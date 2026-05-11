@@ -1,0 +1,396 @@
+import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:convert';
+import '../theme.dart';
+
+class SolicitudAdopcionScreen extends StatefulWidget {
+  final Map<String, dynamic> animal;
+  const SolicitudAdopcionScreen({super.key, required this.animal});
+  @override
+  State<SolicitudAdopcionScreen> createState() => _SolicitudAdopcionScreenState();
+}
+
+class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
+  int _step = 0;
+
+  String _vivienda          = '';
+  String _ninos             = '';
+  String _mascotas          = '';
+  String _experienciaPrevia = '';
+  final  _integrantesCtl = TextEditingController();
+  final  _horasCtl       = TextEditingController();
+  final  _motivacionCtl  = TextEditingController();
+  bool   _enviando       = false;
+
+  static const _viviendaOpts   = ['Casa con jardín', 'Apartamento con balcón', 'Apartamento sin área exterior'];
+  static const _ninosOpts      = ['Sí', 'No'];
+  static const _mascotasOpts   = ['Sí', 'No'];
+  static const _experienciaOpts = ['Sí', 'No, sería mi primera mascota'];
+
+  bool get _completo =>
+      _integrantesCtl.text.trim().isNotEmpty &&
+      _horasCtl.text.trim().isNotEmpty &&
+      _vivienda.isNotEmpty && _ninos.isNotEmpty && _mascotas.isNotEmpty &&
+      _experienciaPrevia.isNotEmpty &&
+      _motivacionCtl.text.trim().isNotEmpty;
+
+  Future<void> _enviar() async {
+    setState(() => _enviando = true);
+    final user = FirebaseAuth.instance.currentUser;
+    try {
+      await FirebaseFirestore.instance.collection('solicitudes').add({
+        'animalNombre':  widget.animal['nombre'],
+        'rescatistaId':  widget.animal['rescatistaId'] ?? '',
+        'adoptanteId':       user?.uid,
+        'nombre':            user?.displayName ?? '',
+        'email':             user?.email ?? '',
+        'integrantes':       _integrantesCtl.text.trim(),
+        'horasFuera':        _horasCtl.text.trim(),
+        'vivienda':          _vivienda,
+        'tieneNinos':        _ninos == 'Sí',
+        'tieneMascotas':     _mascotas == 'Sí',
+        'experienciaPrevia': _experienciaPrevia == 'Sí',
+        'motivacion':        _motivacionCtl.text.trim(),
+        'estado':            'pendiente',
+        // etiquetas del animal para calcular compatibilidad
+        'animalEnergia':          widget.animal['energia'],
+        'animalTamano':           widget.animal['tamano'],
+        'animalOkConNinos':       widget.animal['okConNinos'],
+        'animalOkConMascotas':    widget.animal['okConMascotas'],
+        'animalRequiereExp':      widget.animal['requiereExperiencia'],
+        'creadoEn':      FieldValue.serverTimestamp(),
+      });
+      // Guarda el perfil para el score de compatibilidad en el feed
+      await FirebaseFirestore.instance.collection('usuarios').doc(user?.uid).set({
+        'perfilAdopcion': {
+          'vivienda':          _vivienda,
+          'horasFuera':        _horasCtl.text.trim(),
+          'tieneNinos':        _ninos == 'Sí',
+          'tieneMascotas':     _mascotas == 'Sí',
+          'experienciaPrevia': _experienciaPrevia == 'Sí',
+        }
+      }, SetOptions(merge: true));
+      if (!mounted) return;
+      setState(() => _step = 2);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al enviar: $e')));
+    } finally {
+      if (mounted) setState(() => _enviando = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _integrantesCtl.dispose();
+    _horasCtl.dispose();
+    _motivacionCtl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: appBg,
+      body: SafeArea(
+        child: Column(children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 10, 20, 4),
+            child: Row(children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+                onPressed: () {
+                  if (_step == 1) setState(() => _step = 0);
+                  else Navigator.pop(context);
+                },
+              ),
+              Expanded(child: Text(
+                _step == 0 ? 'Antes de continuar' :
+                _step == 1 ? 'Cuéntanos sobre ti' : '¡Solicitud enviada!',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A)),
+              )),
+              if (_step < 2)
+                Text('${_step + 1} / 2',
+                    style: TextStyle(fontSize: 13, color: Colors.grey.shade500, fontWeight: FontWeight.w600)),
+            ]),
+          ),
+          if (_step < 2)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: _step == 0 ? 0.5 : 1.0,
+                  minHeight: 4,
+                  backgroundColor: Colors.grey.shade200,
+                  valueColor: const AlwaysStoppedAnimation<Color>(appTeal),
+                ),
+              ),
+            ),
+          Expanded(
+            child: _step == 0 ? _stepConciencia() :
+                   _step == 1 ? _stepCuestionario() :
+                                _stepExito(),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _stepConciencia() {
+    final nombre     = widget.animal['nombre'] as String;
+    final emoji      = widget.animal['especie'] == 'Gato' ? '🐱' : '🐶';
+    final fotoBase64 = widget.animal['fotoBase64'] as String?;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(children: [
+        const SizedBox(height: 8),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: fotoBase64 != null
+            ? Image.memory(base64Decode(fotoBase64),
+                height: 200, width: double.infinity, fit: BoxFit.cover)
+            : Container(
+                height: 200, width: double.infinity,
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Color(0xFF3D7A52), Color(0xFF1F4A30)],
+                    begin: Alignment.topLeft, end: Alignment.bottomRight,
+                  ),
+                ),
+                child: Center(child: Text(emoji, style: const TextStyle(fontSize: 80)))),
+        ),
+        const SizedBox(height: 28),
+        Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(color: appDark, borderRadius: BorderRadius.circular(20)),
+          child: Column(children: [
+            const Text('🐾', style: TextStyle(fontSize: 32)),
+            const SizedBox(height: 16),
+            Text(
+              '"$nombre te está esperando."',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold,
+                  color: Colors.white, height: 1.4),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Un animal no es un juguete ni decoración.\nTe amará sin condiciones — en los buenos momentos y en los difíciles.\n\nAdoptar es una promesa de por vida.\n\n¿Estás listo?',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 14, color: Color(0xFFB8D8C8), height: 1.7),
+            ),
+          ]),
+        ),
+        const SizedBox(height: 32),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: () => setState(() => _step = 1),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: appOrange, foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+              elevation: 0,
+            ),
+            child: const Text('Sí, estoy listo 🐾',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ),
+        ),
+        const SizedBox(height: 12),
+        GestureDetector(
+          onTap: () => Navigator.pop(context),
+          child: Text('Aún no estoy seguro/a',
+              style: TextStyle(fontSize: 14, color: Colors.grey.shade500,
+                  decoration: TextDecoration.underline)),
+        ),
+        const SizedBox(height: 24),
+      ]),
+    );
+  }
+
+  Widget _stepCuestionario() {
+    return SingleChildScrollView(
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 60),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const SizedBox(height: 8),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: appTeal.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: appTeal.withOpacity(0.3)),
+          ),
+          child: Row(children: [
+            const Icon(Icons.person_rounded, color: appTeal, size: 20),
+            const SizedBox(width: 10),
+            Text(
+              FirebaseAuth.instance.currentUser?.displayName ?? 'Tu nombre de Google',
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: appTeal),
+            ),
+            const Spacer(),
+            const Text('via Gmail', style: TextStyle(fontSize: 12, color: Colors.grey)),
+          ]),
+        ),
+        const SizedBox(height: 20),
+        _campoTexto('¿Cuántas personas en casa?', _integrantesCtl, 'ej. 3',
+            teclado: TextInputType.number),
+        const SizedBox(height: 24),
+        _campoTexto('¿Cuántas horas al día estás fuera de casa?', _horasCtl,
+            'ej. 4 horas', teclado: TextInputType.number),
+        const SizedBox(height: 24),
+        _pregunta('¿Dónde vives?', '🏠', _viviendaOpts, _vivienda,
+            (v) => setState(() => _vivienda = v)),
+        const SizedBox(height: 24),
+        _pregunta('¿Tienes niños menores de 8 años?', '👶', _ninosOpts, _ninos,
+            (v) => setState(() => _ninos = v)),
+        const SizedBox(height: 24),
+        _pregunta('¿Tienes otras mascotas?', '🐕', _mascotasOpts, _mascotas,
+            (v) => setState(() => _mascotas = v)),
+        const SizedBox(height: 24),
+        _pregunta('¿Has tenido mascotas antes?', '🐾', _experienciaOpts,
+            _experienciaPrevia, (v) => setState(() => _experienciaPrevia = v)),
+        const SizedBox(height: 24),
+        _campoTexto('¿Por qué quieres adoptarlo?', _motivacionCtl,
+            'ej. Siempre quise tener un perro, tengo espacio y mucho amor...',
+            maxLines: 3),
+        const SizedBox(height: 32),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: _completo && !_enviando ? _enviar : null,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: appOrange, foregroundColor: Colors.white,
+              disabledBackgroundColor: Colors.grey.shade300,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+              elevation: 0,
+            ),
+            child: _enviando
+                ? const SizedBox(width: 20, height: 20,
+                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                : const Text('Enviar solicitud',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ),
+        ),
+        const SizedBox(height: 40),
+      ]),
+    );
+  }
+
+  Widget _campoTexto(String titulo, TextEditingController ctl,
+      String hint, {TextInputType teclado = TextInputType.text, int maxLines = 1}) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      RichText(text: TextSpan(
+        text: titulo,
+        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF1A1A1A)),
+        children: const [
+          TextSpan(text: ' *', style: TextStyle(color: appOrange, fontSize: 15)),
+        ],
+      )),
+      const SizedBox(height: 8),
+      Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6)],
+        ),
+        child: TextField(
+          controller: ctl,
+          keyboardType: teclado,
+          maxLines: maxLines,
+          onChanged: (_) => setState(() {}),
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+            border: InputBorder.none,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          ),
+        ),
+      ),
+    ]);
+  }
+
+  Widget _pregunta(String titulo, String icono, List<String> opciones,
+      String seleccion, ValueChanged<String> onSelect) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(titulo,
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF1A1A1A))),
+      const SizedBox(height: 4),
+      Text('$icono  Elige una opción',
+          style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+      const SizedBox(height: 10),
+      Wrap(spacing: 8, runSpacing: 8, children: opciones.map((o) {
+        final sel = o == seleccion;
+        return GestureDetector(
+          onTap: () => onSelect(o),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+            decoration: BoxDecoration(
+              color: sel ? appTeal : Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: sel ? appTeal : Colors.grey.shade300),
+              boxShadow: sel ? [] :
+                  [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 4)],
+            ),
+            child: Text(o, style: TextStyle(
+                fontSize: 13, fontWeight: FontWeight.w600,
+                color: sel ? Colors.white : Colors.grey.shade700)),
+          ),
+        );
+      }).toList()),
+    ]);
+  }
+
+  Widget _stepExito() {
+    final nombre = widget.animal['nombre'] as String;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Container(
+            width: 100, height: 100,
+            decoration: BoxDecoration(
+                color: appTeal.withOpacity(0.12), shape: BoxShape.circle),
+            child: const Icon(Icons.favorite, color: appTeal, size: 50),
+          ),
+          const SizedBox(height: 28),
+          const Text('¡Solicitud enviada!',
+              style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
+          const SizedBox(height: 12),
+          Text(
+            'Le avisamos a la rescatista.\nPronto sabrás si $nombre encontró su hogar contigo. 🌿',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 15, color: Colors.grey.shade600, height: 1.6),
+          ),
+          const SizedBox(height: 36),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () { Navigator.pop(context); Navigator.pop(context); },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: appDark, foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                elevation: 0,
+              ),
+              child: const Text('Volver al inicio',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Ver más animales',
+                style: TextStyle(color: appTeal, fontSize: 14, fontWeight: FontWeight.w600)),
+          ),
+        ]),
+      ),
+    );
+  }
+}
