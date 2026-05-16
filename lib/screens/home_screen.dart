@@ -11,6 +11,8 @@ import 'favoritos_screen.dart';
 import 'perfil_adoptante_screen.dart';
 import 'mis_rescates_screen.dart';
 import 'adoptante_feed_screen.dart';
+import 'chat_screen.dart';
+import 'mis_solicitudes_screen.dart';
 
 // ─── Home Screen ──────────────────────────────────────────────────────────────
 
@@ -100,7 +102,7 @@ class _HomeScreenState extends State<HomeScreen> {
         fit: StackFit.expand,
         children: [
           Container(color: appBg),
-          CustomPaint(painter: LeafPainter()),
+          const LeafOverlay(),
           SafeArea(
             child: _isRescatista!
                 ? _rescatistaView(context)
@@ -208,11 +210,26 @@ class _HomeScreenState extends State<HomeScreen> {
                 decoration: BoxDecoration(color: scoreColor.withOpacity(0.08),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: scoreColor.withOpacity(0.35))),
-                child: Row(children: [
+                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(score >= 80 ? '✅' : score >= 60 ? '⚠️' : '❌', style: const TextStyle(fontSize: 18)),
                   const SizedBox(width: 10),
-                  Text(score >= 80 ? 'Perfil ideal ($score%)' : score >= 60 ? 'Perfil aceptable ($score%)' : 'No recomendado ($score%)',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: scoreColor)),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(score >= 80 ? 'Perfil ideal ($score%)' : score >= 60 ? 'Perfil aceptable ($score%)' : 'No recomendado ($score%)',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: scoreColor)),
+                    const SizedBox(height: 8),
+                    if (data != null) ...explicarCompatibilidad(data).map((r) => Padding(
+                      padding: const EdgeInsets.only(bottom: 3),
+                      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(r.$2 ? '✓' : '✗',
+                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold,
+                                color: r.$2 ? appTeal : Colors.red.shade400)),
+                        const SizedBox(width: 5),
+                        Expanded(child: Text(r.$1,
+                            style: TextStyle(fontSize: 11,
+                                color: r.$2 ? Colors.grey.shade700 : Colors.red.shade600))),
+                      ]),
+                    )),
+                  ])),
                 ]),
               ),
               const SizedBox(height: 20),
@@ -239,8 +256,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Row(children: [
                 Expanded(
                   child: GestureDetector(
-                    onTap: () { Navigator.pop(ctx);
-                      FirebaseFirestore.instance.collection('solicitudes').doc(docId).update({'estado': 'aprobada'}); },
+                    onTap: () { Navigator.pop(ctx); if (data != null) aprobarSolicitud(docId, data); },
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       decoration: BoxDecoration(color: appTeal, borderRadius: BorderRadius.circular(12)),
@@ -272,12 +288,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             onPressed: () {
                               Navigator.pop(dlg);
                               Navigator.pop(ctx);
-                              FirebaseFirestore.instance.collection('solicitudes').doc(docId).update({
-                                'estado': 'rechazada',
-                                'motivoRechazo': motivoCtl.text.trim().isEmpty
-                                    ? 'Sin motivo especificado'
-                                    : motivoCtl.text.trim(),
-                              });
+                              if (data != null) rechazarSolicitud(docId, data, motivoCtl.text.trim());
                             },
                             child: const Text('Confirmar', style: TextStyle(color: Colors.red)),
                           ),
@@ -345,7 +356,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _misRescatesCarousel() {
     return SizedBox(
-      height: 210,
+      height: 245,
       child: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('rescates')
@@ -386,6 +397,28 @@ class _HomeScreenState extends State<HomeScreen> {
                   shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
                   builder: (_) => CambiarEstadoSheet(docId: docId, estadoActual: estadoAdopcion),
                 ),
+                onContactarAdoptante: estadoAdopcion == 'En proceso de adopción' ? () async {
+                  final uid   = FirebaseAuth.instance.currentUser?.uid ?? '';
+                  final chats = await FirebaseFirestore.instance.collection('chats')
+                      .where('animalNombre', isEqualTo: nombre)
+                      .where('rescatistaId', isEqualTo: uid)
+                      .limit(1).get();
+                  if (chats.docs.isEmpty || !context.mounted) return;
+                  final chatDoc = chats.docs.first;
+                  final d = chatDoc.data();
+                  Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => ChatScreen(
+                      esRescatista: true,
+                      chatId: chatDoc.id,
+                      animal: {
+                        'nombre':     nombre,
+                        'rescatista': FirebaseAuth.instance.currentUser?.displayName ?? 'Rescatista',
+                        'especie':    especie,
+                        'fotoBase64': d['fotoBase64'],
+                      },
+                    ),
+                  ));
+                } : null,
               );
             },
           );
@@ -395,7 +428,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _animalCard(String nombre, String especie,
-      {String emoji = '🐾', String estado = 'En adopción', String? fotoBase64, VoidCallback? onCambiarEstado}) {
+      {String emoji = '🐾', String estado = 'En adopción', String? fotoBase64, VoidCallback? onCambiarEstado, VoidCallback? onContactarAdoptante}) {
     final color = cicloColor(estado);
     return Container(
       width: 150,
@@ -441,6 +474,23 @@ class _HomeScreenState extends State<HomeScreen> {
                 ]),
               ),
             ),
+            if (onContactarAdoptante != null) ...[
+              const SizedBox(height: 6),
+              GestureDetector(
+                onTap: onContactarAdoptante,
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  decoration: BoxDecoration(
+                    color: appOrange,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text('Contactar 💬',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white)),
+                ),
+              ),
+            ],
           ]),
         ),
       ]),
@@ -617,11 +667,26 @@ class _HomeScreenState extends State<HomeScreen> {
             _navTap(Icons.person_outline, 'Perfil', 4,
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PerfilRescatistaScreen()))),
           ] else ...[
-            _navItem(Icons.pets,                 'Adoptar',   0),
+            _navItem(Icons.pets, 'Adoptar', 0),
             _navTap(Icons.favorite_outline, 'Favoritos', 1,
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FavoritosScreen()))),
-            _navTap(Icons.chat_bubble_outline, 'Chats', 2,
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdoptanteChatsScreen()))),
+            StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance.collection('chats')
+                  .where('adoptanteId', isEqualTo: FirebaseAuth.instance.currentUser?.uid ?? '')
+                  .snapshots(),
+              builder: (_, snap) {
+                final unread = (snap.data?.docs ?? []).where((doc) {
+                  final d = doc.data() as Map<String, dynamic>;
+                  return ((d['noLeidosAdoptante'] as int?) ?? 0) > 0;
+                }).length;
+                return _navTapConBadge(
+                  Icons.chat_bubble_outline, 'Chats', unread,
+                  () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdoptanteChatsScreen())),
+                );
+              },
+            ),
+            _navTap(Icons.assignment_outlined, 'Solicitudes', 2,
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MisSolicitudesScreen()))),
             _navTap(Icons.person_outline, 'Perfil', 3,
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PerfilAdoptanteScreen()))),
           ],
@@ -649,6 +714,34 @@ class _HomeScreenState extends State<HomeScreen> {
       onTap: onTap,
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         Icon(icon, color: color, size: 24),
+        const SizedBox(height: 3),
+        Text(label, style: TextStyle(fontSize: 10, color: color)),
+      ]),
+    );
+  }
+
+  Widget _navTapConBadge(IconData icon, String label, int badge, VoidCallback onTap) {
+    final color = Colors.grey.shade400;
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Stack(clipBehavior: Clip.none, children: [
+          Icon(icon, color: color, size: 24),
+          if (badge > 0)
+            Positioned(
+              top: -4, right: -6,
+              child: Container(
+                padding: const EdgeInsets.all(3),
+                constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                decoration: const BoxDecoration(color: appOrange, shape: BoxShape.circle),
+                child: Text(
+                  badge > 9 ? '9+' : '$badge',
+                  style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+        ]),
         const SizedBox(height: 3),
         Text(label, style: TextStyle(fontSize: 10, color: color)),
       ]),

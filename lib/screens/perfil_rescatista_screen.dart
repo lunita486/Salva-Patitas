@@ -17,7 +17,7 @@ class PerfilRescatistaScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: appBg,
       body: Stack(fit: StackFit.expand, children: [
-        CustomPaint(painter: LeafPainter()),
+        const LeafOverlay(),
         SafeArea(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),

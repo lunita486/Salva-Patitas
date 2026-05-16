@@ -3,7 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:convert';
 import '../theme.dart';
-import 'chat_screen.dart';
+import 'solicitud_adopcion_screen.dart';
 
 class FavoritosScreen extends StatelessWidget {
   const FavoritosScreen({super.key});
@@ -101,6 +101,7 @@ class FavoritosScreen extends StatelessWidget {
                           final fotoBase64   = d['fotoBase64']   as String?;
                           final rescatista   = d['rescatista']   as String? ?? 'Rescatista';
                           final rescatistaId = d['rescatistaId'] as String? ?? '';
+                          final rescateId    = d['rescateId']    as String? ?? '';
                           final emoji        = especie == 'Gato' ? '🐱' : '🐶';
 
                           final animalMap = {
@@ -111,18 +112,12 @@ class FavoritosScreen extends StatelessWidget {
                             'ubicacion': ubicacion,
                             'rescatista': rescatista,
                             'rescatistaId': rescatistaId,
+                            'rescateId': rescateId,
                             'fotoBase64': fotoBase64,
                           };
 
                           return Stack(children: [
-                            GestureDetector(
-                              onTap: () => Navigator.push(context, MaterialPageRoute(
-                                builder: (_) => ChatScreen(
-                                  animal: animalMap,
-                                  esRescatista: false,
-                                ),
-                              )),
-                              child: Container(
+                            Container(
                                 decoration: BoxDecoration(
                                   color: Colors.white,
                                   borderRadius: BorderRadius.circular(18),
@@ -155,30 +150,75 @@ class FavoritosScreen extends StatelessWidget {
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                       const SizedBox(height: 8),
-                                      SizedBox(
-                                        width: double.infinity,
-                                        child: ElevatedButton(
-                                          onPressed: () => Navigator.push(context, MaterialPageRoute(
-                                            builder: (_) => ChatScreen(
-                                              animal: animalMap,
-                                              esRescatista: false,
-                                            ),
-                                          )),
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: appTeal,
-                                            foregroundColor: Colors.white,
-                                            padding: const EdgeInsets.symmetric(vertical: 6),
-                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                                            elevation: 0,
-                                            textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-                                          ),
-                                          child: const Text('Adoptar'),
-                                        ),
+                                      StreamBuilder<DocumentSnapshot>(
+                                        stream: rescateId.isNotEmpty
+                                            ? FirebaseFirestore.instance.collection('rescates').doc(rescateId).snapshots()
+                                            : const Stream.empty(),
+                                        builder: (_, rescSnap) {
+                                          final rData  = rescateId.isNotEmpty ? (rescSnap.data?.data() as Map<String, dynamic>?) : null;
+                                          final estado = rData?['estadoAdopcion'] as String? ?? '';
+                                          final enProceso = estado == 'En proceso de adopción';
+                                          final adoptado  = estado == 'Adoptado';
+                                          final devuelto  = estado == 'Regresado';
+                                          final noDisponible = enProceso || adoptado;
+                                          return Column(children: [
+                                            if (devuelto) ...[
+                                              Container(
+                                                width: double.infinity,
+                                                padding: const EdgeInsets.symmetric(vertical: 5),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFFFFF3E0),
+                                                  borderRadius: BorderRadius.circular(8),
+                                                  border: Border.all(color: const Color(0xFFE65100).withValues(alpha: 0.4)),
+                                                ),
+                                                child: const Text('🔁 Fue devuelto',
+                                                    textAlign: TextAlign.center,
+                                                    style: TextStyle(fontSize: 11, color: Color(0xFFE65100), fontWeight: FontWeight.w600)),
+                                              ),
+                                              const SizedBox(height: 6),
+                                            ],
+                                            if (noDisponible)
+                                              Container(
+                                                width: double.infinity,
+                                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                                decoration: BoxDecoration(
+                                                  color: enProceso ? const Color(0xFFE65100).withValues(alpha: 0.1) : Colors.grey.shade100,
+                                                  borderRadius: BorderRadius.circular(20),
+                                                  border: Border.all(color: enProceso ? const Color(0xFFE65100).withValues(alpha: 0.5) : Colors.grey.shade300),
+                                                ),
+                                                child: Text(
+                                                  enProceso ? 'En proceso de adopción 🔄' : 'Ya adoptado 🏠',
+                                                  textAlign: TextAlign.center,
+                                                  style: TextStyle(
+                                                    fontSize: 12, fontWeight: FontWeight.w700,
+                                                    color: enProceso ? const Color(0xFFE65100) : const Color(0xFF888888),
+                                                  ),
+                                                ),
+                                              )
+                                            else
+                                              SizedBox(
+                                                width: double.infinity,
+                                                child: ElevatedButton(
+                                                  onPressed: () => Navigator.push(context, MaterialPageRoute(
+                                                    builder: (_) => SolicitudAdopcionScreen(animal: animalMap),
+                                                  )),
+                                                  style: ElevatedButton.styleFrom(
+                                                    backgroundColor: appTeal,
+                                                    foregroundColor: Colors.white,
+                                                    padding: const EdgeInsets.symmetric(vertical: 6),
+                                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                                    elevation: 0,
+                                                    textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                                                  ),
+                                                  child: const Text('Adoptar'),
+                                                ),
+                                              ),
+                                          ]);
+                                        },
                                       ),
                                     ]),
                                   ),
                                 ]),
-                              ),
                             ),
                             // Botón quitar favorito
                             Positioned(

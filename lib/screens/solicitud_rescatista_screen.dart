@@ -69,7 +69,7 @@ class _SolicitudRescatistaScreenState extends State<SolicitudRescatistaScreen> {
     return Scaffold(
       backgroundColor: appBg,
       body: Stack(fit: StackFit.expand, children: [
-        CustomPaint(painter: LeafPainter()),
+        const LeafOverlay(),
         SafeArea(
           child: _paso == 1 ? _paso1() : _paso2(),
         ),

@@ -58,9 +58,17 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
 
   Future<void> _tomarFoto() async {
     if (_fotos.length >= 2) return;
-    final img = await _picker.pickImage(
-        source: ImageSource.camera, imageQuality: 40, maxWidth: 400, maxHeight: 400);
-    if (img != null) setState(() => _fotos.add(img));
+    try {
+      final img = await _picker.pickImage(
+          source: ImageSource.camera, imageQuality: 40, maxWidth: 400, maxHeight: 400);
+      if (img != null) setState(() => _fotos.add(img));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Cámara no disponible — usa la galería'),
+        backgroundColor: appTeal,
+      ));
+    }
   }
 
   bool _publicando = false;
@@ -107,9 +115,12 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
     setState(() => _publicando = true);
     try {
       String? fotoBase64;
+      String? fotoBase642;
       if (_fotos.isNotEmpty) {
-        final bytes = await File(_fotos[0].path).readAsBytes();
-        fotoBase64 = base64Encode(bytes);
+        fotoBase64 = base64Encode(await File(_fotos[0].path).readAsBytes());
+      }
+      if (_fotos.length > 1) {
+        fotoBase642 = base64Encode(await File(_fotos[1].path).readAsBytes());
       }
 
       await FirebaseFirestore.instance.collection('rescates').add({
@@ -121,8 +132,8 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
         'ubicacion':        _lugarCtl.text.trim(),
         'descripcion':      _descCtl.text.trim(),
         'estadoAdopcion':   'Rescatado',
-        'cantidadFotos':    _fotos.length,
-        if (fotoBase64 != null) 'fotoBase64': fotoBase64,
+        if (fotoBase64  != null) 'fotoBase64':  fotoBase64,
+        if (fotoBase642 != null) 'fotoBase642': fotoBase642,
         'rescatistaId':        FirebaseAuth.instance.currentUser?.uid ?? '',
         'rescatistaNombre':    FirebaseAuth.instance.currentUser?.displayName ?? 'Rescatista',
         if (_latitud  != null) 'latitud':  _latitud,
@@ -289,9 +300,7 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
 
   Widget _fotoGrid() {
     final items = List<Widget>.from(_fotos.map((f) => _fotoThumb(f)));
-    if (_fotos.length < 2) {
-      items.add(_fotoAddBtn());
-    }
+    if (_fotos.length < 2) items.add(_fotoAddBtn());
     return Wrap(spacing: 10, runSpacing: 10, children: items);
   }
 
@@ -323,7 +332,7 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
       child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
         const Icon(Icons.add_a_photo_outlined, color: appTeal, size: 28),
         const SizedBox(height: 4),
-        Text('${_fotos.length}/2', style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+        Text(_fotos.isEmpty ? 'Agregar' : '${_fotos.length}/2', style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
       ]),
     ),
   );
@@ -337,7 +346,6 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
           const SizedBox(height: 8),
           Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
           const SizedBox(height: 16),
-          const ListTile(leading: Icon(Icons.camera_alt, color: appTeal), title: Text('Tomar foto')),
           ListTile(leading: const Icon(Icons.camera_alt, color: appTeal), title: const Text('Tomar foto'),
             onTap: () { Navigator.pop(context); _tomarFoto(); }),
           ListTile(leading: const Icon(Icons.photo_library, color: appTeal), title: const Text('Elegir de la galería'),

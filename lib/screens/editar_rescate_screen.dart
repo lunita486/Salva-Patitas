@@ -29,7 +29,9 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
   late String _requiereExp;
   bool _guardando = false;
   String? _fotoBase64Existente;
+  String? _foto2Base64Existente;
   XFile? _nuevaFoto;
+  XFile? _nuevaFoto2;
   final _picker = ImagePicker();
 
   static const _especies  = ['Perro', 'Gato', 'Otro'];
@@ -58,7 +60,8 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
     _okNinos   = (d['okConNinos']    as bool? ?? false) ? 'Sí' : 'No';
     _okMascotas= (d['okConMascotas'] as bool? ?? false) ? 'Sí' : 'No';
     _requiereExp=(d['requiereExperiencia'] as bool? ?? false) ? 'Sí' : 'No';
-    _fotoBase64Existente = d['fotoBase64'] as String?;
+    _fotoBase64Existente  = d['fotoBase64']  as String?;
+    _foto2Base64Existente = d['fotoBase642'] as String?;
   }
 
   @override
@@ -67,38 +70,78 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
     super.dispose();
   }
 
-  Future<void> _pickFoto(ImageSource src) async {
+  Future<void> _pickFoto(ImageSource src, {int slot = 1}) async {
     final img = await _picker.pickImage(source: src, imageQuality: 40, maxWidth: 400, maxHeight: 400);
-    if (img != null) setState(() => _nuevaFoto = img);
+    if (img == null) return;
+    setState(() {
+      if (slot == 1) { _nuevaFoto  = img; }
+      else           { _nuevaFoto2 = img; }
+    });
+  }
+
+  void _mostrarOpcionesFoto(int slot) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const SizedBox(height: 8),
+          Container(width: 40, height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 16),
+          ListTile(
+            leading: const Icon(Icons.camera_alt, color: appTeal),
+            title: const Text('Tomar foto'),
+            onTap: () { Navigator.pop(context); _pickFoto(ImageSource.camera, slot: slot); },
+          ),
+          ListTile(
+            leading: const Icon(Icons.photo_library, color: appTeal),
+            title: const Text('Elegir de la galería'),
+            onTap: () { Navigator.pop(context); _pickFoto(ImageSource.gallery, slot: slot); },
+          ),
+          const SizedBox(height: 8),
+        ]),
+      ),
+    );
   }
 
   Future<void> _guardar() async {
     setState(() => _guardando = true);
-    String? fotoBase64;
-    if (_nuevaFoto != null) {
-      final bytes = await File(_nuevaFoto!.path).readAsBytes();
-      fotoBase64 = base64Encode(bytes);
+    try {
+      final foto1 = _nuevaFoto != null
+          ? base64Encode(await File(_nuevaFoto!.path).readAsBytes())
+          : _fotoBase64Existente;
+      final foto2 = _nuevaFoto2 != null
+          ? base64Encode(await File(_nuevaFoto2!.path).readAsBytes())
+          : _foto2Base64Existente;
+
+      await FirebaseFirestore.instance.collection('rescates').doc(widget.docId).update({
+        'nombre':      _nombreCtl.text.trim(),
+        'descripcion': _descCtl.text.trim(),
+        'ubicacion':   _lugarCtl.text.trim(),
+        'especie':     _especie,
+        'estado':      _estado,
+        'urgencia':    _urgencia,
+        'energia':     _energia,
+        'tamano':      _tamano,
+        'edad':        _edad,
+        'genero':      _genero,
+        'okConNinos':          _okNinos    == 'Sí',
+        'okConMascotas':       _okMascotas == 'Sí',
+        'requiereExperiencia': _requiereExp == 'Sí',
+        'fotoBase64':  foto1 ?? FieldValue.delete(),
+        'fotoBase642': foto2 ?? FieldValue.delete(),
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('¡Cambios guardados!'), backgroundColor: appTeal));
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+    } finally {
+      if (mounted) setState(() => _guardando = false);
     }
-    await FirebaseFirestore.instance.collection('rescates').doc(widget.docId).update({
-      'nombre':      _nombreCtl.text.trim(),
-      'descripcion': _descCtl.text.trim(),
-      'ubicacion':   _lugarCtl.text.trim(),
-      'especie':     _especie,
-      'estado':      _estado,
-      'urgencia':    _urgencia,
-      'energia':     _energia,
-      'tamano':      _tamano,
-      'edad':        _edad,
-      'genero':      _genero,
-      'okConNinos':        _okNinos    == 'Sí',
-      'okConMascotas':     _okMascotas == 'Sí',
-      'requiereExperiencia': _requiereExp == 'Sí',
-      if (fotoBase64 != null) 'fotoBase64': fotoBase64,
-    });
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('¡Cambios guardados!'), backgroundColor: appTeal));
-    Navigator.pop(context);
   }
 
   @override
@@ -130,7 +173,7 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
             child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                _seccion('FOTO'),
+                _seccion('FOTOS'),
                 const SizedBox(height: 10),
                 _fotoSection(),
                 const SizedBox(height: 20),
@@ -176,89 +219,74 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
       style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.2, color: Colors.grey.shade500));
 
   Widget _fotoSection() {
-    final bool tieneNueva = _nuevaFoto != null;
-    final bool tieneExistente = _fotoBase64Existente != null && !tieneNueva;
-    final bool tieneFoto = tieneNueva || tieneExistente;
+    final bool tiene1 = _nuevaFoto != null || _fotoBase64Existente != null;
+    final bool tiene2 = _nuevaFoto2 != null || _foto2Base64Existente != null;
+    final int total   = (tiene1 ? 1 : 0) + (tiene2 ? 1 : 0);
+    final items       = <Widget>[];
 
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      // Vista previa grande
+    if (tiene1) {
+      items.add(_fotoThumbEdit(
+        file: _nuevaFoto,
+        b64: _fotoBase64Existente,
+        onRemove: () => setState(() { _nuevaFoto = null; _fotoBase64Existente = null; }),
+      ));
+    }
+    if (tiene2) {
+      items.add(_fotoThumbEdit(
+        file: _nuevaFoto2,
+        b64: _foto2Base64Existente,
+        onRemove: () => setState(() { _nuevaFoto2 = null; _foto2Base64Existente = null; }),
+      ));
+    }
+    if (total < 2) {
+      items.add(_fotoAddBtnEdit(nextSlot: tiene1 ? 2 : 1));
+    }
+
+    return Wrap(spacing: 10, runSpacing: 10, children: items);
+  }
+
+  Widget _fotoThumbEdit({XFile? file, String? b64, required VoidCallback onRemove}) {
+    return Stack(children: [
       ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: SizedBox(
-          width: double.infinity, height: 180,
-          child: tieneFoto
-            ? Stack(fit: StackFit.expand, children: [
-                tieneNueva
-                  ? Image.file(File(_nuevaFoto!.path), fit: BoxFit.cover)
-                  : Image.memory(base64Decode(_fotoBase64Existente!), fit: BoxFit.cover),
-                Positioned(bottom: 8, right: 8,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: const Text('Foto actual',
-                      style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
-                  )),
-              ])
-            : GestureDetector(
-                onTap: () => _pickFoto(ImageSource.gallery),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFD8F0E4),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: appTeal.withOpacity(0.4), width: 2,
-                        style: BorderStyle.solid),
-                  ),
-                  child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    const Icon(Icons.add_a_photo_outlined, size: 44, color: appTeal),
-                    const SizedBox(height: 8),
-                    const Text('Toca para agregar foto',
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: appTeal)),
-                    const SizedBox(height: 4),
-                    Text('Requerida para publicar',
-                        style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
-                  ]),
-                ),
-              ),
+        borderRadius: BorderRadius.circular(12),
+        child: file != null
+            ? Image.file(File(file.path), width: 90, height: 90, fit: BoxFit.cover)
+            : Image.memory(base64Decode(b64!), width: 90, height: 90, fit: BoxFit.cover),
+      ),
+      Positioned(
+        top: 4, right: 4,
+        child: GestureDetector(
+          onTap: onRemove,
+          child: Container(
+            decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+            padding: const EdgeInsets.all(3),
+            child: const Icon(Icons.close, size: 14, color: Colors.white),
+          ),
         ),
       ),
-      const SizedBox(height: 10),
-      // Botones cambiar foto
-      Row(children: [
-        Expanded(
-          child: ElevatedButton.icon(
-            onPressed: () => _pickFoto(ImageSource.gallery),
-            icon: const Icon(Icons.photo_library_outlined, size: 16),
-            label: const Text('Galería'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: appTeal, foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              elevation: 0,
-              textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-            ),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: ElevatedButton.icon(
-            onPressed: () => _pickFoto(ImageSource.camera),
-            icon: const Icon(Icons.camera_alt_outlined, size: 16),
-            label: const Text('Cámara'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.white, foregroundColor: appTeal,
-              side: const BorderSide(color: appTeal),
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              elevation: 0,
-              textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-            ),
-          ),
-        ),
-      ]),
     ]);
+  }
+
+  Widget _fotoAddBtnEdit({required int nextSlot}) {
+    return GestureDetector(
+      onTap: () => _mostrarOpcionesFoto(nextSlot),
+      child: Container(
+        width: 90, height: 90,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.8),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: appTeal.withValues(alpha: 0.4), width: 1.5),
+        ),
+        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          const Icon(Icons.add_a_photo_outlined, color: appTeal, size: 28),
+          const SizedBox(height: 4),
+          Text(
+            nextSlot == 1 ? 'Agregar' : '1/2',
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+          ),
+        ]),
+      ),
+    );
   }
 
   Widget _campo(String label, TextEditingController ctl, String hint, {int maxLines = 1}) =>

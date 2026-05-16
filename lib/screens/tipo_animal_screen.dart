@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../theme.dart';
 import 'configuracion_screens.dart';
 
 class TipoAnimalScreen extends StatefulWidget {
@@ -14,23 +14,31 @@ class _TipoAnimalScreenState extends State<TipoAnimalScreen> {
   String _tamano  = 'Cualquiera';
   String _edad    = 'Cualquiera';
 
+  DocumentReference get _userDoc => FirebaseFirestore.instance
+      .collection('usuarios')
+      .doc(FirebaseAuth.instance.currentUser?.uid ?? 'anon');
+
   @override
   void initState() {
     super.initState();
-    prefDoc.get().then((doc) {
+    _userDoc.get().then((doc) {
       if (doc.exists && mounted) {
-        final d = doc.data()!;
+        final d = doc.data() as Map<String, dynamic>;
         setState(() {
-          _especie = d['especie'] ?? 'Ambos';
-          _tamano  = d['tamano']  ?? 'Cualquiera';
-          _edad    = d['edad']    ?? 'Cualquiera';
+          _especie = d['prefEspecie'] ?? 'Ambos';
+          _tamano  = d['prefTamano']  ?? 'Cualquiera';
+          _edad    = d['prefEdad']    ?? 'Cualquiera';
         });
       }
     });
   }
 
   void _guardar() {
-    prefDoc.set({'especie': _especie, 'tamano': _tamano, 'edad': _edad}, SetOptions(merge: true));
+    _userDoc.set({
+      'prefEspecie': _especie,
+      'prefTamano':  _tamano,
+      'prefEdad':    _edad,
+    }, SetOptions(merge: true));
   }
 
   Widget _grupo(String label, List<String> opciones, String sel, ValueChanged<String> onChange) =>
@@ -52,7 +60,7 @@ class _TipoAnimalScreenState extends State<TipoAnimalScreen> {
               margin: const EdgeInsets.only(right: 8),
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
               decoration: BoxDecoration(
-                color: active ? const Color(0xFF1A1A1A) : Colors.white.withOpacity(0.88),
+                color: active ? const Color(0xFF1A1A1A) : Colors.white.withValues(alpha: 0.88),
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(color: active ? const Color(0xFF1A1A1A) : Colors.grey.shade300),
               ),

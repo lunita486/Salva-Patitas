@@ -21,7 +21,38 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
   final  _integrantesCtl = TextEditingController();
   final  _horasCtl       = TextEditingController();
   final  _motivacionCtl  = TextEditingController();
-  bool   _enviando       = false;
+  String _tipoSolicitud   = 'adopcion';
+  bool   _enviando        = false;
+  bool   _verificando     = true;
+  bool   _yaAplico        = false;
+  String _estadoExistente = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _verificarDuplicado();
+  }
+
+  Future<void> _verificarDuplicado() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      setState(() => _verificando = false);
+      return;
+    }
+    final q = await FirebaseFirestore.instance
+        .collection('solicitudes')
+        .where('adoptanteId',  isEqualTo: uid)
+        .where('animalNombre', isEqualTo: widget.animal['nombre'])
+        .where('estado',       whereIn: ['pendiente', 'aprobada'])
+        .limit(1).get();
+    if (mounted) {
+      setState(() {
+        _yaAplico        = q.docs.isNotEmpty;
+        _estadoExistente = q.docs.isNotEmpty ? (q.docs.first.data()['estado'] as String? ?? '') : '';
+        _verificando     = false;
+      });
+    }
+  }
 
   static const _viviendaOpts   = ['Casa con jardín', 'Apartamento con balcón', 'Apartamento sin área exterior'];
   static const _ninosOpts      = ['Sí', 'No'];
@@ -42,6 +73,7 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
       await FirebaseFirestore.instance.collection('solicitudes').add({
         'animalNombre':  widget.animal['nombre'],
         'rescatistaId':  widget.animal['rescatistaId'] ?? '',
+        'rescateId':     widget.animal['rescateId']    ?? '',
         'adoptanteId':       user?.uid,
         'nombre':            user?.displayName ?? '',
         'email':             user?.email ?? '',
@@ -52,6 +84,8 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
         'tieneMascotas':     _mascotas == 'Sí',
         'experienciaPrevia': _experienciaPrevia == 'Sí',
         'motivacion':        _motivacionCtl.text.trim(),
+        'tipoSolicitud':     _tipoSolicitud,
+        'fotoBase64':        widget.animal['fotoBase64'],
         'estado':            'pendiente',
         // etiquetas del animal para calcular compatibilidad
         'animalEnergia':          widget.animal['energia'],
@@ -92,6 +126,64 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_verificando) {
+      return const Scaffold(
+        backgroundColor: appBg,
+        body: Center(child: CircularProgressIndicator(color: appTeal)),
+      );
+    }
+    if (_yaAplico) {
+      final aprobada = _estadoExistente == 'aprobada';
+      return Scaffold(
+        backgroundColor: appBg,
+        body: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                Container(
+                  width: 90, height: 90,
+                  decoration: BoxDecoration(
+                    color: (aprobada ? appTeal : appOrange).withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(aprobada ? Icons.favorite : Icons.access_time,
+                      color: aprobada ? appTeal : appOrange, size: 44),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  aprobada ? '¡Solicitud aprobada!' : 'Ya enviaste una solicitud',
+                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A)),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  aprobada
+                      ? 'Tu solicitud para ${widget.animal['nombre']} fue aprobada. Revisa el chat para coordinar el encuentro.'
+                      : 'Tu solicitud para ${widget.animal['nombre']} está pendiente de revisión. Te avisaremos por el chat.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 14, color: Colors.grey.shade600, height: 1.6),
+                ),
+                const SizedBox(height: 32),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: appDark, foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                      elevation: 0,
+                    ),
+                    child: const Text('Volver', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ]),
+            ),
+          ),
+        ),
+      );
+    }
     return Scaffold(
       backgroundColor: appBg,
       body: SafeArea(
@@ -184,19 +276,78 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
             ),
           ]),
         ),
-        const SizedBox(height: 32),
+        const SizedBox(height: 28),
+        Row(children: [
+          Expanded(
+            child: GestureDetector(
+              onTap: () => setState(() => _tipoSolicitud = 'adopcion'),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                decoration: BoxDecoration(
+                  color: _tipoSolicitud == 'adopcion' ? appOrange : Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: _tipoSolicitud == 'adopcion' ? appOrange : Colors.grey.shade300,
+                    width: 2,
+                  ),
+                ),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  const Text('🏠', style: TextStyle(fontSize: 24)),
+                  const SizedBox(height: 4),
+                  Text('Adoptar',
+                      style: TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.bold,
+                        color: _tipoSolicitud == 'adopcion' ? Colors.white : const Color(0xFF1A1A1A),
+                      )),
+                ]),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: GestureDetector(
+              onTap: () => setState(() => _tipoSolicitud = 'hogar_de_paso'),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                decoration: BoxDecoration(
+                  color: _tipoSolicitud == 'hogar_de_paso' ? appTeal : Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: _tipoSolicitud == 'hogar_de_paso' ? appTeal : Colors.grey.shade300,
+                    width: 2,
+                  ),
+                ),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  const Text('🏡', style: TextStyle(fontSize: 24)),
+                  const SizedBox(height: 4),
+                  Text('Hogar de paso',
+                      style: TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.bold,
+                        color: _tipoSolicitud == 'hogar_de_paso' ? Colors.white : const Color(0xFF1A1A1A),
+                      )),
+                ]),
+              ),
+            ),
+          ),
+        ]),
+        const SizedBox(height: 16),
         SizedBox(
           width: double.infinity,
           child: ElevatedButton(
             onPressed: () => setState(() => _step = 1),
             style: ElevatedButton.styleFrom(
-              backgroundColor: appOrange, foregroundColor: Colors.white,
+              backgroundColor: _tipoSolicitud == 'adopcion' ? appOrange : appTeal,
+              foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 16),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
               elevation: 0,
             ),
-            child: const Text('Sí, estoy listo 🐾',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            child: Text(
+              _tipoSolicitud == 'adopcion' ? 'Quiero adoptar 🏠' : 'Quiero dar hogar de paso 🏡',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
           ),
         ),
         const SizedBox(height: 12),

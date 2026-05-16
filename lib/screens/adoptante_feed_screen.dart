@@ -6,17 +6,6 @@ import 'package:geolocator/geolocator.dart';
 import '../theme.dart';
 import 'animal_detalle_screen.dart';
 
-Widget _avatar(String letter, Color color, {double radius = 22, double fontSize = 20}) {
-  final user = FirebaseAuth.instance.currentUser;
-  final foto = user?.photoURL;
-  if (foto != null) {
-    return CircleAvatar(backgroundImage: NetworkImage(foto), radius: radius);
-  }
-  final inicial = user?.displayName?.isNotEmpty == true
-      ? user!.displayName![0].toUpperCase() : letter;
-  return CircleAvatar(backgroundColor: color, radius: radius,
-      child: Text(inicial, style: TextStyle(color: Colors.white, fontSize: fontSize, fontWeight: FontWeight.bold)));
-}
 
 int calcularCompatibilidadFeed(Map<String, dynamic> solicitud) {
   int score = 0;
@@ -69,6 +58,9 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
   int _idx = 0;
   Position? _userPosition;
   Map<String, dynamic>? _perfilAdopcion;
+  String _prefEspecie = 'Ambos';
+  String _prefTamano  = 'Cualquiera';
+  String _prefEdad    = 'Cualquiera';
 
   @override
   void initState() {
@@ -83,9 +75,14 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
     final doc = await FirebaseFirestore.instance.collection('usuarios').doc(uid).get();
     if (doc.exists && mounted) {
       final data = doc.data() as Map<String, dynamic>;
-      if (data['perfilAdopcion'] != null) {
-        setState(() => _perfilAdopcion = Map<String, dynamic>.from(data['perfilAdopcion']));
-      }
+      setState(() {
+        if (data['perfilAdopcion'] != null) {
+          _perfilAdopcion = Map<String, dynamic>.from(data['perfilAdopcion']);
+        }
+        _prefEspecie = data['prefEspecie'] ?? 'Ambos';
+        _prefTamano  = data['prefTamano']  ?? 'Cualquiera';
+        _prefEdad    = data['prefEdad']    ?? 'Cualquiera';
+      });
     }
   }
 
@@ -153,6 +150,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
       'tags':         animal['tags'],
       'rescatista':   animal['rescatista'],
       'rescatistaId': animal['rescatistaId'] ?? '',
+      'rescateId':    animal['rescateId']    ?? '',
       'genero':       animal['genero'] ?? '',
       'fotoBase64':   animal['fotoBase64'],
       'verificado':   animal['verificado'] ?? false,
@@ -169,8 +167,16 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
           .snapshots(),
       builder: (context, snap) {
         final firestoreDocs = (snap.data?.docs ?? []).where((doc) {
-          final estado = (doc.data() as Map<String, dynamic>)['estadoAdopcion'] as String?;
-          return estado == null || estado == 'Rescatado' || estado == 'Regresado';
+          final d = doc.data() as Map<String, dynamic>;
+          final estado = d['estadoAdopcion'] as String?;
+          if (!(estado == null || estado == 'Rescatado' || estado == 'Regresado')) return false;
+          final especie = d['especie'] as String? ?? 'Perro';
+          if (_prefEspecie != 'Ambos' && especie != _prefEspecie) return false;
+          final tamano = d['tamano'] as String? ?? '';
+          if (_prefTamano != 'Cualquiera' && tamano != _prefTamano) return false;
+          final edad = d['edad'] as String? ?? '';
+          if (_prefEdad != 'Cualquiera' && edad != _prefEdad) return false;
+          return true;
         }).toList();
         final animals = <Map<String, dynamic>>[
           ...firestoreDocs.map((doc) {
@@ -186,13 +192,15 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
               'distancia':           '~',
               'descripcion':         d['descripcion'] ?? '',
               'tags':                <String>[
-                                      if (d['okConNinos']    == true)  'Con niños',
-                                      if (d['okConMascotas'] == true)  'Con mascotas',
+                                      if (d['okConNinos']    == true)  'Bueno con niños',
+                                      if (d['okConMascotas'] == true)  'Bueno con mascotas',
                                       if ((d['energia'] as String?)?.isNotEmpty == true) d['energia'] as String,
                                       if (d['estado'] != null && d['estado'] != 'Sano') d['estado'] as String,
                                     ],
               'rescatista':          d['rescatistaNombre'] ?? 'Rescatista',
               'rescatistaId':        d['rescatistaId'] ?? '',
+              'rescateId':           doc.id,
+              'estadoAdopcion':      d['estadoAdopcion'] ?? '',
               'fotoBase64':          d['fotoBase64'],
               'latitud':             d['latitud'],
               'longitud':            d['longitud'],
@@ -314,8 +322,9 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
     final tags        = (a['tags'] as List).cast<String>();
     final rescatista  = a['rescatista'] as String;
     final ubicacion   = a['ubicacion']  as String;
-    final verificado  = a['verificado'] as bool? ?? false;
-    final emoji       = a['especie'] == 'Gato' ? '🐱' : '🐶';
+    final verificado      = a['verificado']     as bool?   ?? false;
+    final estadoAdopcion  = a['estadoAdopcion'] as String? ?? '';
+    final emoji           = a['especie'] == 'Gato' ? '🐱' : '🐶';
 
     Color scoreColor(int s) {
       if (s >= 80) return const Color(0xFF1F8A62);
@@ -370,7 +379,18 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                 )),
               Positioned(top: 12, right: 12,
                 child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                  if (score >= 0)
+                  if (estadoAdopcion == 'Regresado')
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(color: const Color(0xFFE65100), borderRadius: BorderRadius.circular(20)),
+                      child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(Icons.refresh, size: 12, color: Colors.white),
+                        SizedBox(width: 4),
+                        Text('Fue devuelto', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)),
+                      ]),
+                    ),
+                  if (score >= 0) ...[
+                    if (estadoAdopcion == 'Regresado') const SizedBox(height: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
@@ -378,6 +398,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                       child: Text('$score% compatible',
                           style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)),
                     ),
+                  ],
                   if (verificado) ...[
                     const SizedBox(height: 6),
                     Container(
@@ -429,16 +450,21 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                 const SizedBox(height: 14),
               ],
               Row(children: [
-                _avatar('A', appOrange, radius: 16, fontSize: 13),
+                CircleAvatar(
+                  backgroundColor: appTeal.withValues(alpha: 0.15),
+                  radius: 16,
+                  child: Text(
+                    rescatista.isNotEmpty ? rescatista[0].toUpperCase() : 'R',
+                    style: const TextStyle(color: appTeal, fontSize: 13, fontWeight: FontWeight.bold),
+                  ),
+                ),
                 const SizedBox(width: 10),
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const Text('A cargo de',
+                  const Text('Rescatista',
                       style: TextStyle(fontSize: 10, color: Color(0xFFAAAAAA))),
                   Text(rescatista,
                       style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: appTeal)),
                 ]),
-                const Spacer(),
-                const Text('★★★★★', style: TextStyle(fontSize: 14, color: Color(0xFFFFB800))),
               ]),
             ]),
           ),

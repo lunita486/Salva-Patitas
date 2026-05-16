@@ -1,15 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:convert';
 import '../theme.dart';
 
 class MisSolicitudesScreen extends StatelessWidget {
   const MisSolicitudesScreen({super.key});
 
+  String _formatFecha(DateTime d) {
+    const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+    return '${d.day} ${meses[d.month - 1]} ${d.year}';
+  }
+
   @override
   Widget build(BuildContext context) {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     return Scaffold(
       backgroundColor: appBg,
       body: SafeArea(
@@ -36,106 +41,109 @@ class MisSolicitudesScreen extends StatelessWidget {
                   return const Center(child: CircularProgressIndicator(color: appTeal));
                 }
                 final docs = [...(snap.data?.docs ?? [])]..sort((a, b) {
-                    final ta = (a.data() as Map)['creadoEn'] as Timestamp?;
-                    final tb = (b.data() as Map)['creadoEn'] as Timestamp?;
-                    if (ta == null || tb == null) return 0;
-                    return tb.compareTo(ta);
-                  });
+                  final ta = (a.data() as Map)['creadoEn'] as Timestamp?;
+                  final tb = (b.data() as Map)['creadoEn'] as Timestamp?;
+                  if (ta == null || tb == null) return 0;
+                  return tb.compareTo(ta);
+                });
                 if (docs.isEmpty) {
                   return Center(
                     child: Column(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.pets_outlined, size: 64, color: Colors.grey.shade300),
+                      Icon(Icons.assignment_outlined, size: 64, color: Colors.grey.shade300),
                       const SizedBox(height: 16),
-                      Text('Aún no has enviado solicitudes',
-                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.grey.shade500)),
+                      const Text('Aún no has enviado solicitudes',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
                       const SizedBox(height: 8),
-                      Text('Cuando te interese un animal, toca\n"Quiero adoptarlo"',
+                      Text('Cuando solicites adoptar un animal\naparecerá aquí con su estado.',
                           textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: 13, color: Colors.grey.shade400)),
+                          style: TextStyle(fontSize: 14, color: Colors.grey.shade500, height: 1.5)),
                     ]),
                   );
                 }
                 return ListView.separated(
                   padding: const EdgeInsets.fromLTRB(20, 4, 20, 40),
                   itemCount: docs.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  separatorBuilder: (_, _) => const SizedBox(height: 10),
                   itemBuilder: (_, i) {
-                    final d       = docs[i].data() as Map<String, dynamic>;
-                    final animal  = d['animalNombre'] as String? ?? 'Animal';
-                    final estado  = d['estado']       as String? ?? 'pendiente';
-                    final motivo  = d['motivoRechazo'] as String?;
-                    final ts      = d['creadoEn'] as Timestamp?;
-                    final tiempo  = ts != null ? _formatFecha(ts.toDate()) : '';
+                    final d          = docs[i].data() as Map<String, dynamic>;
+                    final animal     = d['animalNombre'] as String? ?? 'Animal';
+                    final estado     = d['estado']       as String? ?? 'pendiente';
+                    final motivo     = d['motivoRechazo'] as String?;
+                    final ts         = d['creadoEn'] as Timestamp?;
+                    final fecha      = ts != null ? _formatFecha(ts.toDate()) : '';
+                    final fotoBase64 = d['fotoBase64']   as String?;
+                    final tipo       = d['tipoSolicitud'] as String? ?? 'adopcion';
 
                     final estadoColor = estado == 'aprobada'
                         ? const Color(0xFF1F8A62)
                         : estado == 'rechazada'
-                            ? const Color(0xFFB71C1C)
-                            : const Color(0xFFE65100);
-                    final estadoLabel = estado == 'aprobada' ? '✅ Aprobada'
-                        : estado == 'rechazada' ? '❌ Rechazada'
-                        : '⏳ Pendiente';
+                        ? const Color(0xFFB71C1C)
+                        : const Color(0xFFE65100);
+                    final estadoLabel = estado == 'aprobada'  ? '✅  Aprobada'
+                        : estado == 'rechazada' ? '❌  Rechazada'
+                        : '⏳  Pendiente';
 
                     return Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(16),
-                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8)],
+                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05),
+                            blurRadius: 8, offset: const Offset(0, 2))],
                       ),
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Row(children: [
-                          Container(width: 40, height: 40,
-                            decoration: BoxDecoration(color: appTeal.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
-                            child: const Icon(Icons.pets, color: appTeal, size: 22)),
-                          const SizedBox(width: 12),
-                          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            Text('Para $animal',
-                                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-                            Text(tiempo, style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
-                          ])),
+                      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: fotoBase64 != null
+                              ? Image.memory(base64Decode(fotoBase64),
+                                  width: 56, height: 56, fit: BoxFit.cover)
+                              : Container(
+                                  width: 56, height: 56,
+                                  color: appTeal.withValues(alpha: 0.12),
+                                  child: const Center(child: Text('🐾', style: TextStyle(fontSize: 26))),
+                                ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(animal, style: const TextStyle(fontSize: 15,
+                              fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
+                          const SizedBox(height: 2),
+                          Text(
+                            tipo == 'hogar_de_paso' ? '🏡 Hogar de paso' : '🏠 Adopción',
+                            style: TextStyle(fontSize: 11, color: Colors.grey.shade500,
+                                fontWeight: FontWeight.w600),
+                          ),
+                          if (fecha.isNotEmpty) ...[
+                            const SizedBox(height: 1),
+                            Text('Enviada el $fecha',
+                                style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                          ],
+                          const SizedBox(height: 10),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                             decoration: BoxDecoration(
-                              color: estadoColor.withOpacity(0.1),
+                              color: estadoColor.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: estadoColor.withOpacity(0.4)),
+                              border: Border.all(color: estadoColor.withValues(alpha: 0.4)),
                             ),
-                            child: Text(estadoLabel,
-                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: estadoColor)),
+                            child: Text(estadoLabel, style: TextStyle(fontSize: 12,
+                                fontWeight: FontWeight.w700, color: estadoColor)),
                           ),
-                        ]),
-                        if (estado == 'rechazada' && motivo != null) ...[
-                          const SizedBox(height: 12),
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.red.shade50,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: Colors.red.shade200),
+                          if (motivo != null && estado == 'rechazada') ...[
+                            const SizedBox(height: 10),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: Colors.red.shade50,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: Colors.red.shade200),
+                              ),
+                              child: Text(motivo, style: TextStyle(fontSize: 12,
+                                  color: Colors.red.shade700, height: 1.4)),
                             ),
-                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              Text('Motivo del rechazo',
-                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.red.shade400)),
-                              const SizedBox(height: 4),
-                              Text(motivo, style: TextStyle(fontSize: 13, color: Colors.red.shade700, height: 1.4)),
-                            ]),
-                          ),
-                        ],
-                        if (estado == 'aprobada') ...[
-                          const SizedBox(height: 12),
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFD8F0E4),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text('¡El rescatista aprobó tu solicitud! Escríbele por el chat para coordinar.',
-                                style: TextStyle(fontSize: 13, color: Colors.green.shade800, height: 1.4)),
-                          ),
-                        ],
+                          ],
+                        ])),
                       ]),
                     );
                   },
@@ -146,12 +154,5 @@ class MisSolicitudesScreen extends StatelessWidget {
         ]),
       ),
     );
-  }
-
-  String _formatFecha(DateTime fecha) {
-    final diff = DateTime.now().difference(fecha);
-    if (diff.inMinutes < 60) return 'hace ${diff.inMinutes}min';
-    if (diff.inHours < 24)   return 'hace ${diff.inHours}h';
-    return 'hace ${diff.inDays}d';
   }
 }

@@ -14,7 +14,7 @@ class SettingsPageScaffold extends StatelessWidget {
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: appBg,
     body: Stack(fit: StackFit.expand, children: [
-      CustomPaint(painter: LeafPainter()),
+      const LeafOverlay(),
       SafeArea(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),

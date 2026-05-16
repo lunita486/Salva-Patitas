@@ -11,7 +11,7 @@ class SeleccionRolScreen extends StatefulWidget {
 }
 
 class _SeleccionRolScreenState extends State<SeleccionRolScreen> {
-  final Set<String> _roles = {'adoptante'};
+  String _rolSeleccionado = 'adoptante';
   bool _guardando = false;
 
   Future<void> _continuar() async {
@@ -21,40 +21,78 @@ class _SeleccionRolScreenState extends State<SeleccionRolScreen> {
       'nombre':   widget.user.displayName ?? 'Usuario',
       'email':    widget.user.email,
       'foto':     widget.user.photoURL,
-      'roles':    _roles.toList(),
+      'roles':    [_rolSeleccionado],
       'ciudad':   'Medellín',
       'creadoEn': FieldValue.serverTimestamp(),
     });
   }
 
-  Widget _rolCard(String rol, String emoji, String descripcion) {
-    final sel = _roles.contains(rol);
+  Widget _rolCard({
+    required String rol,
+    required IconData icono,
+    required Color iconoBg,
+    required Color iconoColor,
+    required String nombre,
+    required String descripcion,
+    String? badgeLabel,
+    Color? badgeBg,
+  }) {
+    final sel = _rolSeleccionado == rol;
     return GestureDetector(
-      onTap: () => setState(() {
-        if (sel && _roles.length > 1) _roles.remove(rol);
-        else _roles.add(rol);
-      }),
+      onTap: () => setState(() => _rolSeleccionado = rol),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          color: sel ? const Color(0xFF1A1A1A) : Colors.white.withOpacity(0.8),
-          borderRadius: BorderRadius.circular(20),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(
-              color: sel ? const Color(0xFF1A1A1A) : Colors.grey.shade300, width: 2),
+            color: sel ? appTeal : Colors.grey.shade200,
+            width: sel ? 2 : 1,
+          ),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 6, offset: const Offset(0, 2)),
+          ],
         ),
         child: Row(children: [
-          Text(emoji, style: const TextStyle(fontSize: 32)),
-          const SizedBox(width: 16),
+          Container(
+            width: 48, height: 48,
+            decoration: BoxDecoration(
+              color: sel ? appTeal.withValues(alpha: 0.15) : iconoBg,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icono, color: sel ? appTeal : iconoColor, size: 24),
+          ),
+          const SizedBox(width: 14),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(rol[0].toUpperCase() + rol.substring(1),
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold,
-                    color: sel ? Colors.white : const Color(0xFF1A1A1A))),
-            const SizedBox(height: 4),
-            Text(descripcion, style: TextStyle(fontSize: 13,
-                color: sel ? Colors.white70 : Colors.grey.shade600)),
+            Row(children: [
+              Text(nombre,
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold,
+                      color: Color(0xFF1A1A1A))),
+              if (badgeLabel != null) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: badgeBg ?? appTeal,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(badgeLabel,
+                      style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w800,
+                          color: Colors.white, letterSpacing: 0.4)),
+                ),
+              ],
+            ]),
+            const SizedBox(height: 3),
+            Text(descripcion,
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
           ])),
-          if (sel) const Icon(Icons.check_circle, color: appTeal, size: 24),
+          const SizedBox(width: 8),
+          if (sel)
+            const Icon(Icons.check_circle_rounded, color: appTeal, size: 22)
+          else
+            Icon(Icons.chevron_right, color: Colors.grey.shade400, size: 22),
         ]),
       ),
     );
@@ -66,7 +104,7 @@ class _SeleccionRolScreenState extends State<SeleccionRolScreen> {
     return Scaffold(
       backgroundColor: appBg,
       body: Stack(fit: StackFit.expand, children: [
-        CustomPaint(painter: LeafPainter()),
+        const LeafOverlay(),
         SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -75,20 +113,50 @@ class _SeleccionRolScreenState extends State<SeleccionRolScreen> {
               Text('Hola, $nombre 👋',
                   style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold,
                       color: Color(0xFF1A1A1A))),
-              const SizedBox(height: 8),
-              Text('¿Cómo quieres usar Salva Patitas?',
-                  style: TextStyle(fontSize: 15, color: Colors.grey.shade600)),
-              const SizedBox(height: 8),
-              Text('Puedes elegir los dos',
-                  style: const TextStyle(fontSize: 13, color: appTeal, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 32),
-              _rolCard('adoptante',  '🏠', 'Encuentra tu compañero perfecto y solicita adopciones'),
-              const SizedBox(height: 12),
-              _rolCard('rescatista', '🦺', 'Publica animales rescatados y gestiona solicitudes'),
-              const SizedBox(height: 12),
-              _rolCard('institucion','🏛️', 'Refugios, fundaciones y perreras con muchos animales'),
-              const SizedBox(height: 12),
-              _rolCard('padrino',    '💛', 'Financia gastos de animales sin necesidad de adoptarlos'),
+              const SizedBox(height: 6),
+              Text('¿CÓMO VAS A ENTRAR?',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
+                      letterSpacing: 1.5, color: Colors.grey.shade500)),
+              const SizedBox(height: 28),
+              _rolCard(
+                rol: 'adoptante',
+                icono: Icons.pets,
+                iconoBg: const Color(0xFFD8F0E4),
+                iconoColor: appTeal,
+                nombre: 'Adoptante',
+                descripcion: 'Quiero adoptar un animal',
+              ),
+              const SizedBox(height: 10),
+              _rolCard(
+                rol: 'rescatista',
+                icono: Icons.eco_outlined,
+                iconoBg: const Color(0xFFE8F5E9),
+                iconoColor: const Color(0xFF388E3C),
+                nombre: 'Rescatista',
+                descripcion: 'Rescato animales por mi cuenta',
+              ),
+              const SizedBox(height: 10),
+              _rolCard(
+                rol: 'albergue',
+                icono: Icons.account_balance_outlined,
+                iconoBg: const Color(0xFFF5F5F5),
+                iconoColor: const Color(0xFF757575),
+                nombre: 'Albergue',
+                descripcion: 'Represento un albergue oficial',
+                badgeLabel: 'VERIFICACIÓN OFICIAL',
+                badgeBg: const Color(0xFF1F8A62),
+              ),
+              const SizedBox(height: 10),
+              _rolCard(
+                rol: 'aliado',
+                icono: Icons.storefront_outlined,
+                iconoBg: const Color(0xFFEDE7F6),
+                iconoColor: const Color(0xFF7C4DFF),
+                nombre: 'Aliado',
+                descripcion: 'Soy veterinario, tienda o servicio',
+                badgeLabel: 'NEGOCIO ALIADO',
+                badgeBg: const Color(0xFFE91E63),
+              ),
               const Spacer(),
               SizedBox(
                 width: double.infinity,

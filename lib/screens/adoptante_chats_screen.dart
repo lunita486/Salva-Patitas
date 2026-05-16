@@ -14,7 +14,7 @@ class AdoptanteChatsScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: appBg,
       body: Stack(fit: StackFit.expand, children: [
-        CustomPaint(painter: LeafPainter()),
+        const LeafOverlay(),
         SafeArea(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Padding(
@@ -95,6 +95,7 @@ class AdoptanteChatsScreen extends StatelessWidget {
                         onTap: () => Navigator.push(context, MaterialPageRoute(
                           builder: (_) => ChatScreen(
                             esRescatista: esRescatista,
+                            chatId: docs[i].id,
                             animal: {
                               'nombre':      animalNombre,
                               'rescatista':  rescatista,

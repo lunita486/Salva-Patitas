@@ -7,7 +7,6 @@ import 'mis_solicitudes_screen.dart';
 import 'notificaciones_screen.dart';
 import 'ubicacion_alcance_screen.dart';
 import 'tipo_animal_screen.dart';
-import 'solicitud_rescatista_screen.dart';
 
 class PerfilAdoptanteScreen extends StatelessWidget {
   const PerfilAdoptanteScreen({super.key});
@@ -43,7 +42,7 @@ class PerfilAdoptanteScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: appBg,
       body: Stack(fit: StackFit.expand, children: [
-        CustomPaint(painter: LeafPainter()),
+        const LeafOverlay(),
         SafeArea(
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
@@ -91,38 +90,6 @@ class PerfilAdoptanteScreen extends StatelessWidget {
                   ]),
                 ]);
               }),
-              const SizedBox(height: 24),
-              // CTA rescatista
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.8),
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8)],
-                ),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const Text('¿RESCATAS ANIMALES?', style: TextStyle(fontSize: 11,
-                      fontWeight: FontWeight.w700, letterSpacing: 1.2, color: appTeal)),
-                  const SizedBox(height: 6),
-                  const Text('Vuélvete rescatista verificado',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
-                  const SizedBox(height: 6),
-                  Text('Publica animales, gestiona solicitudes y construye tu historial público.',
-                      style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
-                  const SizedBox(height: 16),
-                  OutlinedButton(
-                    onPressed: () => Navigator.push(context, MaterialPageRoute(
-                        builder: (_) => const SolicitudRescatistaScreen())),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF1A1A1A),
-                      side: BorderSide(color: Colors.grey.shade300),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                    ),
-                    child: const Text('Empezar solicitud', style: TextStyle(fontWeight: FontWeight.w600)),
-                  ),
-                ]),
-              ),
               const SizedBox(height: 28),
               // Configuración
               const Text('CONFIGURACIÓN', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,

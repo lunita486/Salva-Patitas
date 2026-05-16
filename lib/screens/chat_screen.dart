@@ -7,7 +7,8 @@ import '../theme.dart';
 class ChatScreen extends StatefulWidget {
   final Map<String, dynamic> animal;
   final bool esRescatista;
-  const ChatScreen({super.key, required this.animal, this.esRescatista = false});
+  final String? chatId;
+  const ChatScreen({super.key, required this.animal, this.esRescatista = false, this.chatId});
   @override
   State<ChatScreen> createState() => _ChatScreenState();
 }
@@ -21,27 +22,32 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
-    final nombre     = (widget.animal['nombre'] as String)
-        .toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_');
-    final rescatista = ((widget.animal['rescatista'] as String?) ?? 'ana_restrepo')
-        .toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_');
-    _chatId = '${nombre}_$rescatista';
+    if (widget.chatId != null) {
+      // Chat existente: usa el ID real del documento de Firestore
+      _chatId = widget.chatId!;
+    } else {
+      // Chat nuevo iniciado desde el feed: ID derivado de nombre + rescatista
+      final nombre     = (widget.animal['nombre'] as String)
+          .toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_');
+      final rescatista = ((widget.animal['rescatista'] as String?) ?? 'rescatista')
+          .toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_');
+      _chatId = '${nombre}_$rescatista';
+      // Solo el adoptante crea/actualiza el doc del chat al iniciar desde el feed
+      if (!widget.esRescatista) {
+        FirebaseFirestore.instance.collection('chats').doc(_chatId).set({
+          'animalNombre':  widget.animal['nombre'],
+          'rescatista':    widget.animal['rescatista'] ?? 'Rescatista',
+          'rescatistaId':  widget.animal['rescatistaId'] ?? '',
+          'adoptanteId':   FirebaseAuth.instance.currentUser?.uid ?? '',
+          'especie':       widget.animal['especie'] ?? 'Perro',
+          'fotoBase64':    widget.animal['fotoBase64'],
+          'ultimoMensaje': '',
+          'creadoEn':      FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+    }
     _mensajesRef = FirebaseFirestore.instance
         .collection('chats').doc(_chatId).collection('mensajes');
-    // Solo el adoptante crea/actualiza el doc del chat.
-    // El rescatista NO sobreescribe los IDs — eso rompía el filtro de la lista.
-    if (!widget.esRescatista) {
-      FirebaseFirestore.instance.collection('chats').doc(_chatId).set({
-        'animalNombre':  widget.animal['nombre'],
-        'rescatista':    widget.animal['rescatista'] ?? 'Rescatista',
-        'rescatistaId':  widget.animal['rescatistaId'] ?? '',
-        'adoptanteId':   FirebaseAuth.instance.currentUser?.uid ?? '',
-        'especie':       widget.animal['especie'] ?? 'Perro',
-        'fotoBase64':    widget.animal['fotoBase64'],
-        'ultimoMensaje': '',
-        'creadoEn':      FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-    }
     // Resetea los no leídos del rol que abre el chat
     final campo = widget.esRescatista ? 'noLeidosRescatista' : 'noLeidosAdoptante';
     FirebaseFirestore.instance.collection('chats').doc(_chatId)
@@ -252,18 +258,18 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
 
-          // ── Template chips ──────────────────────────────────────────────────
-          SizedBox(
-            height: 40,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              children: [
-                _templateChip('Plantilla: preguntar por encuentro',
-                    '¿Podríamos coordinar un encuentro con $nombre esta semana?'),
-              ],
+          if (!widget.esRescatista)
+            SizedBox(
+              height: 40,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                children: [
+                  _templateChip('Plantilla: preguntar por encuentro',
+                      '¿Podríamos coordinar un encuentro con $nombre esta semana?'),
+                ],
+              ),
             ),
-          ),
           const SizedBox(height: 8),
 
           // ── Input bar ───────────────────────────────────────────────────────
