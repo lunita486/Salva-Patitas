@@ -11,7 +11,7 @@ class SeleccionRolScreen extends StatefulWidget {
 }
 
 class _SeleccionRolScreenState extends State<SeleccionRolScreen> {
-  String _rolSeleccionado = 'adoptante';
+  final Set<String> _roles = {'adoptante'};
   bool _guardando = false;
 
   Future<void> _continuar() async {
@@ -21,7 +21,7 @@ class _SeleccionRolScreenState extends State<SeleccionRolScreen> {
       'nombre':   widget.user.displayName ?? 'Usuario',
       'email':    widget.user.email,
       'foto':     widget.user.photoURL,
-      'roles':    [_rolSeleccionado],
+      'roles':    _roles.toList(),
       'ciudad':   'Medellín',
       'creadoEn': FieldValue.serverTimestamp(),
     });
@@ -37,9 +37,12 @@ class _SeleccionRolScreenState extends State<SeleccionRolScreen> {
     String? badgeLabel,
     Color? badgeBg,
   }) {
-    final sel = _rolSeleccionado == rol;
+    final sel = _roles.contains(rol);
     return GestureDetector(
-      onTap: () => setState(() => _rolSeleccionado = rol),
+      onTap: () => setState(() {
+        if (sel && _roles.length > 1) { _roles.remove(rol); }
+        else { _roles.add(rol); }
+      }),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
