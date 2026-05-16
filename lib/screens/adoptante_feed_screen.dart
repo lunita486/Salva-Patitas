@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:async';
 import 'dart:convert';
 import 'package:geolocator/geolocator.dart';
 import '../theme.dart';
@@ -61,19 +62,24 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
   String _prefEspecie = 'Ambos';
   String _prefTamano  = 'Cualquiera';
   String _prefEdad    = 'Cualquiera';
+  StreamSubscription? _prefSub;
 
   @override
   void initState() {
     super.initState();
     _obtenerPosicion();
-    _cargarPerfil();
+    _suscribirPerfil();
   }
 
-  Future<void> _cargarPerfil() async {
+  void _suscribirPerfil() {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    final doc = await FirebaseFirestore.instance.collection('usuarios').doc(uid).get();
-    if (doc.exists && mounted) {
+    _prefSub = FirebaseFirestore.instance
+        .collection('usuarios')
+        .doc(uid)
+        .snapshots()
+        .listen((doc) {
+      if (!doc.exists || !mounted) return;
       final data = doc.data() as Map<String, dynamic>;
       setState(() {
         if (data['perfilAdopcion'] != null) {
@@ -83,7 +89,13 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
         _prefTamano  = data['prefTamano']  ?? 'Cualquiera';
         _prefEdad    = data['prefEdad']    ?? 'Cualquiera';
       });
-    }
+    });
+  }
+
+  @override
+  void dispose() {
+    _prefSub?.cancel();
+    super.dispose();
   }
 
   int _calcularScore(Map<String, dynamic> animal) {
