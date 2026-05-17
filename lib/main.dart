@@ -7,6 +7,7 @@ import 'theme.dart';
 import 'screens/login_screen.dart';
 import 'screens/seleccion_rol_screen.dart';
 import 'screens/albergue_perfil_screen.dart';
+import 'screens/albergue_home_screen.dart';
 import 'screens/home_screen.dart';
 
 void main() async {
@@ -62,6 +63,7 @@ class AuthWrapper extends StatelessWidget {
             if (esAlbergue && !perfilCompleto) {
               return const AlberguePerfilScreen();
             }
+            if (esAlbergue) return const AlbergueHomeScreen();
             return const HomeScreen();
           },
         );
