@@ -53,7 +53,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _rolToggle() {
-    if (_roles.length <= 1) return const SizedBox.shrink();
+    final visibles = _roles.where((r) => r == 'adoptante' || r == 'rescatista').toList();
+    if (visibles.length <= 1) return const SizedBox.shrink();
     return Container(
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.80),
@@ -63,7 +64,7 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.all(4),
       child: Row(
         mainAxisSize: MainAxisSize.min,
-        children: _roles.map((rol) {
+        children: visibles.map((rol) {
           final activo = (_isRescatista == true && rol == 'rescatista') ||
                          (_isRescatista == false && rol != 'rescatista');
           final label  = _rolLabel[rol] ?? rol;
