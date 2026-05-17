@@ -6,6 +6,7 @@ import 'firebase_options.dart';
 import 'theme.dart';
 import 'screens/login_screen.dart';
 import 'screens/seleccion_rol_screen.dart';
+import 'screens/albergue_perfil_screen.dart';
 import 'screens/home_screen.dart';
 
 void main() async {
@@ -53,6 +54,13 @@ class AuthWrapper extends StatelessWidget {
             }
             if (!userSnap.hasData || !userSnap.data!.exists) {
               return SeleccionRolScreen(user: snap.data!);
+            }
+            final data  = userSnap.data!.data() as Map<String, dynamic>;
+            final roles = List<String>.from(data['roles'] as List? ?? []);
+            final esAlbergue      = roles.contains('albergue');
+            final perfilCompleto  = (data['albergueNombre'] as String?)?.isNotEmpty == true;
+            if (esAlbergue && !perfilCompleto) {
+              return const AlberguePerfilScreen();
             }
             return const HomeScreen();
           },
