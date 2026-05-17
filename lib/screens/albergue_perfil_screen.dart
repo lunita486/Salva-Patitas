@@ -79,7 +79,7 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
               // Nombre
               _label('NOMBRE DEL ALBERGUE *'),
               const SizedBox(height: 8),
-              _campo(_nombreCtl, 'ej. Centro de Bienestar Animal La Perla'),
+              _campo(_nombreCtl, 'ej. Centro de Bienestar Animal La Perla', autofocus: true),
               const SizedBox(height: 24),
 
               // Tipo
@@ -186,11 +186,13 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
     String hint, {
     TextInputType tipo = TextInputType.text,
     List<TextInputFormatter> formato = const [],
+    bool autofocus = false,
   }) =>
       TextField(
         controller: ctl,
         keyboardType: tipo,
         inputFormatters: formato,
+        autofocus: autofocus,
         decoration: InputDecoration(
           hintText: hint,
           hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
@@ -199,6 +201,14 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFF1F8A62), width: 2),
           ),
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         ),
