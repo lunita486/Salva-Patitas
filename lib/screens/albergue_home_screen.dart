@@ -37,7 +37,6 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
         final nombre       = data['albergueNombre']    as String? ?? 'Albergue';
         final tipo         = data['albergueTipo']      as String? ?? '';
         final capacidad    = (data['capacidadTotal']   as int?)   ?? 0;
-        final verificado   = data['verificado']        as bool?   ?? false;
         final iniciales    = nombre.trim().split(' ')
             .take(2).map((w) => w.isNotEmpty ? w[0].toUpperCase() : '').join();
 
@@ -64,7 +63,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                 const Positioned.fill(child: LeafOverlay()),
                 SafeArea(
                   child: _nav == 0
-                    ? _panel(context, nombre, tipo, iniciales, verificado,
+                    ? _panel(context, nombre, tipo, iniciales,
                         capacidad, enCuidado, enAdopcion, adoptados, totalActivos, pct, rescates)
                     : const SizedBox.shrink(),
                 ),
@@ -86,7 +85,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
   // ── Panel principal ──────────────────────────────────────────────────────────
 
   Widget _panel(BuildContext ctx, String nombre, String tipo, String iniciales,
-      bool verificado, int capacidad, int enCuidado, int enAdopcion,
+      int capacidad, int enCuidado, int enAdopcion,
       int adoptados, int totalActivos, double pct,
       List<QueryDocumentSnapshot> rescates) {
     return SingleChildScrollView(
@@ -99,25 +98,9 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
             const Text('Hola,',
                 style: TextStyle(fontSize: 15, color: Color(0xFF555555))),
             const SizedBox(height: 2),
-            Row(children: [
-              Text(nombre,
-                  style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold,
-                      color: Color(0xFF1A1A1A))),
-              if (verificado) ...[
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: appTeal, borderRadius: BorderRadius.circular(20)),
-                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.circle, size: 7, color: Colors.white),
-                    SizedBox(width: 4),
-                    Text('Oficial', style: TextStyle(fontSize: 11,
-                        fontWeight: FontWeight.w700, color: Colors.white)),
-                  ]),
-                ),
-              ],
-            ]),
+            Text(nombre,
+                style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold,
+                    color: Color(0xFF1A1A1A))),
             if (tipo.isNotEmpty) ...[
               const SizedBox(height: 2),
               Row(children: [

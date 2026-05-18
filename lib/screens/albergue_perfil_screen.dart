@@ -32,7 +32,6 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
       'albergueTipo':      _tipo,
       'capacidadTotal':    int.tryParse(_capacidadCtl.text.trim()) ?? 0,
       'albergueDireccion': _direccionCtl.text.trim(),
-      'verificado':        false,
     });
     // AuthWrapper detecta el cambio y navega a HomeScreen automáticamente
   }
@@ -125,25 +124,6 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
               _label('BARRIO O DIRECCIÓN'),
               const SizedBox(height: 8),
               _campo(_direccionCtl, 'ej. Laureles, Medellín'),
-              const SizedBox(height: 12),
-
-              // Verificación info
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1F8A62).withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFF1F8A62).withValues(alpha: 0.3)),
-                ),
-                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const Icon(Icons.info_outline, size: 18, color: Color(0xFF1F8A62)),
-                  const SizedBox(width: 10),
-                  Expanded(child: Text(
-                    'Tu perfil quedará en revisión. Una vez verificado, aparecerá el badge "● Oficial" en tu cuenta.',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade700, height: 1.5),
-                  )),
-                ]),
-              ),
               const SizedBox(height: 36),
 
               // Botón
