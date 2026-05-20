@@ -29,7 +29,19 @@ class FavoritosScreen extends StatelessWidget {
               final d = doc.data() as Map<String, dynamic>;
               final nombre = (d['animalNombre'] as String? ?? '').toLowerCase();
               return seen.add(nombre);
-            }).toList();
+            }).toList()
+              ..sort((a, b) {
+                const orden = {
+                  'Rescatado': 0,
+                  'Hogar de paso': 1,
+                  'En proceso de adopción': 2,
+                  'Adoptado': 3,
+                  'Regresado': 4,
+                };
+                final ea = (a.data() as Map)['estadoAdopcion'] as String? ?? 'Rescatado';
+                final eb = (b.data() as Map)['estadoAdopcion'] as String? ?? 'Rescatado';
+                return (orden[ea] ?? 0).compareTo(orden[eb] ?? 0);
+              });
             for (final doc in allDocs) {
               final d = doc.data() as Map<String, dynamic>;
               final nombre = (d['animalNombre'] as String? ?? '').toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_');
