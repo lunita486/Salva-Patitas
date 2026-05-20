@@ -39,14 +39,17 @@ class AdoptanteChatsScreen extends StatelessWidget {
                   if (snap.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator(color: appTeal));
                   }
-                  final docs = [...(snap.data?.docs ?? [])]..sort((a, b) {
-                      final ta = (a.data() as Map)['ultimoMensajeEn'] as Timestamp?;
-                      final tb = (b.data() as Map)['ultimoMensajeEn'] as Timestamp?;
-                      if (ta == null && tb == null) return 0;
-                      if (ta == null) return 1;
-                      if (tb == null) return -1;
-                      return tb.compareTo(ta);
-                    });
+                  final docs = (snap.data?.docs ?? [])
+                      .where((d) => ((d.data() as Map)['ultimoMensaje'] as String? ?? '').isNotEmpty)
+                      .toList()
+                      ..sort((a, b) {
+                        final ta = (a.data() as Map)['ultimoMensajeEn'] as Timestamp?;
+                        final tb = (b.data() as Map)['ultimoMensajeEn'] as Timestamp?;
+                        if (ta == null && tb == null) return 0;
+                        if (ta == null) return 1;
+                        if (tb == null) return -1;
+                        return tb.compareTo(ta);
+                      });
                   if (docs.isEmpty) {
                     return Center(
                       child: Column(mainAxisSize: MainAxisSize.min, children: [
