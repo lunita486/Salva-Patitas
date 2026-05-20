@@ -29,19 +29,7 @@ class FavoritosScreen extends StatelessWidget {
               final d = doc.data() as Map<String, dynamic>;
               final nombre = (d['animalNombre'] as String? ?? '').toLowerCase();
               return seen.add(nombre);
-            }).toList()
-              ..sort((a, b) {
-                const orden = {
-                  'Rescatado': 0,
-                  'Hogar de paso': 1,
-                  'Adoptado': 2,
-                  'Regresado': 3,
-                  'En proceso de adopción': 4,
-                };
-                final ea = (a.data() as Map)['estadoAdopcion'] as String? ?? 'Rescatado';
-                final eb = (b.data() as Map)['estadoAdopcion'] as String? ?? 'Rescatado';
-                return (orden[ea] ?? 0).compareTo(orden[eb] ?? 0);
-              });
+            }).toList();
             for (final doc in allDocs) {
               final d = doc.data() as Map<String, dynamic>;
               final nombre = (d['animalNombre'] as String? ?? '').toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_');
@@ -133,7 +121,7 @@ class FavoritosScreen extends StatelessWidget {
                                 decoration: BoxDecoration(
                                   color: Colors.white,
                                   borderRadius: BorderRadius.circular(18),
-                                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.07),
+                                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.07),
                                       blurRadius: 10, offset: const Offset(0, 3))],
                                 ),
                                 clipBehavior: Clip.hardEdge,
