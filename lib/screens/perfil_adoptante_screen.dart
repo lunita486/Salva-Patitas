@@ -4,8 +4,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../theme.dart';
 import 'mis_solicitudes_screen.dart';
-import 'notificaciones_screen.dart';
-import 'ubicacion_alcance_screen.dart';
 import 'tipo_animal_screen.dart';
 
 class PerfilAdoptanteScreen extends StatelessWidget {
@@ -99,15 +97,9 @@ class PerfilAdoptanteScreen extends StatelessWidget {
                   fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
               const SizedBox(height: 16),
               _settingsCard([
-                _settingsRow('Mis solicitudes', Icons.pets,
+                _settingsRow('Mis solicitudes', Icons.assignment_outlined,
                     onTap: () => Navigator.push(context, MaterialPageRoute(
                         builder: (_) => const MisSolicitudesScreen()))),
-                _settingsRow('Notificaciones', Icons.notifications_outlined,
-                    onTap: () => Navigator.push(context, MaterialPageRoute(
-                        builder: (_) => const NotificacionesScreen()))),
-                _settingsRow('Ubicación y alcance', Icons.location_on_outlined,
-                    onTap: () => Navigator.push(context, MaterialPageRoute(
-                        builder: (_) => const UbicacionAlcanceScreen()))),
                 _settingsRow('Tipo de animal preferido', Icons.pets, last: true,
                     onTap: () => Navigator.push(context, MaterialPageRoute(
                         builder: (_) => const TipoAnimalScreen()))),
