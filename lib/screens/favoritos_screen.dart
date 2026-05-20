@@ -34,9 +34,9 @@ class FavoritosScreen extends StatelessWidget {
                 const orden = {
                   'Rescatado': 0,
                   'Hogar de paso': 1,
-                  'En proceso de adopción': 2,
-                  'Adoptado': 3,
-                  'Regresado': 4,
+                  'Adoptado': 2,
+                  'Regresado': 3,
+                  'En proceso de adopción': 4,
                 };
                 final ea = (a.data() as Map)['estadoAdopcion'] as String? ?? 'Rescatado';
                 final eb = (b.data() as Map)['estadoAdopcion'] as String? ?? 'Rescatado';
