@@ -523,7 +523,7 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: () { Navigator.pop(context); Navigator.pop(context); },
+              onPressed: () => Navigator.popUntil(context, (r) => r.isFirst),
               style: ElevatedButton.styleFrom(
                 backgroundColor: appDark, foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 16),
@@ -536,7 +536,7 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
           ),
           const SizedBox(height: 12),
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.popUntil(context, (r) => r.isFirst),
             child: const Text('Ver más animales',
                 style: TextStyle(color: appTeal, fontSize: 14, fontWeight: FontWeight.w600)),
           ),
