@@ -4,13 +4,29 @@ import '../theme.dart';
 import 'chat_screen.dart';
 import 'solicitud_adopcion_screen.dart';
 
-class AnimalDetalleScreen extends StatelessWidget {
+class AnimalDetalleScreen extends StatefulWidget {
   final Map<String, dynamic> animal;
   const AnimalDetalleScreen({super.key, required this.animal});
 
   @override
+  State<AnimalDetalleScreen> createState() => _AnimalDetalleScreenState();
+}
+
+class _AnimalDetalleScreenState extends State<AnimalDetalleScreen> {
+  final _pageCtrl = PageController();
+  int _paginaFoto = 0;
+
+  @override
+  void dispose() {
+    _pageCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final fotoBase64  = animal['fotoBase64'] as String?;
+    final animal       = widget.animal;
+    final fotoBase64   = animal['fotoBase64']   as String?;
+    final fotoBase64_2 = animal['fotoBase64_2'] as String?;
     final nombre      = animal['nombre']      as String;
     final edad        = (animal['edad']   as String?) ?? '';
     final genero      = (animal['genero'] as String?) ?? '';
@@ -19,6 +35,8 @@ class AnimalDetalleScreen extends StatelessWidget {
     final descripcion = animal['descripcion'] as String;
     final tags        = (animal['tags'] as List).cast<String>();
     final emoji       = animal['especie'] == 'Gato' ? '🐱' : '🐶';
+
+    final fotos = [?fotoBase64, ?fotoBase64_2];
 
     return Scaffold(
       backgroundColor: appBg,
@@ -40,23 +58,52 @@ class AnimalDetalleScreen extends StatelessWidget {
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                // Photo
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
-                  child: fotoBase64 != null
-                    ? Image.memory(base64Decode(fotoBase64),
-                        height: 260, width: double.infinity, fit: BoxFit.cover)
-                    : Container(
-                        height: 260, width: double.infinity,
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [Color(0xFF3D7A52), Color(0xFF1F4A30)],
-                            begin: Alignment.topLeft, end: Alignment.bottomRight,
+                // Photos carousel
+                Stack(children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(20),
+                    child: fotos.isEmpty
+                      ? Container(
+                          height: 260, width: double.infinity,
+                          decoration: const BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [Color(0xFF3D7A52), Color(0xFF1F4A30)],
+                              begin: Alignment.topLeft, end: Alignment.bottomRight,
+                            ),
+                          ),
+                          child: Center(child: Text(emoji, style: const TextStyle(fontSize: 90))),
+                        )
+                      : SizedBox(
+                          height: 260,
+                          child: PageView.builder(
+                            controller: _pageCtrl,
+                            itemCount: fotos.length,
+                            onPageChanged: (i) => setState(() => _paginaFoto = i),
+                            itemBuilder: (_, i) => Image.memory(
+                              base64Decode(fotos[i]),
+                              width: double.infinity, fit: BoxFit.cover,
+                            ),
                           ),
                         ),
-                        child: Center(child: Text(emoji, style: const TextStyle(fontSize: 90))),
+                  ),
+                  if (fotos.length > 1)
+                    Positioned(
+                      bottom: 10, left: 0, right: 0,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: List.generate(fotos.length, (i) => AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          margin: const EdgeInsets.symmetric(horizontal: 3),
+                          width:  _paginaFoto == i ? 18 : 7,
+                          height: 7,
+                          decoration: BoxDecoration(
+                            color: _paginaFoto == i ? Colors.white : Colors.white.withValues(alpha: 0.5),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        )),
                       ),
-                ),
+                    ),
+                ]),
                 const SizedBox(height: 12),
                 // Badges
                 Row(children: [

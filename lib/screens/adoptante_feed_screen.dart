@@ -214,6 +214,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
               'rescateId':           doc.id,
               'estadoAdopcion':      d['estadoAdopcion'] ?? '',
               'fotoBase64':          d['fotoBase64'],
+              'fotoBase64_2':        d['fotoBase64_2'],
               'latitud':             d['latitud'],
               'longitud':            d['longitud'],
               'energia':             d['energia'],

@@ -129,18 +129,24 @@ class MisSolicitudesScreen extends StatelessWidget {
                             child: Text(estadoLabel, style: TextStyle(fontSize: 12,
                                 fontWeight: FontWeight.w700, color: estadoColor)),
                           ),
-                          if (motivo != null && estado == 'rechazada') ...[
+                          if (estado == 'rechazada') ...[
                             const SizedBox(height: 10),
                             Container(
                               width: double.infinity,
-                              padding: const EdgeInsets.all(10),
+                              padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
-                                color: Colors.red.shade50,
+                                color: const Color(0xFFFFF8F0),
                                 borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: Colors.red.shade200),
+                                border: Border.all(color: const Color(0xFFE65100).withValues(alpha: 0.3)),
                               ),
-                              child: Text(motivo, style: TextStyle(fontSize: 12,
-                                  color: Colors.red.shade700, height: 1.4)),
+                              child: Text(
+                                'Hola, gracias por tu interés en adoptar a $animal. '
+                                'Luego de revisar tu solicitud, en esta ocasión no podemos continuar con el proceso'
+                                '${motivo != null && motivo.isNotEmpty ? ': $motivo' : ''}. '
+                                '¡Esperamos que pronto encuentres a tu compañero perfecto! 🐾',
+                                style: TextStyle(fontSize: 12,
+                                    color: Colors.grey.shade700, height: 1.5),
+                              ),
                             ),
                           ],
                         ])),
