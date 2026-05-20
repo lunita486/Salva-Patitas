@@ -27,6 +27,25 @@ class _SeleccionRolScreenState extends State<SeleccionRolScreen> {
     });
   }
 
+  static const _rolesExclusivos = {'albergue', 'aliado'};
+
+  void _toggleRol(String rol) {
+    setState(() {
+      if (_roles.contains(rol)) {
+        if (_roles.length > 1) _roles.remove(rol);
+      } else if (_rolesExclusivos.contains(rol)) {
+        // Albergue y Aliado son exclusivos — limpian todo lo demás
+        _roles
+          ..clear()
+          ..add(rol);
+      } else {
+        // Adoptante/Rescatista no pueden combinarse con roles exclusivos
+        _roles.removeWhere((r) => _rolesExclusivos.contains(r));
+        _roles.add(rol);
+      }
+    });
+  }
+
   Widget _rolCard({
     required String rol,
     required IconData icono,
@@ -39,10 +58,7 @@ class _SeleccionRolScreenState extends State<SeleccionRolScreen> {
   }) {
     final sel = _roles.contains(rol);
     return GestureDetector(
-      onTap: () => setState(() {
-        if (sel && _roles.length > 1) { _roles.remove(rol); }
-        else { _roles.add(rol); }
-      }),
+      onTap: () => _toggleRol(rol),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
