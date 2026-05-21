@@ -225,9 +225,38 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
           }),
         ];
 
+        // Ordenar por distancia si hay posición disponible
+        if (_userPosition != null) {
+          animals.sort((a, b) {
+            final latA = a['latitud'] as double?;
+            final lngA = a['longitud'] as double?;
+            final latB = b['latitud'] as double?;
+            final lngB = b['longitud'] as double?;
+            if (latA == null || lngA == null) return 1;
+            if (latB == null || lngB == null) return -1;
+            final dA = Geolocator.distanceBetween(
+                _userPosition!.latitude, _userPosition!.longitude, latA, lngA);
+            final dB = Geolocator.distanceBetween(
+                _userPosition!.latitude, _userPosition!.longitude, latB, lngB);
+            return dA.compareTo(dB);
+          });
+        }
+
         if (_idx >= animals.length) return _emptyState();
 
         final animal = animals[_idx];
+
+        // Detectar si el más cercano está lejos (>500 km)
+        bool sinAnimalesCerca = false;
+        if (_userPosition != null && animals.isNotEmpty) {
+          final lat = animals[0]['latitud'] as double?;
+          final lng = animals[0]['longitud'] as double?;
+          if (lat != null && lng != null) {
+            final metros = Geolocator.distanceBetween(
+                _userPosition!.latitude, _userPosition!.longitude, lat, lng);
+            sinAnimalesCerca = metros > 500000;
+          }
+        }
 
         final distancia = _distancia(animal);
         return Column(children: [
@@ -242,12 +271,35 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                         : (animal['ubicacion'] as String).toUpperCase(),
                     style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
                         letterSpacing: 1.2, color: appTeal)),
-                const Text('Cerca de ti',
+                const Text('Animales disponibles',
                     style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold,
                         color: Color(0xFF1A1A1A))),
               ]),
             ),
           ),
+          if (sinAnimalesCerca)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF8F0),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE65100).withValues(alpha: 0.3)),
+                ),
+                child: Row(children: [
+                  const Text('📍', style: TextStyle(fontSize: 14)),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'No hay animales cerca de ti. Mostrando todos los disponibles.',
+                      style: TextStyle(fontSize: 12, color: Color(0xFF8B4513)),
+                    ),
+                  ),
+                ]),
+              ),
+            ),
           Expanded(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -286,7 +338,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
         child: SizedBox(
           width: double.infinity,
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('MEDELLÍN', style: TextStyle(fontSize: 11,
+            const Text('SALVA PATITAS', style: TextStyle(fontSize: 11,
                 fontWeight: FontWeight.w600, letterSpacing: 1.2, color: appTeal)),
             const Text('Cerca de ti',
                 style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),

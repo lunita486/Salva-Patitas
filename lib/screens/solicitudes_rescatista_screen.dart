@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme.dart';
+import 'chat_screen.dart';
 
 int calcularCompatibilidad(Map<String, dynamic> solicitud) {
   int score = 0;
@@ -106,7 +107,7 @@ List<(String, bool)> explicarCompatibilidad(Map<String, dynamic> sol) {
 
 // ── Funciones top-level reutilizables por home_screen y solicitudes_screen ──
 
-Future<void> enviarMensajeChat(String adoptanteId, String animalNombre, String texto, {String? fotoBase64, String? adoptanteNombre}) async {
+Future<void> enviarMensajeChat(String adoptanteId, String animalNombre, String texto, {String? fotoBase64, String? adoptanteNombre, String? tipoSolicitud}) async {
   try {
     final rescatistaId = FirebaseAuth.instance.currentUser?.uid ?? '';
     final n    = DateTime.now();
@@ -124,7 +125,8 @@ Future<void> enviarMensajeChat(String adoptanteId, String animalNombre, String t
         'animalNombre':    animalNombre,
         'rescatistaId':    rescatistaId,
         'rescatista':      rescatistaNombre,
-        if (fotoBase64 != null) 'fotoBase64': fotoBase64,
+        if (fotoBase64     != null) 'fotoBase64':     fotoBase64,
+        if (tipoSolicitud  != null) 'tipoSolicitud':  tipoSolicitud,
         'ultimoMensaje': texto, 'ultimaHora': hora,
         'ultimoMensajeEn': FieldValue.serverTimestamp(),
         'noLeidosAdoptante': 1,
@@ -209,10 +211,13 @@ Future<void> aprobarSolicitud(String docId, Map<String, dynamic> d) async {
   }
 
   if (adoptanteId.isNotEmpty && animalNombre.isNotEmpty) {
-    await enviarMensajeChat(adoptanteId, animalNombre,
-        '✅ ¡Tu solicitud de adopción fue aprobada! Pronto me pongo en contacto contigo para coordinar el encuentro. 🐾',
+    final msg = tipoSolicitud == 'hogar_de_paso'
+        ? '✅ ¡Tu solicitud de hogar de paso fue aprobada! Pronto me pongo en contacto contigo para coordinar los detalles. 🐾'
+        : '✅ ¡Tu solicitud de adopción fue aprobada! Pronto me pongo en contacto contigo para coordinar el encuentro. 🐾';
+    await enviarMensajeChat(adoptanteId, animalNombre, msg,
         fotoBase64: d['fotoBase64'] as String?,
-        adoptanteNombre: d['nombre'] as String?);
+        adoptanteNombre: d['nombre'] as String?,
+        tipoSolicitud: tipoSolicitud);
   }
 }
 
@@ -484,6 +489,52 @@ class _SolicitudesRescatistaScreenState extends State<SolicitudesRescatistaScree
                                     'Luego de revisar tu solicitud, en esta ocasión no podemos continuar con el proceso. '
                                     '¡Esperamos que pronto encuentres a tu compañero perfecto! 🐾',
                               style: TextStyle(fontSize: 12, color: Colors.grey.shade700, height: 1.5),
+                            ),
+                          ),
+                        ],
+                        if (estado == 'aprobada') ...[
+                          const SizedBox(height: 10),
+                          GestureDetector(
+                            onTap: () async {
+                              final adoptanteId = d['adoptanteId'] as String? ?? '';
+                              final snap = await FirebaseFirestore.instance
+                                  .collection('chats')
+                                  .where('adoptanteId', isEqualTo: adoptanteId)
+                                  .where('animalNombre', isEqualTo: animal)
+                                  .limit(1)
+                                  .get();
+                              if (!context.mounted) return;
+                              final chatId = snap.docs.isNotEmpty ? snap.docs.first.id : null;
+                              Navigator.push(context, MaterialPageRoute(
+                                builder: (_) => ChatScreen(
+                                  esRescatista: true,
+                                  chatId: chatId,
+                                  animal: {
+                                    'nombre':         animal,
+                                    'rescatista':     FirebaseAuth.instance.currentUser?.displayName ?? 'Rescatista',
+                                    'especie':        d['especie'] as String? ?? 'Perro',
+                                    'fotoBase64':     d['fotoBase64'] as String?,
+                                    'tipoSolicitud':  d['tipoSolicitud'] as String? ?? 'adopcion',
+                                    'edad':           '',
+                                    'ubicacion':      '',
+                                    'descripcion':    '',
+                                    'tags':           <String>[],
+                                  },
+                                ),
+                              ));
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              decoration: BoxDecoration(
+                                color: appTeal,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                                Icon(Icons.chat_bubble_outline, size: 15, color: Colors.white),
+                                SizedBox(width: 6),
+                                Text('Ir al chat', style: TextStyle(fontSize: 13,
+                                    fontWeight: FontWeight.w700, color: Colors.white)),
+                              ]),
                             ),
                           ),
                         ],

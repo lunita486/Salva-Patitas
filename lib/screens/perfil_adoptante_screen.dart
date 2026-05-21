@@ -2,12 +2,33 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 import '../theme.dart';
 import 'mis_solicitudes_screen.dart';
 import 'tipo_animal_screen.dart';
 
 class PerfilAdoptanteScreen extends StatelessWidget {
   const PerfilAdoptanteScreen({super.key});
+
+  Future<String> _detectarCiudad() async {
+    try {
+      var permiso = await Geolocator.checkPermission();
+      if (permiso == LocationPermission.denied) {
+        permiso = await Geolocator.requestPermission();
+      }
+      if (permiso == LocationPermission.denied ||
+          permiso == LocationPermission.deniedForever) return '';
+      final pos = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(accuracy: LocationAccuracy.low));
+      final marks = await placemarkFromCoordinates(pos.latitude, pos.longitude);
+      if (marks.isEmpty) return '';
+      final p = marks.first;
+      return p.locality?.isNotEmpty == true ? p.locality! : (p.administrativeArea ?? '');
+    } catch (_) {
+      return '';
+    }
+  }
 
   Widget _settingsCard(List<Widget> items) => Container(
     decoration: BoxDecoration(
@@ -73,18 +94,38 @@ class PerfilAdoptanteScreen extends StatelessWidget {
                     Text(nombre, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold,
                         color: Color(0xFF1A1A1A))),
                   const SizedBox(height: 4),
-                  StreamBuilder<QuerySnapshot>(
-                    stream: FirebaseFirestore.instance.collection('favoritos').snapshots(),
-                    builder: (_, snap) {
-                      final count = snap.data?.docs.length ?? 0;
-                      return Row(children: [
-                        Icon(Icons.location_on, size: 13, color: Colors.grey.shade500),
-                        const SizedBox(width: 2),
-                        Text('Medellín · $count favorito${count == 1 ? "" : "s"}',
-                            style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
-                      ]);
-                    },
-                  ),
+                  Row(children: [
+                    FutureBuilder<String>(
+                      future: _detectarCiudad(),
+                      builder: (_, snap) {
+                        if (!snap.hasData) return const SizedBox.shrink();
+                        return Row(children: [
+                          Icon(Icons.location_on, size: 13, color: Colors.grey.shade500),
+                          const SizedBox(width: 2),
+                          Text(snap.data!,
+                              style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
+                          const SizedBox(width: 6),
+                          Text('·', style: TextStyle(fontSize: 13, color: Colors.grey.shade400)),
+                          const SizedBox(width: 6),
+                        ]);
+                      },
+                    ),
+                    StreamBuilder<QuerySnapshot>(
+                      stream: FirebaseFirestore.instance
+                          .collection('favoritos')
+                          .where('adoptanteId', isEqualTo: FirebaseAuth.instance.currentUser?.uid ?? '')
+                          .snapshots(),
+                      builder: (_, snap) {
+                        final count = snap.data?.docs.length ?? 0;
+                        return Row(children: [
+                          Icon(Icons.favorite_border, size: 13, color: Colors.grey.shade500),
+                          const SizedBox(width: 2),
+                          Text('$count favorito${count == 1 ? "" : "s"}',
+                              style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
+                        ]);
+                      },
+                    ),
+                  ]),
                   ]),
                 ]);
               }),

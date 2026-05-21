@@ -103,8 +103,9 @@ class AdoptanteChatsScreen extends StatelessWidget {
                           : rescatista;
                       final ultimoMensaje = d['ultimoMensaje'] as String? ?? '';
                       final ultimaHora    = d['ultimaHora']    as String? ?? '';
-                      final especie       = d['especie']       as String? ?? 'Perro';
+                      final especie        = d['especie']        as String? ?? 'Perro';
                       final fotoBase64    = d['fotoBase64']    as String?;
+                      final tipoSolicitud = d['tipoSolicitud'] as String? ?? 'adopcion';
                       final campoBadge    = esRescatista ? 'noLeidosRescatista' : 'noLeidosAdoptante';
                       final noLeidos      = (d[campoBadge]    as int?) ?? 0;
                       final emoji         = especie == 'Gato' ? '🐱' : '🐶';
@@ -123,14 +124,15 @@ class AdoptanteChatsScreen extends StatelessWidget {
                             esRescatista: esRescatista,
                             chatId: docs[i].id,
                             animal: {
-                              'nombre':      animalNombre,
-                              'rescatista':  rescatista,
-                              'especie':     especie,
-                              'ubicacion':   '',
-                              'descripcion': '',
-                              'tags':        <String>[],
-                              'edad':        '',
-                              'fotoBase64':  fotoBase64,
+                              'nombre':        animalNombre,
+                              'rescatista':    rescatista,
+                              'especie':       especie,
+                              'tipoSolicitud': tipoSolicitud,
+                              'ubicacion':     '',
+                              'descripcion':   '',
+                              'tags':          <String>[],
+                              'edad':          '',
+                              'fotoBase64':    fotoBase64,
                             }),
                         )),
                         child: Container(

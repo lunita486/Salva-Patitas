@@ -183,15 +183,16 @@ class MisSolicitudesScreen extends StatelessWidget {
                                 if (!context.mounted) return;
                                 final chatId = snap.docs.isNotEmpty ? snap.docs.first.id : null;
                                 final animalMap = {
-                                  'nombre':      animal,
-                                  'rescatista':  d['rescatistaNombre'] as String? ?? d['rescatista'] as String? ?? 'Rescatista',
-                                  'rescatistaId': d['rescatistaId'] as String? ?? '',
-                                  'especie':     d['especie'] as String? ?? 'Perro',
-                                  'fotoBase64':  fotoBase64,
-                                  'edad':        '',
-                                  'ubicacion':   '',
-                                  'descripcion': '',
-                                  'tags':        <String>[],
+                                  'nombre':        animal,
+                                  'rescatista':    d['rescatistaNombre'] as String? ?? d['rescatista'] as String? ?? 'Rescatista',
+                                  'rescatistaId':  d['rescatistaId'] as String? ?? '',
+                                  'especie':       d['especie'] as String? ?? 'Perro',
+                                  'fotoBase64':    fotoBase64,
+                                  'tipoSolicitud': tipo,
+                                  'edad':          '',
+                                  'ubicacion':     '',
+                                  'descripcion':   '',
+                                  'tags':          <String>[],
                                 };
                                 Navigator.push(context, MaterialPageRoute(
                                   builder: (_) => ChatScreen(animal: animalMap, chatId: chatId),

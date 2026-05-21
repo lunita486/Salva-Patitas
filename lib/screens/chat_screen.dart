@@ -130,7 +130,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                 ]),
                 const SizedBox(height: 1),
-                Text('Rescatista · normalmente responde en 1h',
+                Text('Rescatista',
                     style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
               ])),
               const SizedBox(width: 36),
@@ -162,13 +162,24 @@ class _ChatScreenState extends State<ChatScreen> {
                   style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1A1A1A)),
                 ),
                 const SizedBox(height: 4),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                  decoration: BoxDecoration(
-                      color: const Color(0xFFF9DDD5), borderRadius: BorderRadius.circular(20)),
-                  child: const Text('En adopción',
-                      style: TextStyle(fontSize: 11, color: Color(0xFF8B3A1F), fontWeight: FontWeight.w600)),
-                ),
+                Builder(builder: (_) {
+                  final tipo = widget.animal['tipoSolicitud'] as String? ?? 'adopcion';
+                  final esHogar = tipo == 'hogar_de_paso';
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: esHogar ? const Color(0xFFD8F0E4) : const Color(0xFFF9DDD5),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      esHogar ? '🏡 Hogar de paso' : '🏠 En adopción',
+                      style: TextStyle(
+                        fontSize: 11, fontWeight: FontWeight.w600,
+                        color: esHogar ? const Color(0xFF1F8A62) : const Color(0xFF8B3A1F),
+                      ),
+                    ),
+                  );
+                }),
               ])),
               const Icon(Icons.chevron_right, color: Color(0xFFCCCCCC), size: 20),
             ]),
