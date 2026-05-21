@@ -21,7 +21,9 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
   final  _integrantesCtl = TextEditingController();
   final  _horasCtl       = TextEditingController();
   final  _motivacionCtl  = TextEditingController();
-  String _tipoSolicitud   = 'adopcion';
+  String    _tipoSolicitud = 'adopcion';
+  DateTime? _fechaInicio;
+  DateTime? _fechaFin;
   bool   _enviando        = false;
   bool   _verificando     = true;
   bool   _yaAplico        = false;
@@ -64,7 +66,13 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
       _horasCtl.text.trim().isNotEmpty &&
       _vivienda.isNotEmpty && _ninos.isNotEmpty && _mascotas.isNotEmpty &&
       _experienciaPrevia.isNotEmpty &&
-      _motivacionCtl.text.trim().isNotEmpty;
+      _motivacionCtl.text.trim().isNotEmpty &&
+      (_tipoSolicitud != 'hogar_de_paso' || (_fechaInicio != null && _fechaFin != null));
+
+  String _fmt(DateTime d) {
+    const m = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+    return '${d.day} ${m[d.month - 1]} ${d.year}';
+  }
 
   Future<void> _enviar() async {
     setState(() => _enviando = true);
@@ -85,6 +93,10 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
         'experienciaPrevia': _experienciaPrevia == 'Sí',
         'motivacion':        _motivacionCtl.text.trim(),
         'tipoSolicitud':     _tipoSolicitud,
+        if (_tipoSolicitud == 'hogar_de_paso' && _fechaInicio != null)
+          'fechaInicioHogar': Timestamp.fromDate(_fechaInicio!),
+        if (_tipoSolicitud == 'hogar_de_paso' && _fechaFin != null)
+          'fechaFinHogar': Timestamp.fromDate(_fechaFin!),
         'fotoBase64':        widget.animal['fotoBase64'],
         'estado':            'pendiente',
         // etiquetas del animal para calcular compatibilidad
@@ -409,6 +421,36 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
         _campoTexto('¿Por qué quieres adoptarlo?', _motivacionCtl,
             'ej. Siempre quise tener un perro, tengo espacio y mucho amor...',
             maxLines: 3),
+        if (_tipoSolicitud == 'hogar_de_paso') ...[
+          const SizedBox(height: 24),
+          RichText(text: const TextSpan(
+            text: 'Período del hogar de paso',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF1A1A1A)),
+            children: [TextSpan(text: ' *', style: TextStyle(color: appTeal))],
+          )),
+          const SizedBox(height: 6),
+          Text('📅  ¿Cuándo puedes recibirlo y hasta cuándo?',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+          const SizedBox(height: 12),
+          Row(children: [
+            Expanded(child: _selectorFecha(
+              label: 'Desde',
+              fecha: _fechaInicio,
+              onPick: (d) => setState(() {
+                _fechaInicio = d;
+                if (_fechaFin != null && _fechaFin!.isBefore(d)) _fechaFin = null;
+              }),
+              firstDate: DateTime.now(),
+            )),
+            const SizedBox(width: 12),
+            Expanded(child: _selectorFecha(
+              label: 'Hasta',
+              fecha: _fechaFin,
+              onPick: (d) => setState(() => _fechaFin = d),
+              firstDate: _fechaInicio ?? DateTime.now(),
+            )),
+          ]),
+        ],
         const SizedBox(height: 32),
         SizedBox(
           width: double.infinity,
@@ -496,6 +538,58 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
         );
       }).toList()),
     ]);
+  }
+
+  Widget _selectorFecha({
+    required String label,
+    required DateTime? fecha,
+    required ValueChanged<DateTime> onPick,
+    required DateTime firstDate,
+  }) {
+    return GestureDetector(
+      onTap: () async {
+        final picked = await showDatePicker(
+          context: context,
+          initialDate: fecha ?? firstDate,
+          firstDate: firstDate,
+          lastDate: DateTime.now().add(const Duration(days: 365)),
+          builder: (_, child) => Theme(
+            data: Theme.of(context).copyWith(
+              colorScheme: const ColorScheme.light(primary: appTeal),
+            ),
+            child: child!,
+          ),
+        );
+        if (picked != null) onPick(picked);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: fecha != null ? appTeal : Colors.grey.shade300,
+            width: fecha != null ? 1.5 : 1,
+          ),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6)],
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label, style: TextStyle(fontSize: 11, color: Colors.grey.shade500, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
+          Row(children: [
+            Icon(Icons.calendar_today, size: 14, color: fecha != null ? appTeal : Colors.grey.shade400),
+            const SizedBox(width: 6),
+            Text(
+              fecha != null ? _fmt(fecha) : 'Seleccionar',
+              style: TextStyle(
+                fontSize: 13, fontWeight: FontWeight.w600,
+                color: fecha != null ? const Color(0xFF1A1A1A) : Colors.grey.shade400,
+              ),
+            ),
+          ]),
+        ]),
+      ),
+    );
   }
 
   Widget _stepExito() {

@@ -181,7 +181,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
         final firestoreDocs = (snap.data?.docs ?? []).where((doc) {
           final d = doc.data() as Map<String, dynamic>;
           final estado = d['estadoAdopcion'] as String?;
-          if (!(estado == null || estado == 'Rescatado' || estado == 'Regresado')) return false;
+          if (!(estado == null || estado == 'Rescatado' || estado == 'Regresado' || estado == 'Hogar de paso')) return false;
           final especie = d['especie'] as String? ?? 'Perro';
           if (_prefEspecie != 'Ambos' && especie != _prefEspecie) return false;
           final tamano = d['tamano'] as String? ?? '';
@@ -214,7 +214,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
               'rescateId':           doc.id,
               'estadoAdopcion':      d['estadoAdopcion'] ?? '',
               'fotoBase64':          d['fotoBase64'],
-              'fotoBase64_2':        d['fotoBase64_2'],
+              'fotoBase642':         d['fotoBase642'],
               'latitud':             d['latitud'],
               'longitud':            d['longitud'],
               'energia':             d['energia'],
@@ -392,6 +392,16 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                 )),
               Positioned(top: 12, right: 12,
                 child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                  if (estadoAdopcion == 'Hogar de paso')
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(color: appTeal, borderRadius: BorderRadius.circular(20)),
+                      child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(Icons.home_outlined, size: 12, color: Colors.white),
+                        SizedBox(width: 4),
+                        Text('En hogar de paso', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)),
+                      ]),
+                    ),
                   if (estadoAdopcion == 'Regresado')
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),

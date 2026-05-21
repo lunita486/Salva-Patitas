@@ -26,7 +26,7 @@ class _AnimalDetalleScreenState extends State<AnimalDetalleScreen> {
   Widget build(BuildContext context) {
     final animal       = widget.animal;
     final fotoBase64   = animal['fotoBase64']   as String?;
-    final fotoBase64_2 = animal['fotoBase64_2'] as String?;
+    final fotoBase64_2 = animal['fotoBase642'] as String?;
     final nombre      = animal['nombre']      as String;
     final edad        = (animal['edad']   as String?) ?? '';
     final genero      = (animal['genero'] as String?) ?? '';
@@ -36,7 +36,9 @@ class _AnimalDetalleScreenState extends State<AnimalDetalleScreen> {
     final tags        = (animal['tags'] as List).cast<String>();
     final emoji       = animal['especie'] == 'Gato' ? '🐱' : '🐶';
 
-    final fotos = [?fotoBase64, ?fotoBase64_2];
+    final fotos          = [?fotoBase64, ?fotoBase64_2];
+    final estadoAdopcion = animal['estadoAdopcion'] as String? ?? '';
+    final enHogar        = estadoAdopcion == 'Hogar de paso';
 
     return Scaffold(
       backgroundColor: appBg,
@@ -170,13 +172,20 @@ class _AnimalDetalleScreenState extends State<AnimalDetalleScreen> {
                   onTap: () => Navigator.push(context, MaterialPageRoute(
                       builder: (_) => SolicitudAdopcionScreen(animal: animal))),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    padding: EdgeInsets.symmetric(vertical: enHogar ? 8 : 14),
                     decoration: BoxDecoration(color: appOrange, borderRadius: BorderRadius.circular(30)),
-                    child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                      Icon(Icons.favorite, size: 18, color: Colors.white),
-                      SizedBox(width: 8),
-                      Text('Solicitar adopción',
-                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white)),
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        const Icon(Icons.favorite, size: 18, color: Colors.white),
+                        const SizedBox(width: 8),
+                        const Text('Solicitar adopción',
+                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white)),
+                      ]),
+                      if (enHogar) ...[
+                        const SizedBox(height: 2),
+                        Text('Actualmente en hogar de paso',
+                            style: TextStyle(fontSize: 10, color: Colors.white.withValues(alpha: 0.85))),
+                      ],
                     ]),
                   ),
                 ),

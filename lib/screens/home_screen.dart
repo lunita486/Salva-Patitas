@@ -38,6 +38,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _cargarRol();
+    _verificarVencimientos();
   }
 
   Future<void> _cargarRol() async {
@@ -50,6 +51,35 @@ class _HomeScreenState extends State<HomeScreen> {
       _roles = roles;
       _isRescatista = roles.contains('rescatista');
     });
+  }
+
+  Future<void> _verificarVencimientos() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final ahora = DateTime.now();
+    final snap = await FirebaseFirestore.instance
+        .collection('rescates')
+        .where('rescatistaId', isEqualTo: uid)
+        .where('estadoAdopcion', isEqualTo: 'Hogar de paso')
+        .get();
+    for (final doc in snap.docs) {
+      final d = doc.data();
+      final fechaFin = (d['fechaFinHogar'] as Timestamp?)?.toDate();
+      if (fechaFin == null) continue;
+      if (fechaFin.isAfter(ahora)) continue;
+      if (d['vencimientoAvisado'] == true) continue;
+      final nombre      = d['nombre']           as String? ?? 'El animal';
+      final adoptanteId = d['adoptanteIdEnProceso'] as String?;
+      final msg = '📋 El período de hogar de paso de $nombre ha vencido. '
+          'Por favor coordina la devolución o el proceso de adopción definitivo. 🐾';
+      await enviarMensajeChat(
+        adoptanteId ?? '',
+        nombre,
+        msg,
+        fotoBase64: d['fotoBase64'] as String?,
+      );
+      await doc.reference.update({'vencimientoAvisado': true});
+    }
   }
 
   Widget _rolToggle() {
@@ -176,6 +206,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _solicitudDetalle(String ini, Color col, String nombre, String detalle,
       String tiempo, String animal, {String? docId, Map<String, dynamic>? data}) {
+    final tipo        = data?['tipoSolicitud']    as String? ?? 'adopcion';
+    final esHogar     = tipo == 'hogar_de_paso';
+    final fechaInicio = (data?['fechaInicioHogar'] as Timestamp?)?.toDate();
+    final fechaFin    = (data?['fechaFinHogar']    as Timestamp?)?.toDate();
+    final diasHogar   = (fechaInicio != null && fechaFin != null)
+        ? fechaFin.difference(fechaInicio).inDays
+        : null;
     final score      = data != null ? calcularCompatibilidad(data) : -1;
     final scoreColor = score >= 80 ? const Color(0xFF1F8A62) : score >= 60 ? const Color(0xFFE65100) : const Color(0xFFB71C1C);
 
@@ -201,9 +238,47 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(width: 12),
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(nombre, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
-                  Text('Para $animal', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                  const SizedBox(height: 4),
+                  Row(children: [
+                    Text('Para $animal', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: esHogar ? appTeal.withValues(alpha: 0.12) : appOrange.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: esHogar ? appTeal.withValues(alpha: 0.4) : appOrange.withValues(alpha: 0.4)),
+                      ),
+                      child: Text(
+                        esHogar ? '🏡 Hogar de paso' : '🏠 Adopción',
+                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700,
+                            color: esHogar ? appTeal : appOrange),
+                      ),
+                    ),
+                  ]),
                 ])),
               ]),
+              if (esHogar && fechaInicio != null && fechaFin != null) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: appTeal.withValues(alpha: 0.07),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: appTeal.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(children: [
+                    const Icon(Icons.calendar_today, size: 13, color: appTeal),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${fechaInicio.day}/${fechaInicio.month}/${fechaInicio.year} → ${fechaFin.day}/${fechaFin.month}/${fechaFin.year}',
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: appTeal),
+                    ),
+                    const Spacer(),
+                    Text('$diasHogar días', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: appTeal)),
+                  ]),
+                ),
+              ],
               const SizedBox(height: 16),
               if (score >= 0) Container(
                 width: double.infinity,
@@ -270,17 +345,23 @@ class _HomeScreenState extends State<HomeScreen> {
                 Expanded(
                   child: GestureDetector(
                     onTap: () {
-                      final motivoCtl = TextEditingController();
+                      final motivoCtl = TextEditingController(
+                        text: 'Hola, gracias por tu interés en adoptar a $animal. '
+                            'Luego de revisar tu solicitud, en esta ocasión no podemos continuar con el proceso. '
+                            '¡Esperamos que pronto encuentres a tu compañero perfecto! 🐾',
+                      );
                       showDialog(context: ctx, builder: (dlg) => AlertDialog(
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        title: const Text('¿Por qué rechazas?'),
+                        title: const Text('Mensaje de rechazo'),
                         content: TextField(
                           controller: motivoCtl,
-                          maxLines: 3,
+                          maxLines: 5,
                           decoration: InputDecoration(
-                            hintText: 'ej. El espacio no es suficiente para este animal...',
-                            hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade400),
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: const BorderSide(color: appTeal, width: 2),
+                            ),
                           ),
                         ),
                         actions: [
@@ -663,8 +744,21 @@ class _HomeScreenState extends State<HomeScreen> {
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SubirRescateScreen()))),
             _navTap(Icons.notifications_outlined, 'Solicitudes', 2,
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SolicitudesRescatistaScreen()))),
-            _navTap(Icons.chat_bubble_outline, 'Chats', 3,
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdoptanteChatsScreen(esRescatista: true)))),
+            StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance.collection('chats')
+                  .where('rescatistaId', isEqualTo: FirebaseAuth.instance.currentUser?.uid ?? '')
+                  .snapshots(),
+              builder: (_, snap) {
+                final unread = (snap.data?.docs ?? []).where((doc) {
+                  final d = doc.data() as Map<String, dynamic>;
+                  return ((d['noLeidosRescatista'] as int?) ?? 0) > 0;
+                }).length;
+                return _navTapConBadge(
+                  Icons.chat_bubble_outline, 'Chats', unread,
+                  () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdoptanteChatsScreen(esRescatista: true))),
+                );
+              },
+            ),
             _navTap(Icons.person_outline, 'Perfil', 4,
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PerfilRescatistaScreen()))),
           ] else ...[

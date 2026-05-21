@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:convert';
 import '../theme.dart';
+import 'chat_screen.dart';
 
 class MisSolicitudesScreen extends StatelessWidget {
   const MisSolicitudesScreen({super.key});
@@ -71,8 +72,18 @@ class MisSolicitudesScreen extends StatelessWidget {
                     final motivo     = d['motivoRechazo'] as String?;
                     final ts         = d['creadoEn'] as Timestamp?;
                     final fecha      = ts != null ? _formatFecha(ts.toDate()) : '';
-                    final fotoBase64 = d['fotoBase64']   as String?;
-                    final tipo       = d['tipoSolicitud'] as String? ?? 'adopcion';
+                    final fotoBase64    = d['fotoBase64']      as String?;
+                    final tipo          = d['tipoSolicitud']   as String? ?? 'adopcion';
+                    final fechaFinTs    = d['fechaFinHogar']   as Timestamp?;
+                    final fechaInicioTs = d['fechaInicioHogar'] as Timestamp?;
+                    final fechaFin      = fechaFinTs?.toDate();
+                    final fechaInicio   = fechaInicioTs?.toDate();
+                    final hoy           = DateTime.now();
+                    final diasRestantes = fechaFin != null
+                        ? DateTime(fechaFin.year, fechaFin.month, fechaFin.day)
+                            .difference(DateTime(hoy.year, hoy.month, hoy.day))
+                            .inDays
+                        : null;
 
                     final estadoColor = estado == 'aprobada'
                         ? const Color(0xFF1F8A62)
@@ -129,6 +140,78 @@ class MisSolicitudesScreen extends StatelessWidget {
                             child: Text(estadoLabel, style: TextStyle(fontSize: 12,
                                 fontWeight: FontWeight.w700, color: estadoColor)),
                           ),
+                          if (estado == 'aprobada' && tipo == 'hogar_de_paso' && fechaFin != null) ...[
+                            const SizedBox(height: 10),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: appTeal.withValues(alpha: 0.07),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: appTeal.withValues(alpha: 0.3)),
+                              ),
+                              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                if (fechaInicio != null)
+                                  Text('📅 ${_formatFecha(fechaInicio)} → ${_formatFecha(fechaFin)}',
+                                      style: TextStyle(fontSize: 12, color: Colors.grey.shade700, fontWeight: FontWeight.w600)),
+                                const SizedBox(height: 4),
+                                Text(
+                                  diasRestantes! < 0
+                                      ? '⚠️ Período vencido hace ${diasRestantes.abs()} días'
+                                      : diasRestantes == 0
+                                          ? '⚠️ El período vence hoy'
+                                          : '🕐 $diasRestantes días restantes',
+                                  style: TextStyle(
+                                    fontSize: 12, fontWeight: FontWeight.w700,
+                                    color: diasRestantes < 3 ? const Color(0xFFE65100) : appTeal,
+                                  ),
+                                ),
+                              ]),
+                            ),
+                          ],
+                          if (estado == 'aprobada') ...[
+                            const SizedBox(height: 10),
+                            GestureDetector(
+                              onTap: () async {
+                                final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+                                final snap = await FirebaseFirestore.instance
+                                    .collection('chats')
+                                    .where('adoptanteId', isEqualTo: uid)
+                                    .where('animalNombre', isEqualTo: animal)
+                                    .limit(1)
+                                    .get();
+                                if (!context.mounted) return;
+                                final chatId = snap.docs.isNotEmpty ? snap.docs.first.id : null;
+                                final animalMap = {
+                                  'nombre':      animal,
+                                  'rescatista':  d['rescatistaNombre'] as String? ?? d['rescatista'] as String? ?? 'Rescatista',
+                                  'rescatistaId': d['rescatistaId'] as String? ?? '',
+                                  'especie':     d['especie'] as String? ?? 'Perro',
+                                  'fotoBase64':  fotoBase64,
+                                  'edad':        '',
+                                  'ubicacion':   '',
+                                  'descripcion': '',
+                                  'tags':        <String>[],
+                                };
+                                Navigator.push(context, MaterialPageRoute(
+                                  builder: (_) => ChatScreen(animal: animalMap, chatId: chatId),
+                                ));
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: appTeal,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                                  Icon(Icons.chat_bubble_outline, size: 15, color: Colors.white),
+                                  SizedBox(width: 6),
+                                  Text('Ir al chat', style: TextStyle(fontSize: 13,
+                                      fontWeight: FontWeight.w700, color: Colors.white)),
+                                ]),
+                              ),
+                            ),
+                          ],
                           if (estado == 'rechazada') ...[
                             const SizedBox(height: 10),
                             Container(
@@ -140,10 +223,11 @@ class MisSolicitudesScreen extends StatelessWidget {
                                 border: Border.all(color: const Color(0xFFE65100).withValues(alpha: 0.3)),
                               ),
                               child: Text(
-                                'Hola, gracias por tu interés en adoptar a $animal. '
-                                'Luego de revisar tu solicitud, en esta ocasión no podemos continuar con el proceso'
-                                '${motivo != null && motivo.isNotEmpty ? ': $motivo' : ''}. '
-                                '¡Esperamos que pronto encuentres a tu compañero perfecto! 🐾',
+                                motivo != null && motivo.isNotEmpty
+                                    ? motivo
+                                    : 'Hola, gracias por tu interés en adoptar a $animal. '
+                                      'Luego de revisar tu solicitud, en esta ocasión no podemos continuar con el proceso. '
+                                      '¡Esperamos que pronto encuentres a tu compañero perfecto! 🐾',
                                 style: TextStyle(fontSize: 12,
                                     color: Colors.grey.shade700, height: 1.5),
                               ),

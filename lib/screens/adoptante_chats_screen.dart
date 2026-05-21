@@ -50,6 +50,26 @@ class AdoptanteChatsScreen extends StatelessWidget {
                         if (tb == null) return -1;
                         return tb.compareTo(ta);
                       });
+                  // Backfill fotoBase64 for chats created before it was stored
+                  for (final doc in docs) {
+                    final dd = doc.data() as Map<String, dynamic>;
+                    if (dd['fotoBase64'] != null) continue;
+                    final nombre     = dd['animalNombre'] as String? ?? '';
+                    final adoptanteId = dd['adoptanteId'] as String? ?? '';
+                    if (nombre.isEmpty || adoptanteId.isEmpty) continue;
+                    FirebaseFirestore.instance
+                        .collection('solicitudes')
+                        .where('adoptanteId', isEqualTo: adoptanteId)
+                        .where('animalNombre', isEqualTo: nombre)
+                        .limit(1)
+                        .get()
+                        .then((snap) {
+                      if (snap.docs.isEmpty) return;
+                      final foto = (snap.docs.first.data())['fotoBase64'] as String?;
+                      if (foto != null) doc.reference.update({'fotoBase64': foto});
+                    }).catchError((_) {});
+                  }
+
                   if (docs.isEmpty) {
                     return Center(
                       child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -76,8 +96,11 @@ class AdoptanteChatsScreen extends StatelessWidget {
                     itemCount: docs.length,
                     itemBuilder: (_, i) {
                       final d             = docs[i].data() as Map<String, dynamic>;
-                      final animalNombre  = d['animalNombre']  as String? ?? 'Animal';
-                      final rescatista    = d['rescatista']    as String? ?? 'Rescatista';
+                      final animalNombre  = d['animalNombre']    as String? ?? 'Animal';
+                      final rescatista    = d['rescatista']      as String? ?? 'Rescatista';
+                      final nombreMostrar = esRescatista
+                          ? (d['adoptanteNombre'] as String? ?? 'Adoptante')
+                          : rescatista;
                       final ultimoMensaje = d['ultimoMensaje'] as String? ?? '';
                       final ultimaHora    = d['ultimaHora']    as String? ?? '';
                       final especie       = d['especie']       as String? ?? 'Perro';
@@ -85,9 +108,9 @@ class AdoptanteChatsScreen extends StatelessWidget {
                       final campoBadge    = esRescatista ? 'noLeidosRescatista' : 'noLeidosAdoptante';
                       final noLeidos      = (d[campoBadge]    as int?) ?? 0;
                       final emoji         = especie == 'Gato' ? '🐱' : '🐶';
-                      final inicial       = rescatista.isNotEmpty ? rescatista[0].toUpperCase() : 'R';
+                      final inicial       = nombreMostrar.isNotEmpty ? nombreMostrar[0].toUpperCase() : 'A';
                       final avatarColors  = [appOrange, appTeal, const Color(0xFF7C6FCD), const Color(0xFF4CAF50)];
-                      final avatarColor   = avatarColors[rescatista.length % avatarColors.length];
+                      final avatarColor   = avatarColors[nombreMostrar.length % avatarColors.length];
 
                       Widget animalAvatar = fotoBase64 != null
                           ? CircleAvatar(backgroundImage: MemoryImage(base64Decode(fotoBase64)), radius: 28)
@@ -128,7 +151,7 @@ class AdoptanteChatsScreen extends StatelessWidget {
                             const SizedBox(width: 14),
                             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                               Row(children: [
-                                Text(rescatista, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                                Text(nombreMostrar, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
                                 const SizedBox(width: 6),
                                 Container(width: 8, height: 8,
                                     decoration: const BoxDecoration(color: Color(0xFF4CAF50), shape: BoxShape.circle)),
