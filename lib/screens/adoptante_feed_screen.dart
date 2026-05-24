@@ -267,8 +267,8 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(
                     distancia.isNotEmpty
-                        ? '${(animal['ubicacion'] as String).toUpperCase()} · ${distancia.toUpperCase()}'
-                        : (animal['ubicacion'] as String).toUpperCase(),
+                        ? 'EN ${(animal['ubicacion'] as String).toUpperCase()} · A ${distancia.toUpperCase()} DE TI'
+                        : 'EN ${(animal['ubicacion'] as String).toUpperCase()}',
                     style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
                         letterSpacing: 1.2, color: appTeal)),
                 const Text('Animales disponibles',

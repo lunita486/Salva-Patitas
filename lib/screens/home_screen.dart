@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 import '../theme.dart';
 import 'subir_rescate_screen.dart';
 import 'solicitudes_rescatista_screen.dart';
@@ -26,6 +28,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool? _isRescatista;
   List<String> _roles = [];
   int  _selectedNav  = 0;
+  String _ciudad = '';
 
   static const _rolLabel = {
     'rescatista': 'Rescatista',
@@ -39,6 +42,28 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _cargarRol();
     _verificarVencimientos();
+    _detectarCiudad();
+  }
+
+  Future<void> _detectarCiudad() async {
+    try {
+      var perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+      }
+      if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) return;
+
+      Position? pos = await Geolocator.getLastKnownPosition();
+      pos ??= await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(accuracy: LocationAccuracy.low));
+
+      final marks = await placemarkFromCoordinates(pos.latitude, pos.longitude);
+      if (marks.isEmpty) return;
+      final p = marks.first;
+      final ciudad = p.locality?.isNotEmpty == true ? p.locality! : (p.administrativeArea ?? '');
+      if (!mounted || ciudad.isEmpty) return;
+      setState(() => _ciudad = ciudad);
+    } catch (_) {}
   }
 
   Future<void> _cargarRol() async {
@@ -165,7 +190,8 @@ class _HomeScreenState extends State<HomeScreen> {
         Row(children: [
           const Icon(Icons.location_on, size: 14, color: appTeal),
           const SizedBox(width: 2),
-          Text('Medellín', style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
+          if (_ciudad.isNotEmpty)
+            Text(_ciudad, style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
         ]),
         const SizedBox(height: 20),
         _label('ESTA SEMANA'),

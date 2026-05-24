@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 import '../theme.dart';
 
 class SeleccionRolScreen extends StatefulWidget {
@@ -14,17 +16,41 @@ class _SeleccionRolScreenState extends State<SeleccionRolScreen> {
   final Set<String> _roles = {'adoptante'};
   bool _guardando = false;
 
+  Future<String> _detectarCiudad() async {
+    try {
+      var perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+      }
+      if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) return '';
+      final pos = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(accuracy: LocationAccuracy.low));
+      final marks = await placemarkFromCoordinates(pos.latitude, pos.longitude);
+      if (marks.isEmpty) return '';
+      final p = marks.first;
+      return p.locality?.isNotEmpty == true ? p.locality! : (p.administrativeArea ?? '');
+    } catch (_) {
+      return '';
+    }
+  }
+
   Future<void> _continuar() async {
     setState(() => _guardando = true);
-    await FirebaseFirestore.instance
-        .collection('usuarios').doc(widget.user.uid).set({
-      'nombre':   widget.user.displayName ?? 'Usuario',
-      'email':    widget.user.email,
-      'foto':     widget.user.photoURL,
-      'roles':    _roles.toList(),
-      'ciudad':   'Medellín',
-      'creadoEn': FieldValue.serverTimestamp(),
-    });
+    try {
+      final ciudad = await _detectarCiudad().timeout(
+        const Duration(seconds: 5), onTimeout: () => '');
+      await FirebaseFirestore.instance
+          .collection('usuarios').doc(widget.user.uid).set({
+        'nombre':   widget.user.displayName ?? 'Usuario',
+        'email':    widget.user.email,
+        'foto':     widget.user.photoURL,
+        'roles':    _roles.toList(),
+        'ciudad':   ciudad,
+        'creadoEn': FieldValue.serverTimestamp(),
+      });
+    } catch (_) {
+      setState(() => _guardando = false);
+    }
   }
 
   static const _rolesExclusivos = {'albergue', 'aliado'};
