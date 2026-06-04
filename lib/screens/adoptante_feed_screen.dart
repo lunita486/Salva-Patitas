@@ -4,8 +4,35 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:geolocator/geolocator.dart';
+import 'package:share_plus/share_plus.dart';
 import '../theme.dart';
 import 'animal_detalle_screen.dart';
+import 'albergue_publico_screen.dart';
+
+Future<void> compartirAnimal({
+  required String nombre,
+  required String especie,
+  required String edad,
+  required String ubicacion,
+  required List<String> tags,
+  String? fotoBase64,
+}) async {
+  final emoji = especie == 'Gato' ? '🐱' : '🐶';
+  final tagsTexto = tags.isNotEmpty ? tags.map((t) => '✅ $t').join('  ') : '';
+  final texto = '$emoji *$nombre* necesita un hogar!\n'
+      '${[if (especie.isNotEmpty) especie, if (edad.isNotEmpty) edad].join(' · ')}\n'
+      '📍 $ubicacion\n'
+      '${tagsTexto.isNotEmpty ? '$tagsTexto\n' : ''}'
+      '\n¡Ayúdalo a encontrar familia descargando *Salva Patitas* 💚';
+
+  if (fotoBase64 != null) {
+    final bytes = base64Decode(fotoBase64);
+    final xfile = XFile.fromData(bytes, mimeType: 'image/jpeg', name: '$nombre.jpg');
+    await Share.shareXFiles([xfile], text: texto);
+  } else {
+    await Share.share(texto);
+  }
+}
 
 
 int calcularCompatibilidadFeed(Map<String, dynamic> solicitud) {
@@ -204,8 +231,8 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
               'distancia':           '~',
               'descripcion':         d['descripcion'] ?? '',
               'tags':                <String>[
-                                      if (d['okConNinos']    == true)  'Bueno con niños',
-                                      if (d['okConMascotas'] == true)  'Bueno con mascotas',
+                                      if (d['okConNinos']    == true)  'Amigable con niños',
+                                      if (d['okConMascotas'] == true)  'Es sociable',
                                       if ((d['energia'] as String?)?.isNotEmpty == true) d['energia'] as String,
                                       if (d['estado'] != null && d['estado'] != 'Sano') d['estado'] as String,
                                     ],
@@ -221,6 +248,8 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
               'okConNinos':          d['okConNinos'],
               'okConMascotas':       d['okConMascotas'],
               'requiereExperiencia': d['requiereExperiencia'],
+              'urgencia':            d['urgencia'] ?? '',
+              'creadoPor':           d['creadoPor'] ?? '',
             };
           }),
         ];
@@ -389,7 +418,11 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
     final ubicacion   = a['ubicacion']  as String;
     final verificado      = a['verificado']     as bool?   ?? false;
     final estadoAdopcion  = a['estadoAdopcion'] as String? ?? '';
-    final emoji           = a['especie'] == 'Gato' ? '🐱' : '🐶';
+    final urgencia        = a['urgencia']       as String? ?? '';
+    final creadoPor       = a['creadoPor']      as String? ?? '';
+    final rescatistaId    = a['rescatistaId']   as String? ?? '';
+    final especie         = a['especie'] as String? ?? '';
+    final emoji           = especie == 'Gato' ? '🐱' : '🐶';
 
     Color scoreColor(int s) {
       if (s >= 80) return const Color(0xFF1F8A62);
@@ -430,7 +463,29 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                   ),
                 ),
               ),
-              Positioned(top: 12, left: 12,
+              if (urgencia == 'Alta')
+                Positioned(
+                  top: 0, left: 0, right: 0,
+                  child: Container(
+                    color: const Color(0xFFD32F2F),
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.warning_amber_rounded,
+                            size: 13, color: Colors.white),
+                        SizedBox(width: 6),
+                        Text('URGENTE · NECESITA HOGAR YA',
+                            style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white,
+                                letterSpacing: 0.8)),
+                      ],
+                    ),
+                  ),
+                ),
+              Positioned(top: urgencia == 'Alta' ? 40 : 12, left: 12,
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(color: Colors.white.withOpacity(0.92),
@@ -442,7 +497,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                         style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
                   ]),
                 )),
-              Positioned(top: 12, right: 12,
+              Positioned(top: urgencia == 'Alta' ? 40 : 12, right: 12,
                 child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
                   if (estadoAdopcion == 'Hogar de paso')
                     Container(
@@ -524,23 +579,66 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                 )).toList()),
                 const SizedBox(height: 14),
               ],
-              Row(children: [
-                CircleAvatar(
-                  backgroundColor: appTeal.withValues(alpha: 0.15),
-                  radius: 16,
-                  child: Text(
-                    rescatista.isNotEmpty ? rescatista[0].toUpperCase() : 'R',
-                    style: const TextStyle(color: appTeal, fontSize: 13, fontWeight: FontWeight.bold),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  GestureDetector(
+                    onTap: (creadoPor == 'albergue' && rescatistaId.isNotEmpty)
+                        ? () => Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => AlberguePublicoScreen(
+                                rescatistaId: rescatistaId)))
+                        : null,
+                    child: Row(children: [
+                      CircleAvatar(
+                        backgroundColor: appTeal.withValues(alpha: 0.15),
+                        radius: 16,
+                        child: Text(
+                          rescatista.isNotEmpty ? rescatista[0].toUpperCase() : 'R',
+                          style: const TextStyle(color: appTeal, fontSize: 13, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(creadoPor == 'albergue' ? 'Albergue' : 'Rescatista',
+                            style: const TextStyle(fontSize: 10, color: Color(0xFFAAAAAA))),
+                        Row(children: [
+                          Text(rescatista,
+                              style: const TextStyle(fontSize: 13,
+                                  fontWeight: FontWeight.w600, color: appTeal)),
+                          if (creadoPor == 'albergue') ...[
+                            const SizedBox(width: 4),
+                            const Icon(Icons.chevron_right, size: 14, color: appTeal),
+                          ],
+                        ]),
+                      ]),
+                    ]),
                   ),
-                ),
-                const SizedBox(width: 10),
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const Text('Rescatista',
-                      style: TextStyle(fontSize: 10, color: Color(0xFFAAAAAA))),
-                  Text(rescatista,
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: appTeal)),
-                ]),
-              ]),
+                  GestureDetector(
+                    onTap: () => compartirAnimal(
+                      nombre: nombre,
+                      especie: especie,
+                      edad: edad,
+                      ubicacion: ubicacion,
+                      tags: tags,
+                      fotoBase64: fotoBase64,
+                    ),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: appTeal.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: appTeal.withValues(alpha: 0.25)),
+                      ),
+                      child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(Icons.share_outlined, size: 14, color: appTeal),
+                        SizedBox(width: 5),
+                        Text('Compartir', style: TextStyle(fontSize: 12,
+                            fontWeight: FontWeight.w600, color: appTeal)),
+                      ]),
+                    ),
+                  ),
+                ],
+              ),
             ]),
           ),
         ]),

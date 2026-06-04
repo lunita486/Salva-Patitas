@@ -8,6 +8,8 @@ import 'screens/login_screen.dart';
 import 'screens/seleccion_rol_screen.dart';
 import 'screens/albergue_perfil_screen.dart';
 import 'screens/albergue_home_screen.dart';
+import 'screens/aliado_perfil_screen.dart';
+import 'screens/aliado_home_screen.dart';
 import 'screens/home_screen.dart';
 
 void main() async {
@@ -58,12 +60,19 @@ class AuthWrapper extends StatelessWidget {
             }
             final data  = userSnap.data!.data() as Map<String, dynamic>;
             final roles = List<String>.from(data['roles'] as List? ?? []);
-            final esAlbergue      = roles.contains('albergue');
-            final perfilCompleto  = (data['albergueNombre'] as String?)?.isNotEmpty == true;
-            if (esAlbergue && !perfilCompleto) {
-              return const AlberguePerfilScreen();
+            final esAlbergue = roles.contains('albergue');
+            final esAliado   = roles.contains('aliado');
+
+            if (esAlbergue) {
+              final perfilCompleto = (data['albergueNombre'] as String?)?.isNotEmpty == true;
+              if (!perfilCompleto) return const AlberguePerfilScreen();
+              return const AlbergueHomeScreen();
             }
-            if (esAlbergue) return const AlbergueHomeScreen();
+            if (esAliado) {
+              final perfilCompleto = (data['aliadoNombre'] as String?)?.isNotEmpty == true;
+              if (!perfilCompleto) return const AliadoPerfilScreen();
+              return const AliadoHomeScreen();
+            }
             return const HomeScreen();
           },
         );

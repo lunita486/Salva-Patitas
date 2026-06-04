@@ -78,12 +78,17 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
     setState(() => _enviando = true);
     final user = FirebaseAuth.instance.currentUser;
     try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('usuarios').doc(user?.uid).get();
+      final nombreAdoptante = (userDoc.data()?['nombre'] as String?)?.isNotEmpty == true
+          ? userDoc.data()!['nombre'] as String
+          : user?.displayName ?? user?.email ?? 'Adoptante';
       await FirebaseFirestore.instance.collection('solicitudes').add({
         'animalNombre':  widget.animal['nombre'],
         'rescatistaId':  widget.animal['rescatistaId'] ?? '',
         'rescateId':     widget.animal['rescateId']    ?? '',
         'adoptanteId':       user?.uid,
-        'nombre':            user?.displayName ?? '',
+        'nombre':            nombreAdoptante,
         'email':             user?.email ?? '',
         'integrantes':       _integrantesCtl.text.trim(),
         'horasFuera':        _horasCtl.text.trim(),

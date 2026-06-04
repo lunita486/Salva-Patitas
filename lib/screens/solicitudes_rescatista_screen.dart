@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -117,7 +118,14 @@ Future<void> enviarMensajeChat(String adoptanteId, String animalNombre, String t
         .where('animalNombre', isEqualTo: animalNombre)
         .limit(1).get();
     String chatId;
-    final rescatistaNombre = FirebaseAuth.instance.currentUser?.displayName ?? 'Rescatista';
+    final userDoc = await FirebaseFirestore.instance.collection('usuarios').doc(rescatistaId).get();
+    final userData = userDoc.data() ?? {};
+    final rescatistaNombre =
+        (userData['albergueNombre'] as String?)?.isNotEmpty == true
+            ? userData['albergueNombre'] as String
+            : (userData['nombre'] as String?)?.isNotEmpty == true
+                ? userData['nombre'] as String
+                : FirebaseAuth.instance.currentUser?.displayName ?? 'Rescatista';
     if (chats.docs.isEmpty) {
       final ref = await FirebaseFirestore.instance.collection('chats').add({
         'adoptanteId':     adoptanteId,
@@ -331,6 +339,7 @@ class _SolicitudesRescatistaScreenState extends State<SolicitudesRescatistaScree
                     final tiempo      = ts != null ? _tiempoRelativo(ts.toDate()) : '';
                     final ini         = nombre.isNotEmpty ? nombre[0].toUpperCase() : 'A';
                     final col         = i.isEven ? appTeal : appOrange;
+                    final fotoBase64  = d['fotoBase64'] as String?;
                     final estado          = d['estado'] as String? ?? 'pendiente';
                     final tipo            = d['tipoSolicitud']    as String? ?? 'adopcion';
                     final esHogar         = tipo == 'hogar_de_paso';
@@ -365,46 +374,72 @@ class _SolicitudesRescatistaScreenState extends State<SolicitudesRescatistaScree
                         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
                       ),
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Row(children: [
-                          CircleAvatar(backgroundColor: col, radius: 20,
-                              child: Text(ini, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold))),
+
+                        // ── Fila principal: animal ──────────────────────────
+                        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          // Foto del animal
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: fotoBase64 != null
+                              ? Image.memory(base64Decode(fotoBase64),
+                                  width: 64, height: 64, fit: BoxFit.cover)
+                              : Container(width: 64, height: 64,
+                                  color: const Color(0xFFD8F0E4),
+                                  child: const Center(child: Icon(Icons.pets, color: appTeal, size: 30))),
+                          ),
                           const SizedBox(width: 12),
                           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            Text(nombre, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                            const SizedBox(height: 2),
-                            Text(detalle, style: TextStyle(fontSize: 11, color: Colors.grey.shade600), maxLines: 2),
+                            Row(children: [
+                              Expanded(
+                                child: Text(animal,
+                                    style: const TextStyle(fontWeight: FontWeight.bold,
+                                        fontSize: 17, color: Color(0xFF1A1A1A))),
+                              ),
+                              Text(tiempo, style: TextStyle(fontSize: 11, color: Colors.grey.shade400)),
+                            ]),
+                            const SizedBox(height: 6),
+                            Row(children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: esHogar ? appTeal.withValues(alpha: 0.12) : appOrange.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(color: esHogar ? appTeal.withValues(alpha: 0.4) : appOrange.withValues(alpha: 0.4)),
+                                ),
+                                child: Text(esHogar ? '🏡 Hogar de paso' : '🏠 Adopción',
+                                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700,
+                                        color: esHogar ? appTeal : appOrange)),
+                              ),
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: estadoColor.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(color: estadoColor.withValues(alpha: 0.4)),
+                                ),
+                                child: Text(estadoLabel, style: TextStyle(fontSize: 10,
+                                    fontWeight: FontWeight.w700, color: estadoColor)),
+                              ),
+                            ]),
                           ])),
-                          Text(tiempo, style: TextStyle(fontSize: 12, color: Colors.grey.shade400)),
                         ]),
+
+                        // ── Fila adoptante ──────────────────────────────────
                         const SizedBox(height: 12),
                         Row(children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: esHogar ? appTeal.withValues(alpha: 0.12) : appOrange.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: esHogar ? appTeal.withValues(alpha: 0.4) : appOrange.withValues(alpha: 0.4)),
-                            ),
-                            child: Text(
-                              esHogar ? '🏡 Hogar de paso' : '🏠 Adopción',
-                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
-                                  color: esHogar ? appTeal : appOrange),
-                            ),
-                          ),
+                          CircleAvatar(backgroundColor: col, radius: 14,
+                            child: Text(ini, style: const TextStyle(color: Colors.white,
+                                fontSize: 12, fontWeight: FontWeight.bold))),
                           const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: estadoColor.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: estadoColor.withValues(alpha: 0.4)),
-                            ),
-                            child: Text(estadoLabel, style: TextStyle(fontSize: 11,
-                                fontWeight: FontWeight.w700, color: estadoColor)),
-                          ),
+                          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Text(nombre, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                            Text(detalle, style: TextStyle(fontSize: 11, color: Colors.grey.shade500), maxLines: 1, overflow: TextOverflow.ellipsis),
+                          ])),
                         ]),
+
                         if (esHogar && fechaInicio != null && fechaFin != null) ...[
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 10),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                             decoration: BoxDecoration(
@@ -424,18 +459,6 @@ class _SolicitudesRescatistaScreenState extends State<SolicitudesRescatistaScree
                             ]),
                           ),
                         ],
-                        const SizedBox(height: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          decoration: BoxDecoration(color: const Color(0xFFD8F0E4), borderRadius: BorderRadius.circular(12)),
-                          child: Row(mainAxisSize: MainAxisSize.min, children: [
-                            Container(width: 32, height: 32,
-                              decoration: BoxDecoration(color: Colors.brown.shade300, borderRadius: BorderRadius.circular(6)),
-                              child: const Icon(Icons.pets, size: 18, color: Colors.white)),
-                            const SizedBox(width: 8),
-                            Text('Para $animal', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-                          ]),
-                        ),
                         const SizedBox(height: 10),
                         Container(
                           width: double.infinity,

@@ -6,21 +6,34 @@ import '../theme.dart';
 import 'editar_rescate_screen.dart';
 
 class TodosLosRescatesScreen extends StatefulWidget {
-  const TodosLosRescatesScreen({super.key});
+  final String? filtroInicial;
+  final bool esAlbergue;
+  const TodosLosRescatesScreen({super.key, this.filtroInicial, this.esAlbergue = false});
   @override
   State<TodosLosRescatesScreen> createState() => _TodosLosRescatesScreenState();
 }
 
 class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
-  String? _filtroEstado; // null = Todos
+  String? _filtroEstado;
+  String? _filtroEspecie;
 
-  static const _estadosFiltro = [
+  static const _estadosFiltroRescatista = [
     'Rescatado',
     'Hogar de paso',
     'En proceso de adopción',
     'Adoptado',
     'Regresado',
+    'Fallecido',
   ];
+
+
+  static const _especiesFiltro = ['Perro', 'Gato', 'Otro'];
+
+  @override
+  void initState() {
+    super.initState();
+    _filtroEstado = widget.filtroInicial;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -38,21 +51,44 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                     icon: const Icon(Icons.arrow_back_ios_new, size: 20),
                     onPressed: () => Navigator.pop(context),
                   ),
-                  const Expanded(
-                    child: Text('Mis rescates',
-                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(widget.esAlbergue ? 'Mis animales' : 'Mis rescates',
+                          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
+                      if (widget.esAlbergue && _filtroEstado != null)
+                        Text(_filtroEstado!,
+                            style: TextStyle(fontSize: 12, color: cicloColor(_filtroEstado!), fontWeight: FontWeight.w600)),
+                    ]),
                   ),
                 ]),
               ),
-              // Chips de filtro
+              // Chips de estado: rescatista siempre, albergue solo sin filtroInicial
+              if (!widget.esAlbergue || widget.filtroInicial == null) ...[
+                SizedBox(
+                  height: 40,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    children: [
+                      _chip('Todos', null, _filtroEstado, (v) => setState(() => _filtroEstado = v)),
+                      ..._estadosFiltroRescatista
+                          .map((e) => _chip(e, e, _filtroEstado, (v) => setState(() => _filtroEstado = v))),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 6),
+              ],
+              // Chips de especie
               SizedBox(
-                height: 40,
+                height: 36,
                 child: ListView(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   children: [
-                    _chip('Todos', null),
-                    ..._estadosFiltro.map((e) => _chip(e, e)),
+                    _chip('Todas las especies', null, _filtroEspecie,
+                        (v) => setState(() => _filtroEspecie = v), small: true),
+                    ..._especiesFiltro.map((e) => _chip(e, e, _filtroEspecie,
+                        (v) => setState(() => _filtroEspecie = v), small: true)),
                   ],
                 ),
               ),
@@ -67,7 +103,11 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                     if (snap.connectionState == ConnectionState.waiting) {
                       return const Center(child: CircularProgressIndicator(color: appTeal));
                     }
-                    var allDocs = [...(snap.data?.docs ?? [])]..sort((a, b) {
+                    final rolFiltro = widget.esAlbergue ? 'albergue' : 'rescatista';
+                    var allDocs = (snap.data?.docs ?? []).where((d) {
+                      final cp = (d.data() as Map)['creadoPor'] as String?;
+                      return cp == rolFiltro;
+                    }).toList()..sort((a, b) {
                       final ta = (a.data() as Map)['creadoEn'] as Timestamp?;
                       final tb = (b.data() as Map)['creadoEn'] as Timestamp?;
                       if (ta == null || tb == null) return 0;
@@ -76,7 +116,17 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                     if (_filtroEstado != null) {
                       allDocs = allDocs.where((doc) {
                         final ea = (doc.data() as Map<String, dynamic>)['estadoAdopcion'] as String? ?? 'Rescatado';
+                        if (_filtroEstado == 'En cuidado') {
+                          return ea == 'Rescatado' || ea == 'Hogar de paso';
+                        }
                         return ea == _filtroEstado;
+                      }).toList();
+                    }
+                    if (_filtroEspecie != null) {
+                      allDocs = allDocs.where((doc) {
+                        final esp = (doc.data() as Map<String, dynamic>)['especie'] as String? ?? '';
+                        if (_filtroEspecie == 'Otro') return esp != 'Perro' && esp != 'Gato';
+                        return esp == _filtroEspecie;
                       }).toList();
                     }
                     if (allDocs.isEmpty) {
@@ -190,23 +240,24 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                                 ),
                               ),
                               const Spacer(),
-                              GestureDetector(
-                                onTap: () => Navigator.push(context, MaterialPageRoute(
-                                    builder: (_) => EditarRescateScreen(docId: docId, data: d))),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                  decoration: BoxDecoration(
-                                    color: Colors.grey.shade100,
-                                    borderRadius: BorderRadius.circular(20),
-                                    border: Border.all(color: Colors.grey.shade300),
+                              if (estadoAdopcion != 'Adoptado' && estadoAdopcion != 'Fallecido')
+                                GestureDetector(
+                                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                                      builder: (_) => EditarRescateScreen(docId: docId, data: d))),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey.shade100,
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(color: Colors.grey.shade300),
+                                    ),
+                                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                      Icon(Icons.edit_outlined, size: 13, color: Colors.grey.shade600),
+                                      const SizedBox(width: 4),
+                                      Text('Editar', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey.shade600)),
+                                    ]),
                                   ),
-                                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                    Icon(Icons.edit_outlined, size: 13, color: Colors.grey.shade600),
-                                    const SizedBox(width: 4),
-                                    Text('Editar', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey.shade600)),
-                                  ]),
                                 ),
-                              ),
                             ]),
                           ]),
                         );
@@ -222,15 +273,16 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
     );
   }
 
-  Widget _chip(String label, String? valor) {
-    final activo = _filtroEstado == valor;
+  Widget _chip(String label, String? valor, String? filtroActivo,
+      ValueChanged<String?> onTap, {bool small = false}) {
+    final activo = filtroActivo == valor;
     final color  = valor == null ? appTeal : cicloColor(valor);
     return GestureDetector(
-      onTap: () => setState(() => _filtroEstado = valor),
+      onTap: () => onTap(activo ? null : valor),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         margin: const EdgeInsets.only(right: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        padding: EdgeInsets.symmetric(horizontal: small ? 12 : 14, vertical: small ? 5 : 7),
         decoration: BoxDecoration(
           color: activo ? color : Colors.white,
           borderRadius: BorderRadius.circular(20),
@@ -239,7 +291,7 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
         child: Text(
           label,
           style: TextStyle(
-            fontSize: 12,
+            fontSize: small ? 11 : 12,
             fontWeight: FontWeight.w600,
             color: activo ? Colors.white : Colors.grey.shade600,
           ),

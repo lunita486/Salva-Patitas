@@ -8,7 +8,8 @@ import 'package:geolocator/geolocator.dart';
 import '../theme.dart';
 
 class SubirRescateScreen extends StatefulWidget {
-  const SubirRescateScreen({super.key});
+  final bool esAlbergue;
+  const SubirRescateScreen({super.key, this.esAlbergue = false});
   @override
   State<SubirRescateScreen> createState() => _SubirRescateScreenState();
 }
@@ -75,6 +76,20 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
   double? _latitud;
   double? _longitud;
 
+  @override
+  void initState() {
+    super.initState();
+    if (widget.esAlbergue) _cargarCiudadAlbergue();
+  }
+
+  Future<void> _cargarCiudadAlbergue() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final doc = await FirebaseFirestore.instance.collection('usuarios').doc(uid).get();
+    final ciudad = (doc.data()?['ciudad'] as String?) ?? '';
+    if (ciudad.isNotEmpty && mounted) setState(() => _lugarCtl.text = ciudad);
+  }
+
   Future<void> _obtenerUbicacionGPS() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
@@ -107,7 +122,7 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
         const SnackBar(content: Text('Debes agregar al menos una foto del animal')));
       return;
     }
-    if (_latitud == null) {
+    if (_latitud == null && !widget.esAlbergue) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Por favor detecta tu ubicación GPS')));
       return;
@@ -136,6 +151,7 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
         if (fotoBase642 != null) 'fotoBase642': fotoBase642,
         'rescatistaId':        FirebaseAuth.instance.currentUser?.uid ?? '',
         'rescatistaNombre':    FirebaseAuth.instance.currentUser?.displayName ?? 'Rescatista',
+        'creadoPor':           widget.esAlbergue ? 'albergue' : 'rescatista',
         if (_latitud  != null) 'latitud':  _latitud,
         if (_longitud != null) 'longitud': _longitud,
         'edad':             _edad,
@@ -245,12 +261,12 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
                   _chips(_tamanos, _tamano,
                       (v) => setState(() => _tamano = v), appTeal),
                   const SizedBox(height: 20),
-                  _section('¿Es bueno con niños?'),
+                  _section('¿Es amigable con niños?'),
                   const SizedBox(height: 8),
                   _chips(_siNoOpts, _okNinos,
                       (v) => setState(() => _okNinos = v), appTeal),
                   const SizedBox(height: 20),
-                  _section('¿Es bueno con otras mascotas?'),
+                  _section('¿Es sociable con otros animales?'),
                   const SizedBox(height: 8),
                   _chips(_siNoOpts, _okMascotas,
                       (v) => setState(() => _okMascotas = v), appTeal),
@@ -260,10 +276,12 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
                   _chips(_siNoOpts, _requiereExp,
                       (v) => setState(() => _requiereExp = v), appOrange),
                   const SizedBox(height: 28),
-                  _section('Ubicación'),
-                  const SizedBox(height: 8),
-                  _locationField(),
-                  const SizedBox(height: 20),
+                  if (!widget.esAlbergue) ...[
+                    _section('Ubicación'),
+                    const SizedBox(height: 8),
+                    _locationField(),
+                    const SizedBox(height: 20),
+                  ],
                   _field('Descripción adicional', _descCtl,
                       hint: 'Estado del animal, dónde fue encontrado, necesidades especiales...',
                       maxLines: 4),

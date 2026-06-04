@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:image_picker/image_picker.dart';
 import '../theme.dart';
 
 class AlberguePerfilScreen extends StatefulWidget {
@@ -12,16 +14,31 @@ class AlberguePerfilScreen extends StatefulWidget {
 
 class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
   final _nombreCtl    = TextEditingController();
+  final _ciudadCtl    = TextEditingController();
   final _capacidadCtl = TextEditingController();
-  final _direccionCtl = TextEditingController();
-  String _tipo        = 'Fundación';
-  bool   _guardando   = false;
+  String? _tipo;
+  String? _fotoBase64;
+  bool   _guardando = false;
+
+  Future<void> _pickFoto() async {
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 512,
+      maxHeight: 512,
+      imageQuality: 80,
+    );
+    if (picked == null) return;
+    final bytes = await picked.readAsBytes();
+    setState(() => _fotoBase64 = base64Encode(bytes));
+  }
 
   static const _tipos = ['Centro municipal', 'Fundación', 'ONG', 'Privado'];
 
   bool get _completo =>
       _nombreCtl.text.trim().isNotEmpty &&
-      _capacidadCtl.text.trim().isNotEmpty;
+      _ciudadCtl.text.trim().isNotEmpty &&
+      _capacidadCtl.text.trim().isNotEmpty &&
+      _tipo != null;
 
   Future<void> _guardar() async {
     if (!_completo) return;
@@ -29,18 +46,18 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     await FirebaseFirestore.instance.collection('usuarios').doc(uid).update({
       'albergueNombre':    _nombreCtl.text.trim(),
-      'albergueTipo':      _tipo,
+      'albergueTipo':      _tipo ?? '',
+      'ciudad':            _ciudadCtl.text.trim(),
       'capacidadTotal':    int.tryParse(_capacidadCtl.text.trim()) ?? 0,
-      'albergueDireccion': _direccionCtl.text.trim(),
+      if (_fotoBase64 != null) 'fotoBase64': _fotoBase64,
     });
-    // AuthWrapper detecta el cambio y navega a HomeScreen automáticamente
   }
 
   @override
   void dispose() {
     _nombreCtl.dispose();
+    _ciudadCtl.dispose();
     _capacidadCtl.dispose();
-    _direccionCtl.dispose();
     super.dispose();
   }
 
@@ -75,6 +92,53 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
                   style: TextStyle(fontSize: 14, color: Colors.grey.shade600)),
               const SizedBox(height: 32),
 
+              // Logo / foto del albergue
+              Center(
+                child: GestureDetector(
+                  onTap: _pickFoto,
+                  child: Stack(clipBehavior: Clip.none, children: [
+                    Container(
+                      width: 96, height: 96,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white,
+                        border: Border.all(color: const Color(0xFF1F8A62), width: 2.5),
+                        image: _fotoBase64 != null
+                            ? DecorationImage(
+                                image: MemoryImage(base64Decode(_fotoBase64!)),
+                                fit: BoxFit.cover)
+                            : null,
+                      ),
+                      child: _fotoBase64 == null
+                          ? const Icon(Icons.add_a_photo_outlined,
+                              color: Color(0xFF1F8A62), size: 32)
+                          : null,
+                    ),
+                    if (_fotoBase64 != null)
+                      Positioned(
+                        bottom: 0, right: 0,
+                        child: Container(
+                          width: 30, height: 30,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1F8A62),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 2),
+                          ),
+                          child: const Icon(Icons.edit, color: Colors.white, size: 14),
+                        ),
+                      ),
+                  ]),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Center(
+                child: Text(
+                  _fotoBase64 == null ? 'Agrega el logo de tu albergue (opcional)' : 'Toca para cambiar',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                ),
+              ),
+              const SizedBox(height: 28),
+
               // Nombre
               _label('NOMBRE DEL ALBERGUE *'),
               const SizedBox(height: 8),
@@ -82,11 +146,11 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
               const SizedBox(height: 24),
 
               // Tipo
-              _label('TIPO DE ORGANIZACIÓN'),
+              _label('TIPO DE ORGANIZACIÓN *'),
               const SizedBox(height: 10),
               Wrap(spacing: 8, runSpacing: 8,
                 children: _tipos.map((t) {
-                  final sel = t == _tipo;
+                  final sel = t == (_tipo ?? '');
                   return GestureDetector(
                     onTap: () => setState(() => _tipo = t),
                     child: AnimatedContainer(
@@ -120,15 +184,15 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
               const SizedBox(height: 24),
 
-              // Dirección
-              _label('BARRIO O DIRECCIÓN'),
+              // Ciudad
+              _label('CIUDAD *'),
               const SizedBox(height: 8),
-              _campo(_direccionCtl, 'ej. Laureles, Medellín'),
+              _campo(_ciudadCtl, 'ej. Medellín, Bogotá, Santiago'),
               const SizedBox(height: 36),
 
               // Botón
               ListenableBuilder(
-                listenable: Listenable.merge([_nombreCtl, _capacidadCtl]),
+                listenable: Listenable.merge([_nombreCtl, _ciudadCtl, _capacidadCtl]),
                 builder: (_, _) => SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(

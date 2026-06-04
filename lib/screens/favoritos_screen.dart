@@ -157,10 +157,11 @@ class FavoritosScreen extends StatelessWidget {
                                         builder: (_, rescSnap) {
                                           final rData  = rescateId.isNotEmpty ? (rescSnap.data?.data() as Map<String, dynamic>?) : null;
                                           final estado = rData?['estadoAdopcion'] as String? ?? '';
-                                          final enProceso = estado == 'En proceso de adopción';
-                                          final adoptado  = estado == 'Adoptado';
-                                          final devuelto  = estado == 'Regresado';
-                                          final noDisponible = enProceso || adoptado;
+                                          final enProceso     = estado == 'En proceso de adopción';
+                                          final adoptado      = estado == 'Adoptado';
+                                          final devuelto      = estado == 'Regresado';
+                                          final enHogarDePaso = estado == 'Hogar de paso';
+                                          final noDisponible  = enProceso || adoptado || enHogarDePaso;
                                           return Column(children: [
                                             if (devuelto) ...[
                                               Container(
@@ -182,16 +183,32 @@ class FavoritosScreen extends StatelessWidget {
                                                 width: double.infinity,
                                                 padding: const EdgeInsets.symmetric(vertical: 8),
                                                 decoration: BoxDecoration(
-                                                  color: enProceso ? const Color(0xFFE65100).withValues(alpha: 0.1) : Colors.grey.shade100,
+                                                  color: enHogarDePaso
+                                                      ? appTeal.withValues(alpha: 0.1)
+                                                      : enProceso
+                                                          ? const Color(0xFFE65100).withValues(alpha: 0.1)
+                                                          : Colors.grey.shade100,
                                                   borderRadius: BorderRadius.circular(20),
-                                                  border: Border.all(color: enProceso ? const Color(0xFFE65100).withValues(alpha: 0.5) : Colors.grey.shade300),
+                                                  border: Border.all(color: enHogarDePaso
+                                                      ? appTeal.withValues(alpha: 0.4)
+                                                      : enProceso
+                                                          ? const Color(0xFFE65100).withValues(alpha: 0.5)
+                                                          : Colors.grey.shade300),
                                                 ),
                                                 child: Text(
-                                                  enProceso ? 'En proceso de adopción 🔄' : 'Ya adoptado 🏠',
+                                                  enHogarDePaso
+                                                      ? 'En hogar de paso 🏡'
+                                                      : enProceso
+                                                          ? 'En proceso de adopción 🔄'
+                                                          : 'Ya adoptado 🏠',
                                                   textAlign: TextAlign.center,
                                                   style: TextStyle(
                                                     fontSize: 12, fontWeight: FontWeight.w700,
-                                                    color: enProceso ? const Color(0xFFE65100) : const Color(0xFF888888),
+                                                    color: enHogarDePaso
+                                                        ? appTeal
+                                                        : enProceso
+                                                            ? const Color(0xFFE65100)
+                                                            : const Color(0xFF888888),
                                                   ),
                                                 ),
                                               )

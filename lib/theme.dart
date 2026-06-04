@@ -73,11 +73,13 @@ Widget leafBackground({required Widget child}) => Stack(
 // ─── Helpers globales ─────────────────────────────────────────────────────────
 
 Color cicloColor(String s) => switch (s) {
+  'En cuidado'             => appTeal,
   'Rescatado'              => appTeal,
   'Hogar de paso'          => const Color(0xFF7C6FCD),
   'En proceso de adopción' => const Color(0xFFE65100),
   'Adoptado'               => const Color(0xFF2196F3),
   'Regresado'              => const Color(0xFFD32F2F),
+  'Fallecido'              => const Color(0xFF78909C),
   _                        => Colors.grey,
 };
 
@@ -94,6 +96,7 @@ class CambiarEstadoSheet extends StatelessWidget {
     ('En proceso de adopción', '🟠', 'Tiene una solicitud activa'),
     ('Adoptado',               '🔵', 'Ya encontró su hogar'),
     ('Regresado',              '🔴', 'Fue devuelto, disponible de nuevo'),
+    ('Fallecido',              '🌈', 'Ya no está con nosotros'),
   ];
 
   Color _color(String s) => switch (s) {
@@ -102,11 +105,12 @@ class CambiarEstadoSheet extends StatelessWidget {
     'En proceso de adopción' => const Color(0xFFE65100),
     'Adoptado'               => const Color(0xFF2196F3),
     'Regresado'              => const Color(0xFFD32F2F),
+    'Fallecido'              => const Color(0xFF78909C),
     _                        => Colors.grey,
   };
 
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) => SingleChildScrollView(
     padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
     child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
       Center(child: Container(width: 36, height: 4,
@@ -120,25 +124,32 @@ class CambiarEstadoSheet extends StatelessWidget {
         final sel = e.$1 == estadoActual;
         return GestureDetector(
           onTap: () {
-            if (e.$1 != 'Regresado') {
+            if (e.$1 != 'Regresado' && e.$1 != 'Fallecido') {
               FirebaseFirestore.instance.collection('rescates').doc(docId)
-                  .update({'estadoAdopcion': e.$1});
+                  .update({
+                    'estadoAdopcion': e.$1,
+                    if (e.$1 == 'Adoptado')
+                      'fechaAdopcion': FieldValue.serverTimestamp(),
+                  });
               Navigator.pop(context);
               return;
             }
+            final esFallecido = e.$1 == 'Fallecido';
             final ctrl = TextEditingController();
             final sheetCtx = context;
             showDialog(
               context: context,
               builder: (dlgCtx) => AlertDialog(
-                title: const Text('¿Por qué fue regresado?'),
+                title: Text(esFallecido ? 'Lo sentimos mucho 🌈' : '¿Por qué fue regresado?'),
                 content: TextField(
                   controller: ctrl,
                   maxLines: 3,
                   autofocus: true,
-                  decoration: const InputDecoration(
-                    hintText: 'Ej: Incompatibilidad con otros animales, mudanza...',
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    hintText: esFallecido
+                        ? 'Puedes dejar una nota sobre este angelito...'
+                        : 'Ej: Incompatibilidad con otros animales, mudanza...',
+                    border: const OutlineInputBorder(),
                   ),
                 ),
                 actions: [
@@ -147,11 +158,17 @@ class CambiarEstadoSheet extends StatelessWidget {
                     child: const Text('Cancelar'),
                   ),
                   ElevatedButton(
-                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD32F2F)),
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: esFallecido
+                            ? const Color(0xFF78909C)
+                            : const Color(0xFFD32F2F)),
                     onPressed: () {
                       FirebaseFirestore.instance.collection('rescates').doc(docId).update({
-                        'estadoAdopcion': 'Regresado',
-                        'motivoRegreso': ctrl.text.trim(),
+                        'estadoAdopcion': e.$1,
+                        if (esFallecido && ctrl.text.trim().isNotEmpty)
+                          'notaFallecido': ctrl.text.trim()
+                        else if (!esFallecido)
+                          'motivoRegreso': ctrl.text.trim(),
                       });
                       Navigator.pop(dlgCtx);
                       Navigator.pop(sheetCtx);

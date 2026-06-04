@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -77,6 +78,36 @@ class _HomeScreenState extends State<HomeScreen> {
       _isRescatista = roles.contains('rescatista');
     });
   }
+
+  // ── Debug: cambio rápido de rol (solo en builds de desarrollo) ─────────────
+  Future<void> _cambiarRolDebug() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final opciones = <String, List<String>>{
+      'Solo Adoptante': ['adoptante'],
+      'Solo Rescatista': ['rescatista'],
+      'Adoptante + Rescatista': ['adoptante', 'rescatista'],
+      'Albergue': ['albergue'],
+    };
+    final seleccion = await showDialog<List<String>>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('🛠 Cambiar rol (DEBUG)'),
+        children: opciones.entries.map((e) => SimpleDialogOption(
+          onPressed: () => Navigator.pop(ctx, e.value),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Text(e.key),
+          ),
+        )).toList(),
+      ),
+    );
+    if (seleccion == null) return;
+    await FirebaseFirestore.instance
+        .collection('usuarios').doc(uid).update({'roles': seleccion});
+    await _cargarRol();
+  }
+
 
   Future<void> _verificarVencimientos() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -166,6 +197,14 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
+      floatingActionButton: kDebugMode
+          ? FloatingActionButton.small(
+              onPressed: _cambiarRolDebug,
+              backgroundColor: Colors.purple.shade100,
+              elevation: 4,
+              child: Icon(Icons.developer_mode, color: Colors.purple.shade700),
+            )
+          : null,
       bottomNavigationBar: _bottomNav(),
     );
   }
@@ -176,8 +215,10 @@ class _HomeScreenState extends State<HomeScreen> {
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [_rolToggle(), _avatar('A', appOrange)]),
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          _rolToggle(),
+          _avatar('A', appOrange),
+        ]),
         const SizedBox(height: 24),
         const Text('Hola,', style: TextStyle(fontSize: 18, color: Color(0xFF444444))),
         const SizedBox(height: 2),
@@ -477,7 +518,8 @@ class _HomeScreenState extends State<HomeScreen> {
           if (snap.hasError) {
             return Center(child: Text('Error: ${snap.error}', style: const TextStyle(fontSize: 12)));
           }
-          final docs = snap.data?.docs ?? [];
+          final docs = (snap.data?.docs ?? []).where((d) =>
+              (d.data() as Map)['creadoPor'] != 'albergue').toList();
           if (docs.isEmpty) {
             return Center(
               child: Text('Aún no tienes rescates publicados.',
@@ -654,7 +696,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 stream: FirebaseFirestore.instance.collection('rescates')
                     .where('rescatistaId', isEqualTo: uid).snapshots(),
                 builder: (context, rescSnap) {
-                  final total = rescSnap.data?.docs.length ?? 0;
+                  final total = (rescSnap.data?.docs ?? []).where((d) =>
+                      (d.data() as Map)['creadoPor'] != 'albergue').length;
                   return _stat('$total', 'Animales\nrescatados', Colors.white, const Color(0xFF1A1A1A));
                 },
               )),
