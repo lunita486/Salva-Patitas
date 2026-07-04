@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import '../theme.dart';
+import '../services/notificaciones_service.dart';
 import 'subir_rescate_screen.dart';
 import 'solicitudes_rescatista_screen.dart';
 import 'adoptante_chats_screen.dart';
@@ -44,6 +45,12 @@ class _HomeScreenState extends State<HomeScreen> {
     _cargarRol();
     _verificarVencimientos();
     _detectarCiudad();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        NotificacionesService.guardarToken();
+        NotificacionesService.escucharEnPrimerPlano(context);
+      }
+    });
   }
 
   Future<void> _detectarCiudad() async {
@@ -84,10 +91,11 @@ class _HomeScreenState extends State<HomeScreen> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     final opciones = <String, List<String>>{
-      'Solo Adoptante': ['adoptante'],
-      'Solo Rescatista': ['rescatista'],
+      'Solo Adoptante':         ['adoptante'],
+      'Solo Rescatista':        ['rescatista'],
       'Adoptante + Rescatista': ['adoptante', 'rescatista'],
-      'Albergue': ['albergue'],
+      'Albergue':               ['albergue'],
+      'Aliado':                 ['aliado'],
     };
     final seleccion = await showDialog<List<String>>(
       context: context,
@@ -241,7 +249,7 @@ class _HomeScreenState extends State<HomeScreen> {
         const SizedBox(height: 16),
         _ctaCard(ctx),
         const SizedBox(height: 28),
-        _sectionHeader('ESPERAN RESPUESTA', 'Solicitudes de adopción', 'Ver todas',
+        _sectionHeader('ESPERAN RESPUESTA', 'Solicitudes', 'Ver todas',
             onAction: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SolicitudesRescatistaScreen()))),
         const SizedBox(height: 12),
         _solicitudesFirestore(),
@@ -473,17 +481,33 @@ class _HomeScreenState extends State<HomeScreen> {
               Text(tiempo, style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
             ]),
             const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(color: const Color(0xFFD8F0E4), borderRadius: BorderRadius.circular(12)),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Container(width: 32, height: 32,
-                  decoration: BoxDecoration(color: Colors.brown.shade300, borderRadius: BorderRadius.circular(6)),
-                  child: const Icon(Icons.pets, size: 18, color: Colors.white)),
-                const SizedBox(width: 8),
-                Text('Para $animal', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-              ]),
-            ),
+            Row(children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(color: const Color(0xFFD8F0E4), borderRadius: BorderRadius.circular(12)),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Container(width: 32, height: 32,
+                    decoration: BoxDecoration(color: Colors.brown.shade300, borderRadius: BorderRadius.circular(6)),
+                    child: const Icon(Icons.pets, size: 18, color: Colors.white)),
+                  const SizedBox(width: 8),
+                  Text('Para $animal', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                ]),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: esHogar ? appTeal.withValues(alpha: 0.12) : appOrange.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: esHogar ? appTeal.withValues(alpha: 0.4) : appOrange.withValues(alpha: 0.4)),
+                ),
+                child: Text(
+                  esHogar ? '🏡 Hogar de paso' : '🏠 Adopción',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
+                      color: esHogar ? appTeal : appOrange),
+                ),
+              ),
+            ]),
             if (docId != null) ...[
               const SizedBox(height: 12),
               const Text('Revisar →', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: appTeal)),
@@ -681,6 +705,7 @@ class _HomeScreenState extends State<HomeScreen> {
           builder: (context, chatSnap) {
             final noLeidos = (chatSnap.data?.docs ?? []).where((doc) {
               final d = doc.data() as Map<String, dynamic>;
+              if ((d['tipoSolicitud'] as String? ?? '').startsWith('consulta')) return false;
               return ((d['noLeidosRescatista'] as int?) ?? 0) > 0;
             }).length;
             return Row(children: [
@@ -749,7 +774,7 @@ class _HomeScreenState extends State<HomeScreen> {
             final detalle     = '$vivienda · $integrantes personas · $ninos · $mascotas';
             final ts          = d['creadoEn'] as Timestamp?;
             final tiempo      = ts != null ? _tiempoRelativo(ts.toDate()) : '';
-            final ini         = nombreCompleto[0].toUpperCase();
+            final ini         = nombreCompleto.isNotEmpty ? nombreCompleto[0].toUpperCase() : 'A';
             final col         = i.isEven ? appTeal : appOrange;
             return Padding(
               padding: EdgeInsets.only(bottom: i < limited.length - 1 ? 10 : 0),
@@ -820,6 +845,7 @@ class _HomeScreenState extends State<HomeScreen> {
               builder: (_, snap) {
                 final unread = (snap.data?.docs ?? []).where((doc) {
                   final d = doc.data() as Map<String, dynamic>;
+                  if ((d['tipoSolicitud'] as String? ?? '').startsWith('consulta')) return false;
                   return ((d['noLeidosRescatista'] as int?) ?? 0) > 0;
                 }).length;
                 return _navTapConBadge(
@@ -828,6 +854,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 );
               },
             ),
+            _navTap(Icons.store_outlined, 'Negocios', 5,
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AliadosScreen(esRescatista: true)))),
             _navTap(Icons.person_outline, 'Perfil', 4,
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PerfilRescatistaScreen()))),
           ] else ...[
@@ -841,6 +869,7 @@ class _HomeScreenState extends State<HomeScreen> {
               builder: (_, snap) {
                 final unread = (snap.data?.docs ?? []).where((doc) {
                   final d = doc.data() as Map<String, dynamic>;
+                  if ((d['tipoSolicitud'] as String? ?? '').startsWith('consulta')) return false;
                   return ((d['noLeidosAdoptante'] as int?) ?? 0) > 0;
                 }).length;
                 return _navTapConBadge(
@@ -851,7 +880,9 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             _navTap(Icons.assignment_outlined, 'Solicitudes', 2,
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MisSolicitudesScreen()))),
-            _navTap(Icons.person_outline, 'Perfil', 3,
+            _navTap(Icons.store_outlined, 'Negocios', 3,
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AliadosScreen(esRescatista: false)))),
+            _navTap(Icons.person_outline, 'Perfil', 4,
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PerfilAdoptanteScreen()))),
           ],
         ]),

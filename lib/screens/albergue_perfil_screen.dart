@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -19,6 +20,33 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
   String? _tipo;
   String? _fotoBase64;
   bool   _guardando = false;
+
+  Future<void> _cambiarRolDebug(BuildContext ctx) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final opciones = <String, List<String>>{
+      'Solo Adoptante':         ['adoptante'],
+      'Solo Rescatista':        ['rescatista'],
+      'Adoptante + Rescatista': ['adoptante', 'rescatista'],
+      'Albergue':               ['albergue'],
+      'Aliado':                 ['aliado'],
+    };
+    final sel = await showDialog<List<String>>(
+      context: ctx,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('🛠 Cambiar rol (DEBUG)'),
+        children: opciones.entries.map((e) => SimpleDialogOption(
+          onPressed: () => Navigator.pop(ctx, e.value),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Text(e.key),
+          ),
+        )).toList(),
+      ),
+    );
+    if (sel == null || !mounted) return;
+    await FirebaseFirestore.instance.collection('usuarios').doc(uid).update({'roles': sel});
+  }
 
   Future<void> _pickFoto() async {
     final picked = await ImagePicker().pickImage(
@@ -74,16 +102,6 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
               const SizedBox(height: 40),
 
               // Header
-              Container(
-                width: 56, height: 56,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1F8A62),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: const Icon(Icons.account_balance_outlined,
-                    color: Colors.white, size: 28),
-              ),
-              const SizedBox(height: 20),
               const Text('Configura tu albergue',
                   style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold,
                       color: Color(0xFF1A1A1A))),
@@ -217,6 +235,25 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
             ]),
           ),
         ),
+        if (kDebugMode)
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 8,
+            right: 16,
+            child: Builder(builder: (ctx) => GestureDetector(
+              onTap: () => _cambiarRolDebug(ctx),
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.purple.shade100,
+                  shape: BoxShape.circle,
+                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12),
+                      blurRadius: 4, offset: const Offset(0, 2))],
+                ),
+                child: Icon(Icons.developer_mode,
+                    color: Colors.purple.shade700, size: 18),
+              ),
+            )),
+          ),
       ]),
     );
   }

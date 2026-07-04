@@ -1,7 +1,5 @@
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../theme.dart';
 
@@ -13,25 +11,6 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   bool _cargando = false;
-
-  Future<void> _loginDebug(String email, String password, Map<String, dynamic> userData) async {
-    setState(() => _cargando = true);
-    try {
-      final cred = await FirebaseAuth.instance.signInWithEmailAndPassword(
-          email: email, password: password);
-      final docRef = FirebaseFirestore.instance
-          .collection('usuarios').doc(cred.user!.uid);
-      if (!(await docRef.get()).exists) {
-        await docRef.set({
-          ...userData,
-          'email': email,
-          'creadoEn': FieldValue.serverTimestamp(),
-        });
-      }
-    } catch (e) {
-      if (mounted) setState(() => _cargando = false);
-    }
-  }
 
   Future<void> _loginGoogle() async {
     setState(() => _cargando = true);
@@ -105,49 +84,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 Text('Al continuar aceptas nuestros términos de uso',
                     style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
                     textAlign: TextAlign.center),
-                if (kDebugMode) ...[
-                  const SizedBox(height: 20),
-                  Row(children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: _cargando ? null : () => _loginDebug(
-                          'albergue@test.com', 'test1234', {
-                            'nombre':        'La Perla',
-                            'roles':         ['albergue'],
-                            'ciudad':        'Medellín',
-                            'albergueNombre':'La Perla',
-                            'albergueTipo':  'Centro municipal',
-                            'capacidadTotal': 100,
-                          }),
-                        style: OutlinedButton.styleFrom(
-                          side: BorderSide(color: Colors.purple.shade300),
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        child: Text('🛠 Albergue',
-                            style: TextStyle(fontSize: 13, color: Colors.purple.shade700)),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: _cargando ? null : () => _loginDebug(
-                          'adoptante@test.com', 'test1234', {
-                            'nombre': 'Adoptante Test',
-                            'roles':  ['adoptante'],
-                            'ciudad': 'Medellín',
-                          }),
-                        style: OutlinedButton.styleFrom(
-                          side: BorderSide(color: Colors.purple.shade300),
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        child: Text('🛠 Adoptante',
-                            style: TextStyle(fontSize: 13, color: Colors.purple.shade700)),
-                      ),
-                    ),
-                  ]),
-                ],
                 const SizedBox(height: 32),
               ],
             ),

@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:image/image.dart' as img;
 import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 import '../theme.dart';
 
 class SubirRescateScreen extends StatefulWidget {
@@ -23,7 +25,7 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
   final _razaCtl = TextEditingController();
   final List<XFile> _fotos = [];
   String _especie      = 'Perro';
-  String _estado       = 'Herido';
+  String _estado       = 'Sano';
   String _urgencia     = 'Alta';
   String _energia      = 'Tranquilo';
   String _tamano       = 'Mediano';
@@ -73,13 +75,16 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
   }
 
   bool _publicando = false;
+  bool _detectandoUbicacion = false;
   double? _latitud;
   double? _longitud;
+  String _paisCodigo = '';
 
   @override
   void initState() {
     super.initState();
     if (widget.esAlbergue) _cargarCiudadAlbergue();
+    else _obtenerUbicacionGPS();
   }
 
   Future<void> _cargarCiudadAlbergue() async {
@@ -91,29 +96,57 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
   }
 
   Future<void> _obtenerUbicacionGPS() async {
+    setState(() => _detectandoUbicacion = true);
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Activa el GPS en tu dispositivo')));
+      setState(() => _detectandoUbicacion = false);
       return;
     }
     LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) return;
+      if (permission == LocationPermission.denied) {
+        setState(() => _detectandoUbicacion = false);
+        return;
+      }
     }
     if (permission == LocationPermission.deniedForever) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Permiso de ubicación bloqueado. Habilítalo en Ajustes.')));
+      setState(() => _detectandoUbicacion = false);
       return;
     }
     final pos = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(accuracy: LocationAccuracy.high));
+    String ciudad = '';
+    String paisCodigo = '';
+    try {
+      final placemarks = await placemarkFromCoordinates(pos.latitude, pos.longitude);
+      if (placemarks.isNotEmpty) {
+        ciudad = placemarks.first.locality?.isNotEmpty == true
+            ? placemarks.first.locality!
+            : placemarks.first.administrativeArea ?? '';
+        paisCodigo = placemarks.first.isoCountryCode ?? '';
+      }
+    } catch (_) {}
     setState(() {
       _latitud  = pos.latitude;
       _longitud = pos.longitude;
-      _lugarCtl.text = 'Medellín';
+      _lugarCtl.text = ciudad;
+      _paisCodigo = paisCodigo;
+      _detectandoUbicacion = false;
     });
+  }
+
+  Future<String> _normalizarFoto(String path) async {
+    final bytes = await File(path).readAsBytes();
+    final decoded = img.decodeImage(bytes);
+    if (decoded == null) return base64Encode(bytes);
+    final rotated = img.bakeOrientation(decoded);
+    final jpeg = img.encodeJpg(rotated, quality: 72);
+    return base64Encode(jpeg);
   }
 
   Future<void> _publicar() async {
@@ -132,10 +165,10 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
       String? fotoBase64;
       String? fotoBase642;
       if (_fotos.isNotEmpty) {
-        fotoBase64 = base64Encode(await File(_fotos[0].path).readAsBytes());
+        fotoBase64 = await _normalizarFoto(_fotos[0].path);
       }
       if (_fotos.length > 1) {
-        fotoBase642 = base64Encode(await File(_fotos[1].path).readAsBytes());
+        fotoBase642 = await _normalizarFoto(_fotos[1].path);
       }
 
       await FirebaseFirestore.instance.collection('rescates').add({
@@ -154,6 +187,7 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
         'creadoPor':           widget.esAlbergue ? 'albergue' : 'rescatista',
         if (_latitud  != null) 'latitud':  _latitud,
         if (_longitud != null) 'longitud': _longitud,
+        if (_paisCodigo.isNotEmpty) 'paisCodigo': _paisCodigo,
         'edad':             _edad,
         'genero':           _genero,
         'energia':          _energia,
@@ -171,7 +205,8 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: const Text('¡Rescate publicado! 🐾'),
           content: Text('${_nombreCtl.text.isEmpty ? "El animal" : _nombreCtl.text} '
-              'fue publicado con urgencia $_urgencia en ${_lugarCtl.text}.'),
+              'fue publicado con urgencia $_urgencia'
+              '${_lugarCtl.text.isNotEmpty ? ' en ${_lugarCtl.text}' : ''}.'),
           actions: [
             TextButton(
               onPressed: () { Navigator.pop(context); Navigator.pop(context); },
@@ -282,9 +317,51 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
                     _locationField(),
                     const SizedBox(height: 20),
                   ],
-                  _field('Descripción adicional', _descCtl,
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Descripción', style: TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w600,
+                          color: Colors.grey.shade700)),
+                      GestureDetector(
+                        onTap: () {
+                          final nombre = _nombreCtl.text.trim().isNotEmpty
+                              ? _nombreCtl.text.trim()
+                              : '[Nombre]';
+                          final plantilla =
+                              '$nombre fue encontrado/a [dónde] hace [tiempo]. '
+                              'Tiene [X] años y desde entonces espera una familia que lo/la quiera. '
+                              'Le encanta [algo que le gusta] y [otra cosa]. '
+                              'Es [tranquilo/activo/juguetón] y se lleva bien con '
+                              '[niños / otras mascotas / todos]. '
+                              '¿Podrías ser su hogar?';
+                          _descCtl.value = TextEditingValue(
+                            text: plantilla,
+                            selection: TextSelection.collapsed(offset: plantilla.length),
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: appTeal.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: appTeal.withValues(alpha: 0.3)),
+                          ),
+                          child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                            Text('✨', style: TextStyle(fontSize: 13)),
+                            SizedBox(width: 4),
+                            Text('Usar plantilla',
+                                style: TextStyle(fontSize: 12,
+                                    fontWeight: FontWeight.w600, color: appTeal)),
+                          ]),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  _field('', _descCtl,
                       hint: 'Estado del animal, dónde fue encontrado, necesidades especiales...',
-                      maxLines: 4),
+                      maxLines: 5),
                   const SizedBox(height: 28),
                   _publishBtn(),
                   const SizedBox(height: 40),
@@ -414,8 +491,9 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
 
   Widget _locationField() {
     final obtenida = _latitud != null;
+    final ciudad = _lugarCtl.text;
     return GestureDetector(
-      onTap: _obtenerUbicacionGPS,
+      onTap: _detectandoUbicacion ? null : _obtenerUbicacionGPS,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         decoration: BoxDecoration(
@@ -425,14 +503,22 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
           boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6)],
         ),
         child: Row(children: [
-          Icon(obtenida ? Icons.check_circle : Icons.my_location,
-              color: obtenida ? appTeal : Colors.grey.shade500, size: 22),
+          if (_detectandoUbicacion)
+            const SizedBox(width: 22, height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2, color: appTeal))
+          else
+            Icon(obtenida ? Icons.check_circle : Icons.my_location,
+                color: obtenida ? appTeal : Colors.grey.shade500, size: 22),
           const SizedBox(width: 12),
           Text(
-            obtenida ? 'Ubicación detectada ✓' : 'Toca para detectar tu ubicación',
+            _detectandoUbicacion
+                ? 'Detectando ubicación...'
+                : obtenida
+                    ? (ciudad.isNotEmpty ? '$ciudad ✓' : 'Ubicación detectada ✓')
+                    : 'Toca para detectar tu ubicación',
             style: TextStyle(
               fontSize: 14,
-              color: obtenida ? appTeal : Colors.grey.shade500,
+              color: obtenida || _detectandoUbicacion ? appTeal : Colors.grey.shade500,
               fontWeight: obtenida ? FontWeight.w600 : FontWeight.normal,
             ),
           ),

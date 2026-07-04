@@ -7,6 +7,23 @@ import '../theme.dart';
 class PerfilRescatistaScreen extends StatelessWidget {
   const PerfilRescatistaScreen({super.key});
 
+  Future<void> _gestionarRoles(BuildContext context) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final doc = await FirebaseFirestore.instance.collection('usuarios').doc(uid).get();
+    final roles = List<String>.from((doc.data()?['roles'] as List?) ?? ['rescatista']);
+    if (!context.mounted) return;
+    final seleccion = await showModalBottomSheet<List<String>>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => _RolesSheet(rolesActuales: roles),
+    );
+    if (seleccion == null || seleccion.isEmpty) return;
+    await FirebaseFirestore.instance
+        .collection('usuarios').doc(uid).update({'roles': seleccion});
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
@@ -33,7 +50,7 @@ class PerfilRescatistaScreen extends StatelessWidget {
               foto != null
                 ? CircleAvatar(backgroundImage: NetworkImage(foto), radius: 44)
                 : CircleAvatar(backgroundColor: appTeal, radius: 44,
-                    child: Text(nombre[0].toUpperCase(),
+                    child: Text(nombre.isNotEmpty ? nombre[0].toUpperCase() : 'R',
                         style: const TextStyle(fontSize: 36, color: Colors.white, fontWeight: FontWeight.bold))),
               const SizedBox(height: 14),
               Text(nombre, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
@@ -67,6 +84,21 @@ class PerfilRescatistaScreen extends StatelessWidget {
                     ),
                   ]);
                 },
+              ),
+              const SizedBox(height: 16),
+              GestureDetector(
+                onTap: () => _gestionarRoles(context),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
+                  child: Row(children: [
+                    Icon(Icons.switch_account_outlined, color: appTeal, size: 20),
+                    const SizedBox(width: 12),
+                    const Expanded(child: Text('Gestionar mis roles',
+                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600))),
+                    Icon(Icons.chevron_right, color: Colors.grey.shade400),
+                  ]),
+                ),
               ),
               const SizedBox(height: 32),
               // Cerrar sesión
@@ -113,6 +145,7 @@ class PerfilRescatistaScreen extends StatelessWidget {
   }
 
   Widget _statTile(String n, String lbl, Color color) => Expanded(
+
     child: Container(
       padding: const EdgeInsets.symmetric(vertical: 18),
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16),
@@ -124,4 +157,91 @@ class PerfilRescatistaScreen extends StatelessWidget {
       ]),
     ),
   );
+}
+
+class _RolesSheet extends StatefulWidget {
+  final List<String> rolesActuales;
+  const _RolesSheet({required this.rolesActuales});
+  @override
+  State<_RolesSheet> createState() => _RolesSheetState();
+}
+
+class _RolesSheetState extends State<_RolesSheet> {
+  late List<String> _roles;
+
+  @override
+  void initState() {
+    super.initState();
+    _roles = List.from(widget.rolesActuales);
+  }
+
+  void _toggle(String rol) {
+    setState(() {
+      if (_roles.contains(rol)) {
+        if (_roles.length > 1) _roles.remove(rol);
+      } else {
+        _roles.add(rol);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Container(width: 36, height: 4,
+            decoration: BoxDecoration(color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2))),
+        const SizedBox(height: 16),
+        const Text('Mis roles', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 6),
+        Text('Podés tener los dos roles al mismo tiempo',
+            style: TextStyle(fontSize: 13, color: Colors.grey.shade500)),
+        const SizedBox(height: 20),
+        _rolTile('adoptante', '🐾 Adoptante', 'Busco animales para adoptar'),
+        const SizedBox(height: 10),
+        _rolTile('rescatista', '🦺 Rescatista', 'Rescato y publico animales'),
+        const SizedBox(height: 24),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: _roles.isNotEmpty ? () => Navigator.pop(context, _roles) : null,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: appTeal, foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              elevation: 0,
+            ),
+            child: const Text('Guardar', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  Widget _rolTile(String rol, String titulo, String subtitulo) {
+    final activo = _roles.contains(rol);
+    return GestureDetector(
+      onTap: () => _toggle(rol),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: activo ? appTeal.withValues(alpha: 0.08) : Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: activo ? appTeal : Colors.grey.shade200, width: activo ? 2 : 1),
+        ),
+        child: Row(children: [
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(titulo, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700,
+                color: activo ? appTeal : const Color(0xFF1A1A1A))),
+            const SizedBox(height: 2),
+            Text(subtitulo, style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+          ])),
+          if (activo) const Icon(Icons.check_circle, color: appTeal, size: 22),
+        ]),
+      ),
+    );
+  }
 }

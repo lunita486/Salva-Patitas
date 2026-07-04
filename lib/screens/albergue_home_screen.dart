@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import '../theme.dart';
+import '../services/notificaciones_service.dart';
 import 'subir_rescate_screen.dart';
 import 'subir_lote_screen.dart';
 import 'mis_rescates_screen.dart';
@@ -21,6 +22,17 @@ class AlbergueHomeScreen extends StatefulWidget {
 class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
   int _nav = 0;
   final _uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        NotificacionesService.guardarToken();
+        NotificacionesService.escucharEnPrimerPlano(context);
+      }
+    });
+  }
 
   Future<void> _uploadFotoPerfil() async {
     final picked = await ImagePicker().pickImage(
@@ -40,9 +52,11 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
 
   Future<void> _cambiarRolDebug() async {
     final opciones = <String, List<String>>{
-      'Rescatista (para probar)': ['rescatista'],
-      'Adoptante (para probar)': ['adoptante'],
-      'Volver a Albergue': ['albergue'],
+      'Solo Adoptante':         ['adoptante'],
+      'Solo Rescatista':        ['rescatista'],
+      'Adoptante + Rescatista': ['adoptante', 'rescatista'],
+      'Albergue':               ['albergue'],
+      'Aliado':                 ['aliado'],
     };
     final seleccion = await showDialog<List<String>>(
       context: context,
@@ -61,24 +75,6 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
     await FirebaseFirestore.instance
         .collection('usuarios').doc(_uid).update({'roles': seleccion});
   }
-
-  Widget _debugRolButton() => GestureDetector(
-    onTap: _cambiarRolDebug,
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.purple.shade100,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.purple.shade300),
-      ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(Icons.developer_mode, size: 13, color: Colors.purple.shade700),
-        const SizedBox(width: 4),
-        Text('ROL', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold,
-            color: Colors.purple.shade700)),
-      ]),
-    ),
-  );
 
   Stream<QuerySnapshot> get _rescatesStream => FirebaseFirestore.instance
       .collection('rescates')
@@ -165,7 +161,20 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
             alignment: Alignment.centerRight,
             child: Padding(
               padding: const EdgeInsets.only(right: 16, top: 8),
-              child: _debugRolButton(),
+              child: GestureDetector(
+                onTap: _cambiarRolDebug,
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.purple.shade100,
+                    shape: BoxShape.circle,
+                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12),
+                        blurRadius: 4, offset: const Offset(0, 2))],
+                  ),
+                  child: Icon(Icons.developer_mode,
+                      color: Colors.purple.shade700, size: 18),
+                ),
+              ),
             ),
           ),
 

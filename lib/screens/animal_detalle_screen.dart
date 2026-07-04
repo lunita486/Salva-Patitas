@@ -52,7 +52,57 @@ class _AnimalDetalleScreenState extends State<AnimalDetalleScreen> {
               Expanded(child: Text(nombre,
                   textAlign: TextAlign.center,
                   style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A)))),
-              _circleBtn(Icons.favorite_border, () {}),
+              const SizedBox(width: 36),
+            ]),
+          ),
+          // Photo carousel — FUERA del scroll para que el swipe no compita
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Stack(children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: fotos.isEmpty
+                  ? Container(
+                      height: 260, width: double.infinity,
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Color(0xFF3D7A52), Color(0xFF1F4A30)],
+                          begin: Alignment.topLeft, end: Alignment.bottomRight,
+                        ),
+                      ),
+                      child: Center(child: Text(emoji, style: const TextStyle(fontSize: 90))),
+                    )
+                  : SizedBox(
+                      height: 260,
+                      child: PageView.builder(
+                        controller: _pageCtrl,
+                        itemCount: fotos.length,
+                        onPageChanged: (i) => setState(() => _paginaFoto = i),
+                        itemBuilder: (_, i) => Image.memory(
+                          base64Decode(fotos[i]),
+                          width: double.infinity, fit: BoxFit.cover,
+                          alignment: Alignment.topCenter,
+                        ),
+                      ),
+                    ),
+              ),
+              if (fotos.length > 1)
+                Positioned(
+                  bottom: 10, left: 0, right: 0,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: List.generate(fotos.length, (i) => AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      margin: const EdgeInsets.symmetric(horizontal: 3),
+                      width:  _paginaFoto == i ? 18 : 7,
+                      height: 7,
+                      decoration: BoxDecoration(
+                        color: _paginaFoto == i ? Colors.white : Colors.white.withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    )),
+                  ),
+                ),
             ]),
           ),
           // Scrollable content
@@ -60,57 +110,12 @@ class _AnimalDetalleScreenState extends State<AnimalDetalleScreen> {
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                // Photos carousel
-                Stack(children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(20),
-                    child: fotos.isEmpty
-                      ? Container(
-                          height: 260, width: double.infinity,
-                          decoration: const BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [Color(0xFF3D7A52), Color(0xFF1F4A30)],
-                              begin: Alignment.topLeft, end: Alignment.bottomRight,
-                            ),
-                          ),
-                          child: Center(child: Text(emoji, style: const TextStyle(fontSize: 90))),
-                        )
-                      : SizedBox(
-                          height: 260,
-                          child: PageView.builder(
-                            controller: _pageCtrl,
-                            itemCount: fotos.length,
-                            onPageChanged: (i) => setState(() => _paginaFoto = i),
-                            itemBuilder: (_, i) => Image.memory(
-                              base64Decode(fotos[i]),
-                              width: double.infinity, fit: BoxFit.cover,
-                            ),
-                          ),
-                        ),
-                  ),
-                  if (fotos.length > 1)
-                    Positioned(
-                      bottom: 10, left: 0, right: 0,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: List.generate(fotos.length, (i) => AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          margin: const EdgeInsets.symmetric(horizontal: 3),
-                          width:  _paginaFoto == i ? 18 : 7,
-                          height: 7,
-                          decoration: BoxDecoration(
-                            color: _paginaFoto == i ? Colors.white : Colors.white.withValues(alpha: 0.5),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        )),
-                      ),
-                    ),
-                ]),
                 const SizedBox(height: 12),
                 // Badges
                 Row(children: [
-                  _pill(Icons.location_on, ubicacion),
-                  if (edad.isNotEmpty) ...[const SizedBox(width: 8), _pill(null, edad)],
+                  if (ubicacion.isNotEmpty) _pill(Icons.location_on, ubicacion),
+                  if (ubicacion.isNotEmpty && edad.isNotEmpty) const SizedBox(width: 8),
+                  if (edad.isNotEmpty) _pill(null, edad),
                 ]),
                 const SizedBox(height: 16),
                 // Name
@@ -201,15 +206,15 @@ class _AnimalDetalleScreenState extends State<AnimalDetalleScreen> {
     onTap: onTap,
     child: Container(
       width: 36, height: 36,
-      decoration: BoxDecoration(color: Colors.white.withOpacity(0.85), shape: BoxShape.circle,
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.07), blurRadius: 6)]),
+      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.85), shape: BoxShape.circle,
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.07), blurRadius: 6)]),
       child: Icon(icon, size: 16, color: const Color(0xFF444444)),
     ),
   );
 
   Widget _pill(IconData? icon, String text) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-    decoration: BoxDecoration(color: Colors.white.withOpacity(0.9), borderRadius: BorderRadius.circular(20)),
+    decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.9), borderRadius: BorderRadius.circular(20)),
     child: Row(mainAxisSize: MainAxisSize.min, children: [
       if (icon != null) ...[const Icon(Icons.location_on, size: 12, color: appTeal), const SizedBox(width: 4)],
       Text(text, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),

@@ -11,10 +11,12 @@ import 'screens/albergue_home_screen.dart';
 import 'screens/aliado_perfil_screen.dart';
 import 'screens/aliado_home_screen.dart';
 import 'screens/home_screen.dart';
+import 'services/notificaciones_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await NotificacionesService.inicializar();
   runApp(const PatitasApp());
 }
 

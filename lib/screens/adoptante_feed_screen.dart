@@ -8,6 +8,9 @@ import 'package:share_plus/share_plus.dart';
 import '../theme.dart';
 import 'animal_detalle_screen.dart';
 import 'albergue_publico_screen.dart';
+import 'aliado_publico_screen.dart';
+import 'solicitud_adopcion_screen.dart';
+import 'chat_screen.dart';
 
 Future<void> compartirAnimal({
   required String nombre,
@@ -90,6 +93,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
   String _prefTamano  = 'Cualquiera';
   String _prefEdad    = 'Cualquiera';
   StreamSubscription? _prefSub;
+  final _fotoPageNotifier = ValueNotifier<int>(0);
 
   @override
   void initState() {
@@ -122,6 +126,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
   @override
   void dispose() {
     _prefSub?.cancel();
+    _fotoPageNotifier.dispose();
     super.dispose();
   }
 
@@ -215,6 +220,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
           if (_prefTamano != 'Cualquiera' && tamano != _prefTamano) return false;
           final edad = d['edad'] as String? ?? '';
           if (_prefEdad != 'Cualquiera' && edad != _prefEdad) return false;
+          // filtro por país deshabilitado — se activa cuando haya masa crítica de animales por región
           return true;
         }).toList();
         final animals = <Map<String, dynamic>>[
@@ -227,7 +233,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
               'especie':             d['especie']    ?? 'Perro',
               'raza':                d['raza']       ?? 'Criolla',
               'tamano':              d['tamano']     ?? 'Mediano',
-              'ubicacion':           d['ubicacion']  ?? 'Medellín',
+              'ubicacion':           d['ubicacion']  ?? '',
               'distancia':           '~',
               'descripcion':         d['descripcion'] ?? '',
               'tags':                <String>[
@@ -294,12 +300,13 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
             child: SizedBox(
               width: double.infinity,
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(
-                    distancia.isNotEmpty
-                        ? 'EN ${(animal['ubicacion'] as String).toUpperCase()} · A ${distancia.toUpperCase()} DE TI'
-                        : 'EN ${(animal['ubicacion'] as String).toUpperCase()}',
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
-                        letterSpacing: 1.2, color: appTeal)),
+                if ((animal['ubicacion'] as String).isNotEmpty)
+                  Text(
+                      distancia.isNotEmpty
+                          ? 'EN ${(animal['ubicacion'] as String).toUpperCase()} · A ${distancia.toUpperCase()} DE TI'
+                          : 'EN ${(animal['ubicacion'] as String).toUpperCase()}',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
+                          letterSpacing: 1.2, color: appTeal)),
                 const Text('Animales disponibles',
                     style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold,
                         color: Color(0xFF1A1A1A))),
@@ -332,8 +339,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
           Expanded(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: Align(
-                alignment: Alignment.topCenter,
+              child: SingleChildScrollView(
                 child: _buildCard(animal, distancia, _calcularScore(animal)),
               ),
             ),
@@ -341,8 +347,10 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 14),
             child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              _actionBtn(Icons.close, Colors.grey.shade200, Colors.grey.shade600, 52,
-                  () => setState(() => _idx++)),
+              _actionBtn(Icons.close, Colors.grey.shade200, Colors.grey.shade600, 52, () {
+                _fotoPageNotifier.value = 0;
+                setState(() => _idx++);
+              }),
               const SizedBox(width: 18),
               _actionBtn(Icons.pets, Colors.white, const Color(0xFF1A1A1A), 46, () {
                 Navigator.push(context, MaterialPageRoute(
@@ -351,6 +359,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
               const SizedBox(width: 18),
               _actionBtn(Icons.favorite, appOrange, Colors.white, 62, () async {
                 await _guardarFavorito(animal);
+                _fotoPageNotifier.value = 0;
                 setState(() => _idx++);
               }),
             ]),
@@ -361,53 +370,139 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
   }
 
   Widget _emptyState() {
-    return Column(children: [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
-        child: SizedBox(
-          width: double.infinity,
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('SALVA PATITAS', style: TextStyle(fontSize: 11,
-                fontWeight: FontWeight.w600, letterSpacing: 1.2, color: appTeal)),
-            const Text('Cerca de ti',
-                style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
-          ]),
+    return SingleChildScrollView(
+      child: Column(children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+          child: SizedBox(
+            width: double.infinity,
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('SALVA PATITAS', style: TextStyle(fontSize: 11,
+                  fontWeight: FontWeight.w600, letterSpacing: 1.2, color: appTeal)),
+              const Text('Cerca de ti',
+                  style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
+            ]),
+          ),
         ),
-      ),
-      Expanded(
-        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Container(
-            width: 90, height: 90,
-            decoration: BoxDecoration(
-              color: appOrange.withOpacity(0.15),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.pets, size: 44, color: appOrange),
+        const SizedBox(height: 40),
+        Container(
+          width: 90, height: 90,
+          decoration: BoxDecoration(
+            color: appOrange.withOpacity(0.15),
+            shape: BoxShape.circle,
           ),
-          const SizedBox(height: 24),
-          const Text('Eso es todo por hoy',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
-          const SizedBox(height: 10),
-          Text('Vuelve mañana — nuevos amigos\nllegan cada día.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 14, color: Colors.grey.shade600, height: 1.5)),
-          const SizedBox(height: 32),
-          GestureDetector(
-            onTap: () => setState(() => _idx = 0),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 14),
-              decoration: BoxDecoration(color: appOrange, borderRadius: BorderRadius.circular(30)),
-              child: const Text('Ver de nuevo',
-                  style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
+          child: const Icon(Icons.pets, size: 44, color: appOrange),
+        ),
+        const SizedBox(height: 20),
+        const Text('Eso es todo por hoy',
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
+        const SizedBox(height: 8),
+        Text('Vuelve mañana — nuevos amigos\nllegan cada día.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 14, color: Colors.grey.shade600, height: 1.5)),
+        const SizedBox(height: 24),
+        GestureDetector(
+          onTap: () => setState(() => _idx = 0),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 14),
+            decoration: BoxDecoration(color: appOrange, borderRadius: BorderRadius.circular(30)),
+            child: const Text('Ver de nuevo',
+                style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
+          ),
+        ),
+        const SizedBox(height: 36),
+        _aliadosSection(),
+        const SizedBox(height: 32),
+      ]),
+    );
+  }
+
+  Widget _aliadosSection() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('usuarios')
+          .where('aliadoNombre', isGreaterThan: '')
+          .snapshots(),
+      builder: (context, snap) {
+        final aliados = snap.data?.docs ?? [];
+        if (aliados.isEmpty) return const SizedBox.shrink();
+        return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(children: [
+              const Text('NEGOCIOS ALIADOS', style: TextStyle(fontSize: 11,
+                  fontWeight: FontWeight.w700, letterSpacing: 1.2, color: appTeal)),
+              const SizedBox(width: 6),
+              Text('🐾', style: const TextStyle(fontSize: 12)),
+            ]),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 132,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              itemCount: aliados.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              itemBuilder: (_, i) {
+                final d      = aliados[i].data() as Map<String, dynamic>;
+                final nombre = d['aliadoNombre'] as String? ?? 'Aliado';
+                final tipo   = d['aliadoTipo']   as String? ?? '';
+                final foto   = d['fotoBase64']   as String?;
+                final ini    = nombre.isNotEmpty ? nombre[0].toUpperCase() : 'A';
+                final uid    = aliados[i].id;
+
+                return GestureDetector(
+                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => AliadoPublicoScreen(aliadoId: uid, esRescatista: false))),
+                  child: Container(
+                    width: 100,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06),
+                          blurRadius: 8, offset: const Offset(0, 2))],
+                    ),
+                    child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      CircleAvatar(
+                        radius: 26,
+                        backgroundColor: appTeal.withValues(alpha: 0.12),
+                        backgroundImage: foto != null
+                            ? MemoryImage(base64Decode(foto)) as ImageProvider
+                            : null,
+                        child: foto == null
+                            ? Text(ini, style: const TextStyle(
+                                color: appTeal, fontWeight: FontWeight.bold, fontSize: 18))
+                            : null,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(nombre, style: const TextStyle(fontSize: 11,
+                          fontWeight: FontWeight.w700, color: Color(0xFF1A1A1A)),
+                          textAlign: TextAlign.center, maxLines: 2,
+                          overflow: TextOverflow.ellipsis),
+                      if (tipo.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(tipo, style: TextStyle(fontSize: 9,
+                            color: Colors.grey.shade500),
+                            textAlign: TextAlign.center, maxLines: 1,
+                            overflow: TextOverflow.ellipsis),
+                      ],
+                    ]),
+                  ),
+                );
+              },
             ),
           ),
-        ]),
-      ),
-    ]);
+        ]);
+      },
+    );
   }
 
   Widget _buildCard(Map<String, dynamic> a, String distancia, int score) {
-    final fotoBase64  = a['fotoBase64'] as String?;
+    final fotoBase64  = a['fotoBase64']  as String?;
+    final fotoBase642 = a['fotoBase642'] as String?;
+    final fotos = [if (fotoBase64 != null) fotoBase64, if (fotoBase642 != null) fotoBase642];
     final nombre      = a['nombre']     as String;
     final edad        = a['edad']       as String;
     final raza        = a['raza']       as String;
@@ -421,6 +516,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
     final urgencia        = a['urgencia']       as String? ?? '';
     final creadoPor       = a['creadoPor']      as String? ?? '';
     final rescatistaId    = a['rescatistaId']   as String? ?? '';
+    final rescateId       = a['rescateId']      as String? ?? '';
     final especie         = a['especie'] as String? ?? '';
     final emoji           = especie == 'Gato' ? '🐱' : '🐶';
 
@@ -438,11 +534,32 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
       ),
       clipBehavior: Clip.hardEdge,
       child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          SizedBox(
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onHorizontalDragEnd: (details) {
+              if (fotos.length < 2 || details.primaryVelocity == null) return;
+              final curr = _fotoPageNotifier.value;
+              if (details.primaryVelocity! < -200 && curr < fotos.length - 1) {
+                _fotoPageNotifier.value = curr + 1;
+              } else if (details.primaryVelocity! > 200 && curr > 0) {
+                _fotoPageNotifier.value = curr - 1;
+              }
+            },
+            child: SizedBox(
             height: 245,
             child: Stack(fit: StackFit.expand, children: [
-              fotoBase64 != null
-                ? Image.memory(base64Decode(fotoBase64), fit: BoxFit.cover)
+              fotos.isNotEmpty
+                ? ValueListenableBuilder<int>(
+                    valueListenable: _fotoPageNotifier,
+                    builder: (_, fotoIdx, _) => AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 250),
+                      child: SizedBox.expand(
+                        key: ValueKey(fotoIdx),
+                        child: Image.memory(base64Decode(fotos[fotoIdx]),
+                            fit: BoxFit.cover, alignment: Alignment.topCenter),
+                      ),
+                    ),
+                  )
                 : Container(
                     decoration: const BoxDecoration(
                       gradient: LinearGradient(
@@ -452,6 +569,31 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                     ),
                     child: Center(child: Text(emoji, style: const TextStyle(fontSize: 90))),
                   ),
+              if (fotos.length > 1)
+                Positioned(
+                  top: 10, left: 0, right: 0,
+                  child: ValueListenableBuilder<int>(
+                    valueListenable: _fotoPageNotifier,
+                    builder: (_, pageIdx, _) => Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: List.generate(fotos.length, (i) => GestureDetector(
+                        onTap: () => _fotoPageNotifier.value = i,
+                        child: Padding(
+                          padding: const EdgeInsets.all(5),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            width: pageIdx == i ? 18 : 7,
+                            height: 7,
+                            decoration: BoxDecoration(
+                              color: pageIdx == i ? Colors.white : Colors.white.withValues(alpha: 0.5),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                        ),
+                      )),
+                    ),
+                  ),
+                ),
               Positioned.fill(
                 child: DecoratedBox(
                   decoration: BoxDecoration(
@@ -485,18 +627,20 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                     ),
                   ),
                 ),
-              Positioned(top: urgencia == 'Alta' ? 40 : 12, left: 12,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.92),
-                      borderRadius: BorderRadius.circular(20)),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    const Icon(Icons.location_on, size: 12, color: appTeal),
-                    const SizedBox(width: 3),
-                    Text(distancia.isNotEmpty ? '$ubicacion · $distancia' : ubicacion,
+              if (ubicacion.isNotEmpty || distancia.isNotEmpty)
+                Positioned(top: urgencia == 'Alta' ? 40 : 12, left: 12,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.92),
+                        borderRadius: BorderRadius.circular(20)),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(Icons.location_on, size: 12, color: appTeal),
+                      const SizedBox(width: 3),
+                      Text(
+                        ubicacion.isNotEmpty ? ubicacion : distancia,
                         style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
-                  ]),
-                )),
+                    ]),
+                  )),
               Positioned(top: urgencia == 'Alta' ? 40 : 12, right: 12,
                 child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
                   if (estadoAdopcion == 'Hogar de paso')
@@ -557,6 +701,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                       style: const TextStyle(fontSize: 13, color: Colors.white70)),
                 ])),
             ]),
+          ),
           ),
           Padding(
             padding: const EdgeInsets.all(16),
@@ -639,6 +784,43 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                   ),
                 ],
               ),
+              const SizedBox(height: 12),
+              GestureDetector(
+                onTap: () => showModalBottomSheet(
+                  context: context,
+                  useSafeArea: true,
+                  shape: const RoundedRectangleBorder(
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+                  builder: (_) => _MeInteresaSheet(
+                    nombre: nombre,
+                    especie: especie,
+                    edad: edad,
+                    ubicacion: ubicacion,
+                    tags: tags,
+                    fotoBase64: fotoBase64,
+                    rescatistaId: rescatistaId,
+                    rescatista: rescatista,
+                    rescateId: rescateId,
+                    estadoAdopcion: estadoAdopcion,
+                  ),
+                ),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF3CD),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFFFB800).withValues(alpha: 0.4)),
+                  ),
+                  child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    Text('💛', style: TextStyle(fontSize: 16)),
+                    SizedBox(width: 8),
+                    Text('Me interesa ayudar',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700,
+                            color: Color(0xFF8B6914))),
+                  ]),
+                ),
+              ),
             ]),
           ),
         ]),
@@ -655,4 +837,291 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
         child: Icon(icon, color: iconColor, size: size * 0.40),
       ),
     );
+}
+
+// ─── Pantalla de Aliados ──────────────────────────────────────────────────────
+
+class AliadosScreen extends StatelessWidget {
+  final bool esRescatista;
+  const AliadosScreen({super.key, this.esRescatista = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: appBg,
+      body: SafeArea(
+        child: Column(children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 10, 20, 12),
+            child: Row(children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+                onPressed: () => Navigator.pop(context),
+              ),
+              const Expanded(child: Text('Negocios aliados',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold,
+                      color: Color(0xFF1A1A1A)))),
+            ]),
+          ),
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('usuarios')
+                  .where('aliadoNombre', isGreaterThan: '')
+                  .snapshots(),
+              builder: (context, snap) {
+                final aliados = snap.data?.docs ?? [];
+                if (aliados.isEmpty) {
+                  return Center(
+                    child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      const Text('🐾', style: TextStyle(fontSize: 48)),
+                      const SizedBox(height: 16),
+                      Text('Aún no hay negocios aliados',
+                          style: TextStyle(fontSize: 15, color: Colors.grey.shade500)),
+                    ]),
+                  );
+                }
+                return GridView.builder(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                    childAspectRatio: 0.78,
+                  ),
+                  itemCount: aliados.length,
+                  itemBuilder: (_, i) {
+                    final d      = aliados[i].data() as Map<String, dynamic>;
+                    final nombre = d['aliadoNombre'] as String? ?? 'Aliado';
+                    final tipo   = d['aliadoTipo']   as String? ?? '';
+                    final foto   = d['fotoBase64']   as String?;
+                    final ini    = nombre.isNotEmpty ? nombre[0].toUpperCase() : 'A';
+                    final uid    = aliados[i].id;
+                    return GestureDetector(
+                      onTap: () => Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => AliadoPublicoScreen(aliadoId: uid, esRescatista: esRescatista))),
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.06),
+                              blurRadius: 8, offset: const Offset(0, 2))],
+                        ),
+                        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                          CircleAvatar(
+                            radius: 34,
+                            backgroundColor: appTeal.withValues(alpha: 0.12),
+                            backgroundImage: foto != null
+                                ? MemoryImage(base64Decode(foto)) as ImageProvider
+                                : null,
+                            child: foto == null
+                                ? Text(ini, style: const TextStyle(
+                                    color: appTeal, fontWeight: FontWeight.bold, fontSize: 24))
+                                : null,
+                          ),
+                          const SizedBox(height: 10),
+                          Text(nombre,
+                              style: const TextStyle(fontSize: 13,
+                                  fontWeight: FontWeight.w700, color: Color(0xFF1A1A1A)),
+                              textAlign: TextAlign.center,
+                              maxLines: 2, overflow: TextOverflow.ellipsis),
+                          if (tipo.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(tipo,
+                                style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                                textAlign: TextAlign.center,
+                                maxLines: 1, overflow: TextOverflow.ellipsis),
+                          ],
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: appTeal.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: const Text('Ver servicios',
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
+                                    color: appTeal)),
+                          ),
+                        ]),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _MeInteresaSheet extends StatelessWidget {
+  final String nombre, especie, edad, ubicacion, rescatistaId, rescatista, rescateId, estadoAdopcion;
+  final List<String> tags;
+  final String? fotoBase64;
+
+  const _MeInteresaSheet({
+    required this.nombre,
+    required this.especie,
+    required this.edad,
+    required this.ubicacion,
+    required this.rescatistaId,
+    required this.rescatista,
+    required this.rescateId,
+    required this.tags,
+    required this.estadoAdopcion,
+    this.fotoBase64,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Container(width: 36, height: 4,
+            decoration: BoxDecoration(color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2))),
+        const SizedBox(height: 16),
+        Text('¿Cómo querés ayudar a $nombre?',
+            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+            textAlign: TextAlign.center),
+        const SizedBox(height: 20),
+        if (estadoAdopcion != 'Hogar de paso') ...[
+          _opcion(context,
+            emoji: '🏡',
+            titulo: 'Ser hogar de paso',
+            subtitulo: 'Lo/la cuidás temporalmente mientras encuentra familia',
+            onTap: () {
+              final nav = Navigator.of(context);
+              nav.pop();
+              nav.push(MaterialPageRoute(
+                builder: (_) => SolicitudAdopcionScreen(animal: {
+                  'nombre': nombre, 'especie': especie, 'edad': edad,
+                  'ubicacion': ubicacion, 'rescatista': rescatista,
+                  'rescatistaId': rescatistaId, 'rescateId': rescateId,
+                  'fotoBase64': fotoBase64,
+                  'tipoSolicitud': 'hogar_de_paso',
+                }),
+              ));
+            },
+          ),
+          const SizedBox(height: 10),
+        ],
+        _opcion(context,
+          emoji: '💬',
+          titulo: 'Hacer una pregunta',
+          subtitulo: 'Escribile directamente al rescatista',
+          onTap: () async {
+            final nav = Navigator.of(context);
+            nav.pop();
+            final adoptanteId = FirebaseAuth.instance.currentUser?.uid ?? '';
+            if (adoptanteId.isEmpty || rescatistaId.isEmpty) return;
+
+            final n    = DateTime.now();
+            final hora = '${n.hour}:${n.minute.toString().padLeft(2, '0')}';
+            const texto = 'Hola, me gustaría saber más 🐾';
+
+            // Buscar chat existente por adoptanteId (un solo campo = sin índice compuesto)
+            final todos = await FirebaseFirestore.instance
+                .collection('chats')
+                .where('adoptanteId', isEqualTo: adoptanteId)
+                .get();
+            final existente = todos.docs.where((d) {
+              final data = d.data();
+              return data['rescatistaId'] == rescatistaId &&
+                     data['animalNombre'] == nombre;
+            }).firstOrNull;
+
+            String chatId;
+            if (existente == null) {
+              final ref = await FirebaseFirestore.instance.collection('chats').add({
+                'adoptanteId':        adoptanteId,
+                'adoptanteNombre':    FirebaseAuth.instance.currentUser?.displayName ?? 'Adoptante',
+                'animalNombre':       nombre,
+                'rescatistaId':       rescatistaId,
+                'rescatista':         rescatista,
+                if (fotoBase64 != null) 'fotoBase64': fotoBase64,
+                'tipoSolicitud':      'consulta',
+                'ultimoMensaje':      texto,
+                'ultimaHora':         hora,
+                'ultimoMensajeEn':    FieldValue.serverTimestamp(),
+                'noLeidosRescatista': 1,
+              });
+              chatId = ref.id;
+            } else {
+              chatId = existente.id;
+              await FirebaseFirestore.instance.collection('chats').doc(chatId).update({
+                'ultimoMensaje':      texto,
+                'ultimaHora':         hora,
+                'ultimoMensajeEn':    FieldValue.serverTimestamp(),
+                'noLeidosRescatista': FieldValue.increment(1),
+              });
+            }
+
+            await FirebaseFirestore.instance
+                .collection('chats').doc(chatId).collection('mensajes').add({
+              'texto': texto, 'emisor': 'adoptante',
+              'hora': hora, 'creadoEn': FieldValue.serverTimestamp(),
+            });
+
+            nav.push(MaterialPageRoute(
+              builder: (_) => ChatScreen(
+                esRescatista: false,
+                chatId: chatId,
+                animal: {
+                  'nombre': nombre, 'rescatista': rescatista,
+                  'rescatistaId': rescatistaId, 'fotoBase64': fotoBase64,
+                },
+              ),
+            ));
+          },
+        ),
+        const SizedBox(height: 10),
+        _opcion(context,
+          emoji: '🔁',
+          titulo: 'Compartir',
+          subtitulo: 'Difundí a $nombre en tus redes',
+          onTap: () {
+            Navigator.pop(context);
+            compartirAnimal(
+              nombre: nombre, especie: especie, edad: edad,
+              ubicacion: ubicacion, tags: tags, fotoBase64: fotoBase64,
+            );
+          },
+        ),
+      ]),
+    );
+  }
+
+  Widget _opcion(BuildContext context, {
+    required String emoji, required String titulo,
+    required String subtitulo, required VoidCallback onTap,
+  }) => GestureDetector(
+    onTap: onTap,
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Row(children: [
+        Text(emoji, style: const TextStyle(fontSize: 24)),
+        const SizedBox(width: 14),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(titulo, style: const TextStyle(fontSize: 14,
+              fontWeight: FontWeight.w700, color: Color(0xFF1A1A1A))),
+          const SizedBox(height: 2),
+          Text(subtitulo, style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+        ])),
+        Icon(Icons.chevron_right, color: Colors.grey.shade400),
+      ]),
+    ),
+  );
 }

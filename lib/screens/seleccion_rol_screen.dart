@@ -111,24 +111,27 @@ class _SeleccionRolScreenState extends State<SeleccionRolScreen> {
           ),
           const SizedBox(width: 14),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Text(nombre,
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold,
-                      color: Color(0xFF1A1A1A))),
-              if (badgeLabel != null) ...[
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: badgeBg ?? appTeal,
-                    borderRadius: BorderRadius.circular(4),
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                Text(nombre,
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold,
+                        color: Color(0xFF1A1A1A))),
+                if (badgeLabel != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: badgeBg ?? appTeal,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(badgeLabel,
+                        style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w800,
+                            color: Colors.white, letterSpacing: 0.4)),
                   ),
-                  child: Text(badgeLabel,
-                      style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w800,
-                          color: Colors.white, letterSpacing: 0.4)),
-                ),
               ],
-            ]),
+            ),
             const SizedBox(height: 3),
             Text(descripcion,
                 style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),

@@ -1,8 +1,11 @@
 import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:image/image.dart' as img;
 import '../theme.dart';
 
 class AliadoPerfilScreen extends StatefulWidget {
@@ -31,6 +34,26 @@ class _AliadoPerfilScreenState extends State<AliadoPerfilScreen> {
       _ciudadCtl.text.trim().isNotEmpty &&
       _tipo != null;
 
+  @override
+  void initState() {
+    super.initState();
+    _cargarDatosExistentes();
+  }
+
+  Future<void> _cargarDatosExistentes() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final doc = await FirebaseFirestore.instance.collection('usuarios').doc(uid).get();
+    if (!doc.exists || !mounted) return;
+    final data = doc.data() as Map<String, dynamic>;
+    setState(() {
+      _nombreCtl.text = data['aliadoNombre'] as String? ?? '';
+      _ciudadCtl.text = data['ciudad']       as String? ?? '';
+      _tipo           = data['aliadoTipo']   as String?;
+      _fotoBase64     = data['fotoBase64']   as String?;
+    });
+  }
+
   Future<void> _pickFoto() async {
     final picked = await ImagePicker().pickImage(
       source: ImageSource.gallery,
@@ -39,8 +62,11 @@ class _AliadoPerfilScreenState extends State<AliadoPerfilScreen> {
       imageQuality: 80,
     );
     if (picked == null) return;
-    final bytes = await picked.readAsBytes();
-    setState(() => _fotoBase64 = base64Encode(bytes));
+    final bytes   = await File(picked.path).readAsBytes();
+    final decoded = img.decodeImage(bytes);
+    if (decoded == null) { setState(() => _fotoBase64 = base64Encode(bytes)); return; }
+    final rotated = img.bakeOrientation(decoded);
+    setState(() => _fotoBase64 = base64Encode(img.encodeJpg(rotated, quality: 80)));
   }
 
   Future<void> _guardar() async {
@@ -62,10 +88,43 @@ class _AliadoPerfilScreenState extends State<AliadoPerfilScreen> {
     super.dispose();
   }
 
+  Future<void> _cambiarRolDebug() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final opciones = <String, List<String>>{
+      'Solo Adoptante':         ['adoptante'],
+      'Solo Rescatista':        ['rescatista'],
+      'Adoptante + Rescatista': ['adoptante', 'rescatista'],
+      'Albergue':               ['albergue'],
+      'Aliado':                 ['aliado'],
+    };
+    final sel = await showDialog<List<String>>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('🛠 Cambiar rol (DEBUG)'),
+        children: opciones.entries.map((e) => SimpleDialogOption(
+          onPressed: () => Navigator.pop(ctx, e.value),
+          child: Padding(padding: const EdgeInsets.symmetric(vertical: 4), child: Text(e.key)),
+        )).toList(),
+      ),
+    );
+    if (sel == null) return;
+    await FirebaseFirestore.instance.collection('usuarios').doc(uid).update({'roles': sel});
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: appBg,
+      floatingActionButton: kDebugMode
+          ? FloatingActionButton.small(
+              heroTag: 'debug_perfil',
+              onPressed: _cambiarRolDebug,
+              backgroundColor: Colors.purple.shade100,
+              elevation: 4,
+              child: Icon(Icons.developer_mode, color: Colors.purple.shade700),
+            )
+          : null,
       body: Stack(fit: StackFit.expand, children: [
         const LeafOverlay(),
         SafeArea(

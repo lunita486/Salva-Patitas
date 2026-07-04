@@ -115,7 +115,7 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
               CircleAvatar(
                 radius: 20, backgroundColor: appOrange,
-                child: Text(rescatista[0],
+                child: Text(rescatista.isNotEmpty ? rescatista[0].toUpperCase() : 'R',
                     style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold)),
               ),
               const SizedBox(width: 10),
@@ -130,8 +130,12 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                 ]),
                 const SizedBox(height: 1),
-                Text('Rescatista',
-                    style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+                Text(
+                  (widget.animal['tipoSolicitud'] as String? ?? '').startsWith('consulta')
+                      ? 'Negocio aliado'
+                      : 'Rescatista',
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                ),
               ])),
               const SizedBox(width: 36),
             ]),
@@ -164,6 +168,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 const SizedBox(height: 4),
                 Builder(builder: (_) {
                   final tipo = widget.animal['tipoSolicitud'] as String? ?? 'adopcion';
+                  if (tipo.startsWith('consulta')) return const SizedBox.shrink();
                   final esHogar = tipo == 'hogar_de_paso';
                   return Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
@@ -270,18 +275,6 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
 
-          if (!widget.esRescatista)
-            SizedBox(
-              height: 40,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                children: [
-                  _templateChip('Plantilla: preguntar por encuentro',
-                      '¿Podríamos coordinar un encuentro con $nombre esta semana?'),
-                ],
-              ),
-            ),
           const SizedBox(height: 8),
 
           // ── Input bar ───────────────────────────────────────────────────────
@@ -324,17 +317,4 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  Widget _templateChip(String label, String text) => GestureDetector(
-    onTap: () => setState(() => _msgCtl.text = text),
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.grey.shade300),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 4)],
-      ),
-      child: Text(label, style: const TextStyle(fontSize: 12, color: Color(0xFF444444), fontWeight: FontWeight.w500)),
-    ),
-  );
 }

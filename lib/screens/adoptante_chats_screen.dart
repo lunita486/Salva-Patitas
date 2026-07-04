@@ -7,7 +7,8 @@ import 'chat_screen.dart';
 
 class AdoptanteChatsScreen extends StatelessWidget {
   final bool esRescatista;
-  const AdoptanteChatsScreen({super.key, this.esRescatista = false});
+  final bool soloConsultas;
+  const AdoptanteChatsScreen({super.key, this.esRescatista = false, this.soloConsultas = false});
 
   @override
   Widget build(BuildContext context) {
@@ -40,7 +41,15 @@ class AdoptanteChatsScreen extends StatelessWidget {
                     return const Center(child: CircularProgressIndicator(color: appTeal));
                   }
                   final docs = (snap.data?.docs ?? [])
-                      .where((d) => ((d.data() as Map)['ultimoMensaje'] as String? ?? '').isNotEmpty)
+                      .where((d) {
+                        final data = d.data() as Map;
+                        if (((data['ultimoMensaje'] as String?) ?? '').isEmpty) return false;
+                        final tipo = data['tipoSolicitud'] as String? ?? '';
+                        if (soloConsultas) {
+                          return tipo == 'consulta_aliado';
+                        }
+                        return tipo != 'consulta' && tipo != 'consulta_aliado';
+                      })
                       .toList()
                       ..sort((a, b) {
                         final ta = (a.data() as Map)['ultimoMensajeEn'] as Timestamp?;

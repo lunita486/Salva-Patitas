@@ -289,7 +289,7 @@ class _SolicitudesRescatistaScreenState extends State<SolicitudesRescatistaScree
                 icon: const Icon(Icons.arrow_back_ios_new, size: 20),
                 onPressed: () => Navigator.pop(context),
               ),
-              const Expanded(child: Text('Solicitudes de adopción',
+              const Expanded(child: Text('Solicitudes',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A)))),
             ]),
           ),

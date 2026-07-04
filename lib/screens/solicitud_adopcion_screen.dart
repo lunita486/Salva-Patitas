@@ -21,7 +21,7 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
   final  _integrantesCtl = TextEditingController();
   final  _horasCtl       = TextEditingController();
   final  _motivacionCtl  = TextEditingController();
-  String    _tipoSolicitud = 'adopcion';
+  late String _tipoSolicitud;
   DateTime? _fechaInicio;
   DateTime? _fechaFin;
   bool   _enviando        = false;
@@ -32,6 +32,9 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
   @override
   void initState() {
     super.initState();
+    _tipoSolicitud = (widget.animal['tipoSolicitud'] as String?) == 'hogar_de_paso'
+        ? 'hogar_de_paso'
+        : 'adopcion';
     _verificarDuplicado();
   }
 
@@ -287,7 +290,7 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
             ),
             const SizedBox(height: 16),
             const Text(
-              'Un animal no es un juguete ni decoración.\nTe amará sin condiciones — en los buenos momentos y en los difíciles.\n\nAdoptar es una promesa de por vida.\n\n¿Estás listo?',
+              'Un animal no es un juguete ni decoración.\nTe amará sin condiciones, en los buenos momentos y en los difíciles.\n\nAdoptar es una promesa de por vida.\n\n¿Estás listo?',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 14, color: Color(0xFFB8D8C8), height: 1.7),
             ),
