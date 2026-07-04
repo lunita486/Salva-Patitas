@@ -10,7 +10,6 @@ import 'subir_rescate_screen.dart';
 import 'subir_lote_screen.dart';
 import 'mis_rescates_screen.dart';
 import 'solicitudes_rescatista_screen.dart';
-import 'albergue_publico_screen.dart';
 import 'adoptante_chats_screen.dart';
 
 class AlbergueHomeScreen extends StatefulWidget {
