@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../theme.dart';
 import 'mis_solicitudes_screen.dart';
 import 'tipo_animal_screen.dart';
@@ -168,6 +169,14 @@ class PerfilAdoptanteScreen extends StatelessWidget {
                 _settingsRow('Gestionar mis roles', Icons.switch_account_outlined,
                     last: true,
                     onTap: () => _gestionarRoles(context)),
+              ]),
+              const SizedBox(height: 12),
+              _settingsCard([
+                _settingsRow('Política de Privacidad', Icons.shield_outlined, last: true,
+                    onTap: () => launchUrl(
+                      Uri.parse('https://lunita486.github.io/Salva-Patitas/privacidad.html'),
+                      mode: LaunchMode.externalApplication,
+                    )),
               ]),
               const SizedBox(height: 12),
               _settingsCard([

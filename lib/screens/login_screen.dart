@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../theme.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -81,9 +82,29 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                Text('Al continuar aceptas nuestros términos de uso',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
-                    textAlign: TextAlign.center),
+                GestureDetector(
+                  onTap: () => launchUrl(
+                    Uri.parse('https://lunita486.github.io/Salva-Patitas/privacidad.html'),
+                    mode: LaunchMode.externalApplication,
+                  ),
+                  child: RichText(
+                    textAlign: TextAlign.center,
+                    text: TextSpan(
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                      children: const [
+                        TextSpan(text: 'Al continuar aceptás nuestra '),
+                        TextSpan(
+                          text: 'Política de Privacidad',
+                          style: TextStyle(
+                            color: appTeal,
+                            decoration: TextDecoration.underline,
+                            decorationColor: appTeal,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 32),
               ],
             ),

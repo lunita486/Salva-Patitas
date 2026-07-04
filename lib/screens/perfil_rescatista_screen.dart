@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../theme.dart';
 
 class PerfilRescatistaScreen extends StatelessWidget {
@@ -100,7 +101,24 @@ class PerfilRescatistaScreen extends StatelessWidget {
                   ]),
                 ),
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 16),
+              GestureDetector(
+                onTap: () => launchUrl(
+                  Uri.parse('https://lunita486.github.io/Salva-Patitas/privacidad.html'),
+                  mode: LaunchMode.externalApplication,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    Icon(Icons.shield_outlined, size: 16, color: Colors.grey.shade500),
+                    const SizedBox(width: 6),
+                    Text('Política de Privacidad',
+                        style: TextStyle(fontSize: 13, color: Colors.grey.shade500,
+                            decoration: TextDecoration.underline)),
+                  ]),
+                ),
+              ),
+              const SizedBox(height: 16),
               // Cerrar sesión
               GestureDetector(
                 onTap: () => showDialog(context: context, builder: (dlgCtx) => AlertDialog(
