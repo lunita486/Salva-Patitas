@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Política de Privacidad — Salva Patitas</title>
+<style>
+  :root {
+    --bg:        #F5F9F7;
+    --surface:   #FFFFFF;
+    --text:      #1B2E23;
+    --muted:     #587A68;
+    --accent:    #1F8A62;
+    --accent-bg: #E8F4EE;
+    --border:    #C8DDD4;
+    --rule:      #D8EAE2;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:        #0F1D15;
+      --surface:   #162B1E;
+      --text:      #DFF0E7;
+      --muted:     #7DAF92;
+      --accent:    #2EAF7C;
+      --accent-bg: #152A1E;
+      --border:    #264033;
+      --rule:      #1E3328;
+    }
+  }
+
+  :root[data-theme="light"] {
+    --bg:        #F5F9F7;
+    --surface:   #FFFFFF;
+    --text:      #1B2E23;
+    --muted:     #587A68;
+    --accent:    #1F8A62;
+    --accent-bg: #E8F4EE;
+    --border:    #C8DDD4;
+    --rule:      #D8EAE2;
+  }
+
+  :root[data-theme="dark"] {
+    --bg:        #0F1D15;
+    --surface:   #162B1E;
+    --text:      #DFF0E7;
+    --muted:     #7DAF92;
+    --accent:    #2EAF7C;
+    --accent-bg: #152A1E;
+    --border:    #264033;
+    --rule:      #1E3328;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { font-size: 16px; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-size: 1rem;
+    line-height: 1.75;
+    padding: 0 1.25rem 4rem;
+  }
+
+  /* ── Header ── */
+  .header {
+    max-width: 680px;
+    margin: 0 auto;
+    padding: 3rem 0 2rem;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+
+  .header canvas { display: block; }
+
+  .app-name {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: clamp(1.75rem, 5vw, 2.5rem);
+    font-weight: normal;
+    color: var(--text);
+    text-wrap: balance;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+  }
+
+  .app-name span { color: var(--accent); }
+
+  .meta {
+    font-size: 0.8125rem;
+    color: var(--muted);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  /* ── Divider ── */
+  hr {
+    border: none;
+    border-top: 1px solid var(--rule);
+    max-width: 680px;
+    margin: 0 auto;
+  }
+
+  /* ── Intro box ── */
+  .intro {
+    max-width: 680px;
+    margin: 2rem auto;
+    background: var(--accent-bg);
+    border-left: 3px solid var(--accent);
+    padding: 1rem 1.25rem;
+    border-radius: 0 6px 6px 0;
+    font-size: 0.9375rem;
+    color: var(--muted);
+  }
+
+  /* ── Sections ── */
+  .section {
+    max-width: 680px;
+    margin: 0 auto;
+    padding: 2rem 0;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .section:last-child { border-bottom: none; }
+
+  .section-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 0.5rem;
+  }
+
+  .section h2 {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 1.25rem;
+    font-weight: normal;
+    color: var(--text);
+    margin-bottom: 1rem;
+    text-wrap: balance;
+    line-height: 1.3;
+  }
+
+  .section p {
+    font-size: 0.9375rem;
+    color: var(--muted);
+    margin-bottom: 0.875rem;
+    max-width: 62ch;
+  }
+
+  .section p:last-child { margin-bottom: 0; }
+
+  /* ── Data table ── */
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    font-size: 0.875rem;
+    overflow-x: auto;
+    display: block;
+  }
+
+  .data-table th {
+    text-align: left;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    padding: 0.5rem 0.875rem 0.5rem 0;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+
+  .data-table td {
+    padding: 0.75rem 0.875rem 0.75rem 0;
+    border-bottom: 1px solid var(--rule);
+    color: var(--muted);
+    vertical-align: top;
+  }
+
+  .data-table td:first-child {
+    color: var(--text);
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .data-table tr:last-child td { border-bottom: none; }
+
+  /* ── List ── */
+  .section ul {
+    list-style: none;
+    margin: 0.5rem 0 0.875rem;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .section ul li {
+    font-size: 0.9375rem;
+    color: var(--muted);
+    padding-left: 1.25rem;
+    position: relative;
+  }
+
+  .section ul li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0.6em;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    opacity: 0.5;
+  }
+
+  /* ── Contact ── */
+  .contact-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem;
+    margin-top: 0.875rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .contact-box .label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  .contact-box a {
+    color: var(--text);
+    text-decoration: none;
+    font-size: 0.9375rem;
+    border-bottom: 1px solid var(--border);
+    transition: color 0.15s, border-color 0.15s;
+  }
+
+  .contact-box a:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+
+  /* ── Footer ── */
+  .footer {
+    max-width: 680px;
+    margin: 3rem auto 0;
+    font-size: 0.8125rem;
+    color: var(--muted);
+    opacity: 0.6;
+  }
+
+  @media (max-width: 480px) {
+    .header { padding: 2rem 0 1.5rem; }
+    .section { padding: 1.5rem 0; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <canvas id="paw" width="48" height="48" aria-hidden="true"></canvas>
+  <h1 class="app-name">Política de <span>Privacidad</span></h1>
+  <p class="meta">Salva Patitas &nbsp;·&nbsp; Última actualización: julio 2025</p>
+</header>
+
+<hr>
+
+<div class="intro">
+  Esta política explica qué información recopila Salva Patitas, cómo la usamos y cómo podés controlarla. No vendemos ni compartimos tus datos con terceros con fines comerciales.
+</div>
+
+<section class="section">
+  <p class="section-label">01</p>
+  <h2>Quiénes somos</h2>
+  <p>
+    Salva Patitas es una aplicación móvil desarrollada en Colombia cuyo propósito es conectar animales rescatados con personas dispuestas a adoptarlos o darles un hogar de paso. La aplicación es operada de forma independiente por su desarrolladora.
+  </p>
+</section>
+
+<section class="section">
+  <p class="section-label">02</p>
+  <h2>Información que recopilamos</h2>
+  <p>Recopilamos únicamente los datos necesarios para que el app funcione correctamente.</p>
+
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Dato</th>
+        <th>Por qué lo usamos</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Nombre y correo</td>
+        <td>Identificarte dentro del app a través de Google Sign-In</td>
+      </tr>
+      <tr>
+        <td>Foto de perfil</td>
+        <td>Mostrarla en tu perfil visible para rescatistas y aliados</td>
+      </tr>
+      <tr>
+        <td>Ubicación (GPS)</td>
+        <td>Mostrar animales cercanos a vos ordenados por distancia</td>
+      </tr>
+      <tr>
+        <td>Fotos de animales</td>
+        <td>Publicar rescates (solo rescatistas y albergues)</td>
+      </tr>
+      <tr>
+        <td>Token de notificaciones</td>
+        <td>Enviarte alertas de mensajes nuevos y respuestas a solicitudes</td>
+      </tr>
+      <tr>
+        <td>Perfil de adopción</td>
+        <td>Calcular compatibilidad con animales y gestionar solicitudes</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="section">
+  <p class="section-label">03</p>
+  <h2>Cómo usamos tu información</h2>
+  <ul>
+    <li>Crear y gestionar tu cuenta dentro de la aplicación</li>
+    <li>Conectarte con rescatistas, albergues y negocios aliados</li>
+    <li>Enviarte notificaciones push sobre conversaciones y solicitudes</li>
+    <li>Mostrar animales en adopción cercanos a tu ubicación</li>
+    <li>Calcular compatibilidad entre tu perfil y los animales disponibles</li>
+  </ul>
+  <p>No usamos tu información para publicidad, ni la vendemos o compartimos con terceros.</p>
+</section>
+
+<section class="section">
+  <p class="section-label">04</p>
+  <h2>Servicios de terceros</h2>
+  <p>Salva Patitas utiliza los siguientes servicios de Google / Firebase, cada uno con su propia política de privacidad:</p>
+  <ul>
+    <li><strong style="color:var(--text)">Firebase Authentication</strong> — inicio de sesión con Google</li>
+    <li><strong style="color:var(--text)">Cloud Firestore</strong> — almacenamiento de datos del app</li>
+    <li><strong style="color:var(--text)">Firebase Cloud Messaging</strong> — notificaciones push</li>
+    <li><strong style="color:var(--text)">Google Play Services</strong> — distribución de la app</li>
+  </ul>
+  <p>Podés consultar la política de privacidad de Google en <em>policies.google.com/privacy</em>.</p>
+</section>
+
+<section class="section">
+  <p class="section-label">05</p>
+  <h2>Almacenamiento y seguridad</h2>
+  <p>
+    Todos los datos se almacenan en servidores de Google Firebase ubicados en Estados Unidos. Firebase aplica encriptación en tránsito (TLS) y en reposo. No almacenamos contraseñas — el inicio de sesión es únicamente a través de Google.
+  </p>
+  <p>
+    Las fotos de animales y perfiles se guardan codificadas directamente en la base de datos (Base64). No utilizamos servicios de almacenamiento de archivos externos.
+  </p>
+</section>
+
+<section class="section">
+  <p class="section-label">06</p>
+  <h2>Tus derechos</h2>
+  <p>Podés en cualquier momento:</p>
+  <ul>
+    <li>Ver y editar la información de tu perfil desde la pantalla de perfil</li>
+    <li>Solicitar la eliminación completa de tu cuenta y datos escribiéndonos por correo</li>
+    <li>Desactivar las notificaciones push desde la configuración de tu dispositivo</li>
+    <li>Revocar el acceso de Google desde tu cuenta Google en myaccount.google.com</li>
+  </ul>
+  <p>Atendemos solicitudes de eliminación dentro de los 30 días hábiles.</p>
+</section>
+
+<section class="section">
+  <p class="section-label">07</p>
+  <h2>Menores de edad</h2>
+  <p>
+    Salva Patitas no está dirigida a personas menores de 13 años. No recopilamos intencionalmente datos de niños. Si identificás que un menor registró una cuenta, escribinos para eliminarla.
+  </p>
+</section>
+
+<section class="section">
+  <p class="section-label">08</p>
+  <h2>Cambios a esta política</h2>
+  <p>
+    Si realizamos cambios relevantes a esta política, lo comunicaremos dentro del app antes de que entren en vigencia. El uso continuado del app luego de esa notificación implica la aceptación de los cambios.
+  </p>
+</section>
+
+<section class="section">
+  <p class="section-label">09</p>
+  <h2>Contacto</h2>
+  <p>Para cualquier consulta o solicitud sobre tus datos personales:</p>
+  <div class="contact-box">
+    <span class="label">Correo electrónico</span>
+    <a href="mailto:lunita486@gmail.com">lunita486@gmail.com</a>
+  </div>
+</section>
+
+<footer class="footer">
+  <p>© 2025 Salva Patitas. Medellín, Colombia.</p>
+</footer>
+
+<script>
+  // Dibuja una huella de pata con Canvas
+  (function() {
+    const canvas = document.getElementById('paw');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const style = getComputedStyle(document.documentElement);
+
+    function getAccent() {
+      return style.getPropertyValue('--accent').trim() || '#1F8A62';
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, 48, 48);
+      const color = getAccent();
+      ctx.fillStyle = color;
+
+      // Almohadilla central
+      ctx.beginPath();
+      ctx.ellipse(24, 30, 10, 8, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 4 deditos
+      const toes = [
+        { x: 12, y: 18, rx: 5, ry: 4, angle: -0.4 },
+        { x: 20, y: 13, rx: 4.5, ry: 4, angle: -0.1 },
+        { x: 28, y: 13, rx: 4.5, ry: 4, angle: 0.1 },
+        { x: 36, y: 18, rx: 5, ry: 4, angle: 0.4 },
+      ];
+
+      toes.forEach(({ x, y, rx, ry, angle }) => {
+        ctx.beginPath();
+        ctx.ellipse(x, y, rx, ry, angle, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+
+    draw();
+
+    // Actualiza si cambia el tema
+    const observer = new MutationObserver(draw);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+    if (window.matchMedia) {
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', draw);
+    }
+  })();
+</script>
+
+</body>
+</html>
