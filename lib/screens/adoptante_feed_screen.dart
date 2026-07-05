@@ -88,6 +88,7 @@ class AdoptanteFeedScreen extends StatefulWidget {
 class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
   int _idx = 0;
   Position? _userPosition;
+  bool _posicionPrecisa = false;
   Map<String, dynamic>? _perfilAdopcion;
   String _prefEspecie = 'Ambos';
   String _prefTamano  = 'Cualquiera';
@@ -165,7 +166,10 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
             accuracy: LocationAccuracy.low,
             timeLimit: Duration(seconds: 10),
           ));
-      if (mounted) setState(() => _userPosition = pos);
+      if (mounted) setState(() {
+        _userPosition = pos;
+        _posicionPrecisa = true;
+      });
     } catch (_) {}
   }
 
@@ -281,9 +285,10 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
 
         final animal = animals[_idx];
 
-        // Detectar si el más cercano está lejos (>500 km)
+        // Detectar si el más cercano está lejos (>500 km) — solo con posición precisa,
+        // para evitar mostrar el aviso con la ubicación rápida/desactualizada inicial
         bool sinAnimalesCerca = false;
-        if (_userPosition != null && animals.isNotEmpty) {
+        if (_posicionPrecisa && _userPosition != null && animals.isNotEmpty) {
           final lat = animals[0]['latitud'] as double?;
           final lng = animals[0]['longitud'] as double?;
           if (lat != null && lng != null) {
