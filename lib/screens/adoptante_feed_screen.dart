@@ -499,6 +499,21 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
     );
   }
 
+  Widget _flechaFoto(IconData icon, VoidCallback onTap) => Padding(
+        padding: const EdgeInsets.all(8),
+        child: GestureDetector(
+          onTap: onTap,
+          child: Container(
+            width: 36, height: 36,
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.38),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: Colors.white, size: 26),
+          ),
+        ),
+      );
+
   Widget _buildCard(Map<String, dynamic> a, String distancia, int score) {
     final fotoBase64  = a['fotoBase64']  as String?;
     final fotoBase642 = a['fotoBase642'] as String?;
@@ -539,14 +554,14 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
             onHorizontalDragEnd: (details) {
               if (fotos.length < 2 || details.primaryVelocity == null) return;
               final curr = _fotoPageNotifier.value;
-              if (details.primaryVelocity! < -200 && curr < fotos.length - 1) {
+              if (details.primaryVelocity! < -80 && curr < fotos.length - 1) {
                 _fotoPageNotifier.value = curr + 1;
-              } else if (details.primaryVelocity! > 200 && curr > 0) {
+              } else if (details.primaryVelocity! > 80 && curr > 0) {
                 _fotoPageNotifier.value = curr - 1;
               }
             },
             child: SizedBox(
-            height: 245,
+            height: 300,
             child: Stack(fit: StackFit.expand, children: [
               fotos.isNotEmpty
                 ? ValueListenableBuilder<int>(
@@ -556,7 +571,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                       child: SizedBox.expand(
                         key: ValueKey(fotoIdx),
                         child: Image.memory(base64Decode(fotos[fotoIdx]),
-                            fit: BoxFit.cover, alignment: Alignment.topCenter),
+                            fit: BoxFit.cover, alignment: Alignment.center),
                       ),
                     ),
                   )
@@ -687,6 +702,25 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                     ),
                   ],
                 ])),
+              if (fotos.length > 1)
+                Positioned.fill(
+                  child: ValueListenableBuilder<int>(
+                    valueListenable: _fotoPageNotifier,
+                    builder: (_, pageIdx, _) => Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        pageIdx > 0
+                            ? _flechaFoto(Icons.chevron_left,
+                                () => _fotoPageNotifier.value = pageIdx - 1)
+                            : const SizedBox(width: 52),
+                        pageIdx < fotos.length - 1
+                            ? _flechaFoto(Icons.chevron_right,
+                                () => _fotoPageNotifier.value = pageIdx + 1)
+                            : const SizedBox(width: 52),
+                      ],
+                    ),
+                  ),
+                ),
               Positioned(bottom: 14, left: 16,
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   RichText(text: TextSpan(

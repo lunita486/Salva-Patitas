@@ -49,7 +49,7 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> {
   }
 
   Future<void> _pickFotos() async {
-    final picked = await _picker.pickMultiImage(imageQuality: 40, maxWidth: 400, maxHeight: 400);
+    final picked = await _picker.pickMultiImage(imageQuality: 80, maxWidth: 1000, maxHeight: 1000);
     if (picked.isEmpty) return;
     final pathsExistentes = _animales.map((a) => a.foto1.path).toSet();
     final nuevas = picked.where((f) => !pathsExistentes.contains(f.path)).toList();
@@ -61,7 +61,7 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> {
 
   Future<void> _pickSegundaFoto(int index) async {
     final img = await _picker.pickImage(
-        source: ImageSource.gallery, imageQuality: 40, maxWidth: 400, maxHeight: 400);
+        source: ImageSource.gallery, imageQuality: 80, maxWidth: 1000, maxHeight: 1000);
     if (img != null) setState(() => _animales[index].foto2 = img);
   }
 

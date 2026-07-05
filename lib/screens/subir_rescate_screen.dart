@@ -55,7 +55,7 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
   Future<void> _pickFoto() async {
     if (_fotos.length >= 2) return;
     final img = await _picker.pickImage(
-        source: ImageSource.gallery, imageQuality: 40, maxWidth: 400, maxHeight: 400);
+        source: ImageSource.gallery, imageQuality: 90, maxWidth: 1000, maxHeight: 1000);
     if (img != null) setState(() => _fotos.add(img));
   }
 
@@ -63,7 +63,7 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
     if (_fotos.length >= 2) return;
     try {
       final img = await _picker.pickImage(
-          source: ImageSource.camera, imageQuality: 40, maxWidth: 400, maxHeight: 400);
+          source: ImageSource.camera, imageQuality: 90, maxWidth: 1000, maxHeight: 1000);
       if (img != null) setState(() => _fotos.add(img));
     } catch (_) {
       if (!mounted) return;
@@ -145,7 +145,11 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
     final decoded = img.decodeImage(bytes);
     if (decoded == null) return base64Encode(bytes);
     final rotated = img.bakeOrientation(decoded);
-    final jpeg = img.encodeJpg(rotated, quality: 72);
+    // Redimensiona si es muy grande para no exceder el límite de Firestore (1MB por doc)
+    final resized = rotated.width > 1000
+        ? img.copyResize(rotated, width: 1000)
+        : rotated;
+    final jpeg = img.encodeJpg(resized, quality: 80);
     return base64Encode(jpeg);
   }
 

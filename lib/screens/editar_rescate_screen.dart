@@ -71,7 +71,7 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
   }
 
   Future<void> _pickFoto(ImageSource src, {int slot = 1}) async {
-    final img = await _picker.pickImage(source: src, imageQuality: 40, maxWidth: 400, maxHeight: 400);
+    final img = await _picker.pickImage(source: src, imageQuality: 80, maxWidth: 1000, maxHeight: 1000);
     if (img == null) return;
     setState(() {
       if (slot == 1) { _nuevaFoto  = img; }
@@ -103,6 +103,39 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
         ]),
       ),
     );
+  }
+
+  Future<void> _eliminar() async {
+    final nombre = _nombreCtl.text.trim().isNotEmpty ? _nombreCtl.text.trim() : 'este animal';
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (dlgCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Eliminar publicación'),
+        content: Text('¿Seguro que quieres eliminar a $nombre? Esta acción no se puede deshacer.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dlgCtx, false), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(dlgCtx, true),
+            child: const Text('Eliminar', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirmar != true) return;
+    setState(() => _guardando = true);
+    try {
+      await FirebaseFirestore.instance.collection('rescates').doc(widget.docId).delete();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Publicación eliminada'), backgroundColor: appTeal));
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+    } finally {
+      if (mounted) setState(() => _guardando = false);
+    }
   }
 
   Future<void> _guardar() async {
@@ -206,6 +239,25 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
                 _selector('¿Sociable con animales?', _okMascotas, _siNo, (v) => setState(() => _okMascotas = v)),
                 const SizedBox(height: 12),
                 _selector('¿Requiere experiencia?', _requiereExp, _siNo, (v) => setState(() => _requiereExp = v)),
+                const SizedBox(height: 32),
+                GestureDetector(
+                  onTap: _guardando ? null : _eliminar,
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.red.shade200),
+                    ),
+                    child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      Icon(Icons.delete_outline, color: Colors.red.shade400, size: 18),
+                      const SizedBox(width: 8),
+                      Text('Eliminar publicación',
+                          style: TextStyle(color: Colors.red.shade400, fontWeight: FontWeight.w600)),
+                    ]),
+                  ),
+                ),
                 const SizedBox(height: 40),
               ]),
             ),
