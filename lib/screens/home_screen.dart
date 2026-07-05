@@ -809,7 +809,13 @@ class _HomeScreenState extends State<HomeScreen> {
     child: Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: appDark, borderRadius: BorderRadius.circular(20)),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF0A5C40), Color(0xFF1F8A62)],
+          begin: Alignment.topLeft, end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+      ),
       child: Row(children: [
         Container(width: 44, height: 44,
           decoration: const BoxDecoration(color: appOrange, shape: BoxShape.circle),
@@ -818,9 +824,9 @@ class _HomeScreenState extends State<HomeScreen> {
         const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('Subir un rescate', style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold)),
           SizedBox(height: 2),
-          Text('Publica un animal en minutos', style: TextStyle(color: Color(0xFF7FAF7F), fontSize: 13)),
+          Text('Publica un animal en minutos', style: TextStyle(color: Color(0xFFB8E0CC), fontSize: 13)),
         ])),
-        const Icon(Icons.chevron_right, color: Color(0xFF7FAF7F), size: 22),
+        const Icon(Icons.chevron_right, color: Color(0xFFB8E0CC), size: 22),
       ]),
     ),
   );
