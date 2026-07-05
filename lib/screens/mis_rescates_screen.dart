@@ -245,7 +245,7 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                                       style: const TextStyle(fontSize: 12, color: Color(0xFFD32F2F)))),
                                 ]),
                               ),
-                            Row(children: [
+                            Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
                               GestureDetector(
                                 onTap: () => showModalBottomSheet(
                                   context: context,
@@ -267,8 +267,7 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                                   ]),
                                 ),
                               ),
-                              const Spacer(),
-                              if (estadoAdopcion != 'Adoptado' && estadoAdopcion != 'Fallecido') ...[
+                              if (estadoAdopcion != 'Adoptado' && estadoAdopcion != 'Fallecido')
                                 GestureDetector(
                                   onTap: () => Navigator.push(context, MaterialPageRoute(
                                       builder: (_) => EditarRescateScreen(docId: docId, data: d))),
@@ -286,8 +285,6 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                                     ]),
                                   ),
                                 ),
-                                const SizedBox(width: 8),
-                              ],
                               GestureDetector(
                                 onTap: () => _eliminar(context, docId, nombre),
                                 child: Container(
