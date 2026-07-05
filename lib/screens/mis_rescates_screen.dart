@@ -268,20 +268,7 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                                 ),
                               ),
                               const Spacer(),
-                              GestureDetector(
-                                onTap: () => _eliminar(context, docId, nombre),
-                                child: Container(
-                                  padding: const EdgeInsets.all(7),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFFFEBEE),
-                                    borderRadius: BorderRadius.circular(20),
-                                    border: Border.all(color: const Color(0xFFD32F2F).withValues(alpha: 0.3)),
-                                  ),
-                                  child: const Icon(Icons.delete_outline, size: 15, color: Color(0xFFD32F2F)),
-                                ),
-                              ),
                               if (estadoAdopcion != 'Adoptado' && estadoAdopcion != 'Fallecido') ...[
-                                const SizedBox(width: 8),
                                 GestureDetector(
                                   onTap: () => Navigator.push(context, MaterialPageRoute(
                                       builder: (_) => EditarRescateScreen(docId: docId, data: d))),
@@ -299,7 +286,24 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                                     ]),
                                   ),
                                 ),
+                                const SizedBox(width: 8),
                               ],
+                              GestureDetector(
+                                onTap: () => _eliminar(context, docId, nombre),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFFEBEE),
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(color: const Color(0xFFD32F2F).withValues(alpha: 0.3)),
+                                  ),
+                                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                    const Icon(Icons.delete_outline, size: 13, color: Color(0xFFD32F2F)),
+                                    const SizedBox(width: 4),
+                                    Text('Eliminar', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: const Color(0xFFD32F2F))),
+                                  ]),
+                                ),
+                              ),
                             ]),
                           ]),
                         );
