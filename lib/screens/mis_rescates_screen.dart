@@ -29,6 +29,34 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
 
   static const _especiesFiltro = ['Perro', 'Gato', 'Otro'];
 
+  Future<void> _eliminar(BuildContext context, String docId, String nombre) async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (dlgCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Eliminar publicación'),
+        content: Text('¿Seguro que quieres eliminar a $nombre? Esta acción no se puede deshacer.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dlgCtx, false), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(dlgCtx, true),
+            child: const Text('Eliminar', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirmar != true) return;
+    try {
+      await FirebaseFirestore.instance.collection('rescates').doc(docId).delete();
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Publicación eliminada'), backgroundColor: appTeal));
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -240,7 +268,20 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                                 ),
                               ),
                               const Spacer(),
-                              if (estadoAdopcion != 'Adoptado' && estadoAdopcion != 'Fallecido')
+                              GestureDetector(
+                                onTap: () => _eliminar(context, docId, nombre),
+                                child: Container(
+                                  padding: const EdgeInsets.all(7),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFFEBEE),
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(color: const Color(0xFFD32F2F).withValues(alpha: 0.3)),
+                                  ),
+                                  child: const Icon(Icons.delete_outline, size: 15, color: Color(0xFFD32F2F)),
+                                ),
+                              ),
+                              if (estadoAdopcion != 'Adoptado' && estadoAdopcion != 'Fallecido') ...[
+                                const SizedBox(width: 8),
                                 GestureDetector(
                                   onTap: () => Navigator.push(context, MaterialPageRoute(
                                       builder: (_) => EditarRescateScreen(docId: docId, data: d))),
@@ -258,6 +299,7 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                                     ]),
                                   ),
                                 ),
+                              ],
                             ]),
                           ]),
                         );
