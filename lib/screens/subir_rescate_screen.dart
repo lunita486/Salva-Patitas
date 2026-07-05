@@ -333,12 +333,10 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
                               ? _nombreCtl.text.trim()
                               : '[Nombre]';
                           final plantilla =
-                              '$nombre fue encontrado/a [dónde] hace [tiempo]. '
-                              'Tiene [X] años y desde entonces espera una familia que lo/la quiera. '
-                              'Le encanta [algo que le gusta] y [otra cosa]. '
-                              'Es [tranquilo/activo/juguetón] y se lleva bien con '
-                              '[niños / otras mascotas / todos]. '
-                              '¿Podrías ser su hogar?';
+                              '$nombre fue encontrado/a [contá cómo o dónde lo/la encontraste]. '
+                              'Lo/la que lo/la hace único/a es [una costumbre, gesto o anécdota que lo/la describa]. '
+                              'Ya pasó por mucho — ahora solo le falta alguien que decida quedarse. '
+                              '¿Serás vos?';
                           _descCtl.value = TextEditingValue(
                             text: plantilla,
                             selection: TextSelection.collapsed(offset: plantilla.length),
