@@ -268,37 +268,35 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                                 ),
                               ),
                               if (estadoAdopcion != 'Adoptado' && estadoAdopcion != 'Fallecido')
-                                GestureDetector(
-                                  onTap: () => Navigator.push(context, MaterialPageRoute(
-                                      builder: (_) => EditarRescateScreen(docId: docId, data: d))),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey.shade100,
-                                      borderRadius: BorderRadius.circular(20),
-                                      border: Border.all(color: Colors.grey.shade300),
+                                Tooltip(
+                                  message: 'Editar',
+                                  child: GestureDetector(
+                                    onTap: () => Navigator.push(context, MaterialPageRoute(
+                                        builder: (_) => EditarRescateScreen(docId: docId, data: d))),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey.shade100,
+                                        borderRadius: BorderRadius.circular(20),
+                                        border: Border.all(color: Colors.grey.shade300),
+                                      ),
+                                      child: Icon(Icons.edit_outlined, size: 16, color: Colors.grey.shade600),
                                     ),
-                                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                      Icon(Icons.edit_outlined, size: 13, color: Colors.grey.shade600),
-                                      const SizedBox(width: 4),
-                                      Text('Editar', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey.shade600)),
-                                    ]),
                                   ),
                                 ),
-                              GestureDetector(
-                                onTap: () => _eliminar(context, docId, nombre),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFFFEBEE),
-                                    borderRadius: BorderRadius.circular(20),
-                                    border: Border.all(color: const Color(0xFFD32F2F).withValues(alpha: 0.3)),
+                              Tooltip(
+                                message: 'Eliminar',
+                                child: GestureDetector(
+                                  onTap: () => _eliminar(context, docId, nombre),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFFEBEE),
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(color: const Color(0xFFD32F2F).withValues(alpha: 0.3)),
+                                    ),
+                                    child: const Icon(Icons.delete_outline, size: 16, color: Color(0xFFD32F2F)),
                                   ),
-                                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                    const Icon(Icons.delete_outline, size: 13, color: Color(0xFFD32F2F)),
-                                    const SizedBox(width: 4),
-                                    Text('Eliminar', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: const Color(0xFFD32F2F))),
-                                  ]),
                                 ),
                               ),
                             ]),

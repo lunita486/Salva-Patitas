@@ -395,21 +395,19 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> {
           // Botón eliminar
           Align(
             alignment: Alignment.centerRight,
-            child: GestureDetector(
-              onTap: () => setState(() { _animales[i].dispose(); _animales.removeAt(i); }),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.red.shade200),
+            child: Tooltip(
+              message: 'Eliminar',
+              child: GestureDetector(
+                onTap: () => setState(() { _animales[i].dispose(); _animales.removeAt(i); }),
+                child: Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.red.shade200),
+                  ),
+                  child: Icon(Icons.delete_outline, size: 15, color: Colors.red.shade400),
                 ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.delete_outline, size: 13, color: Colors.red.shade400),
-                  const SizedBox(width: 4),
-                  Text('Eliminar', style: TextStyle(fontSize: 11,
-                      color: Colors.red.shade400, fontWeight: FontWeight.w600)),
-                ]),
               ),
             ),
           ),

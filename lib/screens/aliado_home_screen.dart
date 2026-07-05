@@ -564,17 +564,16 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
 
   Widget _miniBtn(IconData icon, String label, Color fg, Color bg, Color border,
       VoidCallback onTap) =>
-    GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: border)),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 14, color: fg),
-          const SizedBox(width: 4),
-          Text(label, style: TextStyle(fontSize: 12, color: fg)),
-        ]),
+    Tooltip(
+      message: label,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: border)),
+          child: Icon(icon, size: 16, color: fg),
+        ),
       ),
     );
 
