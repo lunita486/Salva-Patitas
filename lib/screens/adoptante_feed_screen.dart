@@ -661,51 +661,50 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                         style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
                     ]),
                   )),
-              Positioned(top: urgencia == 'Alta' ? 40 : 12, right: 12,
-                child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+              Positioned(top: urgencia == 'Alta' ? 40 : 12, right: 12, left: 90,
+                child: Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: 6, runSpacing: 6,
+                  children: [
                   if (estadoAdopcion == 'Hogar de paso')
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                       decoration: BoxDecoration(color: appTeal, borderRadius: BorderRadius.circular(20)),
                       child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(Icons.home_outlined, size: 12, color: Colors.white),
-                        SizedBox(width: 4),
-                        Text('En hogar de paso', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)),
+                        Icon(Icons.home_outlined, size: 11, color: Colors.white),
+                        SizedBox(width: 3),
+                        Text('Hogar de paso', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white)),
                       ]),
                     ),
                   if (estadoAdopcion == 'Regresado')
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                       decoration: BoxDecoration(color: const Color(0xFFE65100), borderRadius: BorderRadius.circular(20)),
                       child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(Icons.refresh, size: 12, color: Colors.white),
-                        SizedBox(width: 4),
-                        Text('Fue devuelto', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)),
+                        Icon(Icons.refresh, size: 11, color: Colors.white),
+                        SizedBox(width: 3),
+                        Text('Fue devuelto', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white)),
                       ]),
                     ),
-                  if (score >= 0) ...[
-                    if (estadoAdopcion == 'Regresado') const SizedBox(height: 6),
+                  if (score >= 0)
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                       decoration: BoxDecoration(
                           color: scoreColor(score), borderRadius: BorderRadius.circular(20)),
                       child: Text('$score% compatible',
-                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)),
+                          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white)),
                     ),
-                  ],
-                  if (verificado) ...[
-                    const SizedBox(height: 6),
+                  if (verificado)
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                       decoration: BoxDecoration(color: appTeal, borderRadius: BorderRadius.circular(20)),
                       child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(Icons.verified, size: 12, color: Colors.white),
+                        Icon(Icons.verified, size: 11, color: Colors.white),
                         SizedBox(width: 3),
                         Text('Verificado',
-                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white)),
+                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.white)),
                       ]),
                     ),
-                  ],
                 ])),
               if (fotos.length > 1)
                 Positioned.fill(
