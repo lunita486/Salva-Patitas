@@ -88,7 +88,40 @@ Color cicloColor(String s) => switch (s) {
 class CambiarEstadoSheet extends StatelessWidget {
   final String docId;
   final String estadoActual;
-  const CambiarEstadoSheet({super.key, required this.docId, required this.estadoActual});
+  final String nombre;
+  final String? adoptanteIdEnProceso;
+  const CambiarEstadoSheet({
+    super.key,
+    required this.docId,
+    required this.estadoActual,
+    this.nombre = '',
+    this.adoptanteIdEnProceso,
+  });
+
+  Future<void> _avisarAdoptanteFallecido() async {
+    final adoptanteId = adoptanteIdEnProceso;
+    if (adoptanteId == null || adoptanteId.isEmpty || nombre.isEmpty) return;
+    final chats = await FirebaseFirestore.instance.collection('chats')
+        .where('adoptanteId', isEqualTo: adoptanteId)
+        .where('animalNombre', isEqualTo: nombre)
+        .limit(1).get();
+    if (chats.docs.isEmpty) return;
+    final chatId = chats.docs.first.id;
+    final n = DateTime.now();
+    final hora = '${n.hour}:${n.minute.toString().padLeft(2, '0')}';
+    final texto = 'Lamentamos informarte que $nombre falleció. '
+        'Gracias por tu interés en darle un hogar. 🌈';
+    await FirebaseFirestore.instance.collection('chats').doc(chatId)
+        .collection('mensajes').add({
+      'texto': texto, 'emisor': 'rescatista', 'hora': hora,
+      'creadoEn': FieldValue.serverTimestamp(),
+    });
+    await FirebaseFirestore.instance.collection('chats').doc(chatId).update({
+      'ultimoMensaje': texto, 'ultimaHora': hora,
+      'ultimoMensajeEn': FieldValue.serverTimestamp(),
+      'noLeidosAdoptante': FieldValue.increment(1),
+    });
+  }
 
   static const _estados = [
     ('Rescatado',              '🟢', 'Disponible para adopción'),
@@ -170,6 +203,7 @@ class CambiarEstadoSheet extends StatelessWidget {
                         else if (!esFallecido)
                           'motivoRegreso': ctrl.text.trim(),
                       });
+                      if (esFallecido) _avisarAdoptanteFallecido();
                       Navigator.pop(dlgCtx);
                       Navigator.pop(sheetCtx);
                     },

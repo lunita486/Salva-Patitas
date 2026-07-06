@@ -250,7 +250,12 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                                 onTap: () => showModalBottomSheet(
                                   context: context,
                                   shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-                                  builder: (_) => CambiarEstadoSheet(docId: docId, estadoActual: estadoAdopcion),
+                                  builder: (_) => CambiarEstadoSheet(
+                                    docId: docId,
+                                    estadoActual: estadoAdopcion,
+                                    nombre: nombre,
+                                    adoptanteIdEnProceso: d['adoptanteIdEnProceso'] as String?,
+                                  ),
                                 ),
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),

@@ -569,7 +569,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 onCambiarEstado: () => showModalBottomSheet(
                   context: context,
                   shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-                  builder: (_) => CambiarEstadoSheet(docId: docId, estadoActual: estadoAdopcion),
+                  builder: (_) => CambiarEstadoSheet(
+                    docId: docId,
+                    estadoActual: estadoAdopcion,
+                    nombre: nombre,
+                    adoptanteIdEnProceso: data['adoptanteIdEnProceso'] as String?,
+                  ),
                 ),
                 onContactarAdoptante: estadoAdopcion == 'En proceso de adopción' ? () async {
                   final uid   = FirebaseAuth.instance.currentUser?.uid ?? '';

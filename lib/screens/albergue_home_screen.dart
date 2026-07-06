@@ -780,7 +780,11 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                         shape: const RoundedRectangleBorder(
                             borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
                         builder: (_) => CambiarEstadoSheet(
-                            docId: docId, estadoActual: estadoAdopcion),
+                          docId: docId,
+                          estadoActual: estadoAdopcion,
+                          nombre: nombre,
+                          adoptanteIdEnProceso: d['adoptanteIdEnProceso'] as String?,
+                        ),
                       ),
                       child: Container(
                         width: double.infinity,

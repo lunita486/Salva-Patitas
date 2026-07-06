@@ -174,14 +174,14 @@ Future<void> aprobarSolicitud(String docId, Map<String, dynamic> d) async {
 
   final fechaInicio = d['fechaInicioHogar'] as Timestamp?;
   final fechaFin    = d['fechaFinHogar']    as Timestamp?;
-  final extraHogar  = tipoSolicitud == 'hogar_de_paso'
-      ? <String, dynamic>{
-          if (fechaInicio != null) 'fechaInicioHogar':   fechaInicio,
-          if (fechaFin    != null) 'fechaFinHogar':      fechaFin,
-          'adoptanteIdEnProceso': adoptanteId,
-          'vencimientoAvisado':   false,
-        }
-      : <String, dynamic>{};
+  final extraHogar  = <String, dynamic>{
+    'adoptanteIdEnProceso': adoptanteId,
+    if (tipoSolicitud == 'hogar_de_paso') ...{
+      if (fechaInicio != null) 'fechaInicioHogar': fechaInicio,
+      if (fechaFin    != null) 'fechaFinHogar':    fechaFin,
+      'vencimientoAvisado': false,
+    },
+  };
 
   if (rescateId.isNotEmpty) {
     await FirebaseFirestore.instance.collection('rescates').doc(rescateId)
