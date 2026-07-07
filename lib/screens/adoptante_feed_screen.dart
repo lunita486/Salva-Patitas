@@ -3,6 +3,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+import 'package:flutter/rendering.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:share_plus/share_plus.dart';
 import '../theme.dart';
@@ -12,7 +15,101 @@ import 'aliado_publico_screen.dart';
 import 'solicitud_adopcion_screen.dart';
 import 'chat_screen.dart';
 
+// Tarjeta cuadrada (1080x1080) tipo post de Instagram, generada a partir de la
+// foto del animal para que compartir se vea como una publicación de marca en
+// vez de la foto pelada.
+class _ShareCard extends StatelessWidget {
+  final String nombre;
+  final String especie;
+  final String edad;
+  final String ubicacion;
+  final Uint8List fotoBytes;
+  const _ShareCard({
+    required this.nombre,
+    required this.especie,
+    required this.edad,
+    required this.ubicacion,
+    required this.fotoBytes,
+  });
+
+  @override
+  Widget build(BuildContext context) => Stack(fit: StackFit.expand, children: [
+        Image.memory(fotoBytes, fit: BoxFit.cover),
+        DecoratedBox(decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter, end: Alignment.bottomCenter,
+            colors: [Colors.transparent, Colors.black.withValues(alpha: 0.78)],
+            stops: const [0.35, 1.0],
+          ),
+        )),
+        Positioned(
+          top: 48, left: 48,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+            decoration: BoxDecoration(color: appTeal, borderRadius: BorderRadius.circular(32)),
+            child: const Row(mainAxisSize: MainAxisSize.min, children: [
+              Text('🐾', style: TextStyle(fontSize: 26)),
+              SizedBox(width: 10),
+              Text('Salva Patitas', style: TextStyle(
+                  color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold)),
+            ]),
+          ),
+        ),
+        Positioned(
+          left: 48, right: 48, bottom: 56,
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              decoration: BoxDecoration(color: appOrange, borderRadius: BorderRadius.circular(32)),
+              child: const Text('¡Necesito un hogar!', style: TextStyle(
+                  color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold)),
+            ),
+            const SizedBox(height: 22),
+            Text(nombre, style: const TextStyle(
+                color: Colors.white, fontSize: 68, fontWeight: FontWeight.w900, height: 1.0)),
+            const SizedBox(height: 10),
+            Text(
+              [if (especie.isNotEmpty) especie, if (edad.isNotEmpty) edad].join(' · '),
+              style: const TextStyle(color: Colors.white70, fontSize: 30, fontWeight: FontWeight.w600),
+            ),
+            if (ubicacion.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Row(children: [
+                const Icon(Icons.location_on, color: Colors.white70, size: 26),
+                const SizedBox(width: 6),
+                Text(ubicacion, style: const TextStyle(color: Colors.white70, fontSize: 26)),
+              ]),
+            ],
+          ]),
+        ),
+      ]);
+}
+
+Future<Uint8List?> _renderShareCardToPng(BuildContext context, Widget card, {double size = 1080}) async {
+  final key = GlobalKey();
+  final overlay = Overlay.of(context, rootOverlay: true);
+  final entry = OverlayEntry(
+    builder: (_) => Positioned(
+      left: -size - 200, top: 0,
+      child: Material(color: Colors.transparent,
+          child: RepaintBoundary(key: key, child: SizedBox(width: size, height: size, child: card))),
+    ),
+  );
+  overlay.insert(entry);
+  try {
+    await Future.delayed(const Duration(milliseconds: 60));
+    final boundary = key.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+    if (boundary == null) return null;
+    final image = await boundary.toImage(pixelRatio: 1.0);
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    return byteData?.buffer.asUint8List();
+  } finally {
+    entry.remove();
+  }
+}
+
 Future<void> compartirAnimal({
+  required BuildContext context,
   required String nombre,
   required String especie,
   required String edad,
@@ -29,8 +126,17 @@ Future<void> compartirAnimal({
       '\n¡Ayúdalo a encontrar familia descargando *Salva Patitas* 💚';
 
   if (fotoBase64 != null) {
-    final bytes = base64Decode(fotoBase64);
-    final xfile = XFile.fromData(bytes, mimeType: 'image/jpeg', name: '$nombre.jpg');
+    Uint8List? cardBytes;
+    try {
+      final fotoBytes = base64Decode(fotoBase64);
+      cardBytes = await _renderShareCardToPng(
+        context,
+        _ShareCard(nombre: nombre, especie: especie, edad: edad, ubicacion: ubicacion, fotoBytes: fotoBytes),
+      );
+    } catch (_) {}
+    final xfile = cardBytes != null
+        ? XFile.fromData(cardBytes, mimeType: 'image/png', name: '$nombre.png')
+        : XFile.fromData(base64Decode(fotoBase64), mimeType: 'image/jpeg', name: '$nombre.jpg');
     await Share.shareXFiles([xfile], text: texto);
   } else {
     await Share.share(texto);
@@ -798,6 +904,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                   ),
                   GestureDetector(
                     onTap: () => compartirAnimal(
+                      context: context,
                       nombre: nombre,
                       especie: especie,
                       edad: edad,
@@ -1125,12 +1232,13 @@ class _MeInteresaSheet extends StatelessWidget {
           emoji: '🔁',
           titulo: 'Compartir',
           subtitulo: 'Difundí a $nombre en tus redes',
-          onTap: () {
-            Navigator.pop(context);
-            compartirAnimal(
+          onTap: () async {
+            await compartirAnimal(
+              context: context,
               nombre: nombre, especie: especie, edad: edad,
               ubicacion: ubicacion, tags: tags, fotoBase64: fotoBase64,
             );
+            if (context.mounted) Navigator.pop(context);
           },
         ),
       ]),
