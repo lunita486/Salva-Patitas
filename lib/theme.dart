@@ -111,7 +111,7 @@ class CambiarEstadoSheet extends StatelessWidget {
     final hora = '${n.hour}:${n.minute.toString().padLeft(2, '0')}';
     final texto = 'Lamentamos informarte que $nombre falleció. '
         'Gracias por tu interés en darle un hogar. 🌈'
-        '${nota.isNotEmpty ? '\n\n"$nota"' : ''}';
+        '${nota.isNotEmpty ? '\n\n$nota' : ''}';
     await FirebaseFirestore.instance.collection('chats').doc(chatId)
         .collection('mensajes').add({
       'texto': texto, 'emisor': 'rescatista', 'hora': hora,

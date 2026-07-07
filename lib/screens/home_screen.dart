@@ -566,7 +566,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 estado: estadoAdopcion,
                 emoji: especie == 'Gato' ? '🐱' : '🐶',
                 fotoBase64: fotoBase64,
-                onCambiarEstado: () => showModalBottomSheet(
+                onCambiarEstado: estadoAdopcion == 'Fallecido' ? null : () => showModalBottomSheet(
                   context: context,
                   shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
                   builder: (_) => CambiarEstadoSheet(

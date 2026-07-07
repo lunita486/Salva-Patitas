@@ -247,7 +247,7 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                               ),
                             Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
                               GestureDetector(
-                                onTap: () => showModalBottomSheet(
+                                onTap: estadoAdopcion == 'Fallecido' ? null : () => showModalBottomSheet(
                                   context: context,
                                   shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
                                   builder: (_) => CambiarEstadoSheet(
@@ -267,8 +267,10 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                                   child: Row(mainAxisSize: MainAxisSize.min, children: [
                                     Text(estadoAdopcion, style: TextStyle(fontSize: 12,
                                         fontWeight: FontWeight.w700, color: cicloColor(estadoAdopcion))),
-                                    const SizedBox(width: 4),
-                                    Icon(Icons.expand_more, size: 14, color: cicloColor(estadoAdopcion)),
+                                    if (estadoAdopcion != 'Fallecido') ...[
+                                      const SizedBox(width: 4),
+                                      Icon(Icons.expand_more, size: 14, color: cicloColor(estadoAdopcion)),
+                                    ],
                                   ]),
                                 ),
                               ),

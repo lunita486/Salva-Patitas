@@ -775,7 +775,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                     const SizedBox(height: 6),
                     // ── Chip de estado tappable ──────────────────
                     GestureDetector(
-                      onTap: () => showModalBottomSheet(
+                      onTap: estadoAdopcion == 'Fallecido' ? null : () => showModalBottomSheet(
                         context: ctx,
                         shape: const RoundedRectangleBorder(
                             borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
