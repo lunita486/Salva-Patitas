@@ -41,6 +41,35 @@
           ]
         }
       }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:205018856680:android:ba231f942fd09cac8cdd5d",
+        "android_client_info": {
+          "package_name": "com.salvapatitas.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "205018856680-m0guhvmh4lrmous3glimjstranjqinf4.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA2Xjq6x50oejIMDu-j1G5FP_L5klcDcng"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "205018856680-m0guhvmh4lrmous3glimjstranjqinf4.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
     }
   ],
   "configuration_version": "1"

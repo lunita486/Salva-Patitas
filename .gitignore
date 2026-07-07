@@ -47,3 +47,8 @@ app.*.map.json
 # Node / Cloud Functions
 node_modules/
 functions/node_modules/
+
+# Signing keys — never commit
+/android/key.properties
+*.jks
+*.keystore
