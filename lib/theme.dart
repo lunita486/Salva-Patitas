@@ -98,7 +98,7 @@ class CambiarEstadoSheet extends StatelessWidget {
     this.adoptanteIdEnProceso,
   });
 
-  Future<void> _avisarAdoptanteFallecido() async {
+  Future<void> _avisarAdoptanteFallecido(String nota) async {
     final adoptanteId = adoptanteIdEnProceso;
     if (adoptanteId == null || adoptanteId.isEmpty || nombre.isEmpty) return;
     final chats = await FirebaseFirestore.instance.collection('chats')
@@ -110,7 +110,8 @@ class CambiarEstadoSheet extends StatelessWidget {
     final n = DateTime.now();
     final hora = '${n.hour}:${n.minute.toString().padLeft(2, '0')}';
     final texto = 'Lamentamos informarte que $nombre falleció. '
-        'Gracias por tu interés en darle un hogar. 🌈';
+        'Gracias por tu interés en darle un hogar. 🌈'
+        '${nota.isNotEmpty ? '\n\n"$nota"' : ''}';
     await FirebaseFirestore.instance.collection('chats').doc(chatId)
         .collection('mensajes').add({
       'texto': texto, 'emisor': 'rescatista', 'hora': hora,
@@ -203,7 +204,7 @@ class CambiarEstadoSheet extends StatelessWidget {
                         else if (!esFallecido)
                           'motivoRegreso': ctrl.text.trim(),
                       });
-                      if (esFallecido) _avisarAdoptanteFallecido();
+                      if (esFallecido) _avisarAdoptanteFallecido(ctrl.text.trim());
                       Navigator.pop(dlgCtx);
                       Navigator.pop(sheetCtx);
                     },
