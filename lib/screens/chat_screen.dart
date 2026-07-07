@@ -92,6 +92,21 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
+  Widget _estadoBadge(String label, Color bg, Color fg) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
+        child: Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: fg)),
+      );
+
+  Widget _estadoBadgeTipo(String tipo) {
+    final esHogar = tipo == 'hogar_de_paso';
+    return _estadoBadge(
+      esHogar ? '🏡 Hogar de paso' : '🏠 En adopción',
+      esHogar ? const Color(0xFFD8F0E4) : const Color(0xFFF9DDD5),
+      esHogar ? const Color(0xFF1F8A62) : const Color(0xFF8B3A1F),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final nombre      = widget.animal['nombre']     as String;
@@ -169,20 +184,26 @@ class _ChatScreenState extends State<ChatScreen> {
                 Builder(builder: (_) {
                   final tipo = widget.animal['tipoSolicitud'] as String? ?? 'adopcion';
                   if (tipo.startsWith('consulta')) return const SizedBox.shrink();
-                  final esHogar = tipo == 'hogar_de_paso';
-                  return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: esHogar ? const Color(0xFFD8F0E4) : const Color(0xFFF9DDD5),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      esHogar ? '🏡 Hogar de paso' : '🏠 En adopción',
-                      style: TextStyle(
-                        fontSize: 11, fontWeight: FontWeight.w600,
-                        color: esHogar ? const Color(0xFF1F8A62) : const Color(0xFF8B3A1F),
-                      ),
-                    ),
+                  final rescatistaId = widget.animal['rescatistaId'] as String? ?? '';
+                  if (rescatistaId.isEmpty) return _estadoBadgeTipo(tipo);
+                  return StreamBuilder<QuerySnapshot>(
+                    stream: FirebaseFirestore.instance.collection('rescates')
+                        .where('rescatistaId', isEqualTo: rescatistaId)
+                        .where('nombre', isEqualTo: nombre)
+                        .limit(1).snapshots(),
+                    builder: (_, snap) {
+                      final docs = snap.data?.docs ?? [];
+                      final estadoReal = docs.isNotEmpty
+                          ? (docs.first.data() as Map<String, dynamic>)['estadoAdopcion'] as String?
+                          : null;
+                      if (estadoReal == 'Fallecido') {
+                        return _estadoBadge('🌈 Falleció', const Color(0xFFECEFF1), const Color(0xFF546E7A));
+                      }
+                      if (estadoReal == 'Adoptado') {
+                        return _estadoBadge('✅ Adoptado', const Color(0xFFE3F2FD), const Color(0xFF1565C0));
+                      }
+                      return _estadoBadgeTipo(tipo);
+                    },
                   );
                 }),
               ])),
