@@ -7,6 +7,9 @@ import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import '../theme.dart';
 import '../services/notificaciones_service.dart';
+import '../data/creator_role.dart';
+import '../data/rescates_repository.dart';
+import '../data/solicitudes_repository.dart';
 import 'subir_rescate_screen.dart';
 import 'solicitudes_rescatista_screen.dart';
 import 'adoptante_chats_screen.dart';
@@ -31,6 +34,8 @@ class _HomeScreenState extends State<HomeScreen> {
   List<String> _roles = [];
   int  _selectedNav  = 0;
   String _ciudad = '';
+  final _rescatesRepo = RescatesRepository();
+  final _solicitudesRepo = SolicitudesRepository();
 
   static const _rolLabel = {
     'rescatista': 'Rescatista',
@@ -121,11 +126,11 @@ class _HomeScreenState extends State<HomeScreen> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     final ahora = DateTime.now();
-    final snap = await FirebaseFirestore.instance
-        .collection('rescates')
-        .where('rescatistaId', isEqualTo: uid)
-        .where('estadoAdopcion', isEqualTo: 'Hogar de paso')
-        .get();
+    final snap = await _rescatesRepo.misRescatesPorEstado(
+      uid: uid,
+      role: CreatorRole.rescatista,
+      estadoAdopcion: 'Hogar de paso',
+    );
     for (final doc in snap.docs) {
       final d = doc.data();
       final fechaFin = (d['fechaFinHogar'] as Timestamp?)?.toDate();
@@ -530,11 +535,11 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _misRescatesCarousel() {
     return SizedBox(
       height: 245,
-      child: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('rescates')
-            .where('rescatistaId', isEqualTo: FirebaseAuth.instance.currentUser?.uid ?? '')
-            .snapshots(),
+      child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: _rescatesRepo.misRescates(
+          uid: FirebaseAuth.instance.currentUser?.uid ?? '',
+          role: CreatorRole.rescatista,
+        ),
         builder: (context, snap) {
           if (snap.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator(color: appTeal));
@@ -542,8 +547,7 @@ class _HomeScreenState extends State<HomeScreen> {
           if (snap.hasError) {
             return Center(child: Text('Error: ${snap.error}', style: const TextStyle(fontSize: 12)));
           }
-          final docs = (snap.data?.docs ?? []).where((d) =>
-              (d.data() as Map)['creadoPor'] != 'albergue').toList();
+          final docs = snap.data?.docs ?? [];
           if (docs.isEmpty) {
             return Center(
               child: Text('Aún no tienes rescates publicados.',
@@ -555,7 +559,7 @@ class _HomeScreenState extends State<HomeScreen> {
             itemCount: docs.length,
             separatorBuilder: (_, __) => const SizedBox(width: 12),
             itemBuilder: (_, i) {
-              final data = docs[i].data() as Map<String, dynamic>;
+              final data = docs[i].data();
               final nombre         = (data['nombre'] as String?)?.isNotEmpty == true ? data['nombre'] : 'Sin nombre';
               final especie        = data['especie']        ?? '';
               final estadoAdopcion = data['estadoAdopcion'] ?? 'Rescatado';
@@ -695,12 +699,12 @@ class _HomeScreenState extends State<HomeScreen> {
       fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 1.2, color: Colors.grey.shade600));
 
   Widget _statsRowDynamic() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('solicitudes')
-          .where('rescatistaId', isEqualTo: FirebaseAuth.instance.currentUser?.uid ?? '')
-          .where('estado', isEqualTo: 'pendiente')
-          .snapshots(),
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: _solicitudesRepo.paraOwner(
+        uid: FirebaseAuth.instance.currentUser?.uid ?? '',
+        role: CreatorRole.rescatista,
+        estado: 'pendiente',
+      ),
       builder: (context, snap) {
         final count = snap.data?.docs.length ?? 0;
         final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
@@ -722,12 +726,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdoptanteChatsScreen(esRescatista: true))),
                 child: _stat('$noLeidos', 'Mensajes\nsin leer', const Color(0xFFD8EEFA), const Color(0xFF2070B0)))),
               const SizedBox(width: 10),
-              Expanded(child: StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance.collection('rescates')
-                    .where('rescatistaId', isEqualTo: uid).snapshots(),
+              Expanded(child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                stream: _rescatesRepo.misRescates(uid: uid, role: CreatorRole.rescatista),
                 builder: (context, rescSnap) {
-                  final total = (rescSnap.data?.docs ?? []).where((d) =>
-                      (d.data() as Map)['creadoPor'] != 'albergue').length;
+                  final total = (rescSnap.data?.docs ?? []).length;
                   return _stat('$total', 'Animales\nrescatados', Colors.white, const Color(0xFF1A1A1A));
                 },
               )),
@@ -739,20 +741,20 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _solicitudesFirestore() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('solicitudes')
-          .where('rescatistaId', isEqualTo: FirebaseAuth.instance.currentUser?.uid ?? '')
-          .where('estado', isEqualTo: 'pendiente')
-          .snapshots(),
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: _solicitudesRepo.paraOwner(
+        uid: FirebaseAuth.instance.currentUser?.uid ?? '',
+        role: CreatorRole.rescatista,
+        estado: 'pendiente',
+      ),
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator(color: appTeal));
         }
         final docs = [...(snap.data?.docs ?? [])]
           ..sort((a, b) {
-            final ta = (a.data() as Map)['creadoEn'] as Timestamp?;
-            final tb = (b.data() as Map)['creadoEn'] as Timestamp?;
+            final ta = a.data()['creadoEn'] as Timestamp?;
+            final tb = b.data()['creadoEn'] as Timestamp?;
             if (ta == null || tb == null) return 0;
             return tb.compareTo(ta);
           });
@@ -767,7 +769,7 @@ class _HomeScreenState extends State<HomeScreen> {
         final limited = docs.take(3).toList();
         return Column(
           children: List.generate(limited.length, (i) {
-            final d = limited[i].data() as Map<String, dynamic>;
+            final d = limited[i].data();
             final animal      = d['animalNombre'] as String? ?? 'Animal';
             final nombre      = d['nombre']      as String? ?? '';
             final apellido    = d['apellido']    as String? ?? '';

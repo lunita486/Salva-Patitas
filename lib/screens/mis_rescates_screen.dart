@@ -3,6 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:convert';
 import '../theme.dart';
+import '../data/creator_role.dart';
+import '../data/rescates_repository.dart';
 import 'editar_rescate_screen.dart';
 import 'adoptante_feed_screen.dart' show compartirAnimal;
 
@@ -17,6 +19,7 @@ class TodosLosRescatesScreen extends StatefulWidget {
 class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
   String? _filtroEstado;
   String? _filtroEspecie;
+  final _rescatesRepo = RescatesRepository();
 
   static const _estadosFiltroRescatista = [
     'Rescatado',
@@ -48,7 +51,7 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
     );
     if (confirmar != true) return;
     try {
-      await FirebaseFirestore.instance.collection('rescates').doc(docId).delete();
+      await _rescatesRepo.eliminar(docId);
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Publicación eliminada'), backgroundColor: appTeal));
@@ -123,28 +126,24 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
               ),
               const SizedBox(height: 8),
               Expanded(
-                child: StreamBuilder<QuerySnapshot>(
-                  stream: FirebaseFirestore.instance
-                      .collection('rescates')
-                      .where('rescatistaId', isEqualTo: FirebaseAuth.instance.currentUser?.uid ?? '')
-                      .snapshots(),
+                child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  stream: _rescatesRepo.misRescates(
+                    uid: FirebaseAuth.instance.currentUser?.uid ?? '',
+                    role: widget.esAlbergue ? CreatorRole.albergue : CreatorRole.rescatista,
+                  ),
                   builder: (context, snap) {
                     if (snap.connectionState == ConnectionState.waiting) {
                       return const Center(child: CircularProgressIndicator(color: appTeal));
                     }
-                    final rolFiltro = widget.esAlbergue ? 'albergue' : 'rescatista';
-                    var allDocs = (snap.data?.docs ?? []).where((d) {
-                      final cp = (d.data() as Map)['creadoPor'] as String?;
-                      return cp == rolFiltro;
-                    }).toList()..sort((a, b) {
-                      final ta = (a.data() as Map)['creadoEn'] as Timestamp?;
-                      final tb = (b.data() as Map)['creadoEn'] as Timestamp?;
+                    var allDocs = (snap.data?.docs ?? []).toList()..sort((a, b) {
+                      final ta = a.data()['creadoEn'] as Timestamp?;
+                      final tb = b.data()['creadoEn'] as Timestamp?;
                       if (ta == null || tb == null) return 0;
                       return tb.compareTo(ta);
                     });
                     if (_filtroEstado != null) {
                       allDocs = allDocs.where((doc) {
-                        final ea = (doc.data() as Map<String, dynamic>)['estadoAdopcion'] as String? ?? 'Rescatado';
+                        final ea = doc.data()['estadoAdopcion'] as String? ?? 'Rescatado';
                         if (_filtroEstado == 'En cuidado') {
                           return ea == 'Rescatado' || ea == 'Hogar de paso';
                         }
@@ -153,7 +152,7 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                     }
                     if (_filtroEspecie != null) {
                       allDocs = allDocs.where((doc) {
-                        final esp = (doc.data() as Map<String, dynamic>)['especie'] as String? ?? '';
+                        final esp = doc.data()['especie'] as String? ?? '';
                         if (_filtroEspecie == 'Otro') return esp != 'Perro' && esp != 'Gato';
                         return esp == _filtroEspecie;
                       }).toList();
@@ -178,7 +177,7 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                       itemCount: allDocs.length,
                       separatorBuilder: (_, __) => const SizedBox(height: 12),
                       itemBuilder: (_, i) {
-                        final d = allDocs[i].data() as Map<String, dynamic>;
+                        final d = allDocs[i].data();
                         final docId         = allDocs[i].id;
                         final nombre        = (d['nombre'] as String?)?.isNotEmpty == true ? d['nombre'] : 'Sin nombre';
                         final especie       = d['especie']       ?? '';

@@ -1,9 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme.dart';
-
-// Documento compartido de preferencias del adoptante
-final prefDoc = FirebaseFirestore.instance.collection('preferencias').doc('adoptante');
 
 class SettingsPageScaffold extends StatelessWidget {
   final String title;

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../theme.dart';
+import '../data/preferencias_repository.dart';
 import 'configuracion_screens.dart';
 
 class UbicacionAlcanceScreen extends StatefulWidget {
@@ -10,13 +11,16 @@ class UbicacionAlcanceScreen extends StatefulWidget {
 }
 
 class _UbicacionAlcanceScreenState extends State<UbicacionAlcanceScreen> {
+  final _preferenciasRepo = PreferenciasRepository();
   String _radio = '10 km';
   final _radios = ['2 km', '5 km', '10 km', '20 km', 'Toda Medellín'];
+
+  String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
   @override
   void initState() {
     super.initState();
-    prefDoc.get().then((doc) {
+    _preferenciasRepo.stream(_uid).first.then((doc) {
       if (doc.exists && mounted) {
         setState(() => _radio = doc.data()!['radio'] ?? '10 km');
       }
@@ -43,7 +47,7 @@ class _UbicacionAlcanceScreenState extends State<UbicacionAlcanceScreen> {
             return GestureDetector(
               onTap: () {
                 setState(() => _radio = e.value);
-                prefDoc.set({'radio': e.value}, SetOptions(merge: true));
+                _preferenciasRepo.actualizar(_uid, {'radio': e.value});
               },
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),

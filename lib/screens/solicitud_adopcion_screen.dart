@@ -3,6 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:convert';
 import '../theme.dart';
+import '../data/creator_role.dart';
+import '../data/solicitudes_repository.dart';
 
 class SolicitudAdopcionScreen extends StatefulWidget {
   final Map<String, dynamic> animal;
@@ -12,6 +14,7 @@ class SolicitudAdopcionScreen extends StatefulWidget {
 }
 
 class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
+  final _solicitudesRepo = SolicitudesRepository();
   int _step = 0;
 
   String _vivienda          = '';
@@ -44,16 +47,14 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
       setState(() => _verificando = false);
       return;
     }
-    final q = await FirebaseFirestore.instance
-        .collection('solicitudes')
-        .where('adoptanteId',  isEqualTo: uid)
-        .where('animalNombre', isEqualTo: widget.animal['nombre'])
-        .where('estado',       whereIn: ['pendiente', 'aprobada'])
-        .limit(1).get();
+    final estado = await _solicitudesRepo.estadoExistente(
+      uid: uid,
+      animalNombre: widget.animal['nombre'] as String,
+    );
     if (mounted) {
       setState(() {
-        _yaAplico        = q.docs.isNotEmpty;
-        _estadoExistente = q.docs.isNotEmpty ? (q.docs.first.data()['estado'] as String? ?? '') : '';
+        _yaAplico        = estado != null;
+        _estadoExistente = estado ?? '';
         _verificando     = false;
       });
     }
@@ -86,38 +87,36 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
       final nombreAdoptante = (userDoc.data()?['nombre'] as String?)?.isNotEmpty == true
           ? userDoc.data()!['nombre'] as String
           : user?.displayName ?? user?.email ?? 'Adoptante';
-      await FirebaseFirestore.instance.collection('solicitudes').add({
-        'animalNombre':  widget.animal['nombre'],
-        'rescatistaId':  widget.animal['rescatistaId'] ?? '',
-        'rescateId':     widget.animal['rescateId']    ?? '',
-        'adoptanteId':       user?.uid,
-        'nombre':            nombreAdoptante,
-        'email':             user?.email ?? '',
-        'integrantes':       _integrantesCtl.text.trim(),
-        'horasFuera':        _horasCtl.text.trim(),
-        'vivienda':          _vivienda,
-        'tieneNinos':        _ninos == 'Sí',
-        'tieneMascotas':     _mascotas == 'Sí',
-        'experienciaPrevia': _experienciaPrevia == 'Sí',
-        'motivacion':        _motivacionCtl.text.trim(),
-        'tipoSolicitud':     _tipoSolicitud,
-        if (_tipoSolicitud == 'hogar_de_paso' && _fechaInicio != null)
-          'fechaInicioHogar': Timestamp.fromDate(_fechaInicio!),
-        if (_tipoSolicitud == 'hogar_de_paso' && _fechaFin != null)
-          'fechaFinHogar': Timestamp.fromDate(_fechaFin!),
-        'fotoBase64':        widget.animal['fotoBase64'],
-        'estado':            'pendiente',
-        'creadoPor':         (widget.animal['creadoPor'] as String?)?.isNotEmpty == true
-                                  ? widget.animal['creadoPor']
-                                  : 'rescatista',
-        // etiquetas del animal para calcular compatibilidad
-        'animalEnergia':          widget.animal['energia'],
-        'animalTamano':           widget.animal['tamano'],
-        'animalOkConNinos':       widget.animal['okConNinos'],
-        'animalOkConMascotas':    widget.animal['okConMascotas'],
-        'animalRequiereExp':      widget.animal['requiereExperiencia'],
-        'creadoEn':      FieldValue.serverTimestamp(),
-      });
+      await _solicitudesRepo.crear(
+        adoptanteUid: user?.uid ?? '',
+        rescatistaId: widget.animal['rescatistaId'] as String? ?? '',
+        creadoPor: creatorRoleFromFirestore(widget.animal['creadoPor'] as String?),
+        datos: {
+          'animalNombre':  widget.animal['nombre'],
+          'rescateId':     widget.animal['rescateId']    ?? '',
+          'nombre':            nombreAdoptante,
+          'email':             user?.email ?? '',
+          'integrantes':       _integrantesCtl.text.trim(),
+          'horasFuera':        _horasCtl.text.trim(),
+          'vivienda':          _vivienda,
+          'tieneNinos':        _ninos == 'Sí',
+          'tieneMascotas':     _mascotas == 'Sí',
+          'experienciaPrevia': _experienciaPrevia == 'Sí',
+          'motivacion':        _motivacionCtl.text.trim(),
+          'tipoSolicitud':     _tipoSolicitud,
+          if (_tipoSolicitud == 'hogar_de_paso' && _fechaInicio != null)
+            'fechaInicioHogar': Timestamp.fromDate(_fechaInicio!),
+          if (_tipoSolicitud == 'hogar_de_paso' && _fechaFin != null)
+            'fechaFinHogar': Timestamp.fromDate(_fechaFin!),
+          'fotoBase64':        widget.animal['fotoBase64'],
+          // etiquetas del animal para calcular compatibilidad
+          'animalEnergia':          widget.animal['energia'],
+          'animalTamano':           widget.animal['tamano'],
+          'animalOkConNinos':       widget.animal['okConNinos'],
+          'animalOkConMascotas':    widget.animal['okConMascotas'],
+          'animalRequiereExp':      widget.animal['requiereExperiencia'],
+        },
+      );
       // Guarda el perfil para el score de compatibilidad en el feed
       await FirebaseFirestore.instance.collection('usuarios').doc(user?.uid).set({
         'perfilAdopcion': {

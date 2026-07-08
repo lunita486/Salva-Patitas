@@ -1,0 +1,123 @@
+rules_version = '2';
+
+// Ver ARCHITECTURE.md para el razonamiento completo. Resumen: esta es la
+// barrera real de seguridad — el filtrado del lado del cliente (en Dart)
+// es solo para no traer datos de más, nunca hay que asumir que alcanza.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function uid() {
+      return request.auth.uid;
+    }
+
+    function myRoles() {
+      return signedIn()
+        ? get(/databases/$(database)/documents/usuarios/$(uid())).data.get('roles', [])
+        : [];
+    }
+
+    function hasRole(r) {
+      return signedIn() && r in myRoles();
+    }
+
+    // ── usuarios ──────────────────────────────────────────────────────
+    // Perfil de cuenta. Hay pantallas públicas (albergue_publico_screen,
+    // aliado_publico_screen) que leen el perfil de OTRO usuario, así que
+    // la lectura es abierta a cualquiera logueado. La escritura es solo
+    // del dueño, y si toca `roles`, se valida contra la lista permitida
+    // (antes cualquier cliente podía escribir cualquier string ahí).
+    match /usuarios/{userId} {
+      allow read: if signedIn();
+      allow write: if signedIn() && uid() == userId &&
+        (!('roles' in request.resource.data) ||
+          request.resource.data.roles.hasOnly(['adoptante', 'rescatista', 'albergue', 'aliado']));
+    }
+
+    // ── rescates ──────────────────────────────────────────────────────
+    // Catálogo de adopción — lectura pública. Escritura solo del dueño,
+    // y `creadoPor` tiene que coincidir con un rol de cuenta que ese uid
+    // realmente tenga (no puede publicar como 'albergue' si su cuenta
+    // nunca activó ese rol).
+    match /rescates/{rescateId} {
+      allow read: if true;
+      allow create: if signedIn() &&
+        request.resource.data.rescatistaId == uid() &&
+        request.resource.data.creadoPor in ['rescatista', 'albergue'] &&
+        hasRole(request.resource.data.creadoPor);
+      allow update, delete: if signedIn() && resource.data.rescatistaId == uid();
+    }
+
+    // ── solicitudes ───────────────────────────────────────────────────
+    // Privado: contiene datos de vivienda/familia del adoptante. Solo lo
+    // ven el adoptante dueño y el rescatista/albergue destinatario.
+    // Los campos de identidad no se pueden reescribir después de creada.
+    match /solicitudes/{solicitudId} {
+      allow read: if signedIn() &&
+        (resource.data.adoptanteId == uid() || resource.data.rescatistaId == uid());
+      allow create: if signedIn() && request.resource.data.adoptanteId == uid();
+      allow update: if signedIn() &&
+        request.resource.data.adoptanteId == resource.data.adoptanteId &&
+        request.resource.data.rescatistaId == resource.data.rescatistaId &&
+        (resource.data.adoptanteId == uid() || resource.data.rescatistaId == uid());
+    }
+
+    // ── preferencias ──────────────────────────────────────────────────
+    // Antes: un único documento fijo compartido por todos ("adoptante").
+    // Ahora el id del documento es el uid — cada quien ve/edita el suyo.
+    match /preferencias/{userId} {
+      allow read, write: if signedIn() && uid() == userId;
+    }
+
+    // ── favoritos ─────────────────────────────────────────────────────
+    match /favoritos/{favId} {
+      allow read, delete: if signedIn() && resource.data.adoptanteId == uid();
+      allow create: if signedIn() && request.resource.data.adoptanteId == uid();
+      allow update: if signedIn() && resource.data.adoptanteId == uid() &&
+        request.resource.data.adoptanteId == uid();
+    }
+
+    // ── chats ─────────────────────────────────────────────────────────
+    // Un chat ya identifica a sus dos dueños (adoptanteId/rescatistaId),
+    // no hace falta `creadoPor` acá — a diferencia de rescates/solicitudes
+    // no hay ambigüedad de "con qué sombrero" porque solo hay 2 personas.
+    match /chats/{chatId} {
+      allow read: if signedIn() &&
+        (resource.data.adoptanteId == uid() || resource.data.rescatistaId == uid());
+      allow create: if signedIn() &&
+        (request.resource.data.adoptanteId == uid() || request.resource.data.rescatistaId == uid());
+      allow update: if signedIn() &&
+        (resource.data.adoptanteId == uid() || resource.data.rescatistaId == uid());
+
+      match /mensajes/{mensajeId} {
+        allow read: if signedIn() &&
+          (get(/databases/$(database)/documents/chats/$(chatId)).data.adoptanteId == uid() ||
+           get(/databases/$(database)/documents/chats/$(chatId)).data.rescatistaId == uid());
+        allow create: if signedIn() &&
+          (get(/databases/$(database)/documents/chats/$(chatId)).data.adoptanteId == uid() ||
+           get(/databases/$(database)/documents/chats/$(chatId)).data.rescatistaId == uid());
+      }
+    }
+
+    // ── servicios ─────────────────────────────────────────────────────
+    // Catálogo de negocios aliados — lectura pública, escritura solo del
+    // aliado dueño.
+    match /servicios/{servicioId} {
+      allow read: if true;
+      allow create: if signedIn() && request.resource.data.aliadoId == uid() && hasRole('aliado');
+      allow update, delete: if signedIn() && resource.data.aliadoId == uid();
+    }
+
+    // ── solicitudes_rescatista ────────────────────────────────────────
+    // Pantalla "volverme rescatista verificado" — no está enlazada desde
+    // ninguna navegación hoy (código huérfano). Se bloquea por completo
+    // a propósito hasta que alguien la conecte y le agregue su propia regla.
+    match /solicitudes_rescatista/{docId} {
+      allow read, write: if false;
+    }
+  }
+}

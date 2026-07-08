@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../theme.dart';
+import '../data/preferencias_repository.dart';
 import 'configuracion_screens.dart';
 
 class NotificacionesScreen extends StatefulWidget {
@@ -10,15 +11,18 @@ class NotificacionesScreen extends StatefulWidget {
 }
 
 class _NotificacionesScreenState extends State<NotificacionesScreen> {
+  final _preferenciasRepo = PreferenciasRepository();
   bool _mensajes = true;
   bool _matches  = true;
   bool _solicitudes = true;
   bool _loading  = true;
 
+  String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
+
   @override
   void initState() {
     super.initState();
-    prefDoc.get().then((doc) {
+    _preferenciasRepo.stream(_uid).first.then((doc) {
       if (doc.exists && mounted) {
         final d = doc.data()!;
         setState(() {
@@ -34,7 +38,7 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
   }
 
   void _save(String key, bool val) {
-    prefDoc.set({key: val}, SetOptions(merge: true));
+    _preferenciasRepo.actualizar(_uid, {key: val});
   }
 
   @override

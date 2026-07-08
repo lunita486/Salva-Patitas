@@ -6,11 +6,15 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import '../theme.dart';
 import '../services/notificaciones_service.dart';
+import '../data/creator_role.dart';
+import '../data/rescates_repository.dart';
+import '../data/solicitudes_repository.dart';
 import 'subir_rescate_screen.dart';
 import 'subir_lote_screen.dart';
 import 'mis_rescates_screen.dart';
 import 'solicitudes_rescatista_screen.dart';
 import 'adoptante_chats_screen.dart';
+import 'albergue_perfil_screen.dart';
 
 class AlbergueHomeScreen extends StatefulWidget {
   const AlbergueHomeScreen({super.key});
@@ -21,6 +25,8 @@ class AlbergueHomeScreen extends StatefulWidget {
 class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
   int _nav = 0;
   final _uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+  final _rescatesRepo = RescatesRepository();
+  final _solicitudesRepo = SolicitudesRepository();
 
   @override
   void initState() {
@@ -75,18 +81,11 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
         .collection('usuarios').doc(_uid).update({'roles': seleccion});
   }
 
-  Stream<QuerySnapshot> get _rescatesStream => FirebaseFirestore.instance
-      .collection('rescates')
-      .where('rescatistaId', isEqualTo: _uid)
-      .where('creadoPor', isEqualTo: 'albergue')
-      .snapshots();
+  Stream<QuerySnapshot<Map<String, dynamic>>> get _rescatesStream =>
+      _rescatesRepo.misRescates(uid: _uid, role: CreatorRole.albergue);
 
-  Stream<QuerySnapshot> get _solicitudesStream => FirebaseFirestore.instance
-      .collection('solicitudes')
-      .where('rescatistaId', isEqualTo: _uid)
-      .where('estado', isEqualTo: 'pendiente')
-      .where('creadoPor', isEqualTo: 'albergue')
-      .snapshots();
+  Stream<QuerySnapshot<Map<String, dynamic>>> get _solicitudesStream =>
+      _solicitudesRepo.paraOwner(uid: _uid, role: CreatorRole.albergue, estado: 'pendiente');
 
   @override
   Widget build(BuildContext context) {
@@ -430,94 +429,126 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
   Widget _perfilTab(BuildContext ctx, String nombre, String tipo, String ciudad, String iniciales, String? fotoBase64) {
     final user = FirebaseAuth.instance.currentUser;
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 32, 20, 100),
       child: Column(children: [
-
-        // Avatar tappable con overlay de cámara
-        GestureDetector(
-          onTap: _uploadFotoPerfil,
-          child: Stack(clipBehavior: Clip.none, children: [
-            CircleAvatar(
-              radius: 44,
-              backgroundColor: appTeal,
-              backgroundImage: fotoBase64 != null
-                  ? MemoryImage(base64Decode(fotoBase64)) as ImageProvider
-                  : user?.photoURL != null
-                      ? NetworkImage(user!.photoURL!) as ImageProvider
-                      : null,
-              child: (fotoBase64 == null && user?.photoURL == null)
-                  ? Text(iniciales, style: const TextStyle(color: Colors.white,
-                      fontWeight: FontWeight.bold, fontSize: 28))
-                  : null,
+        // Header verde — mismo estilo que el perfil de aliado
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(24, 36, 24, 32),
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF0A5C40), Color(0xFF1F8A62)],
+              begin: Alignment.topLeft, end: Alignment.bottomRight,
             ),
-            Positioned(
-              bottom: 0, right: 0,
-              child: Container(
-                width: 32, height: 32,
-                decoration: BoxDecoration(
-                  color: appTeal,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 2.5),
+          ),
+          child: Column(children: [
+            GestureDetector(
+              onTap: _uploadFotoPerfil,
+              child: Stack(clipBehavior: Clip.none, children: [
+                Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.5), width: 3),
+                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2),
+                        blurRadius: 16, offset: const Offset(0, 6))],
+                  ),
+                  child: CircleAvatar(
+                    radius: 52,
+                    backgroundColor: Colors.white.withValues(alpha: 0.2),
+                    backgroundImage: fotoBase64 != null
+                        ? MemoryImage(base64Decode(fotoBase64)) as ImageProvider
+                        : user?.photoURL != null
+                            ? NetworkImage(user!.photoURL!) as ImageProvider
+                            : null,
+                    child: (fotoBase64 == null && user?.photoURL == null)
+                        ? Text(iniciales, style: const TextStyle(color: Colors.white,
+                            fontWeight: FontWeight.bold, fontSize: 32))
+                        : null,
+                  ),
                 ),
-                child: const Icon(Icons.camera_alt, color: Colors.white, size: 16),
+                Positioned(
+                  bottom: 0, right: 0,
+                  child: Container(
+                    width: 32, height: 32,
+                    decoration: BoxDecoration(
+                      color: appTeal,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2.5),
+                    ),
+                    child: const Icon(Icons.camera_alt, color: Colors.white, size: 16),
+                  ),
+                ),
+              ]),
+            ),
+            const SizedBox(height: 16),
+            Text(nombre, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold,
+                color: Colors.white), textAlign: TextAlign.center),
+            if (tipo.isNotEmpty || ciudad.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text([if (tipo.isNotEmpty) tipo, if (ciudad.isNotEmpty) ciudad].join(' · '),
+                  style: TextStyle(fontSize: 14, color: Colors.white.withValues(alpha: 0.8))),
+            ],
+          ]),
+        ),
+        Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(children: [
+            _infoTile(Icons.email_outlined, 'Correo', user?.email ?? '—'),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () => Navigator.push(ctx,
+                    MaterialPageRoute(builder: (_) => const AlberguePerfilScreen())),
+                icon: const Icon(Icons.edit_outlined, size: 18),
+                label: const Text('Editar perfil del albergue'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: appTeal,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  elevation: 0,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () async {
+                  final confirmar = await showDialog<bool>(
+                    context: ctx,
+                    builder: (_) => AlertDialog(
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      title: const Text('¿Cerrar sesión?'),
+                      content: const Text('Tendrás que volver a iniciar sesión con Google.'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          child: const Text('Cerrar sesión',
+                              style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600)),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirmar == true) {
+                    await FirebaseAuth.instance.signOut();
+                  }
+                },
+                icon: const Icon(Icons.logout, size: 18),
+                label: const Text('Cerrar sesión'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.red.shade400,
+                  side: BorderSide(color: Colors.red.shade200),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
               ),
             ),
           ]),
-        ),
-        const SizedBox(height: 16),
-        Text(nombre, style: const TextStyle(fontSize: 22,
-            fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
-        const SizedBox(height: 4),
-        if (tipo.isNotEmpty || ciudad.isNotEmpty)
-          Text([if (tipo.isNotEmpty) tipo, if (ciudad.isNotEmpty) ciudad].join(' · '),
-              style: TextStyle(fontSize: 14, color: Colors.grey.shade500)),
-
-        const SizedBox(height: 40),
-
-        // Info cuenta
-        _infoTile(Icons.email_outlined, 'Correo', user?.email ?? '—'),
-        const SizedBox(height: 12),
-        _infoTile(Icons.location_on_outlined, 'Ciudad', ciudad.isNotEmpty ? ciudad : '—'),
-
-        const SizedBox(height: 40),
-
-        // Cerrar sesión
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: () async {
-              final confirmar = await showDialog<bool>(
-                context: ctx,
-                builder: (_) => AlertDialog(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  title: const Text('¿Cerrar sesión?'),
-                  content: const Text('Tendrás que volver a iniciar sesión con Google.'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(ctx, false),
-                      child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.pop(ctx, true),
-                      child: const Text('Cerrar sesión',
-                          style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600)),
-                    ),
-                  ],
-                ),
-              );
-              if (confirmar == true) {
-                await FirebaseAuth.instance.signOut();
-              }
-            },
-            icon: const Icon(Icons.logout, color: Colors.red, size: 20),
-            label: const Text('Cerrar sesión',
-                style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600, fontSize: 15)),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              side: BorderSide(color: Colors.red.shade200),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            ),
-          ),
         ),
       ]),
     );
