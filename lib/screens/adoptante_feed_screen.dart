@@ -88,23 +88,44 @@ class _ShareCard extends StatelessWidget {
 Future<Uint8List?> _renderShareCardToPng(BuildContext context, Widget card, {double size = 1080}) async {
   final key = GlobalKey();
   final overlay = Overlay.of(context, rootOverlay: true);
-  final entry = OverlayEntry(
+  // La tarjeta se arma DENTRO del área visible (no fuera de pantalla): en
+  // algunos dispositivos, una imagen posicionada fuera de la vista nunca
+  // llega a pintarse (aunque los colores/textos sí), y la captura sale sin
+  // foto. Para que el usuario no vea el proceso, se tapa con un scrim +
+  // spinner por encima.
+  final cardEntry = OverlayEntry(
     builder: (_) => Positioned(
-      left: -size - 200, top: 0,
-      child: Material(color: Colors.transparent,
-          child: RepaintBoundary(key: key, child: SizedBox(width: size, height: size, child: card))),
+      left: 0, top: 0,
+      child: Material(
+        color: Colors.transparent,
+        child: RepaintBoundary(key: key, child: SizedBox(width: size, height: size, child: card)),
+      ),
     ),
   );
-  overlay.insert(entry);
+  final scrimEntry = OverlayEntry(
+    builder: (_) => Positioned.fill(
+      child: Material(
+        color: Colors.black.withValues(alpha: 0.55),
+        child: const Center(
+          child: CircularProgressIndicator(color: Colors.white),
+        ),
+      ),
+    ),
+  );
+  overlay.insert(cardEntry);
+  overlay.insert(scrimEntry);
   try {
-    await Future.delayed(const Duration(milliseconds: 60));
+    // Dos frames completos para asegurar que la imagen ya se compuso.
+    await WidgetsBinding.instance.endOfFrame;
+    await WidgetsBinding.instance.endOfFrame;
     final boundary = key.currentContext?.findRenderObject() as RenderRepaintBoundary?;
     if (boundary == null) return null;
     final image = await boundary.toImage(pixelRatio: 1.0);
     final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
     return byteData?.buffer.asUint8List();
   } finally {
-    entry.remove();
+    scrimEntry.remove();
+    cardEntry.remove();
   }
 }
 
