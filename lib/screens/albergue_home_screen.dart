@@ -950,8 +950,10 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
       _NavItem(Icons.pets_outlined,       Icons.pets,       'Jauría'),
       _NavItem(Icons.assignment_outlined, Icons.assignment, 'Solicitudes',
           badge: pendientes),
-      _NavItem(Icons.person_outline,      Icons.person,     'Perfil'),
     ];
+    // 'Perfil' se agrega al final, después de 'Chats' — mismo orden que en
+    // el resto de la app (Rescatista, Aliado): Perfil siempre es el último ícono.
+    const perfilIndex = 3;
 
     return Container(
       decoration: BoxDecoration(
@@ -1044,6 +1046,20 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                   );
                 },
               ),
+              Builder(builder: (_) {
+                final active = _nav == perfilIndex;
+                return GestureDetector(
+                  onTap: () => setState(() => _nav = perfilIndex),
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(active ? Icons.person : Icons.person_outline,
+                        color: active ? appTeal : Colors.grey.shade400, size: 24),
+                    const SizedBox(height: 4),
+                    Text('Perfil', style: TextStyle(fontSize: 10,
+                        color: active ? appTeal : Colors.grey.shade400,
+                        fontWeight: active ? FontWeight.w700 : FontWeight.normal)),
+                  ]),
+                );
+              }),
             ],
           ),
         ),
