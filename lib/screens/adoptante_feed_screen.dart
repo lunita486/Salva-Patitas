@@ -115,13 +115,15 @@ Future<Uint8List?> _renderShareCardToPng(BuildContext context, Widget card, {dou
   overlay.insert(cardEntry);
   overlay.insert(scrimEntry);
   try {
-    // Dos frames completos para asegurar que la imagen ya se compuso.
-    await WidgetsBinding.instance.endOfFrame;
-    await WidgetsBinding.instance.endOfFrame;
+    // Espera de tiempo fijo, no endOfFrame — endOfFrame puede quedar
+    // colgado esperando un cuadro que nunca se vuelve a programar, y eso
+    // congela toda la pantalla (le pasó a una usuaria en un dispositivo real).
+    await Future.delayed(const Duration(milliseconds: 300));
     final boundary = key.currentContext?.findRenderObject() as RenderRepaintBoundary?;
     if (boundary == null) return null;
-    final image = await boundary.toImage(pixelRatio: 1.0);
-    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    final image = await boundary.toImage(pixelRatio: 1.0).timeout(const Duration(seconds: 5));
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png)
+        .timeout(const Duration(seconds: 5));
     return byteData?.buffer.asUint8List();
   } finally {
     scrimEntry.remove();
