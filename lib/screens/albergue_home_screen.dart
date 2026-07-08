@@ -78,12 +78,14 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
   Stream<QuerySnapshot> get _rescatesStream => FirebaseFirestore.instance
       .collection('rescates')
       .where('rescatistaId', isEqualTo: _uid)
+      .where('creadoPor', isEqualTo: 'albergue')
       .snapshots();
 
   Stream<QuerySnapshot> get _solicitudesStream => FirebaseFirestore.instance
       .collection('solicitudes')
       .where('rescatistaId', isEqualTo: _uid)
       .where('estado', isEqualTo: 'pendiente')
+      .where('creadoPor', isEqualTo: 'albergue')
       .snapshots();
 
   @override

@@ -107,6 +107,9 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
           'fechaFinHogar': Timestamp.fromDate(_fechaFin!),
         'fotoBase64':        widget.animal['fotoBase64'],
         'estado':            'pendiente',
+        'creadoPor':         (widget.animal['creadoPor'] as String?)?.isNotEmpty == true
+                                  ? widget.animal['creadoPor']
+                                  : 'rescatista',
         // etiquetas del animal para calcular compatibilidad
         'animalEnergia':          widget.animal['energia'],
         'animalTamano':           widget.animal['tamano'],
