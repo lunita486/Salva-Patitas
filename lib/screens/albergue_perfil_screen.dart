@@ -21,6 +21,27 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
   String? _fotoBase64;
   bool   _guardando = false;
 
+  @override
+  void initState() {
+    super.initState();
+    _cargarDatosExistentes();
+  }
+
+  Future<void> _cargarDatosExistentes() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final doc = await FirebaseFirestore.instance.collection('usuarios').doc(uid).get();
+    if (!doc.exists || !mounted) return;
+    final data = doc.data() as Map<String, dynamic>;
+    setState(() {
+      _nombreCtl.text    = data['albergueNombre'] as String? ?? '';
+      _ciudadCtl.text    = data['ciudad']         as String? ?? '';
+      _capacidadCtl.text = (data['capacidadTotal'] as int?)?.toString() ?? '';
+      _tipo              = data['albergueTipo']   as String?;
+      _fotoBase64        = data['fotoBase64']     as String?;
+    });
+  }
+
   Future<void> _cambiarRolDebug(BuildContext ctx) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
@@ -79,6 +100,13 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
       'capacidadTotal':    int.tryParse(_capacidadCtl.text.trim()) ?? 0,
       if (_fotoBase64 != null) 'fotoBase64': _fotoBase64,
     });
+    if (!mounted) return;
+    setState(() => _guardando = false);
+    if (Navigator.canPop(context)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Perfil actualizado'), backgroundColor: appTeal));
+      Navigator.pop(context);
+    }
   }
 
   @override
@@ -99,7 +127,16 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const SizedBox(height: 40),
+              const SizedBox(height: 24),
+              Builder(builder: (ctx) => Navigator.canPop(ctx)
+                  ? IconButton(
+                      icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+                      onPressed: () => Navigator.pop(ctx),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    )
+                  : const SizedBox.shrink()),
+              const SizedBox(height: 16),
 
               // Header
               const Text('Configura tu albergue',
@@ -226,8 +263,8 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
                     child: _guardando
                         ? const SizedBox(width: 20, height: 20,
                             child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                        : const Text('Crear perfil del albergue',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                        : Text(Navigator.canPop(context) ? 'Guardar cambios' : 'Crear perfil del albergue',
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                   ),
                 ),
               ),
