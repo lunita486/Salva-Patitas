@@ -340,6 +340,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
       'genero':       animal['genero'] ?? '',
       'fotoBase64':   animal['fotoBase64'],
       'verificado':   animal['verificado'] ?? false,
+      'creadoPor':    animal['creadoPor'] ?? 'rescatista',
       'creadoEn':     FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   }
@@ -979,6 +980,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                     rescatista: rescatista,
                     rescateId: rescateId,
                     estadoAdopcion: estadoAdopcion,
+                    creadoPor: creadoPor,
                   ),
                 ),
                 child: Container(
@@ -1139,7 +1141,7 @@ class AliadosScreen extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _MeInteresaSheet extends StatelessWidget {
-  final String nombre, especie, edad, ubicacion, rescatistaId, rescatista, rescateId, estadoAdopcion;
+  final String nombre, especie, edad, ubicacion, rescatistaId, rescatista, rescateId, estadoAdopcion, creadoPor;
   final List<String> tags;
   final String? fotoBase64;
 
@@ -1153,6 +1155,7 @@ class _MeInteresaSheet extends StatelessWidget {
     required this.rescateId,
     required this.tags,
     required this.estadoAdopcion,
+    required this.creadoPor,
     this.fotoBase64,
   });
 
@@ -1184,6 +1187,7 @@ class _MeInteresaSheet extends StatelessWidget {
                   'rescatistaId': rescatistaId, 'rescateId': rescateId,
                   'fotoBase64': fotoBase64,
                   'tipoSolicitud': 'hogar_de_paso',
+                  'creadoPor': creadoPor,
                 }),
               ));
             },

@@ -114,6 +114,7 @@ class FavoritosScreen extends StatelessWidget {
                             'rescatistaId': rescatistaId,
                             'rescateId': rescateId,
                             'fotoBase64': fotoBase64,
+                            'creadoPor': d['creadoPor'] ?? 'rescatista',
                           };
 
                           return Stack(children: [

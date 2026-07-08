@@ -259,6 +259,7 @@ class AlberguePublicoScreen extends StatelessWidget {
       'requiereExperiencia': d['requiereExperiencia'],
       'verificado':          d['verificado'] ?? false,
       'urgencia':            urgencia,
+      'creadoPor':           d['creadoPor'] ?? 'albergue',
     };
 
     return GestureDetector(
