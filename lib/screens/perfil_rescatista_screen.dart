@@ -4,6 +4,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme.dart';
+import '../data/creator_role.dart';
+import '../data/rescates_repository.dart';
+import '../data/solicitudes_repository.dart';
 
 class PerfilRescatistaScreen extends StatelessWidget {
   const PerfilRescatistaScreen({super.key});
@@ -65,19 +68,19 @@ class PerfilRescatistaScreen extends StatelessWidget {
               ),
               const SizedBox(height: 32),
               // Stats
-              StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance.collection('rescates')
-                    .where('rescatistaId', isEqualTo: user?.uid ?? '').snapshots(),
+              StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                stream: RescatesRepository().misRescates(
+                  uid: user?.uid ?? '', role: CreatorRole.rescatista,
+                ),
                 builder: (context, snap) {
                   final total = snap.data?.docs.length ?? 0;
                   return Row(children: [
                     _statTile('$total', 'Animales\nrescatados', appTeal),
                     const SizedBox(width: 12),
-                    StreamBuilder<QuerySnapshot>(
-                      stream: FirebaseFirestore.instance
-                          .collection('solicitudes')
-                          .where('rescatistaId', isEqualTo: user?.uid ?? '')
-                          .where('estado', isEqualTo: 'aprobada').snapshots(),
+                    StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                      stream: SolicitudesRepository().paraOwner(
+                        uid: user?.uid ?? '', role: CreatorRole.rescatista, estado: 'aprobada',
+                      ),
                       builder: (context, snap2) {
                         final aprobadas = snap2.data?.docs.length ?? 0;
                         return _statTile('$aprobadas', 'Adopciones\naprobadas', appOrange);
