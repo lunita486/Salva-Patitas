@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:convert';
 import '../theme.dart';
 import 'editar_rescate_screen.dart';
+import 'adoptante_feed_screen.dart' show compartirAnimal;
 
 class TodosLosRescatesScreen extends StatefulWidget {
   final String? filtroInicial;
@@ -274,6 +275,34 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                                   ]),
                                 ),
                               ),
+                              if (estadoAdopcion != 'Fallecido' && fotoBase64 != null)
+                                Tooltip(
+                                  message: 'Compartir',
+                                  child: GestureDetector(
+                                    onTap: () => compartirAnimal(
+                                      context: context,
+                                      nombre: nombre,
+                                      especie: especie,
+                                      edad: d['edad'] as String? ?? '',
+                                      ubicacion: ubicacion,
+                                      tags: <String>[
+                                        if (d['okConNinos']    == true) 'Amigable con niños',
+                                        if (d['okConMascotas'] == true) 'Es sociable',
+                                        if ((d['energia'] as String?)?.isNotEmpty == true) d['energia'] as String,
+                                      ],
+                                      fotoBase64: fotoBase64,
+                                    ),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: appTeal.withValues(alpha: 0.1),
+                                        borderRadius: BorderRadius.circular(20),
+                                        border: Border.all(color: appTeal.withValues(alpha: 0.3)),
+                                      ),
+                                      child: const Icon(Icons.ios_share, size: 16, color: appTeal),
+                                    ),
+                                  ),
+                                ),
                               if (estadoAdopcion != 'Adoptado' && estadoAdopcion != 'Fallecido')
                                 Tooltip(
                                   message: 'Editar',
