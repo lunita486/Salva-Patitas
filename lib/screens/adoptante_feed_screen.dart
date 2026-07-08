@@ -129,10 +129,19 @@ Future<void> compartirAnimal({
     Uint8List? cardBytes;
     try {
       final fotoBytes = base64Decode(fotoBase64);
-      cardBytes = await _renderShareCardToPng(
-        context,
-        _ShareCard(nombre: nombre, especie: especie, edad: edad, ubicacion: ubicacion, fotoBytes: fotoBytes),
-      );
+      // Decodifica la imagen ANTES de capturar la tarjeta — Image.memory no
+      // pinta de forma instantánea, y sin este paso la captura puede ganarle
+      // la carrera al decode y salir en negro.
+      final fotoProvider = MemoryImage(fotoBytes);
+      if (context.mounted) {
+        await precacheImage(fotoProvider, context);
+        if (context.mounted) {
+          cardBytes = await _renderShareCardToPng(
+            context,
+            _ShareCard(nombre: nombre, especie: especie, edad: edad, ubicacion: ubicacion, fotoBytes: fotoBytes),
+          );
+        }
+      }
     } catch (_) {}
     final xfile = cardBytes != null
         ? XFile.fromData(cardBytes, mimeType: 'image/png', name: '$nombre.png')
