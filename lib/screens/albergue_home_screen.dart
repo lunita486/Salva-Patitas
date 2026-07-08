@@ -329,7 +329,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                 'SOLICITUDES',
                 trailing: GestureDetector(
                   onTap: () => Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => const SolicitudesRescatistaScreen())),
+                      builder: (_) => const SolicitudesRescatistaScreen(esAlbergue: true))),
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
@@ -584,7 +584,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
         onTap: () => Navigator.push(ctx, MaterialPageRoute(
             builder: (_) => filtro != null
                 ? TodosLosRescatesScreen(filtroInicial: filtro, esAlbergue: true)
-                : const SolicitudesRescatistaScreen())),
+                : const SolicitudesRescatistaScreen(esAlbergue: true))),
         child: Container(
           padding: const EdgeInsets.fromLTRB(12, 14, 12, 14),
           decoration: BoxDecoration(
@@ -977,7 +977,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                         builder: (_) => const TodosLosRescatesScreen(esAlbergue: true)));
                   } else if (i == 2) {
                     Navigator.push(context, MaterialPageRoute(
-                        builder: (_) => const SolicitudesRescatistaScreen()));
+                        builder: (_) => const SolicitudesRescatistaScreen(esAlbergue: true)));
                   } else {
                     setState(() => _nav = i);
                   }

@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme.dart';
+import '../data/creator_role.dart';
+import '../data/solicitudes_repository.dart';
 import 'chat_screen.dart';
 
 int calcularCompatibilidad(Map<String, dynamic> solicitud) {
@@ -249,13 +251,15 @@ Future<void> rechazarSolicitud(String docId, Map<String, dynamic> d, String moti
 // ─────────────────────────────────────────────────────────────────────────────
 
 class SolicitudesRescatistaScreen extends StatefulWidget {
-  const SolicitudesRescatistaScreen({super.key});
+  final bool esAlbergue;
+  const SolicitudesRescatistaScreen({super.key, this.esAlbergue = false});
   @override
   State<SolicitudesRescatistaScreen> createState() => _SolicitudesRescatistaScreenState();
 }
 
 class _SolicitudesRescatistaScreenState extends State<SolicitudesRescatistaScreen> {
   final Set<String> _procesando = {};
+  final _solicitudesRepo = SolicitudesRepository();
 
   Future<void> _aprobar(String docId, Map<String, dynamic> d) async {
     if (_procesando.contains(docId)) return;
@@ -295,18 +299,18 @@ class _SolicitudesRescatistaScreenState extends State<SolicitudesRescatistaScree
           ),
           const SizedBox(height: 4),
           Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('solicitudes')
-                  .where('rescatistaId', isEqualTo: FirebaseAuth.instance.currentUser?.uid ?? '')
-                  .snapshots(),
+            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: _solicitudesRepo.paraOwner(
+                uid: FirebaseAuth.instance.currentUser?.uid ?? '',
+                role: widget.esAlbergue ? CreatorRole.albergue : CreatorRole.rescatista,
+              ),
               builder: (context, snap) {
                 if (snap.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator(color: appTeal));
                 }
                 final docs = [...(snap.data?.docs ?? [])]..sort((a, b) {
-                    final ta = (a.data() as Map)['creadoEn'] as Timestamp?;
-                    final tb = (b.data() as Map)['creadoEn'] as Timestamp?;
+                    final ta = a.data()['creadoEn'] as Timestamp?;
+                    final tb = b.data()['creadoEn'] as Timestamp?;
                     if (ta == null) return 1;
                     if (tb == null) return -1;
                     return tb.compareTo(ta);
@@ -326,7 +330,7 @@ class _SolicitudesRescatistaScreenState extends State<SolicitudesRescatistaScree
                   itemCount: docs.length,
                   separatorBuilder: (_, _) => const SizedBox(height: 10),
                   itemBuilder: (_, i) {
-                    final d           = docs[i].data() as Map<String, dynamic>;
+                    final d           = docs[i].data();
                     final animal      = d['animalNombre'] as String? ?? 'Animal';
                     final nombre      = d['nombre']      as String? ?? 'Adoptante';
                     final integrantes = d['integrantes'] as String? ?? '';
