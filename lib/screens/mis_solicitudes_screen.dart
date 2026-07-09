@@ -186,6 +186,7 @@ class MisSolicitudesScreen extends StatelessWidget {
                                   'nombre':        animal,
                                   'rescatista':    d['rescatistaNombre'] as String? ?? d['rescatista'] as String? ?? 'Rescatista',
                                   'rescatistaId':  d['rescatistaId'] as String? ?? '',
+                                  'rescateId':     d['rescateId'] as String? ?? '',
                                   'especie':       d['especie'] as String? ?? 'Perro',
                                   'fotoBase64':    fotoBase64,
                                   'tipoSolicitud': tipo,

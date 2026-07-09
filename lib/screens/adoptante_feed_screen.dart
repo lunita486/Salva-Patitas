@@ -1258,6 +1258,7 @@ class _MeInteresaSheet extends StatelessWidget {
                 animal: {
                   'nombre': nombre, 'rescatista': rescatista,
                   'rescatistaId': rescatistaId, 'fotoBase64': fotoBase64,
+                  'rescateId': rescateId,
                 },
               ),
             ));

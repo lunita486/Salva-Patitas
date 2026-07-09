@@ -199,12 +199,18 @@ Future<void> aprobarSolicitud(String docId, Map<String, dynamic> d) async {
   }
 
   if (animalNombre.isNotEmpty) {
-    final otros = await FirebaseFirestore.instance
+    // Se agrega rescateId cuando está disponible para no confundir animales
+    // con el mismo nombre publicados por la misma cuenta bajo distinto rol
+    // (ej. un "Rocky" como rescatista y otro "Rocky" como albergue).
+    Query<Map<String, dynamic>> q = FirebaseFirestore.instance
         .collection('solicitudes')
         .where('animalNombre', isEqualTo: animalNombre)
         .where('rescatistaId', isEqualTo: rescatistaId)
-        .where('estado',       isEqualTo: 'pendiente')
-        .get();
+        .where('estado',       isEqualTo: 'pendiente');
+    if (rescateId.isNotEmpty) {
+      q = q.where('rescateId', isEqualTo: rescateId);
+    }
+    final otros = await q.get();
     for (final doc in otros.docs) {
       if (doc.id == docId) continue;
       final otroAdoptanteId = (doc.data())['adoptanteId'] as String? ?? '';
@@ -539,6 +545,8 @@ class _SolicitudesRescatistaScreenState extends State<SolicitudesRescatistaScree
                                   animal: {
                                     'nombre':         animal,
                                     'rescatista':     FirebaseAuth.instance.currentUser?.displayName ?? 'Rescatista',
+                                    'rescatistaId':   FirebaseAuth.instance.currentUser?.uid ?? '',
+                                    'rescateId':      d['rescateId'] as String? ?? '',
                                     'especie':        d['especie'] as String? ?? 'Perro',
                                     'fotoBase64':     d['fotoBase64'] as String?,
                                     'tipoSolicitud':  d['tipoSolicitud'] as String? ?? 'adopcion',

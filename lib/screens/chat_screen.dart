@@ -185,7 +185,30 @@ class _ChatScreenState extends State<ChatScreen> {
                   final tipo = widget.animal['tipoSolicitud'] as String? ?? 'adopcion';
                   if (tipo.startsWith('consulta')) return const SizedBox.shrink();
                   final rescatistaId = widget.animal['rescatistaId'] as String? ?? '';
+                  final rescateId = widget.animal['rescateId'] as String? ?? '';
                   if (rescatistaId.isEmpty) return _estadoBadgeTipo(tipo);
+
+                  Widget badgeFor(String? estadoReal) {
+                    if (estadoReal == 'Fallecido') {
+                      return _estadoBadge('🌈 Falleció', const Color(0xFFECEFF1), const Color(0xFF546E7A));
+                    }
+                    if (estadoReal == 'Adoptado') {
+                      return _estadoBadge('✅ Adoptado', const Color(0xFFE3F2FD), const Color(0xFF1565C0));
+                    }
+                    return _estadoBadgeTipo(tipo);
+                  }
+
+                  // Con rescateId se busca el documento exacto (sin ambigüedad
+                  // posible); sin él, se cae al buscar por nombre + rescatistaId
+                  // como antes (puede confundirse si hay 2 animales con el
+                  // mismo nombre bajo la misma cuenta en distinto rol).
+                  if (rescateId.isNotEmpty) {
+                    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                      stream: FirebaseFirestore.instance.collection('rescates')
+                          .doc(rescateId).snapshots(),
+                      builder: (_, snap) => badgeFor(snap.data?.data()?['estadoAdopcion'] as String?),
+                    );
+                  }
                   return StreamBuilder<QuerySnapshot>(
                     stream: FirebaseFirestore.instance.collection('rescates')
                         .where('rescatistaId', isEqualTo: rescatistaId)
@@ -196,13 +219,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       final estadoReal = docs.isNotEmpty
                           ? (docs.first.data() as Map<String, dynamic>)['estadoAdopcion'] as String?
                           : null;
-                      if (estadoReal == 'Fallecido') {
-                        return _estadoBadge('🌈 Falleció', const Color(0xFFECEFF1), const Color(0xFF546E7A));
-                      }
-                      if (estadoReal == 'Adoptado') {
-                        return _estadoBadge('✅ Adoptado', const Color(0xFFE3F2FD), const Color(0xFF1565C0));
-                      }
-                      return _estadoBadgeTipo(tipo);
+                      return badgeFor(estadoReal);
                     },
                   );
                 }),
