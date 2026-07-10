@@ -1,16 +1,24 @@
 const { onDocumentCreated, onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const { initializeApp } = require('firebase-admin/app');
-const { getFirestore } = require('firebase-admin/firestore');
+const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { getMessaging } = require('firebase-admin/messaging');
 
 initializeApp();
 
-async function getToken(uid) {
-  const doc = await getFirestore().collection('usuarios').doc(uid).get();
-  return doc.exists ? (doc.data().fcmToken || null) : null;
-}
+// Tokens que FCM reporta como muertos (app desinstalada, token vencido/rotado).
+// Sin esto, un usuario que desinstaló la app acumula intentos de envío fallidos
+// para siempre y el token nunca se limpia.
+const TOKEN_INVALIDO = new Set([
+  'messaging/registration-token-not-registered',
+  'messaging/invalid-registration-token',
+]);
 
-async function sendNotif(token, title, body) {
+// Busca el token del destinatario y le envía la notificación. Si FCM dice
+// que el token ya no sirve, lo borra del perfil en la misma operación.
+async function notificar(uid, title, body) {
+  const userRef = getFirestore().collection('usuarios').doc(uid);
+  const doc = await userRef.get();
+  const token = doc.exists ? (doc.data().fcmToken || null) : null;
   if (!token) return;
   try {
     await getMessaging().send({
@@ -19,7 +27,10 @@ async function sendNotif(token, title, body) {
       android: { priority: 'high' },
     });
   } catch (e) {
-    console.error('FCM error:', e.message);
+    console.error('FCM error:', e.code || e.message);
+    if (TOKEN_INVALIDO.has(e.code)) {
+      await userRef.update({ fcmToken: FieldValue.delete() }).catch(() => {});
+    }
   }
 }
 
@@ -39,9 +50,8 @@ exports.onNuevoMensaje = onDocumentCreated(
     const recipientId = emisor === 'rescatista' ? chat.adoptanteId : chat.rescatistaId;
     if (!recipientId) return;
 
-    const token = await getToken(recipientId);
     const animal = chat.animalNombre || 'Animal';
-    await sendNotif(token, `Mensaje sobre ${animal}`, data.texto || '');
+    await notificar(recipientId, `Mensaje sobre ${animal}`, data.texto || '');
   }
 );
 
@@ -53,10 +63,9 @@ exports.onNuevaSolicitud = onDocumentCreated(
     const rescatistaId = sol.rescatistaId;
     if (!rescatistaId) return;
 
-    const token = await getToken(rescatistaId);
     const tipo = sol.tipoSolicitud === 'hogar_de_paso' ? 'hogar de paso' : 'adopción';
-    await sendNotif(
-      token,
+    await notificar(
+      rescatistaId,
       `Nueva solicitud de ${tipo}`,
       `${sol.nombre || 'Alguien'} quiere adoptar a ${sol.animalNombre || 'tu animal'}`
     );
@@ -76,13 +85,12 @@ exports.onCambioEstadoSolicitud = onDocumentUpdated(
     const adoptanteId = after.adoptanteId;
     if (!adoptanteId) return;
 
-    const token = await getToken(adoptanteId);
     const animal = after.animalNombre || 'tu animal';
 
     if (after.estado === 'aprobada') {
-      await sendNotif(token, '¡Tu solicitud fue aprobada! 🐾', `¡Felicidades! Tu solicitud para ${animal} fue aprobada.`);
+      await notificar(adoptanteId, '¡Tu solicitud fue aprobada! 🐾', `¡Felicidades! Tu solicitud para ${animal} fue aprobada.`);
     } else {
-      await sendNotif(token, 'Solicitud no aceptada', `Tu solicitud para ${animal} no fue aceptada esta vez.`);
+      await notificar(adoptanteId, 'Solicitud no aceptada', `Tu solicitud para ${animal} no fue aceptada esta vez.`);
     }
   }
 );
