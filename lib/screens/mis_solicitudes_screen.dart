@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'dart:convert';
 import '../theme.dart';
+import '../data/chats_repository.dart';
 import 'chat_screen.dart';
 
 class MisSolicitudesScreen extends StatelessWidget {
@@ -72,7 +72,7 @@ class MisSolicitudesScreen extends StatelessWidget {
                     final motivo     = d['motivoRechazo'] as String?;
                     final ts         = d['creadoEn'] as Timestamp?;
                     final fecha      = ts != null ? _formatFecha(ts.toDate()) : '';
-                    final fotoBase64    = d['fotoBase64']      as String?;
+                    final fotoUrl       = d['fotoUrl']         as String?;
                     final tipo          = d['tipoSolicitud']   as String? ?? 'adopcion';
                     final fechaFinTs    = d['fechaFinHogar']   as Timestamp?;
                     final fechaInicioTs = d['fechaInicioHogar'] as Timestamp?;
@@ -105,9 +105,16 @@ class MisSolicitudesScreen extends StatelessWidget {
                       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         ClipRRect(
                           borderRadius: BorderRadius.circular(12),
-                          child: fotoBase64 != null
-                              ? Image.memory(base64Decode(fotoBase64),
-                                  width: 56, height: 56, fit: BoxFit.cover)
+                          child: fotoUrl != null
+                              ? FotoUrl(
+                                  url: fotoUrl,
+                                  width: 56, height: 56, fit: BoxFit.cover,
+                                  fallback: Container(
+                                    width: 56, height: 56,
+                                    color: appTeal.withValues(alpha: 0.12),
+                                    child: const Center(child: Text('🐾', style: TextStyle(fontSize: 26))),
+                                  ),
+                                )
                               : Container(
                                   width: 56, height: 56,
                                   color: appTeal.withValues(alpha: 0.12),
@@ -174,21 +181,30 @@ class MisSolicitudesScreen extends StatelessWidget {
                             GestureDetector(
                               onTap: () async {
                                 final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-                                final snap = await FirebaseFirestore.instance
-                                    .collection('chats')
-                                    .where('adoptanteId', isEqualTo: uid)
-                                    .where('animalNombre', isEqualTo: animal)
-                                    .limit(1)
-                                    .get();
+                                final rescateIdChat = d['rescateId'] as String? ?? '';
+                                String? chatId;
+                                if (rescateIdChat.isNotEmpty) {
+                                  final doc = await FirebaseFirestore.instance
+                                      .collection('chats').doc(ChatsRepository()
+                                          .idAnimal(rescateId: rescateIdChat, adoptanteId: uid)).get();
+                                  if (doc.exists) chatId = doc.id;
+                                } else {
+                                  final snap = await FirebaseFirestore.instance
+                                      .collection('chats')
+                                      .where('adoptanteId', isEqualTo: uid)
+                                      .where('animalNombre', isEqualTo: animal)
+                                      .limit(1)
+                                      .get();
+                                  if (snap.docs.isNotEmpty) chatId = snap.docs.first.id;
+                                }
                                 if (!context.mounted) return;
-                                final chatId = snap.docs.isNotEmpty ? snap.docs.first.id : null;
                                 final animalMap = {
                                   'nombre':        animal,
                                   'rescatista':    d['rescatistaNombre'] as String? ?? d['rescatista'] as String? ?? 'Rescatista',
                                   'rescatistaId':  d['rescatistaId'] as String? ?? '',
                                   'rescateId':     d['rescateId'] as String? ?? '',
                                   'especie':       d['especie'] as String? ?? 'Perro',
-                                  'fotoBase64':    fotoBase64,
+                                  'fotoUrl':       fotoUrl,
                                   'tipoSolicitud': tipo,
                                   'edad':          '',
                                   'ubicacion':     '',

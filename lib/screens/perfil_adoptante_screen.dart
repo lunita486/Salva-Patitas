@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme.dart';
+import '../data/usuarios_repository.dart';
 import 'mis_solicitudes_screen.dart';
 import 'tipo_animal_screen.dart';
 
@@ -71,8 +72,7 @@ class PerfilAdoptanteScreen extends StatelessWidget {
       builder: (ctx) => _RolesSheet(rolesActuales: roles),
     );
     if (seleccion == null || seleccion.isEmpty) return;
-    await FirebaseFirestore.instance
-        .collection('usuarios').doc(uid).update({'roles': seleccion});
+    await UsuariosRepository().actualizarRoles(uid, seleccion);
   }
 
   @override

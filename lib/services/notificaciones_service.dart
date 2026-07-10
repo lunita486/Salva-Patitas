@@ -37,10 +37,14 @@ class NotificacionesService {
     if (uid == null) return;
     final token = await _messaging.getToken();
     if (token == null) return;
+    // set+merge, no update(): un usuario nuevo (a mitad de onboarding, antes
+    // de que exista usuarios/{uid}) o un refresh de token justo tras el
+    // primer login puede llegar antes de que el doc exista — update()
+    // fallaría con "not-found" en ese momento, que es al arrancar la app.
     await FirebaseFirestore.instance
         .collection('usuarios')
         .doc(uid)
-        .update({'fcmToken': token});
+        .set({'fcmToken': token}, SetOptions(merge: true));
   }
 
   // Muestra un banner dentro del app cuando llega una notificación en primer plano.

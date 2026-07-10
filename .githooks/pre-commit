@@ -1,0 +1,43 @@
+#!/bin/sh
+# Bloquea código NUEVO que accede directo a Firestore para rescates/
+# solicitudes/preferencias fuera de lib/data/. Ver ARCHITECTURE.md.
+#
+# Solo mira las líneas AGREGADAS en este commit (diff con +), no el archivo
+# completo — así no bloquea código viejo que ya estaba ahí antes de este
+# hook, solo avisa cuando se está por agregar un caso nuevo del mismo bug
+# que motivó toda esta capa (rescatistaId sin creadoPor, doc compartido de
+# preferencias, etc.).
+
+pattern="FirebaseFirestore\.instance\.collection\([[:space:]]*['\"](rescates|solicitudes|preferencias)['\"]"
+found=0
+
+files=$(git diff --cached --name-only --diff-filter=ACM -- 'lib/*.dart')
+
+for file in $files; do
+  case "$file" in
+    lib/data/*) continue ;;
+  esac
+  added=$(git diff --cached -U0 -- "$file" | grep -E '^\+' | grep -vF '+++ b/' | grep -E "$pattern")
+  if [ -n "$added" ]; then
+    found=1
+    echo ""
+    echo "  $file:"
+    echo "$added" | sed 's/^\+/    +/'
+  fi
+done
+
+if [ "$found" = "1" ]; then
+  echo ""
+  echo "Commit bloqueado: acceso directo a Firestore para rescates/solicitudes/"
+  echo "preferencias fuera de lib/data/."
+  echo ""
+  echo "Estas colecciones pasan siempre por su repositorio (RescatesRepository,"
+  echo "SolicitudesRepository, PreferenciasRepository) — ver ARCHITECTURE.md."
+  echo ""
+  echo "Si el método que necesitás no existe todavía, agregalo ahí (con su"
+  echo "test en test/data/) en vez de llamar a Firestore directo desde la pantalla."
+  echo ""
+  exit 1
+fi
+
+exit 0

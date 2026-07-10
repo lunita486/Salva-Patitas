@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'dart:async';
-import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/rendering.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:share_plus/share_plus.dart';
 import '../theme.dart';
+import '../compatibilidad.dart';
+import '../data/rescates_repository.dart';
+import '../data/preferencias_repository.dart';
 import 'animal_detalle_screen.dart';
 import 'albergue_publico_screen.dart';
 import 'aliado_publico_screen.dart';
@@ -138,7 +141,7 @@ Future<void> compartirAnimal({
   required String edad,
   required String ubicacion,
   required List<String> tags,
-  String? fotoBase64,
+  String? fotoUrl,
 }) async {
   final emoji = especie == 'Gato' ? '🐱' : '🐶';
   final tagsTexto = tags.isNotEmpty ? tags.map((t) => '✅ $t').join('  ') : '';
@@ -148,10 +151,18 @@ Future<void> compartirAnimal({
       '${tagsTexto.isNotEmpty ? '$tagsTexto\n' : ''}'
       '\n¡Ayúdalo a encontrar familia descargando *Salva Patitas* 💚';
 
-  if (fotoBase64 != null) {
+  // La foto ya no es un string local (base64) — hay que bajarla de Storage
+  // antes de poder compartirla como archivo. Si falla (sin red, URL rota),
+  // se comparte solo el texto en vez de romper el flujo de compartir.
+  Uint8List? fotoBytes;
+  if (fotoUrl != null) {
+    try {
+      fotoBytes = await FirebaseStorage.instance.refFromURL(fotoUrl).getData();
+    } catch (_) {}
+  }
+  if (fotoBytes != null) {
     Uint8List? cardBytes;
     try {
-      final fotoBytes = base64Decode(fotoBase64);
       // Decodifica la imagen ANTES de capturar la tarjeta — Image.memory no
       // pinta de forma instantánea, y sin este paso la captura puede ganarle
       // la carrera al decode y salir en negro.
@@ -166,56 +177,17 @@ Future<void> compartirAnimal({
         }
       }
     } catch (_) {}
+    // fotoBytes ya se validó arriba (bytesFotoSegura), así que este
+    // fallback no puede volver a fallar por el mismo dato corrupto.
     final xfile = cardBytes != null
         ? XFile.fromData(cardBytes, mimeType: 'image/png', name: '$nombre.png')
-        : XFile.fromData(base64Decode(fotoBase64), mimeType: 'image/jpeg', name: '$nombre.jpg');
+        : XFile.fromData(fotoBytes, mimeType: 'image/jpeg', name: '$nombre.jpg');
     await Share.shareXFiles([xfile], text: texto);
   } else {
     await Share.share(texto);
   }
 }
 
-
-int calcularCompatibilidadFeed(Map<String, dynamic> solicitud) {
-  int score = 0;
-
-  final energia    = solicitud['animalEnergia']  as String? ?? 'Tranquilo';
-  final horas      = int.tryParse(solicitud['horasFuera']?.toString() ?? '0') ?? 0;
-  final vivienda   = solicitud['vivienda']       as String? ?? '';
-  final tienePatio = vivienda == 'Casa con jardín';
-
-  if (energia == 'Tranquilo') {
-    score += 20;
-  } else if (energia == 'Activo') {
-    score += horas <= 8 ? 20 : 10;
-  } else {
-    if (tienePatio && horas <= 6) score += 20;
-    else if (tienePatio || horas <= 6) score += 10;
-  }
-
-  final tamano = solicitud['animalTamano'] as String? ?? 'Mediano';
-  if (tamano == 'Pequeño') {
-    score += 20;
-  } else if (tamano == 'Mediano') {
-    score += vivienda != 'Apartamento sin área exterior' ? 20 : 10;
-  } else {
-    score += tienePatio ? 20 : (vivienda == 'Apartamento con balcón' ? 10 : 0);
-  }
-
-  final okNinos    = solicitud['animalOkConNinos']   as bool? ?? true;
-  final tieneNinos = solicitud['tieneNinos']         as bool? ?? false;
-  score += (!tieneNinos || okNinos) ? 20 : 0;
-
-  final okMascotas    = solicitud['animalOkConMascotas'] as bool? ?? true;
-  final tieneMascotas = solicitud['tieneMascotas']       as bool? ?? false;
-  score += (!tieneMascotas || okMascotas) ? 20 : 0;
-
-  final requiereExp = solicitud['animalRequiereExp']   as bool? ?? false;
-  final tieneExp    = solicitud['experienciaPrevia']   as bool? ?? false;
-  score += (!requiereExp || tieneExp) ? 20 : 0;
-
-  return score;
-}
 
 class AdoptanteFeedScreen extends StatefulWidget {
   const AdoptanteFeedScreen();
@@ -232,7 +204,13 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
   String _prefTamano  = 'Cualquiera';
   String _prefEdad    = 'Cualquiera';
   StreamSubscription? _prefSub;
+  StreamSubscription? _perfilAdopcionSub;
   final _fotoPageNotifier = ValueNotifier<int>(0);
+  // Animales recién marcados como favoritos en esta sesión: se ocultan del
+  // feed al instante, sin esperar a que Firestore confirme el favorito.
+  // Antes se avanzaba _idx a mano Y la lista se achicaba sola cuando
+  // Firestore confirmaba — las dos cosas juntas salteaban un animal.
+  final Set<String> _favoritosRecientes = {};
 
   @override
   void initState() {
@@ -252,26 +230,34 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
       if (!doc.exists || !mounted) return;
       final data = doc.data() as Map<String, dynamic>;
       setState(() {
-        if (data['perfilAdopcion'] != null) {
-          _perfilAdopcion = Map<String, dynamic>.from(data['perfilAdopcion']);
-        }
         _prefEspecie = data['prefEspecie'] ?? 'Ambos';
         _prefTamano  = data['prefTamano']  ?? 'Cualquiera';
         _prefEdad    = data['prefEdad']    ?? 'Cualquiera';
       });
+    });
+    // perfilAdopcion vive en preferencias/{uid} (privado, solo el dueño lo
+    // lee), no en usuarios/{uid} (legible por cualquier usuario logueado
+    // porque hay perfiles públicos) — ver ARCHITECTURE.md.
+    _perfilAdopcionSub = PreferenciasRepository().stream(uid).listen((doc) {
+      if (!doc.exists || !mounted) return;
+      final perfil = doc.data()?['perfilAdopcion'];
+      if (perfil != null) {
+        setState(() => _perfilAdopcion = Map<String, dynamic>.from(perfil));
+      }
     });
   }
 
   @override
   void dispose() {
     _prefSub?.cancel();
+    _perfilAdopcionSub?.cancel();
     _fotoPageNotifier.dispose();
     super.dispose();
   }
 
   int _calcularScore(Map<String, dynamic> animal) {
     if (_perfilAdopcion == null) return -1;
-    return calcularCompatibilidadFeed({
+    return calcularCompatibilidad({
       ...animal,
       'animalEnergia':       animal['energia'],
       'animalTamano':        animal['tamano'],
@@ -323,9 +309,11 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
 
 
   Future<void> _guardarFavorito(Map<String, dynamic> animal) async {
-    final uid    = FirebaseAuth.instance.currentUser?.uid ?? '';
-    final nombre = (animal['nombre'] as String).toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_');
-    final docId  = '${uid}_$nombre';
+    final uid       = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final rescateId = animal['rescateId'] as String? ?? '';
+    final docId = rescateId.isNotEmpty
+        ? '${uid}_$rescateId'
+        : '${uid}_${(animal['nombre'] as String? ?? '').toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_')}';
     await FirebaseFirestore.instance.collection('favoritos').doc(docId).set({
       'adoptanteId':  uid,
       'animalNombre': animal['nombre'],
@@ -338,7 +326,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
       'rescatistaId': animal['rescatistaId'] ?? '',
       'rescateId':    animal['rescateId']    ?? '',
       'genero':       animal['genero'] ?? '',
-      'fotoBase64':   animal['fotoBase64'],
+      'fotoUrl':      animal['fotoUrl'],
       'verificado':   animal['verificado'] ?? false,
       'creadoPor':    animal['creadoPor'] ?? 'rescatista',
       'creadoEn':     FieldValue.serverTimestamp(),
@@ -347,13 +335,25 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
-          .collection('rescates')
-          .orderBy('creadoEn', descending: true)
+          .collection('favoritos')
+          .where('adoptanteId', isEqualTo: uid)
           .snapshots(),
+      builder: (context, favSnap) {
+        // Animales ya guardados en Favoritos: no hace falta mostrarlos de
+        // nuevo en el feed principal, ya quedan a mano en esa pestaña.
+        final favRescateIds = (favSnap.data?.docs ?? [])
+            .map((d) => (d.data() as Map<String, dynamic>)['rescateId'] as String? ?? '')
+            .where((id) => id.isNotEmpty)
+            .toSet();
+        return StreamBuilder<QuerySnapshot>(
+      stream: RescatesRepository().feedPublico(),
       builder: (context, snap) {
+        if (snap.hasError) return errorFeedState();
         final firestoreDocs = (snap.data?.docs ?? []).where((doc) {
+          if (favRescateIds.contains(doc.id) || _favoritosRecientes.contains(doc.id)) return false;
           final d = doc.data() as Map<String, dynamic>;
           final estado = d['estadoAdopcion'] as String?;
           if (!(estado == null || estado == 'Rescatado' || estado == 'Regresado' || estado == 'Hogar de paso')) return false;
@@ -365,7 +365,17 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
           if (_prefEdad != 'Cualquiera' && edad != _prefEdad) return false;
           // filtro por país deshabilitado — se activa cuando haya masa crítica de animales por región
           return true;
-        }).toList();
+        }).toList()
+          // Más nuevos primero. Sin campo `creadoEn` (legado) se van al final
+          // en vez de desaparecer del feed — ver feedPublico() en el repo.
+          ..sort((a, b) {
+            final ta = (a.data() as Map<String, dynamic>)['creadoEn'] as Timestamp?;
+            final tb = (b.data() as Map<String, dynamic>)['creadoEn'] as Timestamp?;
+            if (ta == null && tb == null) return 0;
+            if (ta == null) return 1;
+            if (tb == null) return -1;
+            return tb.compareTo(ta);
+          });
         final animals = <Map<String, dynamic>>[
           ...firestoreDocs.map((doc) {
             final d = doc.data() as Map<String, dynamic>;
@@ -387,10 +397,12 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                                     ],
               'rescatista':          d['rescatistaNombre'] ?? 'Rescatista',
               'rescatistaId':        d['rescatistaId'] ?? '',
+              'rescatistaFotoBase64': d['rescatistaFotoBase64'],
+              'rescatistaFotoUrl':   d['rescatistaFotoUrl'],
               'rescateId':           doc.id,
               'estadoAdopcion':      d['estadoAdopcion'] ?? '',
-              'fotoBase64':          d['fotoBase64'],
-              'fotoBase642':         d['fotoBase642'],
+              'fotoUrl':             d['fotoUrl'],
+              'fotoUrl2':            d['fotoUrl2'],
               'latitud':             d['latitud'],
               'longitud':            d['longitud'],
               'energia':             d['energia'],
@@ -444,11 +456,11 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
             child: SizedBox(
               width: double.infinity,
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                if ((animal['ubicacion'] as String).isNotEmpty)
+                if ((animal['ubicacion'] as String? ?? '').isNotEmpty)
                   Text(
                       distancia.isNotEmpty
-                          ? 'EN ${(animal['ubicacion'] as String).toUpperCase()} · A ${distancia.toUpperCase()} DE TI'
-                          : 'EN ${(animal['ubicacion'] as String).toUpperCase()}',
+                          ? 'EN ${(animal['ubicacion'] as String? ?? '').toUpperCase()} · A ${distancia.toUpperCase()} DE TI'
+                          : 'EN ${(animal['ubicacion'] as String? ?? '').toUpperCase()}',
                       style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
                           letterSpacing: 1.2, color: appTeal)),
                 const Text('Animales disponibles',
@@ -502,13 +514,26 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
               }),
               const SizedBox(width: 18),
               _actionBtn(Icons.favorite, appOrange, Colors.white, 62, () async {
-                await _guardarFavorito(animal);
+                // Se oculta de una (sin avanzar _idx a mano): la lista se
+                // achica sola y el siguiente animal ocupa este mismo lugar.
+                final favRescateId = animal['rescateId'] as String? ?? '';
+                final messenger = ScaffoldMessenger.of(context);
                 _fotoPageNotifier.value = 0;
-                setState(() => _idx++);
+                if (favRescateId.isNotEmpty) setState(() => _favoritosRecientes.add(favRescateId));
+                try {
+                  await _guardarFavorito(animal);
+                } catch (e) {
+                  if (!mounted) return;
+                  if (favRescateId.isNotEmpty) setState(() => _favoritosRecientes.remove(favRescateId));
+                  messenger.showSnackBar(const SnackBar(
+                      content: Text('No se pudo guardar el favorito. Intentá de nuevo.')));
+                }
               }),
             ]),
           ),
         ]);
+      },
+    );
       },
     );
   }
@@ -541,7 +566,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
         const Text('Eso es todo por hoy',
             style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
         const SizedBox(height: 8),
-        Text('Vuelve mañana — nuevos amigos\nllegan cada día.',
+        Text('Vuelve mañana, nuevos amigos\nllegan cada día.',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 14, color: Colors.grey.shade600, height: 1.5)),
         const SizedBox(height: 24),
@@ -609,17 +634,19 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                           blurRadius: 8, offset: const Offset(0, 2))],
                     ),
                     child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                      CircleAvatar(
-                        radius: 26,
-                        backgroundColor: appTeal.withValues(alpha: 0.12),
-                        backgroundImage: foto != null
-                            ? MemoryImage(base64Decode(foto)) as ImageProvider
-                            : null,
-                        child: foto == null
-                            ? Text(ini, style: const TextStyle(
-                                color: appTeal, fontWeight: FontWeight.bold, fontSize: 18))
-                            : null,
-                      ),
+                      Builder(builder: (_) {
+                        final fotoBytes = bytesFotoSegura(foto);
+                        return CircleAvatar(
+                          radius: 26,
+                          backgroundColor: appTeal.withValues(alpha: 0.12),
+                          backgroundImage: fotoBytes != null ? MemoryImage(fotoBytes) : null,
+                          onBackgroundImageError: fotoBytes != null ? (_, __) {} : null,
+                          child: fotoBytes == null
+                              ? Text(ini, style: const TextStyle(
+                                  color: appTeal, fontWeight: FontWeight.bold, fontSize: 18))
+                              : null,
+                        );
+                      }),
                       const SizedBox(height: 8),
                       Text(nombre, style: const TextStyle(fontSize: 11,
                           fontWeight: FontWeight.w700, color: Color(0xFF1A1A1A)),
@@ -659,9 +686,9 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
       );
 
   Widget _buildCard(Map<String, dynamic> a, String distancia, int score) {
-    final fotoBase64  = a['fotoBase64']  as String?;
-    final fotoBase642 = a['fotoBase642'] as String?;
-    final fotos = [if (fotoBase64 != null) fotoBase64, if (fotoBase642 != null) fotoBase642];
+    final fotoUrl  = a['fotoUrl']  as String?;
+    final fotoUrl2 = a['fotoUrl2'] as String?;
+    final fotos = [if (fotoUrl != null) fotoUrl, if (fotoUrl2 != null) fotoUrl2];
     final nombre      = a['nombre']     as String;
     final edad        = a['edad']       as String;
     final raza        = a['raza']       as String;
@@ -675,6 +702,8 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
     final urgencia        = a['urgencia']       as String? ?? '';
     final creadoPor       = a['creadoPor']      as String? ?? '';
     final rescatistaId    = a['rescatistaId']   as String? ?? '';
+    final rescatistaFotoBase64 = a['rescatistaFotoBase64'] as String?;
+    final rescatistaFotoUrl    = a['rescatistaFotoUrl']    as String?;
     final rescateId       = a['rescateId']      as String? ?? '';
     final especie         = a['especie'] as String? ?? '';
     final emoji           = especie == 'Gato' ? '🐱' : '🐶';
@@ -714,8 +743,19 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                       duration: const Duration(milliseconds: 250),
                       child: SizedBox.expand(
                         key: ValueKey(fotoIdx),
-                        child: Image.memory(base64Decode(fotos[fotoIdx]),
-                            fit: BoxFit.cover, alignment: Alignment.center),
+                        child: FotoUrl(
+                          url: fotos[fotoIdx],
+                          fit: BoxFit.cover,
+                          fallback: Container(
+                            decoration: const BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft, end: Alignment.bottomRight,
+                                colors: [Color(0xFF3D7A52), Color(0xFF1F4A30)],
+                              ),
+                            ),
+                            child: Center(child: Text(emoji, style: const TextStyle(fontSize: 90))),
+                          ),
+                        ),
                       ),
                     ),
                   )
@@ -904,36 +944,39 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  GestureDetector(
+                  Expanded(
+                    child: GestureDetector(
                     onTap: (creadoPor == 'albergue' && rescatistaId.isNotEmpty)
                         ? () => Navigator.push(context, MaterialPageRoute(
                             builder: (_) => AlberguePublicoScreen(
                                 rescatistaId: rescatistaId)))
                         : null,
                     child: Row(children: [
-                      CircleAvatar(
-                        backgroundColor: appTeal.withValues(alpha: 0.15),
-                        radius: 16,
-                        child: Text(
-                          rescatista.isNotEmpty ? rescatista[0].toUpperCase() : 'R',
-                          style: const TextStyle(color: appTeal, fontSize: 13, fontWeight: FontWeight.bold),
-                        ),
+                      _AvatarPublicador(
+                        fotoBase64: rescatistaFotoBase64,
+                        fotoUrl: rescatistaFotoUrl,
+                        inicial: rescatista.isNotEmpty ? rescatista[0].toUpperCase() : 'R',
                       ),
                       const SizedBox(width: 10),
-                      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Text(creadoPor == 'albergue' ? 'Albergue' : 'Rescatista',
                             style: const TextStyle(fontSize: 10, color: Color(0xFFAAAAAA))),
                         Row(children: [
-                          Text(rescatista,
-                              style: const TextStyle(fontSize: 13,
-                                  fontWeight: FontWeight.w600, color: appTeal)),
+                          Flexible(
+                            child: Text(rescatista,
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                                style: const TextStyle(fontSize: 13,
+                                    fontWeight: FontWeight.w600, color: appTeal)),
+                          ),
                           if (creadoPor == 'albergue') ...[
                             const SizedBox(width: 4),
                             const Icon(Icons.chevron_right, size: 14, color: appTeal),
                           ],
                         ]),
-                      ]),
+                      ])),
                     ]),
+                    ),
                   ),
                   GestureDetector(
                     onTap: () => compartirAnimal(
@@ -943,7 +986,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                       edad: edad,
                       ubicacion: ubicacion,
                       tags: tags,
-                      fotoBase64: fotoBase64,
+                      fotoUrl: fotoUrl,
                     ),
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
@@ -975,7 +1018,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                     edad: edad,
                     ubicacion: ubicacion,
                     tags: tags,
-                    fotoBase64: fotoBase64,
+                    fotoUrl: fotoUrl,
                     rescatistaId: rescatistaId,
                     rescatista: rescatista,
                     rescateId: rescateId,
@@ -1089,17 +1132,19 @@ class AliadosScreen extends StatelessWidget {
                               blurRadius: 8, offset: const Offset(0, 2))],
                         ),
                         child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                          CircleAvatar(
-                            radius: 34,
-                            backgroundColor: appTeal.withValues(alpha: 0.12),
-                            backgroundImage: foto != null
-                                ? MemoryImage(base64Decode(foto)) as ImageProvider
-                                : null,
-                            child: foto == null
-                                ? Text(ini, style: const TextStyle(
-                                    color: appTeal, fontWeight: FontWeight.bold, fontSize: 24))
-                                : null,
-                          ),
+                          Builder(builder: (_) {
+                            final fotoBytes = bytesFotoSegura(foto);
+                            return CircleAvatar(
+                              radius: 34,
+                              backgroundColor: appTeal.withValues(alpha: 0.12),
+                              backgroundImage: fotoBytes != null ? MemoryImage(fotoBytes) : null,
+                              onBackgroundImageError: fotoBytes != null ? (_, __) {} : null,
+                              child: fotoBytes == null
+                                  ? Text(ini, style: const TextStyle(
+                                      color: appTeal, fontWeight: FontWeight.bold, fontSize: 24))
+                                  : null,
+                            );
+                          }),
                           const SizedBox(height: 10),
                           Text(nombre,
                               style: const TextStyle(fontSize: 13,
@@ -1140,10 +1185,52 @@ class AliadosScreen extends StatelessWidget {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Avatar de quien publicó el animal. Si la foto (base64 o url de Google)
+/// falla al cargar, cae a la inicial en vez de romper con una excepción sin
+/// manejar o quedar en blanco.
+class _AvatarPublicador extends StatefulWidget {
+  final String? fotoBase64;
+  final String? fotoUrl;
+  final String inicial;
+  const _AvatarPublicador({this.fotoBase64, this.fotoUrl, required this.inicial});
+
+  @override
+  State<_AvatarPublicador> createState() => _AvatarPublicadorState();
+}
+
+class _AvatarPublicadorState extends State<_AvatarPublicador> {
+  bool _falloCarga = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final fotoBytes = bytesFotoSegura(widget.fotoBase64);
+    final ImageProvider? foto = fotoBytes != null
+        ? MemoryImage(fotoBytes)
+        : widget.fotoUrl != null
+            ? NetworkImage(widget.fotoUrl!)
+            : null;
+    final mostrarFoto = foto != null && !_falloCarga;
+    return CircleAvatar(
+      backgroundColor: appTeal.withValues(alpha: 0.15),
+      radius: 16,
+      backgroundImage: mostrarFoto ? foto : null,
+      onBackgroundImageError: mostrarFoto
+          ? (_, __) {
+              if (mounted) setState(() => _falloCarga = true);
+            }
+          : null,
+      child: !mostrarFoto
+          ? Text(widget.inicial,
+              style: const TextStyle(color: appTeal, fontSize: 13, fontWeight: FontWeight.bold))
+          : null,
+    );
+  }
+}
+
 class _MeInteresaSheet extends StatelessWidget {
   final String nombre, especie, edad, ubicacion, rescatistaId, rescatista, rescateId, estadoAdopcion, creadoPor;
   final List<String> tags;
-  final String? fotoBase64;
+  final String? fotoUrl;
 
   const _MeInteresaSheet({
     required this.nombre,
@@ -1156,7 +1243,7 @@ class _MeInteresaSheet extends StatelessWidget {
     required this.tags,
     required this.estadoAdopcion,
     required this.creadoPor,
-    this.fotoBase64,
+    this.fotoUrl,
   });
 
   @override
@@ -1185,7 +1272,7 @@ class _MeInteresaSheet extends StatelessWidget {
                   'nombre': nombre, 'especie': especie, 'edad': edad,
                   'ubicacion': ubicacion, 'rescatista': rescatista,
                   'rescatistaId': rescatistaId, 'rescateId': rescateId,
-                  'fotoBase64': fotoBase64,
+                  'fotoUrl': fotoUrl,
                   'tipoSolicitud': 'hogar_de_paso',
                   'creadoPor': creadoPor,
                 }),
@@ -1198,84 +1285,25 @@ class _MeInteresaSheet extends StatelessWidget {
           emoji: '💬',
           titulo: 'Hacer una pregunta',
           subtitulo: 'Escribile directamente al rescatista',
-          onTap: () async {
-            final nav = Navigator.of(context);
-            nav.pop();
-            final adoptanteId = FirebaseAuth.instance.currentUser?.uid ?? '';
-            if (adoptanteId.isEmpty || rescatistaId.isEmpty) return;
-
-            final n    = DateTime.now();
-            final hora = '${n.hour}:${n.minute.toString().padLeft(2, '0')}';
-            const texto = 'Hola, me gustaría saber más 🐾';
-
-            // Buscar chat existente por adoptanteId (un solo campo = sin índice compuesto)
-            final todos = await FirebaseFirestore.instance
-                .collection('chats')
-                .where('adoptanteId', isEqualTo: adoptanteId)
-                .get();
-            final existente = todos.docs.where((d) {
-              final data = d.data();
-              return data['rescatistaId'] == rescatistaId &&
-                     data['animalNombre'] == nombre;
-            }).firstOrNull;
-
-            String chatId;
-            if (existente == null) {
-              final ref = await FirebaseFirestore.instance.collection('chats').add({
-                'adoptanteId':        adoptanteId,
-                'adoptanteNombre':    FirebaseAuth.instance.currentUser?.displayName ?? 'Adoptante',
-                'animalNombre':       nombre,
-                'rescatistaId':       rescatistaId,
-                'rescatista':         rescatista,
-                if (fotoBase64 != null) 'fotoBase64': fotoBase64,
-                'tipoSolicitud':      'consulta',
-                'ultimoMensaje':      texto,
-                'ultimaHora':         hora,
-                'ultimoMensajeEn':    FieldValue.serverTimestamp(),
-                'noLeidosRescatista': 1,
-              });
-              chatId = ref.id;
-            } else {
-              chatId = existente.id;
-              await FirebaseFirestore.instance.collection('chats').doc(chatId).update({
-                'ultimoMensaje':      texto,
-                'ultimaHora':         hora,
-                'ultimoMensajeEn':    FieldValue.serverTimestamp(),
-                'noLeidosRescatista': FieldValue.increment(1),
-              });
-            }
-
-            await FirebaseFirestore.instance
-                .collection('chats').doc(chatId).collection('mensajes').add({
-              'texto': texto, 'emisor': 'adoptante',
-              'hora': hora, 'creadoEn': FieldValue.serverTimestamp(),
-            });
-
-            nav.push(MaterialPageRoute(
+          onTap: () {
+            Navigator.pop(context);
+            // Abre el chat vacío (sin mensaje enlatado) para que el adoptante
+            // escriba su propia pregunta. ChatScreen ya sabe crear/encontrar
+            // el chat solo, usando el mismo id determinístico (rescateId+uid)
+            // que el resto de la app — así este chat es uno más normal y
+            // aparece en la bandeja del rescatista como cualquier otro.
+            Navigator.push(context, MaterialPageRoute(
               builder: (_) => ChatScreen(
                 esRescatista: false,
-                chatId: chatId,
                 animal: {
                   'nombre': nombre, 'rescatista': rescatista,
-                  'rescatistaId': rescatistaId, 'fotoBase64': fotoBase64,
-                  'rescateId': rescateId,
+                  'rescatistaId': rescatistaId, 'fotoUrl': fotoUrl,
+                  'rescateId': rescateId, 'especie': especie,
+                  'ubicacion': ubicacion, 'descripcion': '', 'tags': tags,
+                  'edad': edad, 'creadoPor': creadoPor,
                 },
               ),
             ));
-          },
-        ),
-        const SizedBox(height: 10),
-        _opcion(context,
-          emoji: '🔁',
-          titulo: 'Compartir',
-          subtitulo: 'Difundí a $nombre en tus redes',
-          onTap: () async {
-            await compartirAnimal(
-              context: context,
-              nombre: nombre, especie: especie, edad: edad,
-              ubicacion: ubicacion, tags: tags, fotoBase64: fotoBase64,
-            );
-            if (context.mounted) Navigator.pop(context);
           },
         ),
       ]),

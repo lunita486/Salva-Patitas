@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import '../theme.dart';
+import '../data/usuarios_repository.dart';
 
 class SeleccionRolScreen extends StatefulWidget {
   final User user;
@@ -15,6 +16,41 @@ class SeleccionRolScreen extends StatefulWidget {
 class _SeleccionRolScreenState extends State<SeleccionRolScreen> {
   final Set<String> _roles = {'adoptante'};
   bool _guardando = false;
+  bool _perfilExiste = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarRolesExistentes();
+  }
+
+  /// Esta pantalla puede aparecer para una cuenta que YA tiene perfil (la
+  /// caché de Firestore puede decir "no existe" por un instante en un
+  /// arranque en frío). Si el perfil existe, precargamos sus roles y en
+  /// _continuar() solo actualizamos roles — nunca se pisa el perfil entero.
+  Future<void> _cargarRolesExistentes() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('usuarios').doc(widget.user.uid).get();
+      final roles = (doc.data()?['roles'] as List?)
+              ?.cast<String>()
+              .where(UsuariosRepository.rolesValidos.contains)
+              .toSet() ??
+          {};
+      if (!mounted || !doc.exists) return;
+      setState(() {
+        _perfilExiste = true;
+        if (roles.isNotEmpty) {
+          _roles
+            ..clear()
+            ..addAll(roles);
+        }
+      });
+    } catch (_) {
+      // Sin conexión no podemos saberlo — _continuar() usa crearPerfil()
+      // con merge, así que aun en el peor caso no se pisa nada.
+    }
+  }
 
   Future<String> _detectarCiudad() async {
     try {
@@ -37,19 +73,28 @@ class _SeleccionRolScreenState extends State<SeleccionRolScreen> {
   Future<void> _continuar() async {
     setState(() => _guardando = true);
     try {
-      final ciudad = await _detectarCiudad().timeout(
-        const Duration(seconds: 5), onTimeout: () => '');
-      await FirebaseFirestore.instance
-          .collection('usuarios').doc(widget.user.uid).set({
-        'nombre':   widget.user.displayName ?? 'Usuario',
-        'email':    widget.user.email,
-        'foto':     widget.user.photoURL,
-        'roles':    _roles.toList(),
-        'ciudad':   ciudad,
-        'creadoEn': FieldValue.serverTimestamp(),
-      });
-    } catch (_) {
+      if (_perfilExiste) {
+        // Perfil ya creado: solo se tocan los roles (nada de ciudad, nombre,
+        // creadoEn... — eso ya lo tiene y no es asunto de esta pantalla).
+        await UsuariosRepository()
+            .actualizarRoles(widget.user.uid, _roles.toList());
+      } else {
+        final ciudad = await _detectarCiudad().timeout(
+          const Duration(seconds: 5), onTimeout: () => '');
+        await UsuariosRepository().crearPerfil(
+          uid:    widget.user.uid,
+          nombre: widget.user.displayName ?? 'Usuario',
+          email:  widget.user.email,
+          foto:   widget.user.photoURL,
+          roles:  _roles.toList(),
+          ciudad: ciudad,
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
       setState(() => _guardando = false);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('No se pudo crear tu perfil. Revisá tu conexión e intentá de nuevo.')));
     }
   }
 

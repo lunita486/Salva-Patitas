@@ -1,125 +1,46 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme.dart';
+import '../compatibilidad.dart';
 import '../data/creator_role.dart';
 import '../data/solicitudes_repository.dart';
+import '../data/rescates_repository.dart';
+import '../data/chats_repository.dart';
 import 'chat_screen.dart';
-
-int calcularCompatibilidad(Map<String, dynamic> solicitud) {
-  int score = 0;
-
-  final energia    = solicitud['animalEnergia']  as String? ?? 'Tranquilo';
-  final horas      = int.tryParse(solicitud['horasFuera']?.toString() ?? '0') ?? 0;
-  final vivienda   = solicitud['vivienda']       as String? ?? '';
-  final tienePatio = vivienda == 'Casa con jardín';
-
-  if (energia == 'Tranquilo') {
-    score += 20;
-  } else if (energia == 'Activo') {
-    score += horas <= 8 ? 20 : 10;
-  } else {
-    if (tienePatio && horas <= 6) score += 20;
-    else if (tienePatio || horas <= 6) score += 10;
-  }
-
-  final tamano = solicitud['animalTamano'] as String? ?? 'Mediano';
-  if (tamano == 'Pequeño') {
-    score += 20;
-  } else if (tamano == 'Mediano') {
-    score += vivienda != 'Apartamento sin área exterior' ? 20 : 10;
-  } else {
-    score += tienePatio ? 20 : (vivienda == 'Apartamento con balcón' ? 10 : 0);
-  }
-
-  final okNinos    = solicitud['animalOkConNinos']   as bool? ?? true;
-  final tieneNinos = solicitud['tieneNinos']         as bool? ?? false;
-  score += (!tieneNinos || okNinos) ? 20 : 0;
-
-  final okMascotas    = solicitud['animalOkConMascotas'] as bool? ?? true;
-  final tieneMascotas = solicitud['tieneMascotas']       as bool? ?? false;
-  score += (!tieneMascotas || okMascotas) ? 20 : 0;
-
-  final requiereExp = solicitud['animalRequiereExp']   as bool? ?? false;
-  final tieneExp    = solicitud['experienciaPrevia']   as bool? ?? false;
-  score += (!requiereExp || tieneExp) ? 20 : 0;
-
-  return score;
-}
-
-List<(String, bool)> explicarCompatibilidad(Map<String, dynamic> sol) {
-  final reasons = <(String, bool)>[];
-
-  final energia    = sol['animalEnergia']  as String? ?? 'Tranquilo';
-  final horas      = int.tryParse(sol['horasFuera']?.toString() ?? '0') ?? 0;
-  final vivienda   = sol['vivienda']       as String? ?? '';
-  final tienePatio = vivienda == 'Casa con jardín';
-  final tamano     = sol['animalTamano']       as String? ?? 'Mediano';
-  final okNinos    = sol['animalOkConNinos']   as bool?   ?? true;
-  final tieneNinos = sol['tieneNinos']         as bool?   ?? false;
-  final okMascotas    = sol['animalOkConMascotas'] as bool? ?? true;
-  final tieneMascotas = sol['tieneMascotas']       as bool? ?? false;
-  final requiereExp   = sol['animalRequiereExp']   as bool? ?? false;
-  final tieneExp      = sol['experienciaPrevia']   as bool? ?? false;
-
-  // Energía
-  if (energia == 'Tranquilo') {
-    reasons.add(('Animal tranquilo, se adapta bien al hogar', true));
-  } else if (energia == 'Activo') {
-    reasons.add(horas <= 8
-        ? ('Animal activo, horas fuera son aceptables', true)
-        : ('Animal activo pero pasa demasiadas horas solo ($horas h/día)', false));
-  } else {
-    if (tienePatio && horas <= 6)  reasons.add(('Animal muy activo — tiene jardín y poco tiempo solo', true));
-    else if (tienePatio)           reasons.add(('Animal muy activo — tiene jardín pero $horas h solo', false));
-    else if (horas <= 6)           reasons.add(('Animal muy activo — necesita jardín', false));
-    else                           reasons.add(('Animal muy activo — necesita jardín y menos horas solo', false));
-  }
-
-  // Tamaño
-  if (tamano == 'Pequeño') {
-    reasons.add(('Animal pequeño, se adapta a cualquier espacio', true));
-  } else if (tamano == 'Mediano') {
-    reasons.add(vivienda != 'Apartamento sin área exterior'
-        ? ('Animal mediano, el espacio es adecuado', true)
-        : ('Animal mediano en apartamento sin área exterior', false));
-  } else {
-    if (tienePatio)                              reasons.add(('Animal grande, tiene jardín suficiente', true));
-    else if (vivienda == 'Apartamento con balcón') reasons.add(('Animal grande, el espacio es limitado', false));
-    else                                          reasons.add(('Animal grande, necesita más espacio', false));
-  }
-
-  // Niños
-  if (!tieneNinos)      reasons.add(('Sin niños en casa', true));
-  else if (okNinos)     reasons.add(('Hay niños y el animal los acepta bien', true));
-  else                  reasons.add(('Hay niños pero el animal no es apto con ellos', false));
-
-  // Mascotas
-  if (!tieneMascotas)   reasons.add(('Sin otras mascotas en casa', true));
-  else if (okMascotas)  reasons.add(('Hay mascotas y el animal convive bien', true));
-  else                  reasons.add(('Hay mascotas pero el animal no convive con ellas', false));
-
-  // Experiencia
-  if (!requiereExp)     reasons.add(('No se requiere experiencia previa', true));
-  else if (tieneExp)    reasons.add(('El animal requiere experiencia — adoptante la tiene', true));
-  else                  reasons.add(('El animal requiere experiencia previa', false));
-
-  return reasons;
-}
 
 // ── Funciones top-level reutilizables por home_screen y solicitudes_screen ──
 
-Future<void> enviarMensajeChat(String adoptanteId, String animalNombre, String texto, {String? fotoBase64, String? adoptanteNombre, String? tipoSolicitud}) async {
+Future<bool> enviarMensajeChat(String adoptanteId, String animalNombre, String texto,
+    {String? fotoUrl, String? adoptanteNombre, String? tipoSolicitud, String? rescateId,
+     String? creadoPor, String? especie}) async {
   try {
     final rescatistaId = FirebaseAuth.instance.currentUser?.uid ?? '';
     final n    = DateTime.now();
     final hora = '${n.hour}:${n.minute.toString().padLeft(2, '0')}';
-    final chats = await FirebaseFirestore.instance.collection('chats')
-        .where('adoptanteId', isEqualTo: adoptanteId)
-        .where('animalNombre', isEqualTo: animalNombre)
-        .limit(1).get();
-    String chatId;
+
+    // Con rescateId se apunta directo al chat de ese animal puntual (id determinístico
+    // animal+adoptante); sin él (dato legado) se cae al viejo match por nombre.
+    DocumentReference<Map<String, dynamic>> chatRef;
+    DocumentSnapshot<Map<String, dynamic>>? existing;
+    if (rescateId != null && rescateId.isNotEmpty) {
+      chatRef = FirebaseFirestore.instance.collection('chats')
+          .doc(ChatsRepository().idAnimal(rescateId: rescateId, adoptanteId: adoptanteId));
+      final snap = await chatRef.get();
+      if (snap.exists) existing = snap;
+    } else {
+      final chats = await FirebaseFirestore.instance.collection('chats')
+          .where('adoptanteId', isEqualTo: adoptanteId)
+          .where('animalNombre', isEqualTo: animalNombre)
+          .limit(1).get();
+      if (chats.docs.isNotEmpty) {
+        existing = chats.docs.first;
+        chatRef = existing.reference;
+      } else {
+        chatRef = FirebaseFirestore.instance.collection('chats').doc();
+      }
+    }
+
     final userDoc = await FirebaseFirestore.instance.collection('usuarios').doc(rescatistaId).get();
     final userData = userDoc.data() ?? {};
     final rescatistaNombre =
@@ -128,56 +49,88 @@ Future<void> enviarMensajeChat(String adoptanteId, String animalNombre, String t
             : (userData['nombre'] as String?)?.isNotEmpty == true
                 ? userData['nombre'] as String
                 : FirebaseAuth.instance.currentUser?.displayName ?? 'Rescatista';
-    if (chats.docs.isEmpty) {
-      final ref = await FirebaseFirestore.instance.collection('chats').add({
-        'adoptanteId':     adoptanteId,
-        'adoptanteNombre': adoptanteNombre ?? 'Adoptante',
-        'animalNombre':    animalNombre,
-        'rescatistaId':    rescatistaId,
-        'rescatista':      rescatistaNombre,
-        if (fotoBase64     != null) 'fotoBase64':     fotoBase64,
-        if (tipoSolicitud  != null) 'tipoSolicitud':  tipoSolicitud,
-        'ultimoMensaje': texto, 'ultimaHora': hora,
-        'ultimoMensajeEn': FieldValue.serverTimestamp(),
-        'noLeidosAdoptante': 1,
-      });
-      chatId = ref.id;
+
+    if (existing == null) {
+      if (rescateId != null && rescateId.isNotEmpty) {
+        // Mismo método que usa el resto de la app para crear un chat de
+        // animal, así los campos (creadoPor, especie, etc.) no divergen
+        // entre quién crea el chat primero. Todo en una sola escritura
+        // (via `extra`) para que no pueda quedar un chat a medio crear si
+        // la app se cierra justo entre pasos.
+        await ChatsRepository().asegurarChatAnimal(
+          adoptanteId: adoptanteId,
+          adoptanteNombre: adoptanteNombre ?? 'Adoptante',
+          rescateId: rescateId,
+          rescatistaId: rescatistaId,
+          rescatista: rescatistaNombre,
+          creadoPor: creadoPor ?? 'rescatista',
+          animalNombre: animalNombre,
+          especie: especie,
+          fotoUrl: fotoUrl,
+          extra: {
+            'ultimoMensaje': texto, 'ultimaHora': hora,
+            'ultimoMensajeEn': FieldValue.serverTimestamp(),
+            'noLeidosAdoptante': 1,
+            if (tipoSolicitud != null) 'tipoSolicitud': tipoSolicitud,
+          },
+        );
+      } else {
+        await chatRef.set({
+          'adoptanteId':     adoptanteId,
+          'adoptanteNombre': adoptanteNombre ?? 'Adoptante',
+          'animalNombre':    animalNombre,
+          'creadoPor':       creadoPor ?? 'rescatista',
+          'rescatistaId':    rescatistaId,
+          'rescatista':      rescatistaNombre,
+          if (fotoUrl        != null) 'fotoUrl':        fotoUrl,
+          if (tipoSolicitud  != null) 'tipoSolicitud':  tipoSolicitud,
+          if (especie        != null) 'especie':        especie,
+          'ultimoMensaje': texto, 'ultimaHora': hora,
+          'ultimoMensajeEn': FieldValue.serverTimestamp(),
+          'noLeidosAdoptante': 1,
+        });
+      }
     } else {
-      chatId = chats.docs.first.id;
-      final existingData = chats.docs.first.data();
-      await FirebaseFirestore.instance.collection('chats').doc(chatId).update({
+      final existingData = existing.data() ?? {};
+      await chatRef.update({
         'ultimoMensaje': texto, 'ultimaHora': hora,
         'ultimoMensajeEn': FieldValue.serverTimestamp(),
         'noLeidosAdoptante': FieldValue.increment(1),
-        if (fotoBase64 != null && existingData['fotoBase64'] == null)
-          'fotoBase64': fotoBase64,
+        if (fotoUrl != null && existingData['fotoUrl'] == null)
+          'fotoUrl': fotoUrl,
       });
     }
-    await FirebaseFirestore.instance
-        .collection('chats').doc(chatId).collection('mensajes').add({
+    await chatRef.collection('mensajes').add({
       'texto': texto, 'emisor': 'rescatista', 'hora': hora,
       'creadoEn': FieldValue.serverTimestamp(),
     });
-  } catch (_) {}
+    return true;
+  } catch (_) {
+    return false;
+  }
 }
 
-Future<void> aprobarSolicitud(String docId, Map<String, dynamic> d) async {
+/// [aprobada]: false si perdió la carrera contra otra solicitud del mismo
+/// animal (ver [SolicitudesRepository.aprobarSiDisponible]) — en ese caso
+/// esta solicitud quedó auto-rechazada, no aprobada.
+/// [avisoOk]: si el mensaje de chat correspondiente (aprobación, o el aviso
+/// de "ya no disponible" si perdió la carrera) se pudo enviar. La
+/// aprobación/rechazo en sí ya quedó guardada aunque el aviso falle; el
+/// llamador decide cómo informarle al rescatista que el chat no salió.
+Future<({bool aprobada, bool avisoOk})> aprobarSolicitud(String docId, Map<String, dynamic> d) async {
   final rescateId     = d['rescateId']     as String? ?? '';
   final adoptanteId   = d['adoptanteId']   as String? ?? '';
   final animalNombre  = d['animalNombre']  as String? ?? '';
   final rescatistaId  = d['rescatistaId']  as String? ?? '';
+  final creadoPor     = d['creadoPor']     as String? ?? 'rescatista';
   final tipoSolicitud = d['tipoSolicitud'] as String? ?? 'adopcion';
   final nuevoEstado   = tipoSolicitud == 'hogar_de_paso'
       ? 'Hogar de paso'
       : 'En proceso de adopción';
 
-  await FirebaseFirestore.instance.collection('solicitudes').doc(docId)
-      .update({'estado': 'aprobada'});
-
   final fechaInicio = d['fechaInicioHogar'] as Timestamp?;
   final fechaFin    = d['fechaFinHogar']    as Timestamp?;
-  final extraHogar  = <String, dynamic>{
-    'adoptanteIdEnProceso': adoptanteId,
+  final camposExtra = <String, dynamic>{
     if (tipoSolicitud == 'hogar_de_paso') ...{
       if (fechaInicio != null) 'fechaInicioHogar': fechaInicio,
       if (fechaFin    != null) 'fechaFinHogar':    fechaFin,
@@ -185,43 +138,70 @@ Future<void> aprobarSolicitud(String docId, Map<String, dynamic> d) async {
     },
   };
 
+  bool aprobada;
   if (rescateId.isNotEmpty) {
-    await FirebaseFirestore.instance.collection('rescates').doc(rescateId)
-        .update({'estadoAdopcion': nuevoEstado, ...extraHogar});
-  } else if (animalNombre.isNotEmpty && rescatistaId.isNotEmpty) {
-    final q = await FirebaseFirestore.instance.collection('rescates')
-        .where('nombre',       isEqualTo: animalNombre)
-        .where('rescatistaId', isEqualTo: rescatistaId)
-        .limit(1).get();
-    if (q.docs.isNotEmpty) {
-      await q.docs.first.reference.update({'estadoAdopcion': nuevoEstado, ...extraHogar});
+    // Camino atómico (todas las solicitudes nuevas tienen rescateId): la
+    // transacción verifica que el animal siga disponible antes de aprobar.
+    aprobada = await SolicitudesRepository().aprobarSiDisponible(
+      solicitudId: docId,
+      rescateId: rescateId,
+      adoptanteId: adoptanteId,
+      nuevoEstadoAdopcion: nuevoEstado,
+      camposExtra: camposExtra,
+    );
+  } else {
+    // Dato legado sin rescateId: no hay documento puntual contra el cual
+    // transaccionar (la búsqueda por nombre es una query, y las queries no
+    // son transaccionales del lado del cliente). Best-effort, como antes —
+    // caso cada vez más raro, son solicitudes de antes de que este campo
+    // existiera.
+    await SolicitudesRepository().cambiarEstado(docId, 'aprobada');
+    if (animalNombre.isNotEmpty && rescatistaId.isNotEmpty) {
+      await RescatesRepository().actualizarPorNombre(
+        nombre: animalNombre,
+        rescatistaId: rescatistaId,
+        cambios: {
+          'estadoAdopcion': nuevoEstado,
+          'adoptanteIdEnProceso': adoptanteId,
+          ...camposExtra,
+        },
+      );
     }
+    aprobada = true;
+  }
+
+  if (!aprobada) {
+    // Perdió la carrera: se le avisa a ESTE adoptante que ya no pudo ser,
+    // igual que se les avisa a las competidoras más abajo.
+    if (adoptanteId.isEmpty || animalNombre.isEmpty) return (aprobada: false, avisoOk: true);
+    final avisoOk = await enviarMensajeChat(adoptanteId, animalNombre,
+        '🐾 $animalNombre ya tiene un proceso de adopción activo. ¡No te desanimes, hay más amiguitos esperándote!',
+        fotoUrl: d['fotoUrl'] as String?,
+        rescateId: rescateId,
+        creadoPor: creadoPor,
+        especie: d['especie'] as String?);
+    return (aprobada: false, avisoOk: avisoOk);
   }
 
   if (animalNombre.isNotEmpty) {
     // Se agrega rescateId cuando está disponible para no confundir animales
     // con el mismo nombre publicados por la misma cuenta bajo distinto rol
     // (ej. un "Rocky" como rescatista y otro "Rocky" como albergue).
-    Query<Map<String, dynamic>> q = FirebaseFirestore.instance
-        .collection('solicitudes')
-        .where('animalNombre', isEqualTo: animalNombre)
-        .where('rescatistaId', isEqualTo: rescatistaId)
-        .where('estado',       isEqualTo: 'pendiente');
-    if (rescateId.isNotEmpty) {
-      q = q.where('rescateId', isEqualTo: rescateId);
-    }
-    final otros = await q.get();
-    for (final doc in otros.docs) {
-      if (doc.id == docId) continue;
-      final otroAdoptanteId = (doc.data())['adoptanteId'] as String? ?? '';
-      await doc.reference.update({
-        'estado':        'rechazada',
-        'motivoRechazo': 'El proceso de adopción ya fue iniciado con otro adoptante.',
-      });
+    final rechazadas = await SolicitudesRepository().rechazarCompetidoras(
+      animalNombre: animalNombre,
+      rescatistaId: rescatistaId,
+      excluirDocId: docId,
+      rescateId: rescateId.isNotEmpty ? rescateId : null,
+    );
+    for (final otra in rechazadas) {
+      final otroAdoptanteId = otra['adoptanteId'] as String? ?? '';
       if (otroAdoptanteId.isNotEmpty) {
         await enviarMensajeChat(otroAdoptanteId, animalNombre,
             '🐾 $animalNombre ya tiene un proceso de adopción activo. ¡No te desanimes, hay más amiguitos esperándote!',
-            fotoBase64: d['fotoBase64'] as String?);
+            fotoUrl: otra['fotoUrl'] as String?,
+            rescateId: otra['rescateId'] as String? ?? rescateId,
+            creadoPor: otra['creadoPor'] as String? ?? creadoPor,
+            especie: otra['especie'] as String? ?? d['especie'] as String?);
       }
     }
   }
@@ -230,28 +210,36 @@ Future<void> aprobarSolicitud(String docId, Map<String, dynamic> d) async {
     final msg = tipoSolicitud == 'hogar_de_paso'
         ? '✅ ¡Tu solicitud de hogar de paso fue aprobada! Pronto me pongo en contacto contigo para coordinar los detalles. 🐾'
         : '✅ ¡Tu solicitud de adopción fue aprobada! Pronto me pongo en contacto contigo para coordinar el encuentro. 🐾';
-    await enviarMensajeChat(adoptanteId, animalNombre, msg,
-        fotoBase64: d['fotoBase64'] as String?,
+    final avisoOk = await enviarMensajeChat(adoptanteId, animalNombre, msg,
+        fotoUrl: d['fotoUrl'] as String?,
         adoptanteNombre: d['nombre'] as String?,
-        tipoSolicitud: tipoSolicitud);
+        tipoSolicitud: tipoSolicitud,
+        rescateId: rescateId,
+        creadoPor: creadoPor,
+        especie: d['especie'] as String?);
+    return (aprobada: true, avisoOk: avisoOk);
   }
+  return (aprobada: true, avisoOk: true);
 }
 
-Future<void> rechazarSolicitud(String docId, Map<String, dynamic> d, String motivo) async {
+/// Devuelve `true` si el aviso por chat al adoptante se pudo enviar.
+Future<bool> rechazarSolicitud(String docId, Map<String, dynamic> d, String motivo) async {
   final animalNombre = d['animalNombre'] as String? ?? '';
   final texto = motivo.trim().isNotEmpty ? motivo.trim()
       : 'Hola, gracias por tu interés en adoptar a $animalNombre. '
         'Luego de revisar tu solicitud, en esta ocasión no podemos continuar con el proceso. '
         '¡Esperamos que pronto encuentres a tu compañero perfecto! 🐾';
-  await FirebaseFirestore.instance.collection('solicitudes').doc(docId).update({
-    'estado': 'rechazada', 'motivoRechazo': texto,
-  });
+  await SolicitudesRepository().rechazar(docId, texto);
   final adoptanteId = d['adoptanteId'] as String? ?? '';
-  final fotoBase64  = d['fotoBase64']  as String?;
+  final fotoUrl     = d['fotoUrl']     as String?;
+  final rescateId   = d['rescateId']   as String? ?? '';
   if (adoptanteId.isNotEmpty && animalNombre.isNotEmpty) {
-    await enviarMensajeChat(adoptanteId, animalNombre, texto,
-        fotoBase64: fotoBase64, adoptanteNombre: d['nombre'] as String?);
+    return enviarMensajeChat(adoptanteId, animalNombre, texto,
+        fotoUrl: fotoUrl, adoptanteNombre: d['nombre'] as String?,
+        rescateId: rescateId, creadoPor: d['creadoPor'] as String?,
+        especie: d['especie'] as String?);
   }
+  return true;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -271,13 +259,41 @@ class _SolicitudesRescatistaScreenState extends State<SolicitudesRescatistaScree
     if (_procesando.contains(docId)) return;
     setState(() => _procesando.add(docId));
     try {
-      await aprobarSolicitud(docId, d);
+      final resultado = await aprobarSolicitud(docId, d);
+      if (!mounted) return;
+      if (!resultado.aprobada) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Este animal ya tenía un proceso aprobado con otro adoptante — '
+                'esta solicitud se rechazó automáticamente.')));
+      } else if (!resultado.avisoOk) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Solicitud aprobada, pero no pudimos avisarle al adoptante por chat. Escribile manualmente.')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('No se pudo aprobar la solicitud: $e')));
+      }
     } finally {
       if (mounted) setState(() => _procesando.remove(docId));
     }
   }
 
-  Future<void> _rechazar(String docId, Map<String, dynamic> d, String motivo) => rechazarSolicitud(docId, d, motivo);
+  Future<void> _rechazar(String docId, Map<String, dynamic> d, String motivo) async {
+    try {
+      final avisoOk = await rechazarSolicitud(docId, d, motivo);
+      if (!mounted) return;
+      if (!avisoOk) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Solicitud rechazada, pero no pudimos avisarle al adoptante por chat.')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('No se pudo rechazar la solicitud: $e')));
+      }
+    }
+  }
 
   String _tiempoRelativo(DateTime fecha) {
     final diff = DateTime.now().difference(fecha);
@@ -314,6 +330,7 @@ class _SolicitudesRescatistaScreenState extends State<SolicitudesRescatistaScree
                 if (snap.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator(color: appTeal));
                 }
+                if (snap.hasError) return errorFeedState();
                 final docs = [...(snap.data?.docs ?? [])]..sort((a, b) {
                     final ta = a.data()['creadoEn'] as Timestamp?;
                     final tb = b.data()['creadoEn'] as Timestamp?;
@@ -349,7 +366,7 @@ class _SolicitudesRescatistaScreenState extends State<SolicitudesRescatistaScree
                     final tiempo      = ts != null ? _tiempoRelativo(ts.toDate()) : '';
                     final ini         = nombre.isNotEmpty ? nombre[0].toUpperCase() : 'A';
                     final col         = i.isEven ? appTeal : appOrange;
-                    final fotoBase64  = d['fotoBase64'] as String?;
+                    final fotoUrl     = d['fotoUrl'] as String?;
                     final estado          = d['estado'] as String? ?? 'pendiente';
                     final tipo            = d['tipoSolicitud']    as String? ?? 'adopcion';
                     final esHogar         = tipo == 'hogar_de_paso';
@@ -390,9 +407,14 @@ class _SolicitudesRescatistaScreenState extends State<SolicitudesRescatistaScree
                           // Foto del animal
                           ClipRRect(
                             borderRadius: BorderRadius.circular(12),
-                            child: fotoBase64 != null
-                              ? Image.memory(base64Decode(fotoBase64),
-                                  width: 64, height: 64, fit: BoxFit.cover)
+                            child: fotoUrl != null
+                              ? FotoUrl(
+                                  url: fotoUrl,
+                                  width: 64, height: 64, fit: BoxFit.cover,
+                                  fallback: Container(width: 64, height: 64,
+                                      color: const Color(0xFFD8F0E4),
+                                      child: const Center(child: Icon(Icons.pets, color: appTeal, size: 30))),
+                                )
                               : Container(width: 64, height: 64,
                                   color: const Color(0xFFD8F0E4),
                                   child: const Center(child: Icon(Icons.pets, color: appTeal, size: 30))),
@@ -530,14 +552,23 @@ class _SolicitudesRescatistaScreenState extends State<SolicitudesRescatistaScree
                           GestureDetector(
                             onTap: () async {
                               final adoptanteId = d['adoptanteId'] as String? ?? '';
-                              final snap = await FirebaseFirestore.instance
-                                  .collection('chats')
-                                  .where('adoptanteId', isEqualTo: adoptanteId)
-                                  .where('animalNombre', isEqualTo: animal)
-                                  .limit(1)
-                                  .get();
+                              final rescateIdChat = d['rescateId'] as String? ?? '';
+                              String? chatId;
+                              if (rescateIdChat.isNotEmpty) {
+                                final doc = await FirebaseFirestore.instance
+                                    .collection('chats').doc(ChatsRepository()
+                                        .idAnimal(rescateId: rescateIdChat, adoptanteId: adoptanteId)).get();
+                                if (doc.exists) chatId = doc.id;
+                              } else {
+                                final snap = await FirebaseFirestore.instance
+                                    .collection('chats')
+                                    .where('adoptanteId', isEqualTo: adoptanteId)
+                                    .where('animalNombre', isEqualTo: animal)
+                                    .limit(1)
+                                    .get();
+                                if (snap.docs.isNotEmpty) chatId = snap.docs.first.id;
+                              }
                               if (!context.mounted) return;
-                              final chatId = snap.docs.isNotEmpty ? snap.docs.first.id : null;
                               Navigator.push(context, MaterialPageRoute(
                                 builder: (_) => ChatScreen(
                                   esRescatista: true,
@@ -547,9 +578,12 @@ class _SolicitudesRescatistaScreenState extends State<SolicitudesRescatistaScree
                                     'rescatista':     FirebaseAuth.instance.currentUser?.displayName ?? 'Rescatista',
                                     'rescatistaId':   FirebaseAuth.instance.currentUser?.uid ?? '',
                                     'rescateId':      d['rescateId'] as String? ?? '',
+                                    'adoptanteId':    adoptanteId,
+                                    'adoptanteNombre': d['nombre'] as String? ?? 'Adoptante',
                                     'especie':        d['especie'] as String? ?? 'Perro',
-                                    'fotoBase64':     d['fotoBase64'] as String?,
+                                    'fotoUrl':        d['fotoUrl'] as String?,
                                     'tipoSolicitud':  d['tipoSolicitud'] as String? ?? 'adopcion',
+                                    'creadoPor':      d['creadoPor'] as String? ?? 'rescatista',
                                     'edad':           '',
                                     'ubicacion':      '',
                                     'descripcion':    '',

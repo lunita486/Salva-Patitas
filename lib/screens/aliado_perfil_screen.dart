@@ -7,6 +7,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as img;
 import '../theme.dart';
+import '../data/usuarios_repository.dart';
 
 class AliadoPerfilScreen extends StatefulWidget {
   const AliadoPerfilScreen({super.key});
@@ -64,6 +65,7 @@ class _AliadoPerfilScreenState extends State<AliadoPerfilScreen> {
     if (picked == null) return;
     final bytes   = await File(picked.path).readAsBytes();
     final decoded = img.decodeImage(bytes);
+    if (!mounted) return;
     if (decoded == null) { setState(() => _fotoBase64 = base64Encode(bytes)); return; }
     final rotated = img.bakeOrientation(decoded);
     setState(() => _fotoBase64 = base64Encode(img.encodeJpg(rotated, quality: 80)));
@@ -109,7 +111,7 @@ class _AliadoPerfilScreenState extends State<AliadoPerfilScreen> {
       ),
     );
     if (sel == null) return;
-    await FirebaseFirestore.instance.collection('usuarios').doc(uid).update({'roles': sel});
+    await UsuariosRepository().actualizarRoles(uid, sel);
   }
 
   @override
@@ -162,7 +164,15 @@ class _AliadoPerfilScreenState extends State<AliadoPerfilScreen> {
                     ),
                     clipBehavior: Clip.hardEdge,
                     child: _fotoBase64 != null
-                        ? Image.memory(base64Decode(_fotoBase64!), fit: BoxFit.cover)
+                        ? FotoSegura(
+                            base64: _fotoBase64!,
+                            fit: BoxFit.cover,
+                            fallback: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                                Icon(Icons.camera_alt_outlined, color: appTeal, size: 24),
+                                const SizedBox(height: 4),
+                                Text('Logo', style: TextStyle(fontSize: 11, color: appTeal)),
+                              ]),
+                          )
                         : Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                             Icon(Icons.camera_alt_outlined, color: appTeal, size: 24),
                             const SizedBox(height: 4),

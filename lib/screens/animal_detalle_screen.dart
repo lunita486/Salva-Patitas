@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'dart:convert';
 import '../theme.dart';
 import 'chat_screen.dart';
 import 'solicitud_adopcion_screen.dart';
@@ -25,8 +24,8 @@ class _AnimalDetalleScreenState extends State<AnimalDetalleScreen> {
   @override
   Widget build(BuildContext context) {
     final animal       = widget.animal;
-    final fotoBase64   = animal['fotoBase64']   as String?;
-    final fotoBase64_2 = animal['fotoBase642'] as String?;
+    final fotoUrl      = animal['fotoUrl']  as String?;
+    final fotoUrl2     = animal['fotoUrl2'] as String?;
     final nombre      = animal['nombre']      as String;
     final edad        = (animal['edad']   as String?) ?? '';
     final genero      = (animal['genero'] as String?) ?? '';
@@ -36,7 +35,7 @@ class _AnimalDetalleScreenState extends State<AnimalDetalleScreen> {
     final tags        = (animal['tags'] as List).cast<String>();
     final emoji       = animal['especie'] == 'Gato' ? '🐱' : '🐶';
 
-    final fotos          = [?fotoBase64, ?fotoBase64_2];
+    final fotos          = [?fotoUrl, ?fotoUrl2];
     final estadoAdopcion = animal['estadoAdopcion'] as String? ?? '';
     final enHogar        = estadoAdopcion == 'Hogar de paso';
 
@@ -78,10 +77,19 @@ class _AnimalDetalleScreenState extends State<AnimalDetalleScreen> {
                         controller: _pageCtrl,
                         itemCount: fotos.length,
                         onPageChanged: (i) => setState(() => _paginaFoto = i),
-                        itemBuilder: (_, i) => Image.memory(
-                          base64Decode(fotos[i]),
-                          width: double.infinity, fit: BoxFit.cover,
-                          alignment: Alignment.topCenter,
+                        itemBuilder: (_, i) => FotoUrl(
+                          url: fotos[i],
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                          fallback: Container(
+                            decoration: const BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [Color(0xFF3D7A52), Color(0xFF1F4A30)],
+                                begin: Alignment.topLeft, end: Alignment.bottomRight,
+                              ),
+                            ),
+                            child: Center(child: Text(emoji, style: const TextStyle(fontSize: 90))),
+                          ),
                         ),
                       ),
                     ),

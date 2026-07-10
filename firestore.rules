@@ -25,6 +25,14 @@ service cloud.firestore {
       return signedIn() && r in myRoles();
     }
 
+    // Como `rescatistaId` en un chat puede ser un uid distinto al que está
+    // escribiendo (ej. el adoptante crea el chat, pero el rol que se valida
+    // es el del rescatista/albergue del otro lado), no alcanza con hasRole().
+    function tieneRol(elUid, rol) {
+      return signedIn() &&
+        rol in get(/databases/$(database)/documents/usuarios/$(elUid)).data.get('roles', []);
+    }
+
     // ── usuarios ──────────────────────────────────────────────────────
     // Perfil de cuenta. Hay pantallas públicas (albergue_publico_screen,
     // aliado_publico_screen) que leen el perfil de OTRO usuario, así que
@@ -39,10 +47,12 @@ service cloud.firestore {
     }
 
     // ── rescates ──────────────────────────────────────────────────────
-    // Catálogo de adopción — lectura pública. Escritura solo del dueño,
-    // y `creadoPor` tiene que coincidir con un rol de cuenta que ese uid
-    // realmente tenga (no puede publicar como 'albergue' si su cuenta
-    // nunca activó ese rol).
+    // Catálogo de adopción — lectura pública, INCLUYE lat/long exacta.
+    // Decisión consciente (no un descuido): que se pueda ver sin cuenta
+    // ayuda a que se comparta y a que gente sin la app decida entrar.
+    // Escritura solo del dueño, y `creadoPor` tiene que coincidir con un
+    // rol de cuenta que ese uid realmente tenga (no puede publicar como
+    // 'albergue' si su cuenta nunca activó ese rol).
     match /rescates/{rescateId} {
       allow read: if true;
       allow create: if signedIn() &&
@@ -55,20 +65,31 @@ service cloud.firestore {
     // ── solicitudes ───────────────────────────────────────────────────
     // Privado: contiene datos de vivienda/familia del adoptante. Solo lo
     // ven el adoptante dueño y el rescatista/albergue destinatario.
-    // Los campos de identidad no se pueden reescribir después de creada.
     match /solicitudes/{solicitudId} {
       allow read: if signedIn() &&
         (resource.data.adoptanteId == uid() || resource.data.rescatistaId == uid());
       allow create: if signedIn() && request.resource.data.adoptanteId == uid();
+      // Solo el rescatista/albergue dueño del animal puede cambiar el
+      // estado (aprobar/rechazar) — el adoptante lee su propia solicitud
+      // pero nunca la escribe después de creada. Antes cualquiera de las
+      // dos partes podía hacer update() sin que la regla restringiera qué
+      // campo cambiaba: un adoptante podía escribir estado:'aprobada' en
+      // su propia solicitud (no podía tocar el animal, pero sí falsear el
+      // estado y disparar el push de "¡tu solicitud fue aprobada!" sin que
+      // nadie del otro lado la hubiera aprobado en realidad).
       allow update: if signedIn() &&
-        request.resource.data.adoptanteId == resource.data.adoptanteId &&
-        request.resource.data.rescatistaId == resource.data.rescatistaId &&
-        (resource.data.adoptanteId == uid() || resource.data.rescatistaId == uid());
+        resource.data.rescatistaId == uid() &&
+        resource.data.estado == 'pendiente' &&
+        request.resource.data.estado in ['aprobada', 'rechazada'] &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'motivoRechazo']);
     }
 
     // ── preferencias ──────────────────────────────────────────────────
     // Antes: un único documento fijo compartido por todos ("adoptante").
     // Ahora el id del documento es el uid — cada quien ve/edita el suyo.
+    // También vive acá `perfilAdopcion` (vivienda, niños, mascotas, horas
+    // fuera de casa) — es sensible y antes se guardaba en `usuarios/{uid}`,
+    // que es de lectura pública para cualquier usuario logueado.
     match /preferencias/{userId} {
       allow read, write: if signedIn() && uid() == userId;
     }
@@ -82,15 +103,23 @@ service cloud.firestore {
     }
 
     // ── chats ─────────────────────────────────────────────────────────
-    // Un chat ya identifica a sus dos dueños (adoptanteId/rescatistaId),
-    // no hace falta `creadoPor` acá — a diferencia de rescates/solicitudes
-    // no hay ambigüedad de "con qué sombrero" porque solo hay 2 personas.
+    // Un chat identifica a sus dos dueños (adoptanteId/rescatistaId). Los
+    // chats sobre un animal además llevan `creadoPor` (rescatista/albergue)
+    // para separar bandejas en cuentas con doble rol — se valida contra los
+    // roles reales de `rescatistaId`, igual que en `rescates`. Y, como en
+    // `solicitudes`, los campos de identidad no se pueden reescribir después.
     match /chats/{chatId} {
       allow read: if signedIn() &&
         (resource.data.adoptanteId == uid() || resource.data.rescatistaId == uid());
       allow create: if signedIn() &&
-        (request.resource.data.adoptanteId == uid() || request.resource.data.rescatistaId == uid());
+        (request.resource.data.adoptanteId == uid() || request.resource.data.rescatistaId == uid()) &&
+        (!('creadoPor' in request.resource.data) ||
+          (request.resource.data.creadoPor in ['rescatista', 'albergue'] &&
+           tieneRol(request.resource.data.rescatistaId, request.resource.data.creadoPor)));
       allow update: if signedIn() &&
+        request.resource.data.adoptanteId == resource.data.adoptanteId &&
+        request.resource.data.rescatistaId == resource.data.rescatistaId &&
+        request.resource.data.get('creadoPor', null) == resource.data.get('creadoPor', null) &&
         (resource.data.adoptanteId == uid() || resource.data.rescatistaId == uid());
 
       match /mensajes/{mensajeId} {

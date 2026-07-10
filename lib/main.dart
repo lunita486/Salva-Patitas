@@ -58,6 +58,18 @@ class AuthWrapper extends StatelessWidget {
               );
             }
             if (!userSnap.hasData || !userSnap.data!.exists) {
+              // La caché puede decir "no existe" por un instante para una
+              // cuenta que SÍ tiene perfil (arranque en frío / red lenta).
+              // Solo se va al onboarding cuando el "no existe" viene del
+              // servidor; mientras tanto, spinner. Si no, un usuario
+              // existente podía caer en SeleccionRolScreen y pisarse el
+              // perfil al tocar Continuar.
+              if (!userSnap.hasData || userSnap.data!.metadata.isFromCache) {
+                return const Scaffold(
+                  backgroundColor: appBg,
+                  body: Center(child: CircularProgressIndicator(color: appTeal)),
+                );
+              }
               return SeleccionRolScreen(user: snap.data!);
             }
             final data  = userSnap.data!.data() as Map<String, dynamic>;

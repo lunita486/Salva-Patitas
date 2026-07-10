@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -6,10 +5,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import '../theme.dart';
+import '../compatibilidad.dart';
 import '../services/notificaciones_service.dart';
 import '../data/creator_role.dart';
 import '../data/rescates_repository.dart';
 import '../data/solicitudes_repository.dart';
+import '../data/usuarios_repository.dart';
+import '../data/chats_repository.dart';
 import 'subir_rescate_screen.dart';
 import 'solicitudes_rescatista_screen.dart';
 import 'adoptante_chats_screen.dart';
@@ -116,8 +118,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
     if (seleccion == null) return;
-    await FirebaseFirestore.instance
-        .collection('usuarios').doc(uid).update({'roles': seleccion});
+    await UsuariosRepository().actualizarRoles(uid, seleccion);
     await _cargarRol();
   }
 
@@ -145,7 +146,9 @@ class _HomeScreenState extends State<HomeScreen> {
         adoptanteId ?? '',
         nombre,
         msg,
-        fotoBase64: d['fotoBase64'] as String?,
+        fotoUrl: d['fotoUrl'] as String?,
+        rescateId: doc.id,
+        creadoPor: 'rescatista',
       );
       await doc.reference.update({'vencimientoAvisado': true});
     }
@@ -412,7 +415,27 @@ class _HomeScreenState extends State<HomeScreen> {
               Row(children: [
                 Expanded(
                   child: GestureDetector(
-                    onTap: () { Navigator.pop(ctx); if (data != null) aprobarSolicitud(docId, data); },
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      if (data == null) return;
+                      try {
+                        final resultado = await aprobarSolicitud(docId, data);
+                        if (!ctx.mounted) return;
+                        if (!resultado.aprobada) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
+                              content: Text('Este animal ya tenía un proceso aprobado con otro adoptante — '
+                                  'esta solicitud se rechazó automáticamente.')));
+                        } else if (!resultado.avisoOk) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
+                              content: Text('Solicitud aprobada, pero no pudimos avisarle al adoptante por chat. Escribile manualmente.')));
+                        }
+                      } catch (e) {
+                        if (ctx.mounted) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                              SnackBar(content: Text('No se pudo aprobar la solicitud: $e')));
+                        }
+                      }
+                    },
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       decoration: BoxDecoration(color: appTeal, borderRadius: BorderRadius.circular(12)),
@@ -447,10 +470,22 @@ class _HomeScreenState extends State<HomeScreen> {
                         actions: [
                           TextButton(onPressed: () => Navigator.pop(dlg), child: const Text('Cancelar')),
                           TextButton(
-                            onPressed: () {
+                            onPressed: () async {
                               Navigator.pop(dlg);
                               Navigator.pop(ctx);
-                              if (data != null) rechazarSolicitud(docId, data, motivoCtl.text.trim());
+                              if (data == null) return;
+                              try {
+                                final avisoOk = await rechazarSolicitud(docId, data, motivoCtl.text.trim());
+                                if (ctx.mounted && !avisoOk) {
+                                  ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
+                                      content: Text('Solicitud rechazada, pero no pudimos avisarle al adoptante por chat.')));
+                                }
+                              } catch (e) {
+                                if (ctx.mounted) {
+                                  ScaffoldMessenger.of(ctx).showSnackBar(
+                                      SnackBar(content: Text('No se pudo rechazar la solicitud: $e')));
+                                }
+                              }
                             },
                             child: const Text('Confirmar', style: TextStyle(color: Colors.red)),
                           ),
@@ -563,13 +598,13 @@ class _HomeScreenState extends State<HomeScreen> {
               final nombre         = (data['nombre'] as String?)?.isNotEmpty == true ? data['nombre'] : 'Sin nombre';
               final especie        = data['especie']        ?? '';
               final estadoAdopcion = data['estadoAdopcion'] ?? 'Rescatado';
-              final fotoBase64     = data['fotoBase64']     as String?;
+              final fotoUrl        = data['fotoUrl']        as String?;
               final docId          = docs[i].id;
               return _animalCard(
                 nombre, especie,
                 estado: estadoAdopcion,
                 emoji: especie == 'Gato' ? '🐱' : '🐶',
-                fotoBase64: fotoBase64,
+                fotoUrl: fotoUrl,
                 onCambiarEstado: estadoAdopcion == 'Fallecido' ? null : () => showModalBottomSheet(
                   context: context,
                   shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
@@ -581,23 +616,43 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 onContactarAdoptante: estadoAdopcion == 'En proceso de adopción' ? () async {
-                  final uid   = FirebaseAuth.instance.currentUser?.uid ?? '';
-                  final chats = await FirebaseFirestore.instance.collection('chats')
-                      .where('animalNombre', isEqualTo: nombre)
-                      .where('rescatistaId', isEqualTo: uid)
-                      .limit(1).get();
-                  if (chats.docs.isEmpty || !context.mounted) return;
-                  final chatDoc = chats.docs.first;
-                  final d = chatDoc.data();
+                  final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+                  final adoptanteIdEnProceso = data['adoptanteIdEnProceso'] as String? ?? '';
+                  QueryDocumentSnapshot<Map<String, dynamic>>? chatDoc;
+                  Map<String, dynamic>? d;
+                  if (adoptanteIdEnProceso.isNotEmpty) {
+                    final doc = await FirebaseFirestore.instance.collection('chats')
+                        .doc(ChatsRepository().idAnimal(rescateId: docId, adoptanteId: adoptanteIdEnProceso))
+                        .get();
+                    if (doc.exists) d = doc.data();
+                  } else {
+                    final chats = await FirebaseFirestore.instance.collection('chats')
+                        .where('animalNombre', isEqualTo: nombre)
+                        .where('rescatistaId', isEqualTo: uid)
+                        .limit(1).get();
+                    if (chats.docs.isNotEmpty) {
+                      chatDoc = chats.docs.first;
+                      d = chatDoc.data();
+                    }
+                  }
+                  if (d == null || !context.mounted) return;
+                  final dFinal = d;
+                  final chatId = adoptanteIdEnProceso.isNotEmpty
+                      ? ChatsRepository().idAnimal(rescateId: docId, adoptanteId: adoptanteIdEnProceso)
+                      : chatDoc!.id;
                   Navigator.push(context, MaterialPageRoute(
                     builder: (_) => ChatScreen(
                       esRescatista: true,
-                      chatId: chatDoc.id,
+                      chatId: chatId,
                       animal: {
-                        'nombre':     nombre,
-                        'rescatista': FirebaseAuth.instance.currentUser?.displayName ?? 'Rescatista',
-                        'especie':    especie,
-                        'fotoBase64': d['fotoBase64'],
+                        'nombre':        nombre,
+                        'rescatista':    FirebaseAuth.instance.currentUser?.displayName ?? 'Rescatista',
+                        'rescatistaId':  dFinal['rescatistaId'] as String? ?? uid,
+                        'rescateId':     docId,
+                        'especie':       especie,
+                        'creadoPor':     data['creadoPor'] as String? ?? 'rescatista',
+                        'tipoSolicitud': dFinal['tipoSolicitud'] as String? ?? 'adopcion',
+                        'fotoUrl':       dFinal['fotoUrl'],
                       },
                     ),
                   ));
@@ -611,7 +666,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _animalCard(String nombre, String especie,
-      {String emoji = '🐾', String estado = 'En adopción', String? fotoBase64, VoidCallback? onCambiarEstado, VoidCallback? onContactarAdoptante}) {
+      {String emoji = '🐾', String estado = 'En adopción', String? fotoUrl, VoidCallback? onCambiarEstado, VoidCallback? onContactarAdoptante}) {
     final color = cicloColor(estado);
     return Container(
       width: 150,
@@ -620,9 +675,16 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         ClipRRect(
           borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-          child: fotoBase64 != null
-            ? Image.memory(base64Decode(fotoBase64),
-                height: 100, width: double.infinity, fit: BoxFit.cover)
+          child: fotoUrl != null
+            ? FotoUrl(
+                url: fotoUrl,
+                height: 100, width: double.infinity, fit: BoxFit.cover,
+                fallback: Container(
+                    height: 100, width: double.infinity,
+                    color: const Color(0xFFD8F0E4),
+                    child: Center(child: Text(emoji, style: const TextStyle(fontSize: 40))),
+                  ),
+              )
             : Container(
                 height: 100, width: double.infinity,
                 color: const Color(0xFFD8F0E4),
@@ -714,7 +776,8 @@ class _HomeScreenState extends State<HomeScreen> {
           builder: (context, chatSnap) {
             final noLeidos = (chatSnap.data?.docs ?? []).where((doc) {
               final d = doc.data() as Map<String, dynamic>;
-              if ((d['tipoSolicitud'] as String? ?? '').startsWith('consulta')) return false;
+              if ((d['tipoSolicitud'] as String? ?? '') == 'consulta_aliado') return false;
+              if ((d['creadoPor'] as String? ?? 'rescatista') == 'albergue') return false;
               return ((d['noLeidosRescatista'] as int?) ?? 0) > 0;
             }).length;
             return Row(children: [
@@ -858,7 +921,8 @@ class _HomeScreenState extends State<HomeScreen> {
               builder: (_, snap) {
                 final unread = (snap.data?.docs ?? []).where((doc) {
                   final d = doc.data() as Map<String, dynamic>;
-                  if ((d['tipoSolicitud'] as String? ?? '').startsWith('consulta')) return false;
+                  if ((d['tipoSolicitud'] as String? ?? '') == 'consulta_aliado') return false;
+                  if ((d['creadoPor'] as String? ?? 'rescatista') == 'albergue') return false;
                   return ((d['noLeidosRescatista'] as int?) ?? 0) > 0;
                 }).length;
                 return _navTapConBadge(
@@ -875,6 +939,10 @@ class _HomeScreenState extends State<HomeScreen> {
             _navItem(Icons.pets, 'Adoptar', 0),
             _navTap(Icons.favorite_outline, 'Favoritos', 1,
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FavoritosScreen()))),
+            _navTap(Icons.assignment_outlined, 'Solicitudes', 2,
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MisSolicitudesScreen()))),
+            // Mismo orden que en Rescatista/Albergue/Aliado: Chats siempre va
+            // después de Solicitudes, antes de Negocios/Perfil.
             StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance.collection('chats')
                   .where('adoptanteId', isEqualTo: FirebaseAuth.instance.currentUser?.uid ?? '')
@@ -882,7 +950,7 @@ class _HomeScreenState extends State<HomeScreen> {
               builder: (_, snap) {
                 final unread = (snap.data?.docs ?? []).where((doc) {
                   final d = doc.data() as Map<String, dynamic>;
-                  if ((d['tipoSolicitud'] as String? ?? '').startsWith('consulta')) return false;
+                  if ((d['tipoSolicitud'] as String? ?? '') == 'consulta_aliado') return false;
                   return ((d['noLeidosAdoptante'] as int?) ?? 0) > 0;
                 }).length;
                 return _navTapConBadge(
@@ -891,8 +959,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 );
               },
             ),
-            _navTap(Icons.assignment_outlined, 'Solicitudes', 2,
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MisSolicitudesScreen()))),
             _navTap(Icons.store_outlined, 'Negocios', 3,
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AliadosScreen(esRescatista: false)))),
             _navTap(Icons.person_outline, 'Perfil', 4,
@@ -971,45 +1037,3 @@ Widget _avatar(String letter, Color color, {double radius = 22, double fontSize 
       child: Text(inicial, style: TextStyle(color: Colors.white, fontSize: fontSize, fontWeight: FontWeight.bold)));
 }
 
-// ─── Función compatibilidad (global, usada por home y solicitudes) ───────────
-
-int calcularCompatibilidad(Map<String, dynamic> solicitud) {
-  int score = 0;
-
-  final energia    = solicitud['animalEnergia']  as String? ?? 'Tranquilo';
-  final horas      = int.tryParse(solicitud['horasFuera']?.toString() ?? '0') ?? 0;
-  final vivienda   = solicitud['vivienda']       as String? ?? '';
-  final tienePatio = vivienda == 'Casa con jardín';
-
-  if (energia == 'Tranquilo') {
-    score += 20;
-  } else if (energia == 'Activo') {
-    score += horas <= 8 ? 20 : 10;
-  } else {
-    if (tienePatio && horas <= 6) score += 20;
-    else if (tienePatio || horas <= 6) score += 10;
-  }
-
-  final tamano = solicitud['animalTamano'] as String? ?? 'Mediano';
-  if (tamano == 'Pequeño') {
-    score += 20;
-  } else if (tamano == 'Mediano') {
-    score += vivienda != 'Apartamento sin área exterior' ? 20 : 10;
-  } else {
-    score += tienePatio ? 20 : (vivienda == 'Apartamento con balcón' ? 10 : 0);
-  }
-
-  final okNinos    = solicitud['animalOkConNinos']   as bool? ?? true;
-  final tieneNinos = solicitud['tieneNinos']         as bool? ?? false;
-  score += (!tieneNinos || okNinos) ? 20 : 0;
-
-  final okMascotas    = solicitud['animalOkConMascotas'] as bool? ?? true;
-  final tieneMascotas = solicitud['tieneMascotas']       as bool? ?? false;
-  score += (!tieneMascotas || okMascotas) ? 20 : 0;
-
-  final requiereExp = solicitud['animalRequiereExp']   as bool? ?? false;
-  final tieneExp    = solicitud['experienciaPrevia']   as bool? ?? false;
-  score += (!requiereExp || tieneExp) ? 20 : 0;
-
-  return score;
-}

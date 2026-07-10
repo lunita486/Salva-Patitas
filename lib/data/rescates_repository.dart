@@ -23,8 +23,13 @@ class RescatesRepository {
           .snapshots();
 
   /// Feed público de adopción — sin scope por diseño, cualquiera lo ve.
-  Stream<QuerySnapshot<Map<String, dynamic>>> feedPublico() =>
-      _col.orderBy('creadoEn', descending: true).snapshots();
+  ///
+  /// Sin `orderBy('creadoEn')` a propósito: Firestore no solo ordenaría mal
+  /// los documentos que no tengan ese campo (legados, o un futuro path que
+  /// se olvide de setearlo) — los EXCLUIRÍA del resultado por completo,
+  /// desapareciéndolos del feed en silencio. El orden por fecha se aplica
+  /// del lado del cliente, en la pantalla que consume este stream.
+  Stream<QuerySnapshot<Map<String, dynamic>>> feedPublico() => _col.snapshots();
 
   /// Lectura puntual (no stream) de "mis animales en tal estado" — para
   /// chequeos únicos como avisos de vencimiento de hogar de paso.
@@ -53,6 +58,25 @@ class RescatesRepository {
 
   Future<void> actualizar(String rescateId, Map<String, dynamic> cambios) =>
       _col.doc(rescateId).update(cambios);
+
+  /// Fallback para solicitudes viejas guardadas sin `rescateId`: busca el
+  /// rescate por nombre+dueño y lo actualiza si lo encuentra. Si hay más de
+  /// un animal con el mismo nombre bajo la misma cuenta, actualiza el
+  /// primero que encuentre — mismo comportamiento legado que reemplaza.
+  Future<void> actualizarPorNombre({
+    required String nombre,
+    required String rescatistaId,
+    required Map<String, dynamic> cambios,
+  }) async {
+    final q = await _col
+        .where('nombre', isEqualTo: nombre)
+        .where('rescatistaId', isEqualTo: rescatistaId)
+        .limit(1)
+        .get();
+    if (q.docs.isNotEmpty) {
+      await q.docs.first.reference.update(cambios);
+    }
+  }
 
   Future<void> eliminar(String rescateId) => _col.doc(rescateId).delete();
 }

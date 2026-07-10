@@ -1,5 +1,5 @@
-import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -8,6 +8,9 @@ import 'package:image/image.dart' as img;
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import '../theme.dart';
+import '../data/creator_role.dart';
+import '../data/rescates_repository.dart';
+import '../data/rescate_fotos_repository.dart';
 
 class SubirRescateScreen extends StatefulWidget {
   final bool esAlbergue;
@@ -56,7 +59,7 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
     if (_fotos.length >= 2) return;
     final img = await _picker.pickImage(
         source: ImageSource.gallery, imageQuality: 90, maxWidth: 1000, maxHeight: 1000);
-    if (img != null) setState(() => _fotos.add(img));
+    if (img != null && mounted) setState(() => _fotos.add(img));
   }
 
   Future<void> _tomarFoto() async {
@@ -64,17 +67,18 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
     try {
       final img = await _picker.pickImage(
           source: ImageSource.camera, imageQuality: 90, maxWidth: 1000, maxHeight: 1000);
-      if (img != null) setState(() => _fotos.add(img));
+      if (img != null && mounted) setState(() => _fotos.add(img));
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Cámara no disponible — usa la galería'),
+        content: Text('Cámara no disponible, usa la galería'),
         backgroundColor: appTeal,
       ));
     }
   }
 
   bool _publicando = false;
+  double _progreso = 0;
   bool _detectandoUbicacion = false;
   double? _latitud;
   double? _longitud;
@@ -118,39 +122,58 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
       setState(() => _detectandoUbicacion = false);
       return;
     }
-    final pos = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high));
-    String ciudad = '';
-    String paisCodigo = '';
+    // Con timeLimit: si el GPS tarda demasiado (señal débil, adentro de un
+    // edificio) o falla por cualquier motivo, esto antes podía quedar
+    // esperando para siempre sin avisar nada — ahora se rinde a los 12
+    // segundos y deja reintentar. La ubicación de todas formas es opcional
+    // para publicar (ver _publicar()), así que un fallo acá nunca bloquea.
     try {
-      final placemarks = await placemarkFromCoordinates(pos.latitude, pos.longitude);
-      if (placemarks.isNotEmpty) {
-        ciudad = placemarks.first.locality?.isNotEmpty == true
-            ? placemarks.first.locality!
-            : placemarks.first.administrativeArea ?? '';
-        paisCodigo = placemarks.first.isoCountryCode ?? '';
-      }
-    } catch (_) {}
-    setState(() {
-      _latitud  = pos.latitude;
-      _longitud = pos.longitude;
-      _lugarCtl.text = ciudad;
-      _paisCodigo = paisCodigo;
-      _detectandoUbicacion = false;
-    });
+      final pos = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            timeLimit: Duration(seconds: 12),
+          ));
+      String ciudad = '';
+      String paisCodigo = '';
+      try {
+        final placemarks = await placemarkFromCoordinates(pos.latitude, pos.longitude);
+        if (placemarks.isNotEmpty) {
+          ciudad = placemarks.first.locality?.isNotEmpty == true
+              ? placemarks.first.locality!
+              : placemarks.first.administrativeArea ?? '';
+          paisCodigo = placemarks.first.isoCountryCode ?? '';
+        }
+      } catch (_) {}
+      if (!mounted) return;
+      setState(() {
+        _latitud  = pos.latitude;
+        _longitud = pos.longitude;
+        _lugarCtl.text = ciudad;
+        _paisCodigo = paisCodigo;
+        _detectandoUbicacion = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _detectandoUbicacion = false);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('No se pudo detectar tu ubicación. Podés tocar para '
+              'reintentar, o publicar igual sin ubicación exacta.')));
+    }
   }
 
-  Future<String> _normalizarFoto(String path) async {
+  /// Comprime la foto a JPEG liviano antes de subirla a Storage. El límite
+  /// de 1000px ya no es por el límite de 1 MiB de un doc de Firestore (las
+  /// fotos ya no viven ahí) — se mantiene igual que antes solo para no
+  /// subir fotos más pesadas de lo necesario para el feed/detalle.
+  Future<Uint8List> _normalizarFoto(String path) async {
     final bytes = await File(path).readAsBytes();
     final decoded = img.decodeImage(bytes);
-    if (decoded == null) return base64Encode(bytes);
+    if (decoded == null) return bytes;
     final rotated = img.bakeOrientation(decoded);
-    // Redimensiona si es muy grande para no exceder el límite de Firestore (1MB por doc)
     final resized = rotated.width > 1000
         ? img.copyResize(rotated, width: 1000)
         : rotated;
-    final jpeg = img.encodeJpg(resized, quality: 80);
-    return base64Encode(jpeg);
+    return img.encodeJpg(resized, quality: 80);
   }
 
   Future<void> _publicar() async {
@@ -159,47 +182,119 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
         const SnackBar(content: Text('Debes agregar al menos una foto del animal')));
       return;
     }
+    // La ubicación ya no bloquea la publicación — antes, si el GPS fallaba
+    // o tardaba (señal débil, permiso recién concedido, lo que sea), el
+    // rescatista quedaba sin poder publicar y sin un aviso claro de por qué.
+    // Ahora se avisa y se deja elegir: publicar igual (sin distancia en el
+    // feed hasta que se agregue la ubicación editando) o cancelar y reintentar.
     if (_latitud == null && !widget.esAlbergue) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor detecta tu ubicación GPS')));
-      return;
+      final continuar = await showDialog<bool>(
+        context: context,
+        builder: (dlgCtx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Sin ubicación detectada'),
+          content: const Text(
+              'No se detectó tu ubicación GPS. Podés publicar igual — el animal '
+              'no va a aparecer con distancia en el feed hasta que agregues la '
+              'ubicación más tarde, editando la publicación.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dlgCtx, false),
+              child: const Text('Cancelar y reintentar'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dlgCtx, true),
+              child: const Text('Publicar sin ubicación', style: TextStyle(color: appTeal)),
+            ),
+          ],
+        ),
+      );
+      if (continuar != true) return;
     }
-    setState(() => _publicando = true);
+    setState(() { _publicando = true; _progreso = 0; });
+
+    final fotosRepo = RescateFotosRepository();
+    String? rescateId;
+    var foto2Fallo = false;
+
     try {
-      String? fotoBase64;
-      String? fotoBase642;
-      if (_fotos.isNotEmpty) {
-        fotoBase64 = await _normalizarFoto(_fotos[0].path);
-      }
-      if (_fotos.length > 1) {
-        fotoBase642 = await _normalizarFoto(_fotos[1].path);
+      final foto1Bytes = await _normalizarFoto(_fotos[0].path);
+      final foto2Bytes = _fotos.length > 1 ? await _normalizarFoto(_fotos[1].path) : null;
+
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      var nombrePublicador = FirebaseAuth.instance.currentUser?.displayName ?? 'Rescatista';
+      String? fotoPublicadorBase64;
+      String? fotoPublicadorUrl;
+      if (widget.esAlbergue) {
+        final userDoc = await FirebaseFirestore.instance.collection('usuarios').doc(uid).get();
+        final albergueNombre = userDoc.data()?['albergueNombre'] as String?;
+        if (albergueNombre != null && albergueNombre.isNotEmpty) nombrePublicador = albergueNombre;
+        fotoPublicadorBase64 = userDoc.data()?['fotoBase64'] as String?;
+      } else {
+        fotoPublicadorUrl = FirebaseAuth.instance.currentUser?.photoURL;
       }
 
-      await FirebaseFirestore.instance.collection('rescates').add({
-        'nombre':           _nombreCtl.text.trim(),
-        'especie':          _especie,
-        'raza':             _tipoRaza == 'Criolla' ? 'Criolla' : _razaCtl.text.trim().isEmpty ? 'Raza definida' : _razaCtl.text.trim(),
-        'estado':           _estado,
-        'urgencia':         _urgencia,
-        'ubicacion':        _lugarCtl.text.trim(),
-        'descripcion':      _descCtl.text.trim(),
-        'estadoAdopcion':   'Rescatado',
-        if (fotoBase64  != null) 'fotoBase64':  fotoBase64,
-        if (fotoBase642 != null) 'fotoBase642': fotoBase642,
-        'rescatistaId':        FirebaseAuth.instance.currentUser?.uid ?? '',
-        'rescatistaNombre':    FirebaseAuth.instance.currentUser?.displayName ?? 'Rescatista',
-        'creadoPor':           widget.esAlbergue ? 'albergue' : 'rescatista',
-        if (_latitud  != null) 'latitud':  _latitud,
-        if (_longitud != null) 'longitud': _longitud,
-        if (_paisCodigo.isNotEmpty) 'paisCodigo': _paisCodigo,
-        'edad':             _edad,
-        'genero':           _genero,
-        'energia':          _energia,
-        'tamano':           _tamano,
-        'okConNinos':       _okNinos == 'Sí',
-        'okConMascotas':    _okMascotas == 'Sí',
-        'requiereExperiencia': _requiereExp == 'Sí',
-        'creadoEn':         FieldValue.serverTimestamp(),
+      // 1) Crear el doc SIN fotos todavía — storage.rules necesita que el
+      // rescate ya exista (con el rescatistaId correcto) para poder
+      // verificar dueño cuando se suba la foto en el paso 2.
+      final ref = await RescatesRepository().crear(
+        uid: uid,
+        role: widget.esAlbergue ? CreatorRole.albergue : CreatorRole.rescatista,
+        datos: {
+          'nombre':           _nombreCtl.text.trim(),
+          'especie':          _especie,
+          'raza':             _tipoRaza == 'Criolla' ? 'Criolla' : _razaCtl.text.trim().isEmpty ? 'Raza definida' : _razaCtl.text.trim(),
+          'estado':           _estado,
+          'urgencia':         _urgencia,
+          'ubicacion':        _lugarCtl.text.trim(),
+          'descripcion':      _descCtl.text.trim(),
+          'estadoAdopcion':   'Rescatado',
+          'rescatistaNombre':    nombrePublicador,
+          if (fotoPublicadorBase64 != null) 'rescatistaFotoBase64': fotoPublicadorBase64,
+          if (fotoPublicadorUrl    != null) 'rescatistaFotoUrl':    fotoPublicadorUrl,
+          if (_latitud  != null) 'latitud':  _latitud,
+          if (_longitud != null) 'longitud': _longitud,
+          if (_paisCodigo.isNotEmpty) 'paisCodigo': _paisCodigo,
+          'edad':             _edad,
+          'genero':           _genero,
+          'energia':          _energia,
+          'tamano':           _tamano,
+          'okConNinos':       _okNinos == 'Sí',
+          'okConMascotas':    _okMascotas == 'Sí',
+          'requiereExperiencia': _requiereExp == 'Sí',
+        },
+      );
+      rescateId = ref.id;
+
+      // 2) Foto obligatoria — si falla, no tiene sentido dejar un rescate
+      // sin ninguna foto: se hace rollback completo (ver catch de abajo).
+      final fotoUrl = await fotosRepo.subir(
+        rescateId: rescateId, slot: 1, bytes: foto1Bytes,
+        onProgreso: (p) {
+          if (mounted) setState(() => _progreso = foto2Bytes != null ? p / 2 : p);
+        },
+      );
+
+      // 3) Segunda foto — opcional: si falla, se publica igual sin ella en
+      // vez de perder todo el trabajo ya hecho.
+      String? fotoUrl2;
+      if (foto2Bytes != null) {
+        try {
+          fotoUrl2 = await fotosRepo.subir(
+            rescateId: rescateId, slot: 2, bytes: foto2Bytes,
+            onProgreso: (p) {
+              if (mounted) setState(() => _progreso = 0.5 + p / 2);
+            },
+          );
+        } catch (_) {
+          foto2Fallo = true;
+        }
+      }
+
+      // 4) Vincular las fotos ya subidas al doc.
+      await RescatesRepository().actualizar(rescateId, {
+        'fotoUrl': fotoUrl,
+        if (fotoUrl2 != null) 'fotoUrl2': fotoUrl2,
       });
 
       if (!mounted) return;
@@ -210,7 +305,8 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
           title: const Text('¡Rescate publicado! 🐾'),
           content: Text('${_nombreCtl.text.isEmpty ? "El animal" : _nombreCtl.text} '
               'fue publicado con urgencia $_urgencia'
-              '${_lugarCtl.text.isNotEmpty ? ' en ${_lugarCtl.text}' : ''}.'),
+              '${_lugarCtl.text.isNotEmpty ? ' en ${_lugarCtl.text}' : ''}.'
+              '${foto2Fallo ? ' La segunda foto no se pudo subir — podés agregarla después editando la publicación.' : ''}'),
           actions: [
             TextButton(
               onPressed: () { Navigator.pop(context); Navigator.pop(context); },
@@ -220,6 +316,17 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
         ),
       );
     } catch (e) {
+      // Rollback: si el doc llegó a crearse pero algo después falló (la
+      // foto obligatoria, o el paso 4), no dejar un rescate fantasma sin
+      // datos — se borra el doc y cualquier foto que haya llegado a subir.
+      // try/catch por paso (no .catchError): un catchError con el tipo
+      // equivocado revienta DENTRO de este catch y el SnackBar de abajo
+      // nunca llega a mostrarse — el bug de "toco publicar y no pasa nada".
+      if (rescateId != null) {
+        final id = rescateId;
+        try { await RescatesRepository().eliminar(id); } catch (_) {}
+        try { await fotosRepo.eliminarTodas(id); } catch (_) {}
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error al publicar: $e')));
@@ -335,7 +442,7 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
                           final plantilla =
                               '$nombre fue encontrado/a [contá cómo o dónde lo/la encontraste]. '
                               'Lo/la que lo/la hace único/a es [una costumbre, gesto o anécdota que lo/la describa]. '
-                              'Ya pasó por mucho — ahora solo le falta alguien que decida quedarse. '
+                              'Ya pasó por mucho. Ahora solo le falta alguien que decida quedarse. '
                               '¿Serás vos?';
                           _descCtl.value = TextEditingValue(
                             text: plantilla,
@@ -540,8 +647,17 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
         elevation: 0,
       ),
       child: _publicando
-          ? const SizedBox(height: 20, width: 20,
-              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+          ? Row(mainAxisSize: MainAxisSize.min, children: [
+              SizedBox(height: 20, width: 20,
+                  child: CircularProgressIndicator(
+                      color: Colors.white, strokeWidth: 2,
+                      value: _progreso > 0 ? _progreso : null)),
+              if (_progreso > 0) ...[
+                const SizedBox(width: 10),
+                Text('${(_progreso * 100).round()}%',
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white)),
+              ],
+            ])
           : const Text('Publicar rescate 🐾', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
     ),
   );

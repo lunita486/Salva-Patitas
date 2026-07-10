@@ -54,7 +54,7 @@ Tabla resumen (ver el archivo para el detalle exacto):
 |---|---|---|
 | `usuarios` | cualquier logueado (hay perfiles públicos) | solo el dueño; `roles` se valida contra la lista permitida |
 | `rescates` | pública (catálogo de adopción) | solo el dueño, y `creadoPor` debe coincidir con un rol de cuenta que ese uid realmente tenga |
-| `solicitudes` | adoptante dueño o rescatista/albergue destinatario | crear: solo el adoptante; los campos de identidad no se pueden reescribir |
+| `solicitudes` | adoptante dueño o rescatista/albergue destinatario | crear: solo el adoptante. Cambiar `estado`: solo el rescatista/albergue destinatario, y solo de `pendiente` a `aprobada`/`rechazada` — el adoptante no puede escribir su propia solicitud después de creada |
 | `preferencias/{uid}` | solo el dueño | solo el dueño |
 | `favoritos` | solo el adoptante dueño | solo el adoptante dueño |
 | `chats` / `mensajes` | los dos participantes | los dos participantes |
@@ -64,6 +64,68 @@ Importante: el día que se despliega este archivo, cualquier colección sin
 regla explícita queda **bloqueada por defecto**. Por eso el archivo cubre
 todas las colecciones que existen hoy, aunque solo `rescates`/`solicitudes`/
 `preferencias` tengan repositorio en Dart todavía.
+
+## Fotos de animales — Firebase Storage (`storage.rules`)
+
+Las fotos de `rescates` viven en Firebase Storage (`rescates/{rescateId}/foto{1,2}.jpg`),
+no embebidas en el documento de Firestore. El documento solo guarda
+`fotoUrl`/`fotoUrl2` (URLs de descarga). Antes eran strings base64 dentro
+del propio doc — eso hacía que el feed público descargara el catálogo
+entero con todas las fotos en cada apertura, y acercaba cada documento al
+límite de 1 MiB de Firestore.
+
+Repositorio: [`RescateFotosRepository`](lib/data/rescate_fotos_repository.dart)
+(`subir()`, `eliminar()`, `eliminarTodas()`) — mismo patrón que el resto de
+`lib/data/`. Widget de lectura: `FotoUrl` en `lib/theme.dart` (análogo a
+`FotoSegura`, pero para `Image.network` en vez de base64).
+
+**El flujo de creación está reordenado a propósito**: primero se crea el
+documento en Firestore (sin foto), después se sube la foto a Storage usando
+el id ya generado, y por último se actualiza el doc con la URL. Es así
+porque `storage.rules` verifica dueño cruzando contra el documento de
+Firestore (`firestore.get(...)`) — ese documento tiene que existir antes de
+poder subir el archivo. Si falla la foto obligatoria (o el paso de crear el
+doc), se hace rollback completo; si falla solo la segunda foto (opcional),
+se publica igual sin ella. Ver `subir_rescate_screen.dart`/`subir_lote_screen.dart`.
+
+**Esquema mixto en `chats` — importante si tocás fotos de chat:**
+`ChatsRepository.asegurarChatAnimal()` guarda `fotoUrl` (foto del animal,
+Storage). `asegurarChatNegocio()` sigue guardando `fotoBase64` (logo propio
+del negocio aliado — nunca migró, no tiene el problema de "N documentos en
+una query" porque es 1 foto por cuenta). Los dos tipos de chat viven en la
+misma colección y se renderizan con el mismo código
+(`chat_screen.dart`, `adoptante_chats_screen.dart`), así que esas pantallas
+revisan los dos campos (`fotoUrl` primero, `fotoBase64` como fallback) en
+vez de asumir uno solo.
+
+**Fotos de perfil (usuario/albergue/aliado) siguen en base64** — 1 foto por
+cuenta, sin el problema de escala del feed. Quedaron fuera a propósito;
+si algún día se migran, sería el mismo patrón (repositorio + `FotoUrl` +
+reordenar creación si la regla de Storage llega a necesitar verificar dueño).
+
+**Incidente 2026-07-10 — "publico y no pasa nada" (dos causas encadenadas):**
+
+1. *En producción, TODA subida de foto daba 403* aunque la regla estaba bien
+   escrita y pasaba los tests contra el emulador local. Causa: la regla usa
+   `firestore.get()` (cross-service), y eso requiere que el agente de
+   servicio de Storage (`service-<nº-proyecto>@gcp-sa-firebasestorage.iam.gserviceaccount.com`)
+   tenga el rol `roles/firebaserules.firestoreServiceAgent`. La CLI de
+   Firebase otorga ese rol al desplegar, **pero se lo salta en silencio en
+   modo no interactivo** (`if (nonInteractive) return;` en su código) — y el
+   deploy original corrió desde un script. El emulador local no exige IAM,
+   por eso los tests de reglas no lo detectaron. Si esto vuelve a pasar
+   (proyecto nuevo, restore, etc.): otorgar el rol a mano en IAM o
+   re-desplegar `storage.rules` desde una terminal interactiva y aceptar la
+   pregunta de permiso.
+
+2. *El error real quedaba escondido*: en el rollback de `_publicar()` había
+   un `.catchError((_) {})` sobre el `Future` de `eliminarTodas()`, que en
+   runtime era un `Future<List<void>>` (devolvía el `Future.wait` directo) —
+   eso lanza `Invalid argument (onError)` DENTRO del bloque `catch`, y el
+   SnackBar de error nunca llegaba a mostrarse. Regla práctica que quedó en
+   el código: para ignorar errores best-effort usar `try { await ... } catch (_) {}`,
+   no `.catchError((_) {})`, y los repos nunca devuelven `Future.wait`
+   directo (siempre `async`/`await` para que el tipo runtime sea `Future<void>` real).
 
 ## Capa 2 — Repositorios en Dart (`lib/data/`)
 
@@ -102,18 +164,26 @@ qué relación es, así que no se puede llamar el equivocado por error.
 4. ¿Agregaste un test en `test/data/` para el método nuevo? (Con
    `fake_cloud_firestore` — no hace falta tocar Firebase real.)
 
+## Hook de pre-commit
+
+`.githooks/pre-commit` (versionado, se activa con `git config core.hooksPath
+.githooks` — ya corrido en este checkout) revisa las líneas **agregadas** en
+cada commit y bloquea si alguna llama
+`FirebaseFirestore.instance.collection('rescates'|'solicitudes'|'preferencias')`
+fuera de `lib/data/`. Solo mira líneas nuevas, no el código ya existente, así
+que no bloquea commits que no tocan ese patrón. Es la alarma automática que
+reemplaza a "esperar que alguien lo note en code review".
+
 ## Qué falta (a propósito, no es urgente)
 
-- El resto de pantallas que tocan `rescates`/`solicitudes` directo
-  (`subir_rescate_screen.dart`, `editar_rescate_screen.dart`,
-  `subir_lote_screen.dart`, `solicitudes_rescatista_screen.dart`, etc.) — se
-  migran de a poco, no bloquea nada mientras tanto porque las reglas del
-  servidor ya protegen esas colecciones igual.
 - `chats` no tiene el mismo problema de `CreatorRole` porque un chat ya
   identifica a sus dos dueños (`adoptanteId`/`rescatistaId`) — no hay
   ambigüedad de "con qué sombrero" ahí. Sí hay un bug menor de UI (el
   contador de mensajes no distingue entre chats de la faceta rescatista vs
-  albergue de una cuenta dual-rol) — cosmético, no de seguridad.
+  albergue de una cuenta dual-rol) — cosmético, no de seguridad. `chat_screen.dart`
+  todavía lee `rescates` directo (2 lecturas, para mostrar el estado del
+  animal en el header) — no está migrado a `RescatesRepository` todavía, y el
+  hook de pre-commit no lo bloquea porque esas líneas ya existían antes del hook.
 - Cloud Functions (`functions/index.js`) usa el Admin SDK, que **ignora
   `firestore.rules` por completo** — no son parte de esta barrera. Confían
   en lo que sea que dispare el trigger. No es un problema hoy porque solo

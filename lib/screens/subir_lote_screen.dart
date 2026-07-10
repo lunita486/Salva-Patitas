@@ -1,10 +1,14 @@
-import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:image/image.dart' as img;
 import '../theme.dart';
+import '../data/creator_role.dart';
+import '../data/rescates_repository.dart';
+import '../data/rescate_fotos_repository.dart';
 
 class SubirLoteScreen extends StatefulWidget {
   const SubirLoteScreen({super.key});
@@ -33,6 +37,7 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> {
 
   final List<_AnimalDraft> _animales = [];
   bool _publicando = false;
+  int _procesados = 0;
 
   @override
   void initState() {
@@ -62,51 +67,123 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> {
   Future<void> _pickSegundaFoto(int index) async {
     final img = await _picker.pickImage(
         source: ImageSource.gallery, imageQuality: 80, maxWidth: 1000, maxHeight: 1000);
-    if (img != null) setState(() => _animales[index].foto2 = img);
+    if (img != null && mounted) setState(() => _animales[index].foto2 = img);
+  }
+
+  /// Mismo tratamiento de bytes que subir_rescate_screen.dart — unificado
+  /// para que un lote no suba fotos más pesadas de lo necesario solo por
+  /// no pasar por la misma recompresión.
+  Future<Uint8List> _normalizarFoto(String path) async {
+    final bytes = await File(path).readAsBytes();
+    final decoded = img.decodeImage(bytes);
+    if (decoded == null) return bytes;
+    final rotated = img.bakeOrientation(decoded);
+    final resized = rotated.width > 1000
+        ? img.copyResize(rotated, width: 1000)
+        : rotated;
+    return img.encodeJpg(resized, quality: 80);
   }
 
   Future<void> _publicar() async {
-    setState(() => _publicando = true);
+    setState(() { _publicando = true; _procesados = 0; });
+    final fotosRepo = RescateFotosRepository();
+    final fallidos = <String>[];
+    var publicados = 0;
     try {
-      final uid    = FirebaseAuth.instance.currentUser?.uid ?? '';
-      final nombre = FirebaseAuth.instance.currentUser?.displayName ?? 'Rescatista';
-      for (final a in _animales) {
-        final foto1b64 = base64Encode(await File(a.foto1.path).readAsBytes());
-        String? foto2b64;
-        if (a.foto2 != null) {
-          foto2b64 = base64Encode(await File(a.foto2!.path).readAsBytes());
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      var nombre = FirebaseAuth.instance.currentUser?.displayName ?? 'Rescatista';
+      final userDoc = await FirebaseFirestore.instance.collection('usuarios').doc(uid).get();
+      final albergueNombre = userDoc.data()?['albergueNombre'] as String?;
+      if (albergueNombre != null && albergueNombre.isNotEmpty) nombre = albergueNombre;
+      final fotoAlbergue = userDoc.data()?['fotoBase64'] as String?;
+
+      for (var i = 0; i < _animales.length; i++) {
+        final a = _animales[i];
+        final nombreAnimal = a.nombreCtl.text.trim().isNotEmpty
+            ? a.nombreCtl.text.trim() : 'Animal ${i + 1}';
+        String? rescateId;
+        try {
+          final foto1Bytes = await _normalizarFoto(a.foto1.path);
+          final foto2Bytes = a.foto2 != null ? await _normalizarFoto(a.foto2!.path) : null;
+
+          // 1) Crear el doc SIN fotos — storage.rules necesita que exista
+          // para verificar dueño al subir (mismo motivo que en el alta
+          // individual, ver subir_rescate_screen.dart).
+          final ref = await RescatesRepository().crear(
+            uid: uid,
+            role: CreatorRole.albergue,
+            datos: {
+              'nombre':              a.nombreCtl.text.trim(),
+              'especie':             a.especieOverride ?? _especie,
+              'raza':                'Criolla',
+              'estado':              'Sano',
+              'urgencia':            a.urgenciaOverride ?? _urgencia,
+              'ubicacion':           _ciudad,
+              'descripcion':         '',
+              'estadoAdopcion':      'Rescatado',
+              'rescatistaNombre':    nombre,
+              if (fotoAlbergue != null) 'rescatistaFotoBase64': fotoAlbergue,
+              'edad':                'Adulto',
+              'genero':              'No sé',
+              'energia':             'Tranquilo',
+              'tamano':              'Mediano',
+              'okConNinos':          true,
+              'okConMascotas':       true,
+              'requiereExperiencia': false,
+            },
+          );
+          rescateId = ref.id;
+
+          // 2) Foto obligatoria.
+          final fotoUrl = await fotosRepo.subir(rescateId: rescateId, slot: 1, bytes: foto1Bytes);
+
+          // 3) Segunda foto — opcional, no aborta este animal si falla.
+          String? fotoUrl2;
+          if (foto2Bytes != null) {
+            try {
+              fotoUrl2 = await fotosRepo.subir(rescateId: rescateId, slot: 2, bytes: foto2Bytes);
+            } catch (_) {}
+          }
+
+          await RescatesRepository().actualizar(rescateId, {
+            'fotoUrl': fotoUrl,
+            if (fotoUrl2 != null) 'fotoUrl2': fotoUrl2,
+          });
+          publicados++;
+        } catch (_) {
+          // Este animal falló — no se aborta el lote entero (no tiene
+          // sentido perder los N-1 que sí funcionaron). Se hace rollback
+          // solo de este animal y se sigue con el resto; al final se
+          // informa cuáles quedaron pendientes.
+          // try/catch por paso (no .catchError) — mismo motivo que en
+          // subir_rescate_screen.dart: un catchError mal tipado revienta
+          // dentro de este catch y aborta el lote entero en silencio.
+          if (rescateId != null) {
+            final id = rescateId;
+            try { await RescatesRepository().eliminar(id); } catch (_) {}
+            try { await fotosRepo.eliminarTodas(id); } catch (_) {}
+          }
+          fallidos.add(nombreAnimal);
         }
-        await FirebaseFirestore.instance.collection('rescates').add({
-          'nombre':              a.nombreCtl.text.trim(),
-          'especie':             a.especieOverride ?? _especie,
-          'raza':                'Criolla',
-          'estado':              'Sano',
-          'urgencia':            a.urgenciaOverride ?? _urgencia,
-          'ubicacion':           _ciudad,
-          'descripcion':         '',
-          'estadoAdopcion':      'Rescatado',
-          'fotoBase64':          foto1b64,
-          if (foto2b64 != null) 'fotoBase642': foto2b64,
-          'rescatistaId':        uid,
-          'rescatistaNombre':    nombre,
-          'creadoPor':           'albergue',
-          'edad':                'Adulto',
-          'genero':              'No sé',
-          'energia':             'Tranquilo',
-          'tamano':              'Mediano',
-          'okConNinos':          true,
-          'okConMascotas':       true,
-          'requiereExperiencia': false,
-          'creadoEn':            FieldValue.serverTimestamp(),
-        });
+        if (mounted) setState(() => _procesados++);
       }
+
       if (!mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('${_animales.length} animales publicados 🐾'),
-        backgroundColor: appTeal,
-        behavior: SnackBarBehavior.floating,
-      ));
+      if (fallidos.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('$publicados animales publicados 🐾'),
+          backgroundColor: appTeal,
+          behavior: SnackBarBehavior.floating,
+        ));
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('$publicados publicados. No se pudieron publicar: ${fallidos.join(", ")}.'),
+          backgroundColor: Colors.orange.shade700,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 6),
+        ));
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -259,7 +336,7 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> {
               const Text('Toca para seleccionar fotos',
                   style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: appTeal)),
               const SizedBox(height: 4),
-              Text('Selecciona varias a la vez — 1 foto = 1 animal',
+              Text('Selecciona varias a la vez: 1 foto = 1 animal',
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
             ]),
           ),
@@ -519,8 +596,13 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> {
               elevation: 0,
             ),
             child: _publicando
-                ? const SizedBox(height: 20, width: 20,
-                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                ? Row(mainAxisSize: MainAxisSize.min, children: [
+                    const SizedBox(height: 20, width: 20,
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
+                    const SizedBox(width: 10),
+                    Text('Publicando $_procesados de ${_animales.length}...',
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white)),
+                  ])
                 : Text('Publicar ${_animales.length} animales 🐾',
                     style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
           ),

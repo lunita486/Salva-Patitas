@@ -2,19 +2,23 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../theme.dart';
 import '../services/notificaciones_service.dart';
 import '../data/creator_role.dart';
 import '../data/rescates_repository.dart';
 import '../data/solicitudes_repository.dart';
+import '../data/usuarios_repository.dart';
 import 'subir_rescate_screen.dart';
 import 'subir_lote_screen.dart';
 import 'mis_rescates_screen.dart';
 import 'solicitudes_rescatista_screen.dart';
 import 'adoptante_chats_screen.dart';
 import 'albergue_perfil_screen.dart';
+import 'adoptante_feed_screen.dart' show AliadosScreen;
 
 class AlbergueHomeScreen extends StatefulWidget {
   const AlbergueHomeScreen({super.key});
@@ -31,12 +35,46 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
   @override
   void initState() {
     super.initState();
+    _verificarVencimientos();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         NotificacionesService.guardarToken();
         NotificacionesService.escucharEnPrimerPlano(context);
       }
     });
+  }
+
+  // Mismo aviso automático que tiene el rescatista (home_screen.dart) para
+  // los "hogar de paso" vencidos — antes solo corría ahí, así que un
+  // albergue con animales en hogar de paso nunca los veía revisados.
+  Future<void> _verificarVencimientos() async {
+    if (_uid.isEmpty) return;
+    final ahora = DateTime.now();
+    final snap = await _rescatesRepo.misRescatesPorEstado(
+      uid: _uid,
+      role: CreatorRole.albergue,
+      estadoAdopcion: 'Hogar de paso',
+    );
+    for (final doc in snap.docs) {
+      final d = doc.data();
+      final fechaFin = (d['fechaFinHogar'] as Timestamp?)?.toDate();
+      if (fechaFin == null) continue;
+      if (fechaFin.isAfter(ahora)) continue;
+      if (d['vencimientoAvisado'] == true) continue;
+      final nombre      = d['nombre']            as String? ?? 'El animal';
+      final adoptanteId = d['adoptanteIdEnProceso'] as String?;
+      final msg = '📋 El período de hogar de paso de $nombre ha vencido. '
+          'Por favor coordina la devolución o el proceso de adopción definitivo. 🐾';
+      await enviarMensajeChat(
+        adoptanteId ?? '',
+        nombre,
+        msg,
+        fotoUrl: d['fotoUrl'] as String?,
+        rescateId: doc.id,
+        creadoPor: 'albergue',
+      );
+      await doc.reference.update({'vencimientoAvisado': true});
+    }
   }
 
   Future<void> _uploadFotoPerfil() async {
@@ -47,12 +85,21 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
       imageQuality: 80,
     );
     if (picked == null) return;
-    final bytes = await picked.readAsBytes();
-    final b64 = base64Encode(bytes);
-    await FirebaseFirestore.instance
-        .collection('usuarios')
-        .doc(_uid)
-        .update({'fotoBase64': b64});
+    try {
+      final bytes = await picked.readAsBytes();
+      final b64 = base64Encode(bytes);
+      await FirebaseFirestore.instance
+          .collection('usuarios')
+          .doc(_uid)
+          .update({'fotoBase64': b64});
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Foto de perfil actualizada'), backgroundColor: appTeal));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo subir la foto: $e')));
+    }
   }
 
   Future<void> _cambiarRolDebug() async {
@@ -77,8 +124,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
       ),
     );
     if (seleccion == null || !mounted) return;
-    await FirebaseFirestore.instance
-        .collection('usuarios').doc(_uid).update({'roles': seleccion});
+    await UsuariosRepository().actualizarRoles(_uid, seleccion);
   }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> get _rescatesStream =>
@@ -106,6 +152,9 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
           body: StreamBuilder<QuerySnapshot>(
             stream: _rescatesStream,
             builder: (context, rSnap) {
+              if (rSnap.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator(color: appTeal));
+              }
               final rescates = rSnap.data?.docs ?? [];
               final enCuidado  = rescates.where((d) {
                 final e = (d.data() as Map)['estadoAdopcion'] as String? ?? 'Rescatado';
@@ -203,19 +252,23 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                   shape: BoxShape.circle,
                   border: Border.all(color: Colors.white.withValues(alpha: 0.4), width: 2.5),
                 ),
-                child: CircleAvatar(
-                  radius: 28,
-                  backgroundColor: Colors.white.withValues(alpha: 0.2),
-                  backgroundImage: fotoBase64 != null
-                      ? MemoryImage(base64Decode(fotoBase64)) as ImageProvider
-                      : FirebaseAuth.instance.currentUser?.photoURL != null
-                          ? NetworkImage(FirebaseAuth.instance.currentUser!.photoURL!) as ImageProvider
-                          : null,
-                  child: (fotoBase64 == null && FirebaseAuth.instance.currentUser?.photoURL == null)
-                      ? Text(iniciales, style: const TextStyle(color: Colors.white,
-                          fontWeight: FontWeight.bold, fontSize: 18))
-                      : null,
-                ),
+                child: Builder(builder: (_) {
+                  final fotoBytes = bytesFotoSegura(fotoBase64);
+                  final photoUrl = FirebaseAuth.instance.currentUser?.photoURL;
+                  final ImageProvider? avatarImg = fotoBytes != null
+                      ? MemoryImage(fotoBytes)
+                      : photoUrl != null ? NetworkImage(photoUrl) : null;
+                  return CircleAvatar(
+                    radius: 28,
+                    backgroundColor: Colors.white.withValues(alpha: 0.2),
+                    backgroundImage: avatarImg,
+                    onBackgroundImageError: avatarImg != null ? (_, __) {} : null,
+                    child: avatarImg == null
+                        ? Text(iniciales, style: const TextStyle(color: Colors.white,
+                            fontWeight: FontWeight.bold, fontSize: 18))
+                        : null,
+                  );
+                }),
               ),
               const SizedBox(width: 14),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -451,19 +504,22 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                     boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2),
                         blurRadius: 16, offset: const Offset(0, 6))],
                   ),
-                  child: CircleAvatar(
-                    radius: 52,
-                    backgroundColor: Colors.white.withValues(alpha: 0.2),
-                    backgroundImage: fotoBase64 != null
-                        ? MemoryImage(base64Decode(fotoBase64)) as ImageProvider
-                        : user?.photoURL != null
-                            ? NetworkImage(user!.photoURL!) as ImageProvider
-                            : null,
-                    child: (fotoBase64 == null && user?.photoURL == null)
-                        ? Text(iniciales, style: const TextStyle(color: Colors.white,
-                            fontWeight: FontWeight.bold, fontSize: 32))
-                        : null,
-                  ),
+                  child: Builder(builder: (_) {
+                    final fotoBytes = bytesFotoSegura(fotoBase64);
+                    final ImageProvider? avatarImg = fotoBytes != null
+                        ? MemoryImage(fotoBytes)
+                        : user?.photoURL != null ? NetworkImage(user!.photoURL!) : null;
+                    return CircleAvatar(
+                      radius: 52,
+                      backgroundColor: Colors.white.withValues(alpha: 0.2),
+                      backgroundImage: avatarImg,
+                      onBackgroundImageError: avatarImg != null ? (_, __) {} : null,
+                      child: avatarImg == null
+                          ? Text(iniciales, style: const TextStyle(color: Colors.white,
+                              fontWeight: FontWeight.bold, fontSize: 32))
+                          : null,
+                    );
+                  }),
                 ),
                 Positioned(
                   bottom: 0, right: 0,
@@ -492,7 +548,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
         Padding(
           padding: const EdgeInsets.all(24),
           child: Column(children: [
-            _infoTile(Icons.email_outlined, 'Correo', user?.email ?? '—'),
+            _infoTile(Icons.email_outlined, 'Correo', user?.email ?? '-'),
             const SizedBox(height: 24),
             SizedBox(
               width: double.infinity,
@@ -519,8 +575,8 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                     context: ctx,
                     builder: (_) => AlertDialog(
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      title: const Text('¿Cerrar sesión?'),
-                      content: const Text('Tendrás que volver a iniciar sesión con Google.'),
+                      title: const Text('Cerrar sesión'),
+                      content: const Text('¿Seguro que quieres cerrar sesión?'),
                       actions: [
                         TextButton(
                           onPressed: () => Navigator.pop(ctx, false),
@@ -535,6 +591,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                     ),
                   );
                   if (confirmar == true) {
+                    await GoogleSignIn().signOut();
                     await FirebaseAuth.instance.signOut();
                   }
                 },
@@ -546,6 +603,23 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            GestureDetector(
+              onTap: () => launchUrl(
+                Uri.parse('https://lunita486.github.io/Salva-Patitas/privacidad.html'),
+                mode: LaunchMode.externalApplication,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Icon(Icons.shield_outlined, size: 16, color: Colors.grey.shade500),
+                  const SizedBox(width: 6),
+                  Text('Política de Privacidad',
+                      style: TextStyle(fontSize: 13, color: Colors.grey.shade500,
+                          decoration: TextDecoration.underline)),
+                ]),
               ),
             ),
           ]),
@@ -736,8 +810,25 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
     if (rescates.isEmpty) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 16),
-        child: Text('Aún no tienes animales publicados.',
-            style: TextStyle(color: Colors.grey.shade500, fontSize: 13)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Aún no tienes animales publicados.',
+              style: TextStyle(color: Colors.grey.shade500, fontSize: 13)),
+          const SizedBox(height: 10),
+          GestureDetector(
+            onTap: () => Navigator.push(context, MaterialPageRoute(
+                builder: (_) => const SubirRescateScreen(esAlbergue: true))),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              decoration: BoxDecoration(color: appTeal, borderRadius: BorderRadius.circular(20)),
+              child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.add, color: Colors.white, size: 16),
+                SizedBox(width: 4),
+                Text('Publicar el primero', style: TextStyle(color: Colors.white,
+                    fontSize: 13, fontWeight: FontWeight.w600)),
+              ]),
+            ),
+          ),
+        ]),
       );
     }
     final sorted = [...rescates]..sort((a, b) {
@@ -760,7 +851,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
               ? d['nombre'] as String : 'Sin nombre';
           final especie        = d['especie']        as String? ?? 'Perro';
           final edad           = d['edad']           as String? ?? '';
-          final fotoBase64     = d['fotoBase64']     as String?;
+          final fotoUrl        = d['fotoUrl']        as String?;
           final estadoAdopcion = d['estadoAdopcion'] as String? ?? 'Rescatado';
           final ts             = d['creadoEn']       as Timestamp?;
           final urgencia       = d['urgencia']       as String? ?? '';
@@ -782,9 +873,16 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
             child: Stack(children: [
               Column(children: [
                 Expanded(
-                  child: fotoBase64 != null
-                    ? Image.memory(base64Decode(fotoBase64),
-                        width: double.infinity, fit: BoxFit.cover)
+                  child: fotoUrl != null
+                    ? FotoUrl(
+                        url: fotoUrl,
+                        width: double.infinity,
+                        fallback: Container(
+                            width: double.infinity,
+                            color: const Color(0xFFD8F0E4),
+                            child: Center(child: Text(emoji,
+                                style: const TextStyle(fontSize: 36)))),
+                      )
                     : Container(
                         width: double.infinity,
                         color: const Color(0xFFD8F0E4),
@@ -888,7 +986,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
           final nombre    = (d['nombre'] as String?)?.isNotEmpty == true
               ? d['nombre'] as String : 'Sin nombre';
           final especie   = d['especie']    as String? ?? 'Perro';
-          final fotoBase64= d['fotoBase64'] as String?;
+          final fotoUrl   = d['fotoUrl']    as String?;
           final emoji     = especie == 'Gato' ? '🐱' : '🐶';
 
           return Container(
@@ -903,9 +1001,16 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
             child: Stack(children: [
               Column(children: [
                 Expanded(
-                  child: fotoBase64 != null
-                    ? Image.memory(base64Decode(fotoBase64),
-                        width: double.infinity, fit: BoxFit.cover)
+                  child: fotoUrl != null
+                    ? FotoUrl(
+                        url: fotoUrl,
+                        width: double.infinity,
+                        fallback: Container(
+                            width: double.infinity,
+                            color: const Color(0xFFD8F0E4),
+                            child: Center(child: Text(emoji,
+                                style: const TextStyle(fontSize: 32)))),
+                      )
                     : Container(
                         width: double.infinity,
                         color: const Color(0xFFD8F0E4),
@@ -989,15 +1094,15 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                     if (item.badge > 0)
                       Positioned(top: -4, right: -6,
                         child: Container(
-                          width: 16, height: 16,
+                          padding: const EdgeInsets.all(3),
+                          constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
                           decoration: const BoxDecoration(
                               color: appOrange, shape: BoxShape.circle),
-                          child: Center(
-                            child: Text(
-                              item.badge > 9 ? '9+' : '${item.badge}',
-                              style: const TextStyle(fontSize: 9,
-                                  color: Colors.white, fontWeight: FontWeight.bold),
-                            ),
+                          child: Text(
+                            item.badge > 9 ? '9+' : '${item.badge}',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontSize: 9,
+                                color: Colors.white, fontWeight: FontWeight.bold),
                           ),
                         )),
                   ]),
@@ -1015,11 +1120,13 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                 builder: (_, snap) {
                   final unread = (snap.data?.docs ?? []).where((doc) {
                     final d = doc.data() as Map<String, dynamic>;
+                    final creadoPor = d['creadoPor'] as String? ?? 'rescatista';
+                    if (creadoPor != 'albergue') return false;
                     return ((d['noLeidosRescatista'] as int?) ?? 0) > 0;
                   }).length;
                   return GestureDetector(
                     onTap: () => Navigator.push(context, MaterialPageRoute(
-                        builder: (_) => const AdoptanteChatsScreen(esRescatista: true))),
+                        builder: (_) => const AdoptanteChatsScreen(esRescatista: true, esAlbergue: true))),
                     child: Column(mainAxisSize: MainAxisSize.min, children: [
                       Stack(clipBehavior: Clip.none, children: [
                         Icon(Icons.chat_bubble_outline,
@@ -1027,15 +1134,15 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                         if (unread > 0)
                           Positioned(top: -4, right: -6,
                             child: Container(
-                              width: 16, height: 16,
+                              padding: const EdgeInsets.all(3),
+                              constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
                               decoration: const BoxDecoration(
                                   color: appOrange, shape: BoxShape.circle),
-                              child: Center(
-                                child: Text(
-                                  unread > 9 ? '9+' : '$unread',
-                                  style: const TextStyle(fontSize: 9,
-                                      color: Colors.white, fontWeight: FontWeight.bold),
-                                ),
+                              child: Text(
+                                unread > 9 ? '9+' : '$unread',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(fontSize: 9,
+                                    color: Colors.white, fontWeight: FontWeight.bold),
                               ),
                             )),
                       ]),
@@ -1045,6 +1152,15 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                     ]),
                   );
                 },
+              ),
+              GestureDetector(
+                onTap: () => Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => const AliadosScreen(esRescatista: true))),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.store_outlined, color: Colors.grey.shade400, size: 24),
+                  const SizedBox(height: 4),
+                  Text('Negocios', style: TextStyle(fontSize: 10, color: Colors.grey.shade400)),
+                ]),
               ),
               Builder(builder: (_) {
                 final active = _nav == perfilIndex;

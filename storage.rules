@@ -1,0 +1,32 @@
+rules_version = '2';
+
+// Ver ARCHITECTURE.md y firestore.rules para el razonamiento completo.
+// Análogo a firestore.rules pero para archivos (fotos de animales).
+//
+// OJO: la regla de escritura usa firestore.get() (cross-service). Para que
+// funcione en producción, el agente de servicio de Firebase Rules
+// (service-<nº-de-proyecto>@firebase-rules.iam.gserviceaccount.com) necesita
+// el rol "roles/firebaserules.firestoreServiceAgent". La CLI lo otorga al
+// desplegar, pero solo si puede preguntar (modo interactivo) — un deploy
+// desde un script no interactivo se salta ese paso en silencio y entonces
+// TODA subida da 403 aunque la regla esté bien escrita. Eso pasó el
+// 2026-07-10 y se arregló otorgando el rol vía la API de IAM.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // ── rescates/{rescateId}/fotoN.jpg ──────────────────────────────────
+    // Catálogo público — lectura abierta, igual que el documento de
+    // Firestore correspondiente. La escritura solo la puede hacer el
+    // dueño real del rescate, verificado cruzando contra el documento de
+    // Firestore (no alcanza con "cualquier usuario logueado": como la
+    // lectura de `rescates` es pública, cualquiera podría enumerar
+    // rescateIds reales y sobreescribir/vandalizar la foto de otro
+    // rescatista si no se valida dueño de verdad).
+    match /rescates/{rescateId}/{fileName} {
+      allow read: if true;
+      allow write: if request.auth != null &&
+        firestore.get(/databases/(default)/documents/rescates/$(rescateId)).data.rescatistaId == request.auth.uid;
+    }
+  }
+}

@@ -1,5 +1,8 @@
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'data/chats_repository.dart';
 
 // ─── Constantes de color ──────────────────────────────────────────────────────
 
@@ -72,6 +75,116 @@ Widget leafBackground({required Widget child}) => Stack(
 
 // ─── Helpers globales ─────────────────────────────────────────────────────────
 
+/// Para cuando un StreamBuilder falla (sin conexión, permiso denegado, etc.)
+/// — sin esto, `snap.data?.docs ?? []` hace que la pantalla se vea igual que
+/// "no hay nada todavía", confundiendo un error real con una lista vacía.
+Widget errorFeedState({String mensaje = 'No se pudo cargar. Revisá tu conexión e intentá de nuevo.'}) {
+  return Center(
+    child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.wifi_off_rounded, size: 48, color: Colors.grey.shade400),
+        const SizedBox(height: 12),
+        Text(mensaje, textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 14, color: Colors.grey.shade600, height: 1.4)),
+      ]),
+    ),
+  );
+}
+
+/// Decodifica un string base64 de forma segura — devuelve `null` en vez de
+/// tirar una excepción si el string está corrupto o incompleto (ej. una
+/// subida de foto que se cortó a la mitad). Usar antes de armar un
+/// `MemoryImage`/`DecorationImage` a mano, para poder caer al fallback
+/// (inicial/emoji) en vez de crashear.
+Uint8List? bytesFotoSegura(String? base64) {
+  if (base64 == null || base64.isEmpty) return null;
+  try {
+    return base64Decode(base64);
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Muestra una foto guardada en base64 de forma segura: si el string está
+/// corrupto, o los bytes no son una imagen válida, muestra [fallback] en vez
+/// de crashear la pantalla que la contiene. Antes cada pantalla decodificaba
+/// `base64Decode(...)` a mano sin ninguna protección — un solo dato corrupto
+/// (una subida interrumpida, por ejemplo) tumbaba toda la pantalla.
+class FotoSegura extends StatelessWidget {
+  final String base64;
+  final Widget fallback;
+  final double? width;
+  final double? height;
+  final BoxFit fit;
+  const FotoSegura({
+    super.key,
+    required this.base64,
+    required this.fallback,
+    this.width,
+    this.height,
+    this.fit = BoxFit.cover,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bytes = bytesFotoSegura(base64);
+    if (bytes == null) return fallback;
+    return Image.memory(
+      bytes,
+      width: width,
+      height: height,
+      fit: fit,
+      errorBuilder: (_, _, _) => fallback,
+    );
+  }
+}
+
+/// Muestra una foto alojada en Firebase Storage (`url`) de forma segura:
+/// mientras carga, un indicador liviano; si la red falla o la URL ya no es
+/// válida, [fallback] en vez de crashear. Mismo contrato que [FotoSegura]
+/// (base64) para minimizar el diff en cada pantalla — se usa para fotos de
+/// animales (`rescates`), que viven en Storage y no embebidas en Firestore.
+class FotoUrl extends StatelessWidget {
+  final String url;
+  final Widget fallback;
+  final double? width;
+  final double? height;
+  final BoxFit fit;
+  const FotoUrl({
+    super.key,
+    required this.url,
+    required this.fallback,
+    this.width,
+    this.height,
+    this.fit = BoxFit.cover,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Image.network(
+      url,
+      width: width,
+      height: height,
+      fit: fit,
+      errorBuilder: (_, _, _) => fallback,
+      loadingBuilder: (_, child, progress) {
+        if (progress == null) return child;
+        return SizedBox(
+          width: width,
+          height: height,
+          child: const Center(
+            child: SizedBox(
+              width: 20, height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2, color: appTeal),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 Color cicloColor(String s) => switch (s) {
   'En cuidado'             => appTeal,
   'Rescatado'              => appTeal,
@@ -101,12 +214,19 @@ class CambiarEstadoSheet extends StatelessWidget {
   Future<void> _avisarAdoptanteFallecido(String nota) async {
     final adoptanteId = adoptanteIdEnProceso;
     if (adoptanteId == null || adoptanteId.isEmpty || nombre.isEmpty) return;
-    final chats = await FirebaseFirestore.instance.collection('chats')
-        .where('adoptanteId', isEqualTo: adoptanteId)
-        .where('animalNombre', isEqualTo: nombre)
-        .limit(1).get();
-    if (chats.docs.isEmpty) return;
-    final chatId = chats.docs.first.id;
+    // docId es el id único del rescate (el mismo animal), así que el chat se
+    // ubica directo por id en vez de buscarlo por nombre (que puede repetirse).
+    final chatDoc = await FirebaseFirestore.instance.collection('chats')
+        .doc(ChatsRepository().idAnimal(rescateId: docId, adoptanteId: adoptanteId)).get();
+    String? chatId = chatDoc.exists ? chatDoc.id : null;
+    if (chatId == null) {
+      final chats = await FirebaseFirestore.instance.collection('chats')
+          .where('adoptanteId', isEqualTo: adoptanteId)
+          .where('animalNombre', isEqualTo: nombre)
+          .limit(1).get();
+      if (chats.docs.isEmpty) return;
+      chatId = chats.docs.first.id;
+    }
     final n = DateTime.now();
     final hora = '${n.hour}:${n.minute.toString().padLeft(2, '0')}';
     final texto = 'Lamentamos informarte que $nombre falleció. '
@@ -132,16 +252,6 @@ class CambiarEstadoSheet extends StatelessWidget {
     ('Regresado',              '🔴', 'Fue devuelto, disponible de nuevo'),
     ('Fallecido',              '🌈', 'Ya no está con nosotros'),
   ];
-
-  Color _color(String s) => switch (s) {
-    'Rescatado'              => appTeal,
-    'Hogar de paso'          => const Color(0xFF7C6FCD),
-    'En proceso de adopción' => const Color(0xFFE65100),
-    'Adoptado'               => const Color(0xFF2196F3),
-    'Regresado'              => const Color(0xFFD32F2F),
-    'Fallecido'              => const Color(0xFF78909C),
-    _                        => Colors.grey,
-  };
 
   @override
   Widget build(BuildContext context) => SingleChildScrollView(
@@ -218,19 +328,19 @@ class CambiarEstadoSheet extends StatelessWidget {
             margin: const EdgeInsets.only(bottom: 8),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: sel ? _color(e.$1).withValues(alpha: 0.1) : Colors.grey.shade50,
+              color: sel ? cicloColor(e.$1).withValues(alpha: 0.1) : Colors.grey.shade50,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: sel ? _color(e.$1) : Colors.grey.shade200, width: sel ? 2 : 1),
+              border: Border.all(color: sel ? cicloColor(e.$1) : Colors.grey.shade200, width: sel ? 2 : 1),
             ),
             child: Row(children: [
               Text(e.$2, style: const TextStyle(fontSize: 20)),
               const SizedBox(width: 12),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(e.$1, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600,
-                    color: sel ? _color(e.$1) : const Color(0xFF1A1A1A))),
+                    color: sel ? cicloColor(e.$1) : const Color(0xFF1A1A1A))),
                 Text(e.$3, style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
               ])),
-              if (sel) Icon(Icons.check_circle, color: _color(e.$1), size: 20),
+              if (sel) Icon(Icons.check_circle, color: cicloColor(e.$1), size: 20),
             ]),
           ),
         );

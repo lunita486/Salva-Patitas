@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'dart:convert';
 import '../theme.dart';
 import 'solicitud_adopcion_screen.dart';
 
@@ -13,57 +12,91 @@ class FavoritosScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: appBg,
       body: SafeArea(
-        child: StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('favoritos')
-              .where('adoptanteId', isEqualTo: FirebaseAuth.instance.currentUser?.uid ?? '')
-              .snapshots(),
-          builder: (context, snap) {
-            if (snap.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator(color: appTeal));
-            }
-            final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-            final allDocs = snap.data?.docs ?? [];
-            final seen = <String>{};
-            final docs = allDocs.where((doc) {
-              final d = doc.data() as Map<String, dynamic>;
-              final nombre = (d['animalNombre'] as String? ?? '').toLowerCase();
-              return seen.add(nombre);
-            }).toList();
-            for (final doc in allDocs) {
-              final d = doc.data() as Map<String, dynamic>;
-              final nombre = (d['animalNombre'] as String? ?? '').toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_');
-              final expectedId = '${uid}_$nombre';
-              if (doc.id != expectedId) doc.reference.delete();
-            }
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          // El botón de volver vive acá afuera, siempre visible, para que
+          // si falla la carga de abajo el usuario no quede atrapado sin
+          // forma de salir de la pantalla.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                IconButton(
+                  icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ]),
+              const SizedBox(height: 4),
+              const Padding(
+                padding: EdgeInsets.only(left: 4),
+                child: Text('Tus favoritos',
+                    style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
+              ),
+            ]),
+          ),
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('favoritos')
+                  .where('adoptanteId', isEqualTo: FirebaseAuth.instance.currentUser?.uid ?? '')
+                  .snapshots(),
+              builder: (context, snap) {
+                if (snap.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator(color: appTeal));
+                }
+                if (snap.hasError) return errorFeedState();
+                final docs = snap.data?.docs ?? [];
+                // Un solo listener con el estado de todos los animales guardados,
+                // en vez de uno por tarjeta (antes N conexiones, ahora 1).
+                final rescateIds = docs
+                    .map((d) => (d.data() as Map<String, dynamic>)['rescateId'] as String? ?? '')
+                    .where((id) => id.isNotEmpty)
+                    .toSet()
+                    .take(30) // límite de Firestore para whereIn
+                    .toList();
 
-            return CustomScrollView(
+                return StreamBuilder<QuerySnapshot>(
+                  stream: rescateIds.isEmpty
+                      ? const Stream.empty()
+                      : FirebaseFirestore.instance
+                          .collection('rescates')
+                          .where(FieldPath.documentId, whereIn: rescateIds)
+                          .snapshots(),
+                  builder: (context, rescatesSnap) {
+                    final estadoPorRescateId = <String, String>{
+                      for (final r in rescatesSnap.data?.docs ?? [])
+                        r.id: (r.data() as Map<String, dynamic>)['estadoAdopcion'] as String? ?? '',
+                    };
+                    return _FavoritosGrid(docs: docs, estadoPorRescateId: estadoPorRescateId);
+                  },
+                );
+              },
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+class _FavoritosGrid extends StatelessWidget {
+  final List<QueryDocumentSnapshot> docs;
+  final Map<String, String> estadoPorRescateId;
+  const _FavoritosGrid({required this.docs, required this.estadoPorRescateId});
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomScrollView(
               slivers: [
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Row(children: [
-                        IconButton(
-                          icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                          onPressed: () => Navigator.pop(context),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          docs.isEmpty ? 'SIN GUARDADOS' : '${docs.length} GUARDADO${docs.length == 1 ? "" : "S"}',
-                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
-                              letterSpacing: 1.2, color: Colors.grey.shade500),
-                        ),
-                      ]),
-                      const SizedBox(height: 4),
-                      const Padding(
-                        padding: EdgeInsets.only(left: 4),
-                        child: Text('Tus favoritos',
-                            style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
-                      ),
-                    ]),
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                    child: Text(
+                      docs.isEmpty ? 'SIN GUARDADOS' : '${docs.length} GUARDADO${docs.length == 1 ? "" : "S"}',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
+                          letterSpacing: 1.2, color: Colors.grey.shade500),
+                    ),
                   ),
                 ),
                 if (docs.isEmpty)
@@ -98,7 +131,7 @@ class FavoritosScreen extends StatelessWidget {
                           final especie      = d['especie']      as String? ?? '';
                           final edad         = d['edad']         as String? ?? '';
                           final ubicacion    = d['ubicacion']    as String? ?? '';
-                          final fotoBase64   = d['fotoBase64']   as String?;
+                          final fotoUrl      = d['fotoUrl']      as String?;
                           final rescatista   = d['rescatista']   as String? ?? 'Rescatista';
                           final rescatistaId = d['rescatistaId'] as String? ?? '';
                           final rescateId    = d['rescateId']    as String? ?? '';
@@ -113,7 +146,7 @@ class FavoritosScreen extends StatelessWidget {
                             'rescatista': rescatista,
                             'rescatistaId': rescatistaId,
                             'rescateId': rescateId,
-                            'fotoBase64': fotoBase64,
+                            'fotoUrl': fotoUrl,
                             'creadoPor': d['creadoPor'] ?? 'rescatista',
                           };
 
@@ -128,9 +161,16 @@ class FavoritosScreen extends StatelessWidget {
                                 clipBehavior: Clip.hardEdge,
                                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                   Expanded(
-                                    child: fotoBase64 != null
-                                      ? Image.memory(base64Decode(fotoBase64),
-                                          width: double.infinity, fit: BoxFit.cover)
+                                    child: fotoUrl != null
+                                      ? FotoUrl(
+                                          url: fotoUrl,
+                                          width: double.infinity, fit: BoxFit.cover,
+                                          fallback: Container(
+                                              width: double.infinity,
+                                              color: const Color(0xFFD8F0E4),
+                                              child: Center(child: Text(emoji,
+                                                  style: const TextStyle(fontSize: 52)))),
+                                        )
                                       : Container(
                                           width: double.infinity,
                                           color: const Color(0xFFD8F0E4),
@@ -151,18 +191,14 @@ class FavoritosScreen extends StatelessWidget {
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                       const SizedBox(height: 8),
-                                      StreamBuilder<DocumentSnapshot>(
-                                        stream: rescateId.isNotEmpty
-                                            ? FirebaseFirestore.instance.collection('rescates').doc(rescateId).snapshots()
-                                            : const Stream.empty(),
-                                        builder: (_, rescSnap) {
-                                          final rData  = rescateId.isNotEmpty ? (rescSnap.data?.data() as Map<String, dynamic>?) : null;
-                                          final estado = rData?['estadoAdopcion'] as String? ?? '';
+                                      Builder(builder: (_) {
+                                          final estado = estadoPorRescateId[rescateId] ?? '';
                                           final enProceso     = estado == 'En proceso de adopción';
                                           final adoptado      = estado == 'Adoptado';
                                           final devuelto      = estado == 'Regresado';
                                           final enHogarDePaso = estado == 'Hogar de paso';
-                                          final noDisponible  = enProceso || adoptado || enHogarDePaso;
+                                          final fallecido     = estado == 'Fallecido';
+                                          final noDisponible  = enProceso || adoptado || enHogarDePaso || fallecido;
                                           return Column(children: [
                                             if (devuelto) ...[
                                               Container(
@@ -184,32 +220,22 @@ class FavoritosScreen extends StatelessWidget {
                                                 width: double.infinity,
                                                 padding: const EdgeInsets.symmetric(vertical: 8),
                                                 decoration: BoxDecoration(
-                                                  color: enHogarDePaso
-                                                      ? appTeal.withValues(alpha: 0.1)
-                                                      : enProceso
-                                                          ? const Color(0xFFE65100).withValues(alpha: 0.1)
-                                                          : Colors.grey.shade100,
+                                                  color: cicloColor(estado).withValues(alpha: 0.1),
                                                   borderRadius: BorderRadius.circular(20),
-                                                  border: Border.all(color: enHogarDePaso
-                                                      ? appTeal.withValues(alpha: 0.4)
-                                                      : enProceso
-                                                          ? const Color(0xFFE65100).withValues(alpha: 0.5)
-                                                          : Colors.grey.shade300),
+                                                  border: Border.all(color: cicloColor(estado).withValues(alpha: 0.4)),
                                                 ),
                                                 child: Text(
-                                                  enHogarDePaso
-                                                      ? 'En hogar de paso 🏡'
-                                                      : enProceso
-                                                          ? 'En proceso de adopción 🔄'
-                                                          : 'Ya adoptado 🏠',
+                                                  fallecido
+                                                      ? 'Falleció 🌈'
+                                                      : enHogarDePaso
+                                                          ? 'En hogar de paso 🏡'
+                                                          : enProceso
+                                                              ? 'En proceso de adopción 🔄'
+                                                              : 'Ya adoptado 🏠',
                                                   textAlign: TextAlign.center,
                                                   style: TextStyle(
                                                     fontSize: 12, fontWeight: FontWeight.w700,
-                                                    color: enHogarDePaso
-                                                        ? appTeal
-                                                        : enProceso
-                                                            ? const Color(0xFFE65100)
-                                                            : const Color(0xFF888888),
+                                                    color: cicloColor(estado),
                                                   ),
                                                 ),
                                               )
@@ -242,9 +268,27 @@ class FavoritosScreen extends StatelessWidget {
                             Positioned(
                               top: 8, right: 8,
                               child: GestureDetector(
-                                onTap: () => docs[i].reference.delete(),
+                                onTap: () async {
+                                  final confirmar = await showDialog<bool>(
+                                    context: context,
+                                    builder: (dlgCtx) => AlertDialog(
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                      title: const Text('Quitar de favoritos'),
+                                      content: Text('¿Seguro que quieres quitar a $nombre de tus favoritos?'),
+                                      actions: [
+                                        TextButton(onPressed: () => Navigator.pop(dlgCtx, false),
+                                            child: const Text('Cancelar')),
+                                        TextButton(
+                                          onPressed: () => Navigator.pop(dlgCtx, true),
+                                          child: const Text('Quitar', style: TextStyle(color: Colors.red)),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                  if (confirmar == true) docs[i].reference.delete();
+                                },
                                 child: Container(
-                                  width: 30, height: 30,
+                                  width: 36, height: 36,
                                   decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
                                   child: const Icon(Icons.favorite, color: appOrange, size: 17),
                                 ),
@@ -258,9 +302,5 @@ class FavoritosScreen extends StatelessWidget {
                   ),
               ],
             );
-          },
-        ),
-      ),
-    );
   }
 }

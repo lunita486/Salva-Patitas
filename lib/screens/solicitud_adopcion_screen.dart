@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'dart:convert';
 import '../theme.dart';
 import '../data/creator_role.dart';
 import '../data/solicitudes_repository.dart';
+import '../data/preferencias_repository.dart';
 
 class SolicitudAdopcionScreen extends StatefulWidget {
   final Map<String, dynamic> animal;
@@ -50,6 +50,7 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
     final estado = await _solicitudesRepo.estadoExistente(
       uid: uid,
       animalNombre: widget.animal['nombre'] as String,
+      rescateId: widget.animal['rescateId'] as String?,
     );
     if (mounted) {
       setState(() {
@@ -108,7 +109,7 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
             'fechaInicioHogar': Timestamp.fromDate(_fechaInicio!),
           if (_tipoSolicitud == 'hogar_de_paso' && _fechaFin != null)
             'fechaFinHogar': Timestamp.fromDate(_fechaFin!),
-          'fotoBase64':        widget.animal['fotoBase64'],
+          'fotoUrl':           widget.animal['fotoUrl'],
           // etiquetas del animal para calcular compatibilidad
           'animalEnergia':          widget.animal['energia'],
           'animalTamano':           widget.animal['tamano'],
@@ -117,8 +118,12 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
           'animalRequiereExp':      widget.animal['requiereExperiencia'],
         },
       );
-      // Guarda el perfil para el score de compatibilidad en el feed
-      await FirebaseFirestore.instance.collection('usuarios').doc(user?.uid).set({
+      // Guarda el perfil para el score de compatibilidad en el feed. Va en
+      // preferencias/{uid} (privado, solo lo lee el dueño) y NO en
+      // usuarios/{uid} — ese doc es legible por cualquier usuario logueado
+      // (hay perfiles públicos), y estos datos son sensibles: vivienda, si
+      // hay niños en casa, cuántas horas queda solo el animal.
+      await PreferenciasRepository().actualizar(user?.uid ?? '', {
         'perfilAdopcion': {
           'vivienda':          _vivienda,
           'horasFuera':        _horasCtl.text.trim(),
@@ -126,7 +131,7 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
           'tieneMascotas':     _mascotas == 'Sí',
           'experienciaPrevia': _experienciaPrevia == 'Sí',
         }
-      }, SetOptions(merge: true));
+      });
       if (!mounted) return;
       setState(() => _step = 2);
     } catch (e) {
@@ -256,7 +261,7 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
   Widget _stepConciencia() {
     final nombre     = widget.animal['nombre'] as String;
     final emoji      = widget.animal['especie'] == 'Gato' ? '🐱' : '🐶';
-    final fotoBase64 = widget.animal['fotoBase64'] as String?;
+    final fotoUrl = widget.animal['fotoUrl'] as String?;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -264,9 +269,20 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
         const SizedBox(height: 8),
         ClipRRect(
           borderRadius: BorderRadius.circular(20),
-          child: fotoBase64 != null
-            ? Image.memory(base64Decode(fotoBase64),
-                height: 200, width: double.infinity, fit: BoxFit.cover)
+          child: fotoUrl != null
+            ? FotoUrl(
+                url: fotoUrl,
+                height: 200, width: double.infinity, fit: BoxFit.cover,
+                fallback: Container(
+                    height: 200, width: double.infinity,
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Color(0xFF3D7A52), Color(0xFF1F4A30)],
+                        begin: Alignment.topLeft, end: Alignment.bottomRight,
+                      ),
+                    ),
+                    child: Center(child: Text(emoji, style: const TextStyle(fontSize: 80)))),
+              )
             : Container(
                 height: 200, width: double.infinity,
                 decoration: const BoxDecoration(

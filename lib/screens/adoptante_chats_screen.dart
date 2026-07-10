@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'dart:convert';
 import '../theme.dart';
 import 'chat_screen.dart';
 
 class AdoptanteChatsScreen extends StatelessWidget {
   final bool esRescatista;
   final bool soloConsultas;
-  const AdoptanteChatsScreen({super.key, this.esRescatista = false, this.soloConsultas = false});
+  final bool esAlbergue;
+  const AdoptanteChatsScreen({super.key, this.esRescatista = false, this.soloConsultas = false, this.esAlbergue = false});
 
   @override
   Widget build(BuildContext context) {
@@ -40,6 +40,7 @@ class AdoptanteChatsScreen extends StatelessWidget {
                   if (snap.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator(color: appTeal));
                   }
+                  if (snap.hasError) return errorFeedState();
                   final docs = (snap.data?.docs ?? [])
                       .where((d) {
                         final data = d.data() as Map;
@@ -48,7 +49,18 @@ class AdoptanteChatsScreen extends StatelessWidget {
                         if (soloConsultas) {
                           return tipo == 'consulta_aliado';
                         }
-                        return tipo != 'consulta' && tipo != 'consulta_aliado';
+                        // 'consulta' (pregunta de un adoptante antes de postular) es un
+                        // chat normal para el rescatista; solo 'consulta_aliado' (consultas
+                        // de negocio) se excluye acá, porque tienen su propia pestaña.
+                        if (tipo == 'consulta_aliado') return false;
+                        // Una misma cuenta puede tener rol rescatista y albergue a la vez;
+                        // esto evita que se mezclen las conversaciones de un rol con el otro.
+                        if (esRescatista) {
+                          final creadoPor = data['creadoPor'] as String? ?? 'rescatista';
+                          if (esAlbergue) return creadoPor == 'albergue';
+                          return creadoPor != 'albergue';
+                        }
+                        return true;
                       })
                       .toList()
                       ..sort((a, b) {
@@ -59,10 +71,15 @@ class AdoptanteChatsScreen extends StatelessWidget {
                         if (tb == null) return -1;
                         return tb.compareTo(ta);
                       });
-                  // Backfill fotoBase64 for chats created before it was stored
+                  // Backfill de fotoUrl para chats de animal creados antes de
+                  // que se guardara (o antes de la migración a Storage — las
+                  // solicitudes viejas guardaban fotoBase64, así que además
+                  // se salta si ya tiene cualquiera de los dos campos). Los
+                  // chats de consulta a un aliado no tienen solicitud
+                  // asociada, así que este backfill nunca les aplica.
                   for (final doc in docs) {
                     final dd = doc.data() as Map<String, dynamic>;
-                    if (dd['fotoBase64'] != null) continue;
+                    if (dd['fotoUrl'] != null || dd['fotoBase64'] != null) continue;
                     final nombre     = dd['animalNombre'] as String? ?? '';
                     final adoptanteId = dd['adoptanteId'] as String? ?? '';
                     if (nombre.isEmpty || adoptanteId.isEmpty) continue;
@@ -74,8 +91,8 @@ class AdoptanteChatsScreen extends StatelessWidget {
                         .get()
                         .then((snap) {
                       if (snap.docs.isEmpty) return;
-                      final foto = (snap.docs.first.data())['fotoBase64'] as String?;
-                      if (foto != null) doc.reference.update({'fotoBase64': foto});
+                      final foto = (snap.docs.first.data())['fotoUrl'] as String?;
+                      if (foto != null) doc.reference.update({'fotoUrl': foto});
                     }).catchError((_) {});
                   }
 
@@ -113,6 +130,10 @@ class AdoptanteChatsScreen extends StatelessWidget {
                       final ultimoMensaje = d['ultimoMensaje'] as String? ?? '';
                       final ultimaHora    = d['ultimaHora']    as String? ?? '';
                       final especie        = d['especie']        as String? ?? 'Perro';
+                      // Un chat de animal tiene fotoUrl (Storage); uno de
+                      // consulta a un aliado tiene fotoBase64 (su logo,
+                      // fuera de esta migración) — se revisan los dos.
+                      final fotoUrl       = d['fotoUrl']       as String?;
                       final fotoBase64    = d['fotoBase64']    as String?;
                       final tipoSolicitud = d['tipoSolicitud'] as String? ?? 'adopcion';
                       final campoBadge    = esRescatista ? 'noLeidosRescatista' : 'noLeidosAdoptante';
@@ -122,8 +143,17 @@ class AdoptanteChatsScreen extends StatelessWidget {
                       final avatarColors  = [appOrange, appTeal, const Color(0xFF7C6FCD), const Color(0xFF4CAF50)];
                       final avatarColor   = avatarColors[nombreMostrar.length % avatarColors.length];
 
-                      Widget animalAvatar = fotoBase64 != null
-                          ? CircleAvatar(backgroundImage: MemoryImage(base64Decode(fotoBase64)), radius: 28)
+                      final fotoBytes = bytesFotoSegura(fotoBase64);
+                      final ImageProvider? fotoProvider = fotoBytes != null
+                          ? MemoryImage(fotoBytes)
+                          : fotoUrl != null
+                              ? NetworkImage(fotoUrl)
+                              : null;
+                      Widget animalAvatar = fotoProvider != null
+                          ? CircleAvatar(
+                              backgroundImage: fotoProvider,
+                              onBackgroundImageError: (_, _) {},
+                              radius: 28)
                           : CircleAvatar(backgroundColor: appTeal.withOpacity(0.15), radius: 28,
                               child: Text(emoji, style: const TextStyle(fontSize: 26)));
 
@@ -142,6 +172,7 @@ class AdoptanteChatsScreen extends StatelessWidget {
                               'descripcion':   '',
                               'tags':          <String>[],
                               'edad':          '',
+                              'fotoUrl':       fotoUrl,
                               'fotoBase64':    fotoBase64,
                             }),
                         )),
@@ -172,7 +203,8 @@ class AdoptanteChatsScreen extends StatelessWidget {
                               ]),
                               const SizedBox(height: 2),
                               Row(children: [
-                                Text('Sobre ', style: TextStyle(fontSize: 13, color: Colors.grey.shade500)),
+                                Text(tipoSolicitud == 'consulta_aliado' ? 'Con ' : 'Sobre ',
+                                    style: TextStyle(fontSize: 13, color: Colors.grey.shade500)),
                                 Text(animalNombre, style: TextStyle(fontSize: 13,
                                     fontWeight: FontWeight.w600, color: Colors.grey.shade700)),
                               ]),
@@ -188,11 +220,14 @@ class AdoptanteChatsScreen extends StatelessWidget {
                                 if (noLeidos > 0) ...[
                                   const SizedBox(width: 8),
                                   Container(
-                                    width: 20, height: 20,
-                                    decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                                    padding: const EdgeInsets.all(4),
+                                    constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                                    decoration: const BoxDecoration(color: appOrange, shape: BoxShape.circle),
                                     alignment: Alignment.center,
-                                    child: Text('$noLeidos', style: const TextStyle(
-                                        fontSize: 11, color: Colors.white, fontWeight: FontWeight.bold)),
+                                    child: Text(noLeidos > 99 ? '99+' : '$noLeidos',
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                            fontSize: 11, color: Colors.white, fontWeight: FontWeight.bold)),
                                   ),
                                 ],
                               ]),

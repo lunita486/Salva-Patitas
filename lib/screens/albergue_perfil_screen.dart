@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import '../theme.dart';
+import '../data/usuarios_repository.dart';
 
 class AlberguePerfilScreen extends StatefulWidget {
   const AlberguePerfilScreen({super.key});
@@ -66,7 +67,7 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
       ),
     );
     if (sel == null || !mounted) return;
-    await FirebaseFirestore.instance.collection('usuarios').doc(uid).update({'roles': sel});
+    await UsuariosRepository().actualizarRoles(uid, sel);
   }
 
   Future<void> _pickFoto() async {
@@ -78,6 +79,7 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
     );
     if (picked == null) return;
     final bytes = await picked.readAsBytes();
+    if (!mounted) return;
     setState(() => _fotoBase64 = base64Encode(bytes));
   }
 
@@ -149,41 +151,45 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
 
               // Logo / foto del albergue
               Center(
-                child: GestureDetector(
-                  onTap: _pickFoto,
-                  child: Stack(clipBehavior: Clip.none, children: [
-                    Container(
-                      width: 96, height: 96,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white,
-                        border: Border.all(color: const Color(0xFF1F8A62), width: 2.5),
-                        image: _fotoBase64 != null
-                            ? DecorationImage(
-                                image: MemoryImage(base64Decode(_fotoBase64!)),
-                                fit: BoxFit.cover)
+                child: Builder(builder: (_) {
+                  final fotoBytes = bytesFotoSegura(_fotoBase64);
+                  return GestureDetector(
+                    onTap: _pickFoto,
+                    child: Stack(clipBehavior: Clip.none, children: [
+                      Container(
+                        width: 96, height: 96,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.white,
+                          border: Border.all(color: const Color(0xFF1F8A62), width: 2.5),
+                          image: fotoBytes != null
+                              ? DecorationImage(
+                                  image: MemoryImage(fotoBytes),
+                                  fit: BoxFit.cover,
+                                  onError: (_, _) {})
+                              : null,
+                        ),
+                        child: fotoBytes == null
+                            ? const Icon(Icons.add_a_photo_outlined,
+                                color: Color(0xFF1F8A62), size: 32)
                             : null,
                       ),
-                      child: _fotoBase64 == null
-                          ? const Icon(Icons.add_a_photo_outlined,
-                              color: Color(0xFF1F8A62), size: 32)
-                          : null,
-                    ),
-                    if (_fotoBase64 != null)
-                      Positioned(
-                        bottom: 0, right: 0,
-                        child: Container(
-                          width: 30, height: 30,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF1F8A62),
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 2),
+                      if (fotoBytes != null)
+                        Positioned(
+                          bottom: 0, right: 0,
+                          child: Container(
+                            width: 30, height: 30,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1F8A62),
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 2),
+                            ),
+                            child: const Icon(Icons.edit, color: Colors.white, size: 14),
                           ),
-                          child: const Icon(Icons.edit, color: Colors.white, size: 14),
                         ),
-                      ),
-                  ]),
-                ),
+                    ]),
+                  );
+                }),
               ),
               const SizedBox(height: 8),
               Center(

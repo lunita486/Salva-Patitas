@@ -32,20 +32,24 @@ class SolicitudesRepository {
   Stream<QuerySnapshot<Map<String, dynamic>>> misSolicitudes(String uid) =>
       _col.where('adoptanteId', isEqualTo: uid).snapshots();
 
-  Future<bool> yaAplico({required String uid, required String animalNombre}) async =>
-      (await estadoExistente(uid: uid, animalNombre: animalNombre)) != null;
-
-  /// Estado de la solicitud pendiente/aprobada que ya tenga [uid] sobre
-  /// [animalNombre], o `null` si no aplicó todavía.
-  Future<String?> estadoExistente({required String uid, required String animalNombre}) async {
-    final q = await _col
+  /// Estado de la solicitud pendiente/aprobada que ya tenga [uid] sobre este
+  /// animal, o `null` si no aplicó todavía. Con [rescateId] se compara por
+  /// el id único del animal (dos animales con el mismo nombre no se
+  /// confunden); sin él (dato legado) se cae al viejo match por nombre.
+  Future<String?> estadoExistente({
+    required String uid,
+    required String animalNombre,
+    String? rescateId,
+  }) async {
+    Query<Map<String, dynamic>> q = _col
         .where('adoptanteId', isEqualTo: uid)
-        .where('animalNombre', isEqualTo: animalNombre)
-        .where('estado', whereIn: ['pendiente', 'aprobada'])
-        .limit(1)
-        .get();
-    if (q.docs.isEmpty) return null;
-    return q.docs.first.data()['estado'] as String? ?? '';
+        .where('estado', whereIn: ['pendiente', 'aprobada']);
+    q = (rescateId != null && rescateId.isNotEmpty)
+        ? q.where('rescateId', isEqualTo: rescateId)
+        : q.where('animalNombre', isEqualTo: animalNombre);
+    final res = await q.limit(1).get();
+    if (res.docs.isEmpty) return null;
+    return res.docs.first.data()['estado'] as String? ?? '';
   }
 
   Future<DocumentReference<Map<String, dynamic>>> crear({
@@ -65,4 +69,99 @@ class SolicitudesRepository {
 
   Future<void> cambiarEstado(String solicitudId, String estado) =>
       _col.doc(solicitudId).update({'estado': estado});
+
+  /// Rechaza una solicitud dejando registrado el motivo (a diferencia de
+  /// [cambiarEstado], que no toca `motivoRechazo`).
+  Future<void> rechazar(String solicitudId, String motivo) =>
+      _col.doc(solicitudId).update({'estado': 'rechazada', 'motivoRechazo': motivo});
+
+  /// Cuando se aprueba una solicitud, rechaza automáticamente cualquier otra
+  /// solicitud PENDIENTE por el mismo animal (excepto [excluirDocId]) — ya
+  /// no tiene sentido seguir considerándolas. Devuelve los datos de las que
+  /// rechazó (con su id incluido) para que el llamador pueda avisarle a cada
+  /// adoptante por chat.
+  ///
+  /// Con [rescateId] se filtra por el id único del animal; sin él (dato
+  /// legado) se cae al match por nombre+dueño, que puede confundir dos
+  /// animales con el mismo nombre bajo la misma cuenta en distinto rol.
+  Future<List<Map<String, dynamic>>> rechazarCompetidoras({
+    required String animalNombre,
+    required String rescatistaId,
+    required String excluirDocId,
+    String? rescateId,
+  }) async {
+    Query<Map<String, dynamic>> q = _col
+        .where('animalNombre', isEqualTo: animalNombre)
+        .where('rescatistaId', isEqualTo: rescatistaId)
+        .where('estado', isEqualTo: 'pendiente');
+    if (rescateId != null && rescateId.isNotEmpty) {
+      q = q.where('rescateId', isEqualTo: rescateId);
+    }
+    final otros = await q.get();
+    final rechazadas = <Map<String, dynamic>>[];
+    for (final doc in otros.docs) {
+      if (doc.id == excluirDocId) continue;
+      await doc.reference.update({
+        'estado': 'rechazada',
+        'motivoRechazo': 'El proceso de adopción ya fue iniciado con otro adoptante.',
+      });
+      rechazadas.add({...doc.data(), 'id': doc.id});
+    }
+    return rechazadas;
+  }
+
+  /// Aprueba [solicitudId] de forma atómica junto con el rescate
+  /// [rescateId]: dentro de una transacción, lee el rescate y verifica que
+  /// no tenga ya un `adoptanteIdEnProceso` de OTRO adoptante antes de
+  /// aprobar. Si dos solicitudes del mismo animal se aprueban casi al
+  /// mismo tiempo (dos rescatistas, dos pestañas, doble tap), la segunda
+  /// en llegar ve que el animal ya quedó tomado y se RECHAZA sola en la
+  /// misma transacción — nunca quedan dos adoptantes "aprobados" para un
+  /// solo animal.
+  ///
+  /// Alcance a propósito: toca `rescates` directo (no pasa por
+  /// `RescatesRepository`) porque una `Transaction` de Firestore solo puede
+  /// leer/escribir referencias de documento puntuales dentro de su propio
+  /// callback — no puede llamar a otro repositorio ni hacer queries. Esto
+  /// es lo único que necesita ser realmente atómico; rechazar competidoras
+  /// y avisar por chat siguen siendo pasos separados después (best-effort,
+  /// no corrompen datos si fallan a medias).
+  ///
+  /// Solo sirve cuando hay [rescateId] (todas las solicitudes nuevas lo
+  /// tienen). Para el dato legado sin `rescateId`, no hay documento puntual
+  /// contra el cual transaccionar — ver el fallback en
+  /// `solicitudes_rescatista_screen.dart`.
+  ///
+  /// Devuelve `true` si se aprobó, `false` si se rechazó por la carrera.
+  Future<bool> aprobarSiDisponible({
+    required String solicitudId,
+    required String rescateId,
+    required String adoptanteId,
+    required String nuevoEstadoAdopcion,
+    Map<String, dynamic> camposExtra = const {},
+  }) {
+    final rescateRef = _db.collection('rescates').doc(rescateId);
+    final solicitudRef = _col.doc(solicitudId);
+
+    return _db.runTransaction<bool>((tx) async {
+      final rescateSnap = await tx.get(rescateRef);
+      final yaClaimadoPor = (rescateSnap.data()?['adoptanteIdEnProceso'] as String?) ?? '';
+
+      if (yaClaimadoPor.isNotEmpty && yaClaimadoPor != adoptanteId) {
+        tx.update(solicitudRef, {
+          'estado': 'rechazada',
+          'motivoRechazo': 'El proceso de adopción ya fue iniciado con otro adoptante.',
+        });
+        return false;
+      }
+
+      tx.update(solicitudRef, {'estado': 'aprobada'});
+      tx.update(rescateRef, {
+        'estadoAdopcion': nuevoEstadoAdopcion,
+        'adoptanteIdEnProceso': adoptanteId,
+        ...camposExtra,
+      });
+      return true;
+    });
+  }
 }

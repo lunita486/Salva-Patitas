@@ -7,6 +7,7 @@ import '../theme.dart';
 import '../data/creator_role.dart';
 import '../data/rescates_repository.dart';
 import '../data/solicitudes_repository.dart';
+import '../data/usuarios_repository.dart';
 
 class PerfilRescatistaScreen extends StatelessWidget {
   const PerfilRescatistaScreen({super.key});
@@ -24,8 +25,7 @@ class PerfilRescatistaScreen extends StatelessWidget {
       builder: (ctx) => _RolesSheet(rolesActuales: roles),
     );
     if (seleccion == null || seleccion.isEmpty) return;
-    await FirebaseFirestore.instance
-        .collection('usuarios').doc(uid).update({'roles': seleccion});
+    await UsuariosRepository().actualizarRoles(uid, seleccion);
   }
 
   @override

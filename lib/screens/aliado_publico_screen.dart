@@ -1,8 +1,8 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme.dart';
+import '../data/chats_repository.dart';
 import 'chat_screen.dart';
 
 class AliadoPublicoScreen extends StatelessWidget {
@@ -23,35 +23,14 @@ class AliadoPublicoScreen extends StatelessWidget {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     if (uid.isEmpty) return;
 
-    final nombreChat = esRescatista ? 'Consulta rescatista' : 'Consulta general';
-
-    final existing = await FirebaseFirestore.instance
-        .collection('chats')
-        .where('adoptanteId', isEqualTo: uid)
-        .where('rescatistaId', isEqualTo: aliadoId)
-        .where('animalNombre', isEqualTo: nombreChat)
-        .limit(1).get();
-
-    String chatId;
-    if (existing.docs.isEmpty) {
-      final ref = await FirebaseFirestore.instance.collection('chats').add({
-        'adoptanteId':        uid,
-        'adoptanteNombre':    FirebaseAuth.instance.currentUser?.displayName ?? 'Usuario',
-        'animalNombre':       nombreChat,
-        'rescatistaId':       aliadoId,
-        'rescatista':         nombre,
-        if (fotoBase64 != null) 'fotoBase64': fotoBase64,
-        'tipoSolicitud':      'consulta_aliado',
-        'ultimoMensaje':      '',
-        'ultimaHora':         '',
-        'ultimoMensajeEn':    FieldValue.serverTimestamp(),
-        'noLeidosAdoptante':  0,
-        'noLeidosRescatista': 0,
-      });
-      chatId = ref.id;
-    } else {
-      chatId = existing.docs.first.id;
-    }
+    final chatId = await ChatsRepository().asegurarChatNegocio(
+      adoptanteId: uid,
+      adoptanteNombre: FirebaseAuth.instance.currentUser?.displayName ?? 'Usuario',
+      aliadoId: aliadoId,
+      aliadoNombre: nombre,
+      contexto: esRescatista ? 'rescatista' : 'general',
+      fotoBase64: fotoBase64,
+    );
 
     if (!context.mounted) return;
     Navigator.push(context, MaterialPageRoute(
@@ -63,6 +42,7 @@ class AliadoPublicoScreen extends StatelessWidget {
           'rescatista':   nombre,
           'rescatistaId': aliadoId,
           'fotoBase64':   fotoBase64,
+          'tipoSolicitud': 'consulta_aliado',
         },
       ),
     ));
@@ -107,17 +87,19 @@ class AliadoPublicoScreen extends StatelessWidget {
                         ),
                       ),
                       child: Column(children: [
-                        CircleAvatar(
-                          radius: 44,
-                          backgroundColor: Colors.white.withValues(alpha: 0.2),
-                          backgroundImage: foto != null
-                              ? MemoryImage(base64Decode(foto)) as ImageProvider
-                              : null,
-                          child: foto == null
-                              ? Text(iniciales, style: const TextStyle(
-                                  color: Colors.white, fontWeight: FontWeight.bold, fontSize: 24))
-                              : null,
-                        ),
+                        Builder(builder: (_) {
+                          final fotoBytes = bytesFotoSegura(foto);
+                          return CircleAvatar(
+                            radius: 44,
+                            backgroundColor: Colors.white.withValues(alpha: 0.2),
+                            backgroundImage: fotoBytes != null ? MemoryImage(fotoBytes) : null,
+                            onBackgroundImageError: fotoBytes != null ? (_, __) {} : null,
+                            child: fotoBytes == null
+                                ? Text(iniciales, style: const TextStyle(
+                                    color: Colors.white, fontWeight: FontWeight.bold, fontSize: 24))
+                                : null,
+                          );
+                        }),
                         const SizedBox(height: 12),
                         Text(nombre, style: const TextStyle(
                             fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)),

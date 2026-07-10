@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:patitas_medellin/data/creator_role.dart';
@@ -55,6 +56,45 @@ void main() {
       await repo.eliminar(ref.id);
       final doc = await ref.get();
       expect(doc.exists, false);
+    });
+
+    test('actualizarPorNombre encuentra el rescate por nombre+dueño y lo actualiza '
+        '(fallback para solicitudes viejas sin rescateId guardado)', () async {
+      final ref = await firestore.collection('rescates').add({
+        'nombre': 'Firulais', 'rescatistaId': 'r1', 'estadoAdopcion': 'Rescatado',
+      });
+      await repo.actualizarPorNombre(
+        nombre: 'Firulais', rescatistaId: 'r1', cambios: {'estadoAdopcion': 'Adoptado'},
+      );
+      expect((await ref.get())['estadoAdopcion'], 'Adoptado');
+    });
+
+    test('actualizarPorNombre no confunde animales con el mismo nombre de otro dueño', () async {
+      final deOtro = await firestore.collection('rescates').add({
+        'nombre': 'Firulais', 'rescatistaId': 'otro-uid', 'estadoAdopcion': 'Rescatado',
+      });
+      await repo.actualizarPorNombre(
+        nombre: 'Firulais', rescatistaId: 'r1', cambios: {'estadoAdopcion': 'Adoptado'},
+      );
+      expect((await deOtro.get())['estadoAdopcion'], 'Rescatado');
+    });
+
+    test('actualizarPorNombre no rompe si no encuentra ningún rescate', () async {
+      await expectLater(
+        repo.actualizarPorNombre(
+          nombre: 'NoExiste', rescatistaId: 'r1', cambios: {'estadoAdopcion': 'Adoptado'},
+        ),
+        completes,
+      );
+    });
+
+    test('feedPublico no excluye rescates sin creadoEn (bug: orderBy los desaparecía del feed)', () async {
+      await firestore.collection('rescates').add({'nombre': 'ConFecha', 'creadoEn': Timestamp.now()});
+      await firestore.collection('rescates').add({'nombre': 'SinFecha'});
+
+      final docs = await repo.feedPublico().first;
+      expect(docs.docs.length, 2);
+      expect(docs.docs.map((d) => d['nombre']), containsAll(['ConFecha', 'SinFecha']));
     });
 
     test('misRescatesPorEstado filtra por uid, CreatorRole y estado a la vez', () async {

@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme.dart';
@@ -81,22 +80,26 @@ class AlberguePublicoScreen extends StatelessWidget {
                                   color: Colors.white.withValues(alpha: 0.5),
                                   width: 3),
                             ),
-                            child: CircleAvatar(
-                              radius: 42,
-                              backgroundColor:
-                                  Colors.white.withValues(alpha: 0.2),
-                              backgroundImage: foto64 != null
-                                  ? MemoryImage(base64Decode(foto64))
-                                      as ImageProvider
-                                  : null,
-                              child: foto64 == null
-                                  ? Text(iniciales,
-                                      style: const TextStyle(
-                                          fontSize: 26,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.white))
-                                  : null,
-                            ),
+                            child: Builder(builder: (_) {
+                              final fotoBytes = bytesFotoSegura(foto64);
+                              return CircleAvatar(
+                                radius: 42,
+                                backgroundColor:
+                                    Colors.white.withValues(alpha: 0.2),
+                                backgroundImage: fotoBytes != null
+                                    ? MemoryImage(fotoBytes)
+                                    : null,
+                                onBackgroundImageError:
+                                    fotoBytes != null ? (_, __) {} : null,
+                                child: fotoBytes == null
+                                    ? Text(iniciales,
+                                        style: const TextStyle(
+                                            fontSize: 26,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white))
+                                    : null,
+                              );
+                            }),
                           ),
                           const SizedBox(height: 10),
                           Text(nombre,
@@ -226,7 +229,7 @@ class AlberguePublicoScreen extends StatelessWidget {
         ? d['nombre'] as String : 'Sin nombre';
     final especie       = d['especie']        as String? ?? 'Perro';
     final edad          = d['edad']           as String? ?? '';
-    final fotoBase64    = d['fotoBase64']     as String?;
+    final fotoUrl       = d['fotoUrl']        as String?;
     final urgencia      = d['urgencia']       as String? ?? '';
     final estadoAdopcion= d['estadoAdopcion'] as String? ?? 'Rescatado';
     final emoji         = especie == 'Gato' ? '🐱' : '🐶';
@@ -249,8 +252,8 @@ class AlberguePublicoScreen extends StatelessWidget {
       'rescatistaId':        d['rescatistaId']     ?? '',
       'rescateId':           docId,
       'estadoAdopcion':      estadoAdopcion,
-      'fotoBase64':          fotoBase64,
-      'fotoBase642':         d['fotoBase642'],
+      'fotoUrl':             fotoUrl,
+      'fotoUrl2':            d['fotoUrl2'],
       'latitud':             d['latitud'],
       'longitud':            d['longitud'],
       'energia':             d['energia'],
@@ -280,9 +283,17 @@ class AlberguePublicoScreen extends StatelessWidget {
         child: Stack(children: [
           Column(children: [
             Expanded(
-              child: fotoBase64 != null
-                  ? Image.memory(base64Decode(fotoBase64),
-                      width: double.infinity, fit: BoxFit.cover)
+              child: fotoUrl != null
+                  ? FotoUrl(
+                      url: fotoUrl,
+                      width: double.infinity,
+                      fallback: Container(
+                          width: double.infinity,
+                          color: const Color(0xFFD8F0E4),
+                          child: Center(
+                              child: Text(emoji,
+                                  style: const TextStyle(fontSize: 40)))),
+                    )
                   : Container(
                       width: double.infinity,
                       color: const Color(0xFFD8F0E4),

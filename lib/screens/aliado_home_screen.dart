@@ -1,10 +1,12 @@
-import 'dart:convert';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../theme.dart';
 import '../services/notificaciones_service.dart';
+import '../data/usuarios_repository.dart';
 import 'adoptante_chats_screen.dart';
 import 'subir_servicio_screen.dart';
 import 'aliado_perfil_screen.dart';
@@ -67,26 +69,31 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
       ),
     );
     if (sel == null || !mounted) return;
-    await FirebaseFirestore.instance.collection('usuarios').doc(_uid).update({'roles': sel});
+    await UsuariosRepository().actualizarRoles(_uid, sel);
   }
 
   Future<void> _cerrarSesion() async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Cerrar sesión'),
-        content: const Text('¿Seguro que querés cerrar sesión?'),
+        content: const Text('¿Seguro que quieres cerrar sesión?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: appTeal, foregroundColor: Colors.white),
+          TextButton(onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar', style: TextStyle(color: Colors.grey))),
+          TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Cerrar sesión'),
+            child: const Text('Cerrar sesión',
+                style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600)),
           ),
         ],
       ),
     );
-    if (ok == true) await FirebaseAuth.instance.signOut();
+    if (ok == true) {
+      await GoogleSignIn().signOut();
+      await FirebaseAuth.instance.signOut();
+    }
   }
 
   Future<void> _toggleActivo(String docId, bool actual) async {
@@ -213,16 +220,19 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2),
                             blurRadius: 16, offset: const Offset(0, 6))],
                       ),
-                      child: CircleAvatar(
-                        radius: 52,
-                        backgroundColor: Colors.white.withValues(alpha: 0.2),
-                        backgroundImage: foto != null
-                            ? MemoryImage(base64Decode(foto)) as ImageProvider : null,
-                        child: foto == null
-                            ? Text(iniciales, style: const TextStyle(color: Colors.white,
-                                fontWeight: FontWeight.bold, fontSize: 32))
-                            : null,
-                      ),
+                      child: Builder(builder: (_) {
+                        final fotoBytes = bytesFotoSegura(foto);
+                        return CircleAvatar(
+                          radius: 52,
+                          backgroundColor: Colors.white.withValues(alpha: 0.2),
+                          backgroundImage: fotoBytes != null ? MemoryImage(fotoBytes) : null,
+                          onBackgroundImageError: fotoBytes != null ? (_, __) {} : null,
+                          child: fotoBytes == null
+                              ? Text(iniciales, style: const TextStyle(color: Colors.white,
+                                  fontWeight: FontWeight.bold, fontSize: 32))
+                              : null,
+                        );
+                      }),
                     ),
                     const SizedBox(height: 16),
                     Row(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -414,6 +424,9 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
       stream: FirebaseFirestore.instance
           .collection('servicios').where('aliadoId', isEqualTo: _uid).snapshots(),
       builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator(color: appTeal));
+        }
         final docs = (snap.data?.docs ?? [])
           ..sort((a, b) {
             final tA = (a.data() as Map)['creadoEn'] as Timestamp?;
@@ -600,16 +613,19 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                 boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2),
                     blurRadius: 16, offset: const Offset(0, 6))],
               ),
-              child: CircleAvatar(
-                radius: 52,
-                backgroundColor: Colors.white.withValues(alpha: 0.2),
-                backgroundImage: foto != null
-                    ? MemoryImage(base64Decode(foto)) as ImageProvider : null,
-                child: foto == null
-                    ? Text(iniciales, style: const TextStyle(color: Colors.white,
-                        fontWeight: FontWeight.bold, fontSize: 32))
-                    : null,
-              ),
+              child: Builder(builder: (_) {
+                final fotoBytes = bytesFotoSegura(foto);
+                return CircleAvatar(
+                  radius: 52,
+                  backgroundColor: Colors.white.withValues(alpha: 0.2),
+                  backgroundImage: fotoBytes != null ? MemoryImage(fotoBytes) : null,
+                  onBackgroundImageError: fotoBytes != null ? (_, __) {} : null,
+                  child: fotoBytes == null
+                      ? Text(iniciales, style: const TextStyle(color: Colors.white,
+                          fontWeight: FontWeight.bold, fontSize: 32))
+                      : null,
+                );
+              }),
             ),
             const SizedBox(height: 16),
             Text(nombre, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold,
@@ -653,6 +669,23 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            GestureDetector(
+              onTap: () => launchUrl(
+                Uri.parse('https://lunita486.github.io/Salva-Patitas/privacidad.html'),
+                mode: LaunchMode.externalApplication,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Icon(Icons.shield_outlined, size: 16, color: Colors.grey.shade500),
+                  const SizedBox(width: 6),
+                  Text('Política de Privacidad',
+                      style: TextStyle(fontSize: 13, color: Colors.grey.shade500,
+                          decoration: TextDecoration.underline)),
+                ]),
               ),
             ),
           ]),
@@ -718,11 +751,13 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
           if (badge > 0)
             Positioned(top: -4, right: -6,
               child: Container(
-                width: 16, height: 16,
+                padding: const EdgeInsets.all(3),
+                constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
                 decoration: const BoxDecoration(color: appOrange, shape: BoxShape.circle),
-                child: Center(child: Text(badge > 9 ? '9+' : '$badge',
+                child: Text(badge > 9 ? '9+' : '$badge',
+                    textAlign: TextAlign.center,
                     style: const TextStyle(fontSize: 9, color: Colors.white,
-                        fontWeight: FontWeight.bold))),
+                        fontWeight: FontWeight.bold)),
               )),
         ]),
         const SizedBox(height: 3),

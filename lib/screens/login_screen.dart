@@ -25,7 +25,11 @@ class _LoginScreenState extends State<LoginScreen> {
       );
       await FirebaseAuth.instance.signInWithCredential(credential);
     } catch (e) {
-      if (mounted) setState(() => _cargando = false);
+      if (mounted) {
+        setState(() => _cargando = false);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('No se pudo iniciar sesión. Revisá tu conexión e intentá de nuevo.')));
+      }
     }
   }
 

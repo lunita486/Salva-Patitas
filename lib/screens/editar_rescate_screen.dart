@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'dart:convert';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 import '../theme.dart';
+import '../data/rescates_repository.dart';
+import '../data/rescate_fotos_repository.dart';
 
 class EditarRescateScreen extends StatefulWidget {
   final String docId;
@@ -28,11 +31,16 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
   late String _okMascotas;
   late String _requiereExp;
   bool _guardando = false;
-  String? _fotoBase64Existente;
-  String? _foto2Base64Existente;
+  String? _fotoUrlExistente;
+  String? _foto2UrlExistente;
   XFile? _nuevaFoto;
   XFile? _nuevaFoto2;
   final _picker = ImagePicker();
+
+  bool _detectandoUbicacion = false;
+  double? _latitud;
+  double? _longitud;
+  String _paisCodigo = '';
 
   static const _especies  = ['Perro', 'Gato', 'Otro'];
   static const _estados   = ['Sano', 'En tratamiento', 'Recuperado'];
@@ -60,8 +68,70 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
     _okNinos   = (d['okConNinos']    as bool? ?? false) ? 'Sí' : 'No';
     _okMascotas= (d['okConMascotas'] as bool? ?? false) ? 'Sí' : 'No';
     _requiereExp=(d['requiereExperiencia'] as bool? ?? false) ? 'Sí' : 'No';
-    _fotoBase64Existente  = d['fotoBase64']  as String?;
-    _foto2Base64Existente = d['fotoBase642'] as String?;
+    _fotoUrlExistente  = d['fotoUrl']  as String?;
+    _foto2UrlExistente = d['fotoUrl2'] as String?;
+    _latitud     = d['latitud']    as double?;
+    _longitud    = d['longitud']   as double?;
+    _paisCodigo  = d['paisCodigo'] as String? ?? '';
+  }
+
+  /// Igual que en subir_rescate_screen.dart: con timeLimit para que un GPS
+  /// lento o que falla no se quede esperando para siempre sin avisar nada.
+  /// Totalmente opcional acá — guardar nunca depende de esto.
+  Future<void> _obtenerUbicacionGPS() async {
+    setState(() => _detectandoUbicacion = true);
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Activa el GPS en tu dispositivo')));
+      setState(() => _detectandoUbicacion = false);
+      return;
+    }
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        setState(() => _detectandoUbicacion = false);
+        return;
+      }
+    }
+    if (permission == LocationPermission.deniedForever) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Permiso de ubicación bloqueado. Habilítalo en Ajustes.')));
+      setState(() => _detectandoUbicacion = false);
+      return;
+    }
+    try {
+      final pos = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            timeLimit: Duration(seconds: 12),
+          ));
+      String ciudad = '';
+      String paisCodigo = '';
+      try {
+        final placemarks = await placemarkFromCoordinates(pos.latitude, pos.longitude);
+        if (placemarks.isNotEmpty) {
+          ciudad = placemarks.first.locality?.isNotEmpty == true
+              ? placemarks.first.locality!
+              : placemarks.first.administrativeArea ?? '';
+          paisCodigo = placemarks.first.isoCountryCode ?? '';
+        }
+      } catch (_) {}
+      if (!mounted) return;
+      setState(() {
+        _latitud  = pos.latitude;
+        _longitud = pos.longitude;
+        if (ciudad.isNotEmpty) _lugarCtl.text = ciudad;
+        _paisCodigo = paisCodigo;
+        _detectandoUbicacion = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _detectandoUbicacion = false);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('No se pudo detectar tu ubicación. Podés reintentar tocando de nuevo.')));
+    }
   }
 
   @override
@@ -72,7 +142,7 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
 
   Future<void> _pickFoto(ImageSource src, {int slot = 1}) async {
     final img = await _picker.pickImage(source: src, imageQuality: 80, maxWidth: 1000, maxHeight: 1000);
-    if (img == null) return;
+    if (img == null || !mounted) return;
     setState(() {
       if (slot == 1) { _nuevaFoto  = img; }
       else           { _nuevaFoto2 = img; }
@@ -125,7 +195,12 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
     if (confirmar != true) return;
     setState(() => _guardando = true);
     try {
-      await FirebaseFirestore.instance.collection('rescates').doc(widget.docId).delete();
+      await RescatesRepository().eliminar(widget.docId);
+      // Best-effort: borrar también las fotos de Storage para no dejarlas
+      // huérfanas pagando almacenamiento indefinidamente. try/catch, no
+      // .catchError — un catchError mal tipado revienta acá y el flujo
+      // muere en silencio antes del SnackBar.
+      try { await RescateFotosRepository().eliminarTodas(widget.docId); } catch (_) {}
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Publicación eliminada'), backgroundColor: appTeal));
@@ -138,17 +213,33 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
     }
   }
 
+  /// Resuelve un slot de foto comparando estado inicial vs. final: foto
+  /// nueva → subirla (sobreescribe el mismo path); sin cambios → mantener
+  /// la URL que ya había, sin tocar Storage; se quitó sin reemplazarla →
+  /// borrarla de Storage para no dejarla huérfana pagando almacenamiento.
+  Future<String?> _resolverSlot({
+    required int slot,
+    required XFile? nuevaFoto,
+    required String? urlExistente,
+  }) async {
+    if (nuevaFoto != null) {
+      final bytes = await File(nuevaFoto.path).readAsBytes();
+      return RescateFotosRepository().subir(rescateId: widget.docId, slot: slot, bytes: bytes);
+    }
+    if (urlExistente != null) return urlExistente;
+    await RescateFotosRepository().eliminar(rescateId: widget.docId, slot: slot);
+    return null;
+  }
+
   Future<void> _guardar() async {
     setState(() => _guardando = true);
     try {
-      final foto1 = _nuevaFoto != null
-          ? base64Encode(await File(_nuevaFoto!.path).readAsBytes())
-          : _fotoBase64Existente;
-      final foto2 = _nuevaFoto2 != null
-          ? base64Encode(await File(_nuevaFoto2!.path).readAsBytes())
-          : _foto2Base64Existente;
+      final fotoUrl = await _resolverSlot(
+          slot: 1, nuevaFoto: _nuevaFoto, urlExistente: _fotoUrlExistente);
+      final fotoUrl2 = await _resolverSlot(
+          slot: 2, nuevaFoto: _nuevaFoto2, urlExistente: _foto2UrlExistente);
 
-      await FirebaseFirestore.instance.collection('rescates').doc(widget.docId).update({
+      await RescatesRepository().actualizar(widget.docId, {
         'nombre':      _nombreCtl.text.trim(),
         'descripcion': _descCtl.text.trim(),
         'ubicacion':   _lugarCtl.text.trim(),
@@ -162,8 +253,11 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
         'okConNinos':          _okNinos    == 'Sí',
         'okConMascotas':       _okMascotas == 'Sí',
         'requiereExperiencia': _requiereExp == 'Sí',
-        'fotoBase64':  foto1 ?? FieldValue.delete(),
-        'fotoBase642': foto2 ?? FieldValue.delete(),
+        'fotoUrl':  fotoUrl  ?? FieldValue.delete(),
+        'fotoUrl2': fotoUrl2 ?? FieldValue.delete(),
+        if (_latitud    != null) 'latitud':    _latitud,
+        if (_longitud   != null) 'longitud':   _longitud,
+        if (_paisCodigo.isNotEmpty) 'paisCodigo': _paisCodigo,
       });
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -213,6 +307,8 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
                 _campo('Nombre', _nombreCtl, 'ej. Luna'),
                 const SizedBox(height: 16),
                 _campo('Ubicación', _lugarCtl, 'ej. Laureles'),
+                const SizedBox(height: 8),
+                _locationField(),
                 const SizedBox(height: 16),
                 _campo('Descripción', _descCtl, 'Cuéntanos sobre el animal...', maxLines: 3),
                 const SizedBox(height: 20),
@@ -271,23 +367,23 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
       style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.2, color: Colors.grey.shade500));
 
   Widget _fotoSection() {
-    final bool tiene1 = _nuevaFoto != null || _fotoBase64Existente != null;
-    final bool tiene2 = _nuevaFoto2 != null || _foto2Base64Existente != null;
+    final bool tiene1 = _nuevaFoto != null || _fotoUrlExistente != null;
+    final bool tiene2 = _nuevaFoto2 != null || _foto2UrlExistente != null;
     final int total   = (tiene1 ? 1 : 0) + (tiene2 ? 1 : 0);
     final items       = <Widget>[];
 
     if (tiene1) {
       items.add(_fotoThumbEdit(
         file: _nuevaFoto,
-        b64: _fotoBase64Existente,
-        onRemove: () => setState(() { _nuevaFoto = null; _fotoBase64Existente = null; }),
+        url: _fotoUrlExistente,
+        onRemove: () => setState(() { _nuevaFoto = null; _fotoUrlExistente = null; }),
       ));
     }
     if (tiene2) {
       items.add(_fotoThumbEdit(
         file: _nuevaFoto2,
-        b64: _foto2Base64Existente,
-        onRemove: () => setState(() { _nuevaFoto2 = null; _foto2Base64Existente = null; }),
+        url: _foto2UrlExistente,
+        onRemove: () => setState(() { _nuevaFoto2 = null; _foto2UrlExistente = null; }),
       ));
     }
     if (total < 2) {
@@ -297,13 +393,21 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
     return Wrap(spacing: 10, runSpacing: 10, children: items);
   }
 
-  Widget _fotoThumbEdit({XFile? file, String? b64, required VoidCallback onRemove}) {
+  Widget _fotoThumbEdit({XFile? file, String? url, required VoidCallback onRemove}) {
     return Stack(children: [
       ClipRRect(
         borderRadius: BorderRadius.circular(12),
         child: file != null
             ? Image.file(File(file.path), width: 90, height: 90, fit: BoxFit.cover)
-            : Image.memory(base64Decode(b64!), width: 90, height: 90, fit: BoxFit.cover),
+            : FotoUrl(
+                url: url!,
+                width: 90, height: 90,
+                fallback: Container(
+                  width: 90, height: 90,
+                  color: Colors.grey.shade200,
+                  child: Icon(Icons.broken_image_outlined, color: Colors.grey.shade400),
+                ),
+              ),
       ),
       Positioned(
         top: 4, right: 4,
@@ -357,6 +461,43 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
         ),
       ),
     ]);
+
+  Widget _locationField() {
+    final obtenida = _latitud != null;
+    final ciudad = _lugarCtl.text;
+    return GestureDetector(
+      onTap: _detectandoUbicacion ? null : _obtenerUbicacionGPS,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        decoration: BoxDecoration(
+          color: obtenida ? appTeal.withValues(alpha: 0.08) : Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: obtenida ? appTeal : Colors.grey.shade300),
+        ),
+        child: Row(children: [
+          if (_detectandoUbicacion)
+            const SizedBox(width: 22, height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2, color: appTeal))
+          else
+            Icon(obtenida ? Icons.check_circle : Icons.my_location,
+                color: obtenida ? appTeal : Colors.grey.shade500, size: 22),
+          const SizedBox(width: 12),
+          Text(
+            _detectandoUbicacion
+                ? 'Detectando ubicación...'
+                : obtenida
+                    ? (ciudad.isNotEmpty ? '$ciudad ✓' : 'Ubicación detectada ✓')
+                    : 'Toca para detectar tu ubicación',
+            style: TextStyle(
+              fontSize: 14,
+              color: obtenida || _detectandoUbicacion ? appTeal : Colors.grey.shade500,
+              fontWeight: obtenida ? FontWeight.w600 : FontWeight.normal,
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
 
   Widget _selector(String label, String valor, List<String> opts, ValueChanged<String> onChanged) =>
     Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

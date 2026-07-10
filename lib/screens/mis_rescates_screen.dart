@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'dart:convert';
 import '../theme.dart';
 import '../data/creator_role.dart';
 import '../data/rescates_repository.dart';
@@ -135,6 +134,7 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                     if (snap.connectionState == ConnectionState.waiting) {
                       return const Center(child: CircularProgressIndicator(color: appTeal));
                     }
+                    if (snap.hasError) return errorFeedState();
                     var allDocs = (snap.data?.docs ?? []).toList()..sort((a, b) {
                       final ta = a.data()['creadoEn'] as Timestamp?;
                       final tb = b.data()['creadoEn'] as Timestamp?;
@@ -184,7 +184,7 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                         final estado        = d['estado']        ?? '';
                         final urgencia      = d['urgencia']      ?? '';
                         final ubicacion     = d['ubicacion']     ?? '';
-                        final fotoBase64    = d['fotoBase64']    as String?;
+                        final fotoUrl       = d['fotoUrl']       as String?;
                         final estadoAdopcion= d['estadoAdopcion'] as String? ?? 'Rescatado';
                         final motivoRegreso = d['motivoRegreso']  as String?;
                         final emoji = especie == 'Gato' ? '🐱' : '🐶';
@@ -203,9 +203,14 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                             Row(children: [
                               ClipRRect(
                                 borderRadius: BorderRadius.circular(12),
-                                child: fotoBase64 != null
-                                  ? Image.memory(base64Decode(fotoBase64),
-                                      width: 64, height: 64, fit: BoxFit.cover)
+                                child: fotoUrl != null
+                                  ? FotoUrl(
+                                      url: fotoUrl,
+                                      width: 64, height: 64, fit: BoxFit.cover,
+                                      fallback: Container(width: 64, height: 64,
+                                          color: const Color(0xFFD8F0E4),
+                                          child: Center(child: Text(emoji, style: const TextStyle(fontSize: 32)))),
+                                    )
                                   : Container(width: 64, height: 64,
                                       color: const Color(0xFFD8F0E4),
                                       child: Center(child: Text(emoji, style: const TextStyle(fontSize: 32)))),
@@ -274,7 +279,7 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                                   ]),
                                 ),
                               ),
-                              if (estadoAdopcion != 'Fallecido' && fotoBase64 != null)
+                              if (estadoAdopcion != 'Fallecido' && fotoUrl != null)
                                 Tooltip(
                                   message: 'Compartir',
                                   child: GestureDetector(
@@ -289,7 +294,7 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                                         if (d['okConMascotas'] == true) 'Es sociable',
                                         if ((d['energia'] as String?)?.isNotEmpty == true) d['energia'] as String,
                                       ],
-                                      fotoBase64: fotoBase64,
+                                      fotoUrl: fotoUrl,
                                     ),
                                     child: Container(
                                       padding: const EdgeInsets.all(8),
