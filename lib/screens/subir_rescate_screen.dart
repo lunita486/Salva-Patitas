@@ -101,9 +101,13 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
 
   Future<void> _obtenerUbicacionGPS() async {
     setState(() => _detectandoUbicacion = true);
+    // Después de cada await hay que re-verificar mounted antes de setState:
+    // la detección puede tardar y la usuaria puede haber salido de la
+    // pantalla mientras tanto (setState tras dispose es una excepción).
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Activa el GPS en tu dispositivo')));
       setState(() => _detectandoUbicacion = false);
       return;
@@ -112,15 +116,17 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
+        if (!mounted) return;
         setState(() => _detectandoUbicacion = false);
         return;
       }
     }
     if (permission == LocationPermission.deniedForever) {
+      if (!mounted) return;
       // "Habilítalo en Ajustes" solo no le dice a la usuaria QUÉ tocar ni
       // A DÓNDE ir — con un botón que abre directo la pantalla de permisos
       // de la app no hace falta que busque nada por su cuenta.
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: const Text('Permiso de ubicación bloqueado.'),
         action: SnackBarAction(
           label: 'Abrir Ajustes',

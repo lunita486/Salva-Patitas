@@ -349,12 +349,16 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
             .where((id) => id.isNotEmpty)
             .toSet();
         // _favoritosRecientes solo existe para tapar la ventana entre
-        // "tocaste el corazón acá" y "Firestore ya confirmó el favorito"
-        // — una vez que Firestore contesta, es la única verdad. Sin esto,
-        // un animal que se sacó de favoritos DESDE OTRA pantalla (la de
-        // Favoritos) se quedaba oculto del carrusel para siempre, porque
-        // acá nadie se enteraba de que ya no estaba favorito.
-        _favoritosRecientes.removeWhere((id) => !favRescateIds.contains(id));
+        // "tocaste el corazón acá" y "Firestore ya confirmó el favorito".
+        // Apenas el favorito aparece confirmado en favRescateIds, se lo
+        // saca de la lista local: desde ahí lo oculta la fuente de verdad,
+        // y si más tarde se le quita el corazón (desde cualquier pantalla)
+        // desaparece de favRescateIds y reaparece solo en el carrusel.
+        // OJO: la condición es "confirmado" y no "ausente" a propósito —
+        // podar los ausentes borraría el id recién agregado en el rebuild
+        // que dispara el propio toque del corazón (que corre con el
+        // snapshot viejo, sin el favorito todavía) y la tarjeta parpadearía.
+        _favoritosRecientes.removeWhere(favRescateIds.contains);
         return StreamBuilder<QuerySnapshot>(
       stream: RescatesRepository().feedPublico(),
       builder: (context, snap) {

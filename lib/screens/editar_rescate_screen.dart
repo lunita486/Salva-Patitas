@@ -70,8 +70,11 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
     _requiereExp=(d['requiereExperiencia'] as bool? ?? false) ? 'Sí' : 'No';
     _fotoUrlExistente  = d['fotoUrl']  as String?;
     _foto2UrlExistente = d['fotoUrl2'] as String?;
-    _latitud     = d['latitud']    as double?;
-    _longitud    = d['longitud']   as double?;
+    // num→toDouble y no "as double": si algún doc trae la coordenada como
+    // entero (dato legado o escrito a mano), un cast estricto tira una
+    // excepción en initState y rompe la pantalla de editar completa.
+    _latitud     = (d['latitud']  as num?)?.toDouble();
+    _longitud    = (d['longitud'] as num?)?.toDouble();
     _paisCodigo  = d['paisCodigo'] as String? ?? '';
   }
 
@@ -80,9 +83,13 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
   /// Totalmente opcional acá — guardar nunca depende de esto.
   Future<void> _obtenerUbicacionGPS() async {
     setState(() => _detectandoUbicacion = true);
+    // Después de cada await hay que re-verificar mounted antes de setState:
+    // la detección puede tardar y la usuaria puede haber salido de la
+    // pantalla mientras tanto (setState tras dispose es una excepción).
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Activa el GPS en tu dispositivo')));
       setState(() => _detectandoUbicacion = false);
       return;
@@ -91,14 +98,16 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
+        if (!mounted) return;
         setState(() => _detectandoUbicacion = false);
         return;
       }
     }
     if (permission == LocationPermission.deniedForever) {
+      if (!mounted) return;
       // Mismo criterio que subir_rescate_screen.dart: un botón que abre
       // directo la pantalla de permisos, no solo el texto "andá a Ajustes".
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: const Text('Permiso de ubicación bloqueado.'),
         action: SnackBarAction(
           label: 'Abrir Ajustes',
