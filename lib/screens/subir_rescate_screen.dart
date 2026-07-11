@@ -200,7 +200,7 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dlgCtx, false),
-              child: const Text('Cancelar y reintentar'),
+              child: const Text('Volver y detectar de nuevo'),
             ),
             TextButton(
               onPressed: () => Navigator.pop(dlgCtx, true),
@@ -209,7 +209,15 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
           ],
         ),
       );
-      if (continuar != true) return;
+      // "Volver y detectar de nuevo" antes solo cerraba el diálogo y
+      // dejaba al rescatista de nuevo en el formulario sin indicar qué
+      // hacer — el botón decía "reintentar" pero no reintentaba nada.
+      // Ahora dispara la detección de GPS de una, en vez de obligarlo a
+      // encontrar y tocar el campo de ubicación por su cuenta.
+      if (continuar != true) {
+        if (mounted && !_detectandoUbicacion) _obtenerUbicacionGPS();
+        return;
+      }
     }
     setState(() { _publicando = true; _progreso = 0; });
 
