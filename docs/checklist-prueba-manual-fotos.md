@@ -3,6 +3,8 @@
 Instalá el APK en tu celular y probá esto en orden. Marcá cada uno.
 Si algo falla, anotá en qué paso fue y qué mensaje/comportamiento viste.
 
+
+
 ## A. Publicar un rescate (rescatista)
 
 - [ ] Publicar un animal nuevo con **1 sola foto** → se publica sin error,
@@ -63,6 +65,24 @@ Si algo falla, anotá en qué paso fue y qué mensaje/comportamiento viste.
 - [ ] Si podés, probá publicar un animal **sin conexión** o con el wifi
       cortado a mitad de subida — la app debería avisar el error, no
       quedar colgada ni crashear.
+
+## H. Arreglos del 11 de julio (re-verificar en V13)
+
+- [ ] Publicar **sin GPS activado** → sale el diálogo "Sin ubicación
+      detectada". "Publicar sin ubicación" publica igual; "Volver y
+      detectar de nuevo" vuelve al formulario y arranca solo el
+      "Detectando ubicación...".
+- [ ] Con el permiso de ubicación **bloqueado**, tocar el campo de
+      ubicación → el aviso trae el botón "Abrir Ajustes" y te lleva
+      directo a los permisos de la app.
+- [ ] En el panel de rescatista sin ciudad detectada → NO se ve el pin
+      de ubicación suelto.
+- [ ] Quitar el corazón de un favorito → se quita **sin preguntar** y el
+      animal **reaparece en el carrusel** principal.
+- [ ] Tocar el corazón en el carrusel → la tarjeta se oculta al instante,
+      sin parpadear.
+- [ ] Las descripciones de los animales se ven **sin comillas** alrededor
+      (tarjeta del feed, detalle "Mi historia" y motivación del adoptante).
 
 ---
 
