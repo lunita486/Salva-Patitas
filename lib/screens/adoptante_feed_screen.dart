@@ -348,6 +348,13 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
             .map((d) => (d.data() as Map<String, dynamic>)['rescateId'] as String? ?? '')
             .where((id) => id.isNotEmpty)
             .toSet();
+        // _favoritosRecientes solo existe para tapar la ventana entre
+        // "tocaste el corazón acá" y "Firestore ya confirmó el favorito"
+        // — una vez que Firestore contesta, es la única verdad. Sin esto,
+        // un animal que se sacó de favoritos DESDE OTRA pantalla (la de
+        // Favoritos) se quedaba oculto del carrusel para siempre, porque
+        // acá nadie se enteraba de que ya no estaba favorito.
+        _favoritosRecientes.removeWhere((id) => !favRescateIds.contains(id));
         return StreamBuilder<QuerySnapshot>(
       stream: RescatesRepository().feedPublico(),
       builder: (context, snap) {
