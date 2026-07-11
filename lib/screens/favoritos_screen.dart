@@ -285,29 +285,14 @@ class _FavoritosGrid extends StatelessWidget {
                                   ),
                                 ]),
                             ),
-                            // Botón quitar favorito
+                            // Botón quitar favorito — sin confirmación: quitar un
+                            // favorito no es destructivo (el animal vuelve a
+                            // aparecer solo en el carrusel principal) y es
+                            // reversible con un toque, no amerita el paso extra.
                             Positioned(
                               top: 8, right: 8,
                               child: GestureDetector(
-                                onTap: () async {
-                                  final confirmar = await showDialog<bool>(
-                                    context: context,
-                                    builder: (dlgCtx) => AlertDialog(
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                      title: const Text('Quitar de favoritos'),
-                                      content: Text('¿Seguro que quieres quitar a $nombre de tus favoritos?'),
-                                      actions: [
-                                        TextButton(onPressed: () => Navigator.pop(dlgCtx, false),
-                                            child: const Text('Cancelar')),
-                                        TextButton(
-                                          onPressed: () => Navigator.pop(dlgCtx, true),
-                                          child: const Text('Quitar', style: TextStyle(color: Colors.red)),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                  if (confirmar == true) docs[i].reference.delete();
-                                },
+                                onTap: () => docs[i].reference.delete(),
                                 child: Container(
                                   width: 36, height: 36,
                                   decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
