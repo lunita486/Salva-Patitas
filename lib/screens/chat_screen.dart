@@ -18,6 +18,13 @@ class _ChatScreenState extends State<ChatScreen> {
   final _scrollCtl = ScrollController();
   late final String _chatId;
   late final CollectionReference _mensajesRef;
+  // Se completa cuando el doc del chat ya existe en Firestore. El listener
+  // de mensajes recién se conecta después de esto: las reglas de mensajes
+  // verifican participante contra el doc del chat, y si el listener se
+  // conecta ANTES de que el doc exista, Firestore lo rechaza y lo mata para
+  // siempre (no reintenta) — los mensajes no aparecían hasta salir y volver
+  // a entrar al chat.
+  late final Future<void> _chatListo;
 
   @override
   void initState() {
@@ -25,6 +32,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (widget.chatId != null) {
       // Chat existente: usa el ID real del documento de Firestore
       _chatId = widget.chatId!;
+      _chatListo = Future.value();
     } else {
       // El uid propio solo es el del adoptante cuando quien abre la pantalla
       // ES el adoptante; si abre el rescatista/albergue, el adoptante es la
@@ -45,7 +53,7 @@ class _ChatScreenState extends State<ChatScreen> {
         // mensaje se guardaba pero la actualización del chat fallaba (el
         // documento no existía) — la app avisaba "no se pudo enviar" pero el
         // mensaje ya había quedado guardado, y si reintentaba quedaba duplicado.
-        ChatsRepository().asegurarChatAnimal(
+        _chatListo = ChatsRepository().asegurarChatAnimal(
           adoptanteId: adoptanteUid,
           adoptanteNombre: widget.esRescatista
               ? (widget.animal['adoptanteNombre'] as String? ?? 'Adoptante')
@@ -69,7 +77,7 @@ class _ChatScreenState extends State<ChatScreen> {
         // Solo el adoptante crea/actualiza el doc del chat en este esquema
         // legado, porque es el único lado del que tenemos datos confiables.
         if (!widget.esRescatista) {
-          FirebaseFirestore.instance.collection('chats').doc(_chatId).set({
+          _chatListo = FirebaseFirestore.instance.collection('chats').doc(_chatId).set({
             'animalNombre':  widget.animal['nombre'],
             'rescateId':     rescateId ?? '',
             'creadoPor':     widget.animal['creadoPor'] ?? 'rescatista',
@@ -81,16 +89,21 @@ class _ChatScreenState extends State<ChatScreen> {
             'fotoUrl':       widget.animal['fotoUrl'],
             'ultimoMensaje': '',
             'creadoEn':      FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
+          }, SetOptions(merge: true)).catchError((_) {});
+        } else {
+          _chatListo = Future.value();
         }
       }
     }
     _mensajesRef = FirebaseFirestore.instance
         .collection('chats').doc(_chatId).collection('mensajes');
-    // Resetea los no leídos del rol que abre el chat
-    final campo = widget.esRescatista ? 'noLeidosRescatista' : 'noLeidosAdoptante';
-    FirebaseFirestore.instance.collection('chats').doc(_chatId)
-        .update({campo: 0}).catchError((_) {});
+    // Resetea los no leídos del rol que abre el chat — después de que el
+    // doc exista, para no hacer un update sobre un doc que todavía no está.
+    _chatListo.whenComplete(() {
+      final campo = widget.esRescatista ? 'noLeidosRescatista' : 'noLeidosAdoptante';
+      FirebaseFirestore.instance.collection('chats').doc(_chatId)
+          .update({campo: 0}).catchError((_) {});
+    });
   }
 
   String _nowTime() {
@@ -375,12 +388,29 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
 
           // ── Messages (con separador por día real, no fijo en "Hoy") ─────────
+          // El FutureBuilder de afuera espera a que el doc del chat exista
+          // antes de conectar el listener de mensajes (ver _chatListo).
           Expanded(
-            child: StreamBuilder<QuerySnapshot>(
+            child: FutureBuilder<void>(
+              future: _chatListo,
+              builder: (context, listo) {
+                if (listo.connectionState != ConnectionState.done) {
+                  return const Center(child: CircularProgressIndicator(color: appTeal));
+                }
+                return StreamBuilder<QuerySnapshot>(
               stream: _mensajesRef.orderBy('creadoEn').snapshots(),
               builder: (context, snap) {
                 if (snap.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator(color: appTeal));
+                }
+                if (snap.hasError) {
+                  // Antes un error del listener se veía igual que un chat
+                  // vacío ("Sé el primero en escribir") y nadie se enteraba.
+                  return Center(
+                    child: Text('No se pudieron cargar los mensajes.\nSalí y volvé a entrar al chat.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 13, color: Colors.grey.shade500)),
+                  );
                 }
                 final docs = snap.data?.docs ?? [];
                 if (docs.isEmpty) {
@@ -414,6 +444,8 @@ class _ChatScreenState extends State<ChatScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                   children: items,
                 );
+              },
+            );
               },
             ),
           ),
