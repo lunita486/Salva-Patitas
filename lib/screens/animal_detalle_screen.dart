@@ -148,7 +148,7 @@ class _AnimalDetalleScreenState extends State<AnimalDetalleScreen> {
                   const Text('MI HISTORIA',
                       style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.2, color: appTeal)),
                   const SizedBox(height: 10),
-                  Text('"$descripcion"',
+                  Text(descripcion,
                       style: const TextStyle(fontSize: 15, fontStyle: FontStyle.italic,
                           color: Color(0xFF2A2A2A), height: 1.65, fontWeight: FontWeight.w500)),
                 ],

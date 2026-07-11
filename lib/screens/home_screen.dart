@@ -411,7 +411,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   width: double.infinity,
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(12)),
-                  child: Text('"${data!['motivacion']}"', style: TextStyle(fontSize: 13, color: Colors.grey.shade700, height: 1.5)),
+                  child: Text('${data!['motivacion']}', style: TextStyle(fontSize: 13, color: Colors.grey.shade700, height: 1.5)),
                 ),
               ],
               const SizedBox(height: 24),

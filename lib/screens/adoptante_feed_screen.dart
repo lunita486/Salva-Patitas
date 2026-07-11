@@ -931,7 +931,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
             padding: const EdgeInsets.all(16),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               if (descripcion.isNotEmpty) ...[
-                Text('"$descripcion"',
+                Text(descripcion,
                     style: TextStyle(fontSize: 13, color: Colors.grey.shade700, height: 1.4),
                     maxLines: 3, overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 12),
