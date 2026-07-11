@@ -96,8 +96,16 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
       }
     }
     if (permission == LocationPermission.deniedForever) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Permiso de ubicación bloqueado. Habilítalo en Ajustes.')));
+      // Mismo criterio que subir_rescate_screen.dart: un botón que abre
+      // directo la pantalla de permisos, no solo el texto "andá a Ajustes".
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Permiso de ubicación bloqueado.'),
+        action: SnackBarAction(
+          label: 'Abrir Ajustes',
+          onPressed: () => Geolocator.openAppSettings(),
+        ),
+        duration: const Duration(seconds: 8),
+      ));
       setState(() => _detectandoUbicacion = false);
       return;
     }
