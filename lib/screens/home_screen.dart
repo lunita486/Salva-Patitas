@@ -244,12 +244,15 @@ class _HomeScreenState extends State<HomeScreen> {
           const Text('🌿', style: TextStyle(fontSize: 28)),
         ]),
         const SizedBox(height: 4),
-        Row(children: [
-          const Icon(Icons.location_on, size: 14, color: appTeal),
-          const SizedBox(width: 2),
-          if (_ciudad.isNotEmpty)
+        // El ícono solo tiene sentido junto a un texto — antes se mostraba
+        // solo (sin ciudad al lado) cuando el GPS estaba bloqueado o sin
+        // detectar, quedando un pin "flotando" sin explicación.
+        if (_ciudad.isNotEmpty)
+          Row(children: [
+            const Icon(Icons.location_on, size: 14, color: appTeal),
+            const SizedBox(width: 2),
             Text(_ciudad, style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
-        ]),
+          ]),
         const SizedBox(height: 20),
         _label('ESTA SEMANA'),
         const SizedBox(height: 10),
