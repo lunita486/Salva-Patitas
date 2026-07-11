@@ -68,7 +68,23 @@ class FavoritosScreen extends StatelessWidget {
                       for (final r in rescatesSnap.data?.docs ?? [])
                         r.id: (r.data() as Map<String, dynamic>)['estadoAdopcion'] as String? ?? '',
                     };
-                    return _FavoritosGrid(docs: docs, estadoPorRescateId: estadoPorRescateId);
+                    // `favoritos.fotoUrl` es una foto de una sola vez tomada
+                    // al guardar el favorito — si el rescate se guardó en
+                    // ese instante justo entre "se creó el doc" y "se le
+                    // linkeó la foto" (dos animales subiéndose a la vez es
+                    // el caso real que lo disparó), el favorito queda para
+                    // siempre con fotoUrl null aunque el rescate después sí
+                    // tenga foto. Este mapa de respaldo, con la foto ACTUAL
+                    // del rescate, evita que ese favorito se vea roto.
+                    final fotoPorRescateId = <String, String?>{
+                      for (final r in rescatesSnap.data?.docs ?? [])
+                        r.id: (r.data() as Map<String, dynamic>)['fotoUrl'] as String?,
+                    };
+                    return _FavoritosGrid(
+                      docs: docs,
+                      estadoPorRescateId: estadoPorRescateId,
+                      fotoPorRescateId: fotoPorRescateId,
+                    );
                   },
                 );
               },
@@ -83,7 +99,12 @@ class FavoritosScreen extends StatelessWidget {
 class _FavoritosGrid extends StatelessWidget {
   final List<QueryDocumentSnapshot> docs;
   final Map<String, String> estadoPorRescateId;
-  const _FavoritosGrid({required this.docs, required this.estadoPorRescateId});
+  final Map<String, String?> fotoPorRescateId;
+  const _FavoritosGrid({
+    required this.docs,
+    required this.estadoPorRescateId,
+    required this.fotoPorRescateId,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -131,10 +152,10 @@ class _FavoritosGrid extends StatelessWidget {
                           final especie      = d['especie']      as String? ?? '';
                           final edad         = d['edad']         as String? ?? '';
                           final ubicacion    = d['ubicacion']    as String? ?? '';
-                          final fotoUrl      = d['fotoUrl']      as String?;
                           final rescatista   = d['rescatista']   as String? ?? 'Rescatista';
                           final rescatistaId = d['rescatistaId'] as String? ?? '';
                           final rescateId    = d['rescateId']    as String? ?? '';
+                          final fotoUrl      = (d['fotoUrl'] as String?) ?? fotoPorRescateId[rescateId];
                           final emoji        = especie == 'Gato' ? '🐱' : '🐶';
 
                           final animalMap = {
