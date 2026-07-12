@@ -25,6 +25,31 @@ class _ChatScreenState extends State<ChatScreen> {
   // siempre (no reintenta) — los mensajes no aparecían hasta salir y volver
   // a entrar al chat.
   late final Future<void> _chatListo;
+  // Foto de perfil de la CONTRAPARTE (no la propia). Se resuelve leyendo el
+  // doc del chat (que siempre tiene adoptanteId/rescatistaId, sin importar
+  // qué pantalla haya abierto este ChatScreen) y de ahí el campo `foto` de
+  // usuarios/{id} — así no depende de que cada sitio de navegación pase la
+  // foto de la otra persona en el mapa `animal`.
+  late final Future<String?> _fotoContraparte;
+
+  Future<String?> _cargarFotoContraparte() async {
+    final esConsulta = (widget.animal['tipoSolicitud'] as String? ?? '').startsWith('consulta');
+    if (esConsulta) return null;
+    try {
+      await _chatListo;
+      final chatDoc = await FirebaseFirestore.instance.collection('chats').doc(_chatId).get();
+      final d = chatDoc.data();
+      if (d == null) return null;
+      final contraparteId = widget.esRescatista
+          ? (d['adoptanteId'] as String? ?? '')
+          : (d['rescatistaId'] as String? ?? '');
+      if (contraparteId.isEmpty) return null;
+      final userDoc = await FirebaseFirestore.instance.collection('usuarios').doc(contraparteId).get();
+      return userDoc.data()?['foto'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
 
   @override
   void initState() {
@@ -97,6 +122,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
     _mensajesRef = FirebaseFirestore.instance
         .collection('chats').doc(_chatId).collection('mensajes');
+    _fotoContraparte = _cargarFotoContraparte();
     // Resetea los no leídos del rol que abre el chat — después de que el
     // doc exista, para no hacer un update sobre un doc que todavía no está.
     _chatListo.whenComplete(() {
@@ -281,10 +307,16 @@ class _ChatScreenState extends State<ChatScreen> {
                 icon: const Icon(Icons.arrow_back_ios_new, size: 20),
                 onPressed: () => Navigator.pop(context),
               ),
-              CircleAvatar(
-                radius: 20, backgroundColor: appOrange,
-                child: Text(contraparte.isNotEmpty ? contraparte[0].toUpperCase() : '?',
-                    style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold)),
+              FutureBuilder<String?>(
+                future: _fotoContraparte,
+                builder: (context, snap) => AvatarPersona(
+                  fotoBase64: esConsulta ? fotoBase64 : null,
+                  fotoUrl: esConsulta ? null : snap.data,
+                  inicial: contraparte.isNotEmpty ? contraparte[0].toUpperCase() : '?',
+                  radius: 20,
+                  backgroundColor: appOrange,
+                  textColor: Colors.white,
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

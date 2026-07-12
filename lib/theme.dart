@@ -185,6 +185,62 @@ class FotoUrl extends StatelessWidget {
   }
 }
 
+/// Avatar de una persona (foto de perfil en base64 o URL). Si la foto falla
+/// al cargar, cae a la inicial en vez de romper con una excepción sin
+/// manejar o quedar en blanco. Antes esta lógica vivía duplicada como
+/// `_AvatarPublicador` solo en el feed del adoptante — el mismo problema
+/// (foto que no carga = pantalla rota) aplica a cualquier avatar de foto
+/// real, así que se promovió acá para reutilizarla (ej. en el chat).
+class AvatarPersona extends StatefulWidget {
+  final String? fotoBase64;
+  final String? fotoUrl;
+  final String inicial;
+  final double radius;
+  final Color backgroundColor;
+  final Color textColor;
+  const AvatarPersona({
+    super.key,
+    this.fotoBase64,
+    this.fotoUrl,
+    required this.inicial,
+    this.radius = 20,
+    this.backgroundColor = appTeal,
+    this.textColor = Colors.white,
+  });
+
+  @override
+  State<AvatarPersona> createState() => _AvatarPersonaState();
+}
+
+class _AvatarPersonaState extends State<AvatarPersona> {
+  bool _falloCarga = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final fotoBytes = bytesFotoSegura(widget.fotoBase64);
+    final ImageProvider? foto = fotoBytes != null
+        ? MemoryImage(fotoBytes)
+        : widget.fotoUrl != null
+            ? NetworkImage(widget.fotoUrl!)
+            : null;
+    final mostrarFoto = foto != null && !_falloCarga;
+    return CircleAvatar(
+      backgroundColor: widget.backgroundColor,
+      radius: widget.radius,
+      backgroundImage: mostrarFoto ? foto : null,
+      onBackgroundImageError: mostrarFoto
+          ? (_, _) {
+              if (mounted) setState(() => _falloCarga = true);
+            }
+          : null,
+      child: !mostrarFoto
+          ? Text(widget.inicial,
+              style: TextStyle(color: widget.textColor, fontSize: widget.radius * 0.65, fontWeight: FontWeight.bold))
+          : null,
+    );
+  }
+}
+
 Color cicloColor(String s) => switch (s) {
   'En cuidado'             => appTeal,
   'Rescatado'              => appTeal,

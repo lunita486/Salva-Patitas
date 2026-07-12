@@ -963,10 +963,13 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                                 rescatistaId: rescatistaId)))
                         : null,
                     child: Row(children: [
-                      _AvatarPublicador(
+                      AvatarPersona(
                         fotoBase64: rescatistaFotoBase64,
                         fotoUrl: rescatistaFotoUrl,
                         inicial: rescatista.isNotEmpty ? rescatista[0].toUpperCase() : 'R',
+                        radius: 16,
+                        backgroundColor: appTeal.withValues(alpha: 0.15),
+                        textColor: appTeal,
                       ),
                       const SizedBox(width: 10),
                       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1195,48 +1198,6 @@ class AliadosScreen extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-
-/// Avatar de quien publicó el animal. Si la foto (base64 o url de Google)
-/// falla al cargar, cae a la inicial en vez de romper con una excepción sin
-/// manejar o quedar en blanco.
-class _AvatarPublicador extends StatefulWidget {
-  final String? fotoBase64;
-  final String? fotoUrl;
-  final String inicial;
-  const _AvatarPublicador({this.fotoBase64, this.fotoUrl, required this.inicial});
-
-  @override
-  State<_AvatarPublicador> createState() => _AvatarPublicadorState();
-}
-
-class _AvatarPublicadorState extends State<_AvatarPublicador> {
-  bool _falloCarga = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final fotoBytes = bytesFotoSegura(widget.fotoBase64);
-    final ImageProvider? foto = fotoBytes != null
-        ? MemoryImage(fotoBytes)
-        : widget.fotoUrl != null
-            ? NetworkImage(widget.fotoUrl!)
-            : null;
-    final mostrarFoto = foto != null && !_falloCarga;
-    return CircleAvatar(
-      backgroundColor: appTeal.withValues(alpha: 0.15),
-      radius: 16,
-      backgroundImage: mostrarFoto ? foto : null,
-      onBackgroundImageError: mostrarFoto
-          ? (_, __) {
-              if (mounted) setState(() => _falloCarga = true);
-            }
-          : null,
-      child: !mostrarFoto
-          ? Text(widget.inicial,
-              style: const TextStyle(color: appTeal, fontSize: 13, fontWeight: FontWeight.bold))
-          : null,
-    );
-  }
-}
 
 class _MeInteresaSheet extends StatelessWidget {
   final String nombre, especie, edad, ubicacion, rescatistaId, rescatista, rescateId, estadoAdopcion, creadoPor;

@@ -73,6 +73,19 @@ class AuthWrapper extends StatelessWidget {
               return SeleccionRolScreen(user: snap.data!);
             }
             final data  = userSnap.data!.data() as Map<String, dynamic>;
+            // `foto` solo se escribía una vez, al crear el perfil (ver
+            // UsuariosRepository.crearPerfil) — si la cuenta se creó cuando
+            // el photoURL de Google todavía no estaba disponible (o cambió
+            // después), quedaba null para siempre. Otras pantallas del chat
+            // necesitan poder mostrar la foto de la CONTRAPARTE leyendo este
+            // campo (no pueden usar FirebaseAuth, que solo expone al usuario
+            // propio), así que acá se mantiene sincronizado de forma
+            // oportunista cada vez que la cuenta pasa por este punto central.
+            final fotoAuth = snap.data!.photoURL;
+            if (fotoAuth != null && fotoAuth != data['foto']) {
+              FirebaseFirestore.instance.collection('usuarios').doc(snap.data!.uid)
+                  .update({'foto': fotoAuth}).catchError((_) {});
+            }
             final roles = List<String>.from(data['roles'] as List? ?? []);
             final esAlbergue = roles.contains('albergue');
             final esAliado   = roles.contains('aliado');
