@@ -32,6 +32,20 @@ class SolicitudesRepository {
   Stream<QuerySnapshot<Map<String, dynamic>>> misSolicitudes(String uid) =>
       _col.where('adoptanteId', isEqualTo: uid).snapshots();
 
+  /// Hay al menos una solicitud PENDIENTE sobre este animal — se usa para
+  /// bloquear el borrado del rescate mientras alguien espera respuesta. Si
+  /// no se revisa esto, borrar el animal y después aprobar esa solicitud
+  /// revienta: la transacción de [aprobarSiDisponible] intenta actualizar
+  /// un documento de `rescates` que ya no existe.
+  Future<bool> tienePendientesPara(String rescateId) async {
+    final res = await _col
+        .where('rescateId', isEqualTo: rescateId)
+        .where('estado', isEqualTo: 'pendiente')
+        .limit(1)
+        .get();
+    return res.docs.isNotEmpty;
+  }
+
   /// Estado de la solicitud pendiente/aprobada que ya tenga [uid] sobre este
   /// animal, o `null` si no aplicó todavía. Con [rescateId] se compara por
   /// el id único del animal (dos animales con el mismo nombre no se
@@ -132,8 +146,16 @@ class SolicitudesRepository {
   /// contra el cual transaccionar — ver el fallback en
   /// `solicitudes_rescatista_screen.dart`.
   ///
-  /// Devuelve `true` si se aprobó, `false` si se rechazó por la carrera.
-  Future<bool> aprobarSiDisponible({
+  /// `aprobada`: true si se aprobó. `animalEliminado`: true si se rechazó
+  /// porque el rescate ya no existe (se borró mientras la solicitud seguía
+  /// pendiente) — antes esto no se revisaba y `tx.update(rescateRef, ...)`
+  /// sobre un documento borrado tiraba un
+  /// `[cloud_firestore/invalid-argument]` sin manejar, dejando la solicitud
+  /// en limbo ("esperan respuesta" para siempre, sin poder aprobar NI
+  /// reintentar). El llamador usa `animalEliminado` para avisarle al
+  /// adoptante con el motivo real en vez del genérico "ya tiene un proceso
+  /// con otro adoptante".
+  Future<({bool aprobada, bool animalEliminado})> aprobarSiDisponible({
     required String solicitudId,
     required String rescateId,
     required String adoptanteId,
@@ -143,8 +165,17 @@ class SolicitudesRepository {
     final rescateRef = _db.collection('rescates').doc(rescateId);
     final solicitudRef = _col.doc(solicitudId);
 
-    return _db.runTransaction<bool>((tx) async {
+    return _db.runTransaction((tx) async {
       final rescateSnap = await tx.get(rescateRef);
+
+      if (!rescateSnap.exists) {
+        tx.update(solicitudRef, {
+          'estado': 'rechazada',
+          'motivoRechazo': 'Este animalito ya no está disponible en la plataforma.',
+        });
+        return (aprobada: false, animalEliminado: true);
+      }
+
       final yaClaimadoPor = (rescateSnap.data()?['adoptanteIdEnProceso'] as String?) ?? '';
 
       if (yaClaimadoPor.isNotEmpty && yaClaimadoPor != adoptanteId) {
@@ -152,7 +183,7 @@ class SolicitudesRepository {
           'estado': 'rechazada',
           'motivoRechazo': 'El proceso de adopción ya fue iniciado con otro adoptante.',
         });
-        return false;
+        return (aprobada: false, animalEliminado: false);
       }
 
       tx.update(solicitudRef, {'estado': 'aprobada'});
@@ -161,7 +192,7 @@ class SolicitudesRepository {
         'adoptanteIdEnProceso': adoptanteId,
         ...camposExtra,
       });
-      return true;
+      return (aprobada: true, animalEliminado: false);
     });
   }
 }

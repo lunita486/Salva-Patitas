@@ -7,6 +7,7 @@ import 'package:geocoding/geocoding.dart';
 import '../theme.dart';
 import '../data/rescates_repository.dart';
 import '../data/rescate_fotos_repository.dart';
+import '../data/solicitudes_repository.dart';
 
 class EditarRescateScreen extends StatefulWidget {
   final String docId;
@@ -194,6 +195,28 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
 
   Future<void> _eliminar() async {
     final nombre = _nombreCtl.text.trim().isNotEmpty ? _nombreCtl.text.trim() : 'este animal';
+
+    // Si hay una solicitud pendiente sobre este animal, no se deja borrar:
+    // aprobar esa solicitud después revienta contra un rescate que ya no
+    // existe (tx.update de aprobarSiDisponible tira invalid-argument).
+    final tienePendientes = await SolicitudesRepository().tienePendientesPara(widget.docId);
+    if (!mounted) return;
+    if (tienePendientes) {
+      await showDialog<void>(
+        context: context,
+        builder: (dlgCtx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('No se puede eliminar todavía'),
+          content: Text('$nombre tiene una solicitud esperando respuesta. '
+              'Aprobala o rechazala primero, y después podés eliminar la publicación.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dlgCtx), child: const Text('Entendido')),
+          ],
+        ),
+      );
+      return;
+    }
+
     final confirmar = await showDialog<bool>(
       context: context,
       builder: (dlgCtx) => AlertDialog(

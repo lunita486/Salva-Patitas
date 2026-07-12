@@ -425,9 +425,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         final resultado = await aprobarSolicitud(docId, data);
                         if (!ctx.mounted) return;
                         if (!resultado.aprobada) {
-                          ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
-                              content: Text('Este animal ya tenía un proceso aprobado con otro adoptante — '
-                                  'esta solicitud se rechazó automáticamente.')));
+                          ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+                              content: Text(resultado.animalEliminado
+                                  ? 'Este animal ya no existe (fue eliminado) — la solicitud se rechazó automáticamente.'
+                                  : 'Este animal ya tenía un proceso aprobado con otro adoptante — '
+                                      'esta solicitud se rechazó automáticamente.')));
                         } else if (!resultado.avisoOk) {
                           ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
                               content: Text('Solicitud aprobada, pero no pudimos avisarle al adoptante por chat. Escribile manualmente.')));

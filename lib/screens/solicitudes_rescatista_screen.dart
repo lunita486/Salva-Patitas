@@ -111,13 +111,16 @@ Future<bool> enviarMensajeChat(String adoptanteId, String animalNombre, String t
 }
 
 /// [aprobada]: false si perdió la carrera contra otra solicitud del mismo
-/// animal (ver [SolicitudesRepository.aprobarSiDisponible]) — en ese caso
-/// esta solicitud quedó auto-rechazada, no aprobada.
+/// animal, o si el animal ya no existe (ver
+/// [SolicitudesRepository.aprobarSiDisponible]) — en cualquiera de los dos
+/// casos esta solicitud quedó auto-rechazada, no aprobada.
+/// [animalEliminado]: distingue cuál de esos dos motivos fue, para que el
+/// llamador le muestre al rescatista el mensaje correcto.
 /// [avisoOk]: si el mensaje de chat correspondiente (aprobación, o el aviso
 /// de "ya no disponible" si perdió la carrera) se pudo enviar. La
 /// aprobación/rechazo en sí ya quedó guardada aunque el aviso falle; el
 /// llamador decide cómo informarle al rescatista que el chat no salió.
-Future<({bool aprobada, bool avisoOk})> aprobarSolicitud(String docId, Map<String, dynamic> d) async {
+Future<({bool aprobada, bool animalEliminado, bool avisoOk})> aprobarSolicitud(String docId, Map<String, dynamic> d) async {
   final rescateId     = d['rescateId']     as String? ?? '';
   final adoptanteId   = d['adoptanteId']   as String? ?? '';
   final animalNombre  = d['animalNombre']  as String? ?? '';
@@ -139,16 +142,19 @@ Future<({bool aprobada, bool avisoOk})> aprobarSolicitud(String docId, Map<Strin
   };
 
   bool aprobada;
+  bool animalEliminado = false;
   if (rescateId.isNotEmpty) {
     // Camino atómico (todas las solicitudes nuevas tienen rescateId): la
     // transacción verifica que el animal siga disponible antes de aprobar.
-    aprobada = await SolicitudesRepository().aprobarSiDisponible(
+    final resultado = await SolicitudesRepository().aprobarSiDisponible(
       solicitudId: docId,
       rescateId: rescateId,
       adoptanteId: adoptanteId,
       nuevoEstadoAdopcion: nuevoEstado,
       camposExtra: camposExtra,
     );
+    aprobada = resultado.aprobada;
+    animalEliminado = resultado.animalEliminado;
   } else {
     // Dato legado sin rescateId: no hay documento puntual contra el cual
     // transaccionar (la búsqueda por nombre es una query, y las queries no
@@ -171,16 +177,21 @@ Future<({bool aprobada, bool avisoOk})> aprobarSolicitud(String docId, Map<Strin
   }
 
   if (!aprobada) {
-    // Perdió la carrera: se le avisa a ESTE adoptante que ya no pudo ser,
-    // igual que se les avisa a las competidoras más abajo.
-    if (adoptanteId.isEmpty || animalNombre.isEmpty) return (aprobada: false, avisoOk: true);
-    final avisoOk = await enviarMensajeChat(adoptanteId, animalNombre,
-        '🐾 $animalNombre ya tiene un proceso de adopción activo. ¡No te desanimes, hay más amiguitos esperándote!',
+    // Perdió la carrera, o el animal ya no existe: se le avisa a ESTE
+    // adoptante que ya no pudo ser, igual que se les avisa a las
+    // competidoras más abajo.
+    if (adoptanteId.isEmpty || animalNombre.isEmpty) {
+      return (aprobada: false, animalEliminado: animalEliminado, avisoOk: true);
+    }
+    final mensaje = animalEliminado
+        ? '🐾 $animalNombre ya no está disponible en la plataforma. ¡No te desanimes, hay más amiguitos esperándote!'
+        : '🐾 $animalNombre ya tiene un proceso de adopción activo. ¡No te desanimes, hay más amiguitos esperándote!';
+    final avisoOk = await enviarMensajeChat(adoptanteId, animalNombre, mensaje,
         fotoUrl: d['fotoUrl'] as String?,
         rescateId: rescateId,
         creadoPor: creadoPor,
         especie: d['especie'] as String?);
-    return (aprobada: false, avisoOk: avisoOk);
+    return (aprobada: false, animalEliminado: animalEliminado, avisoOk: avisoOk);
   }
 
   if (animalNombre.isNotEmpty) {
@@ -217,9 +228,9 @@ Future<({bool aprobada, bool avisoOk})> aprobarSolicitud(String docId, Map<Strin
         rescateId: rescateId,
         creadoPor: creadoPor,
         especie: d['especie'] as String?);
-    return (aprobada: true, avisoOk: avisoOk);
+    return (aprobada: true, animalEliminado: false, avisoOk: avisoOk);
   }
-  return (aprobada: true, avisoOk: true);
+  return (aprobada: true, animalEliminado: false, avisoOk: true);
 }
 
 /// Devuelve `true` si el aviso por chat al adoptante se pudo enviar.
@@ -262,9 +273,11 @@ class _SolicitudesRescatistaScreenState extends State<SolicitudesRescatistaScree
       final resultado = await aprobarSolicitud(docId, d);
       if (!mounted) return;
       if (!resultado.aprobada) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Este animal ya tenía un proceso aprobado con otro adoptante — '
-                'esta solicitud se rechazó automáticamente.')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(resultado.animalEliminado
+                ? 'Este animal ya no existe (fue eliminado) — la solicitud se rechazó automáticamente.'
+                : 'Este animal ya tenía un proceso aprobado con otro adoptante — '
+                    'esta solicitud se rechazó automáticamente.')));
       } else if (!resultado.avisoOk) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
             content: Text('Solicitud aprobada, pero no pudimos avisarle al adoptante por chat. Escribile manualmente.')));

@@ -162,12 +162,32 @@ void main() {
           camposExtra: {'vencimientoAvisado': false},
         );
 
-        expect(resultado, true);
+        expect(resultado.aprobada, true);
+        expect(resultado.animalEliminado, false);
         expect((await sol.get())['estado'], 'aprobada');
         final rescateData = (await rescate.get()).data()!;
         expect(rescateData['estadoAdopcion'], 'En proceso de adopción');
         expect(rescateData['adoptanteIdEnProceso'], 'ganador');
         expect(rescateData['vencimientoAvisado'], false);
+      });
+
+      test('rechaza con animalEliminado=true cuando el rescate ya no existe '
+          '(se borró mientras la solicitud seguía pendiente — antes esto tiraba '
+          'invalid-argument al intentar tx.update sobre un doc borrado)', () async {
+        final sol = await firestore.collection('solicitudes').add({'estado': 'pendiente'});
+
+        final resultado = await repo.aprobarSiDisponible(
+          solicitudId: sol.id,
+          rescateId: 'rescate-que-ya-no-existe',
+          adoptanteId: 'ganador',
+          nuevoEstadoAdopcion: 'En proceso de adopción',
+        );
+
+        expect(resultado.aprobada, false);
+        expect(resultado.animalEliminado, true);
+        final solData = (await sol.get()).data()!;
+        expect(solData['estado'], 'rechazada');
+        expect(solData['motivoRechazo'], isNotEmpty);
       });
 
       test('se autorrechaza en vez de aprobar cuando otro adoptante ya ganó la carrera '
@@ -186,7 +206,8 @@ void main() {
           nuevoEstadoAdopcion: 'En proceso de adopción',
         );
 
-        expect(resultado, false);
+        expect(resultado.aprobada, false);
+        expect(resultado.animalEliminado, false);
         final solData = (await sol.get()).data()!;
         expect(solData['estado'], 'rechazada');
         expect(solData['motivoRechazo'], isNotEmpty);
@@ -211,8 +232,28 @@ void main() {
           nuevoEstadoAdopcion: 'En proceso de adopción',
         );
 
-        expect(resultado, true);
+        expect(resultado.aprobada, true);
         expect((await sol.get())['estado'], 'aprobada');
+      });
+    });
+
+    group('tienePendientesPara', () {
+      test('true si hay una solicitud pendiente para ese rescateId', () async {
+        await firestore.collection('solicitudes').add({
+          'rescateId': 'eddy-1', 'estado': 'pendiente',
+        });
+        expect(await repo.tienePendientesPara('eddy-1'), true);
+      });
+
+      test('false si la única solicitud ya fue aprobada/rechazada', () async {
+        await firestore.collection('solicitudes').add({
+          'rescateId': 'eddy-1', 'estado': 'aprobada',
+        });
+        expect(await repo.tienePendientesPara('eddy-1'), false);
+      });
+
+      test('false si no hay ninguna solicitud para ese rescateId', () async {
+        expect(await repo.tienePendientesPara('sin-solicitudes'), false);
       });
     });
   });
