@@ -183,19 +183,28 @@ class MisSolicitudesScreen extends StatelessWidget {
                                 final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
                                 final rescateIdChat = d['rescateId'] as String? ?? '';
                                 String? chatId;
-                                if (rescateIdChat.isNotEmpty) {
-                                  final doc = await FirebaseFirestore.instance
-                                      .collection('chats').doc(ChatsRepository()
-                                          .idAnimal(rescateId: rescateIdChat, adoptanteId: uid)).get();
-                                  if (doc.exists) chatId = doc.id;
-                                } else {
-                                  final snap = await FirebaseFirestore.instance
-                                      .collection('chats')
-                                      .where('adoptanteId', isEqualTo: uid)
-                                      .where('animalNombre', isEqualTo: animal)
-                                      .limit(1)
-                                      .get();
-                                  if (snap.docs.isNotEmpty) chatId = snap.docs.first.id;
+                                // try/catch: leer un chat que NO existe da
+                                // permission-denied con nuestras reglas — sin
+                                // esto la excepción mataba el onTap y el botón
+                                // del chat no hacía nada. Con chatId null,
+                                // ChatScreen crea el chat al abrirse.
+                                try {
+                                  if (rescateIdChat.isNotEmpty) {
+                                    final doc = await FirebaseFirestore.instance
+                                        .collection('chats').doc(ChatsRepository()
+                                            .idAnimal(rescateId: rescateIdChat, adoptanteId: uid)).get();
+                                    if (doc.exists) chatId = doc.id;
+                                  } else {
+                                    final snap = await FirebaseFirestore.instance
+                                        .collection('chats')
+                                        .where('adoptanteId', isEqualTo: uid)
+                                        .where('animalNombre', isEqualTo: animal)
+                                        .limit(1)
+                                        .get();
+                                    if (snap.docs.isNotEmpty) chatId = snap.docs.first.id;
+                                  }
+                                } catch (_) {
+                                  chatId = null;
                                 }
                                 if (!context.mounted) return;
                                 final animalMap = {

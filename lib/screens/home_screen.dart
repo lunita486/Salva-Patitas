@@ -623,26 +623,39 @@ class _HomeScreenState extends State<HomeScreen> {
                   final adoptanteIdEnProceso = data['adoptanteIdEnProceso'] as String? ?? '';
                   QueryDocumentSnapshot<Map<String, dynamic>>? chatDoc;
                   Map<String, dynamic>? d;
-                  if (adoptanteIdEnProceso.isNotEmpty) {
-                    final doc = await FirebaseFirestore.instance.collection('chats')
-                        .doc(ChatsRepository().idAnimal(rescateId: docId, adoptanteId: adoptanteIdEnProceso))
-                        .get();
-                    if (doc.exists) d = doc.data();
-                  } else {
-                    final chats = await FirebaseFirestore.instance.collection('chats')
-                        .where('animalNombre', isEqualTo: nombre)
-                        .where('rescatistaId', isEqualTo: uid)
-                        .limit(1).get();
-                    if (chats.docs.isNotEmpty) {
-                      chatDoc = chats.docs.first;
-                      d = chatDoc.data();
+                  // try/catch: leer un chat que NO existe da permission-denied
+                  // con nuestras reglas — sin esto la excepción mataba el
+                  // onTap y "Contactar adoptante" no hacía nada.
+                  try {
+                    if (adoptanteIdEnProceso.isNotEmpty) {
+                      final doc = await FirebaseFirestore.instance.collection('chats')
+                          .doc(ChatsRepository().idAnimal(rescateId: docId, adoptanteId: adoptanteIdEnProceso))
+                          .get();
+                      if (doc.exists) d = doc.data();
+                    } else {
+                      final chats = await FirebaseFirestore.instance.collection('chats')
+                          .where('animalNombre', isEqualTo: nombre)
+                          .where('rescatistaId', isEqualTo: uid)
+                          .limit(1).get();
+                      if (chats.docs.isNotEmpty) {
+                        chatDoc = chats.docs.first;
+                        d = chatDoc.data();
+                      }
                     }
+                  } catch (_) {
+                    d = null;
                   }
-                  if (d == null || !context.mounted) return;
-                  final dFinal = d;
-                  final chatId = adoptanteIdEnProceso.isNotEmpty
-                      ? ChatsRepository().idAnimal(rescateId: docId, adoptanteId: adoptanteIdEnProceso)
-                      : chatDoc!.id;
+                  if (!context.mounted) return;
+                  // Sin chat previo pero con adoptante conocido: se abre el
+                  // chat igual con chatId null y ChatScreen lo crea — antes
+                  // el botón simplemente no hacía nada en este caso.
+                  if (d == null && adoptanteIdEnProceso.isEmpty) return;
+                  final dFinal = d ?? const <String, dynamic>{};
+                  final chatId = d == null
+                      ? null
+                      : adoptanteIdEnProceso.isNotEmpty
+                          ? ChatsRepository().idAnimal(rescateId: docId, adoptanteId: adoptanteIdEnProceso)
+                          : chatDoc!.id;
                   Navigator.push(context, MaterialPageRoute(
                     builder: (_) => ChatScreen(
                       esRescatista: true,
@@ -652,10 +665,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         'rescatista':    FirebaseAuth.instance.currentUser?.displayName ?? 'Rescatista',
                         'rescatistaId':  dFinal['rescatistaId'] as String? ?? uid,
                         'rescateId':     docId,
+                        'adoptanteId':   adoptanteIdEnProceso,
                         'especie':       especie,
                         'creadoPor':     data['creadoPor'] as String? ?? 'rescatista',
                         'tipoSolicitud': dFinal['tipoSolicitud'] as String? ?? 'adopcion',
-                        'fotoUrl':       dFinal['fotoUrl'],
+                        'fotoUrl':       dFinal['fotoUrl'] ?? data['fotoUrl'],
                       },
                     ),
                   ));

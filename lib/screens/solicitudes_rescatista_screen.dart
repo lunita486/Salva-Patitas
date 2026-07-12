@@ -554,19 +554,31 @@ class _SolicitudesRescatistaScreenState extends State<SolicitudesRescatistaScree
                               final adoptanteId = d['adoptanteId'] as String? ?? '';
                               final rescateIdChat = d['rescateId'] as String? ?? '';
                               String? chatId;
-                              if (rescateIdChat.isNotEmpty) {
-                                final doc = await FirebaseFirestore.instance
-                                    .collection('chats').doc(ChatsRepository()
-                                        .idAnimal(rescateId: rescateIdChat, adoptanteId: adoptanteId)).get();
-                                if (doc.exists) chatId = doc.id;
-                              } else {
-                                final snap = await FirebaseFirestore.instance
-                                    .collection('chats')
-                                    .where('adoptanteId', isEqualTo: adoptanteId)
-                                    .where('animalNombre', isEqualTo: animal)
-                                    .limit(1)
-                                    .get();
-                                if (snap.docs.isNotEmpty) chatId = snap.docs.first.id;
+                              // try/catch: leer un chat que NO existe da
+                              // permission-denied con nuestras reglas (no
+                              // pueden probar que te corresponde ver un doc
+                              // que no está). Pasa cuando el mensaje
+                              // automático de la aprobación no llegó a crear
+                              // el chat — sin esto, la excepción mataba el
+                              // onTap y el botón "Ir al chat" no hacía nada.
+                              // Con chatId null, ChatScreen crea el chat.
+                              try {
+                                if (rescateIdChat.isNotEmpty) {
+                                  final doc = await FirebaseFirestore.instance
+                                      .collection('chats').doc(ChatsRepository()
+                                          .idAnimal(rescateId: rescateIdChat, adoptanteId: adoptanteId)).get();
+                                  if (doc.exists) chatId = doc.id;
+                                } else {
+                                  final snap = await FirebaseFirestore.instance
+                                      .collection('chats')
+                                      .where('adoptanteId', isEqualTo: adoptanteId)
+                                      .where('animalNombre', isEqualTo: animal)
+                                      .limit(1)
+                                      .get();
+                                  if (snap.docs.isNotEmpty) chatId = snap.docs.first.id;
+                                }
+                              } catch (_) {
+                                chatId = null;
                               }
                               if (!context.mounted) return;
                               Navigator.push(context, MaterialPageRoute(
