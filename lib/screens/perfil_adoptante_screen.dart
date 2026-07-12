@@ -117,7 +117,10 @@ class PerfilAdoptanteScreen extends StatelessWidget {
                     FutureBuilder<String>(
                       future: _detectarCiudad(),
                       builder: (_, snap) {
-                        if (!snap.hasData) return const SizedBox.shrink();
+                        // También con ciudad vacía ('' cuando el GPS falla o
+                        // está bloqueado): sin este guard quedaba el pin y el
+                        // separador "·" flotando sin texto.
+                        if (!snap.hasData || snap.data!.isEmpty) return const SizedBox.shrink();
                         return Row(children: [
                           Icon(Icons.location_on, size: 13, color: Colors.grey.shade500),
                           const SizedBox(width: 2),

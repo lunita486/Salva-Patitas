@@ -220,12 +220,17 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                                 Text(nombre, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                                 const SizedBox(height: 4),
                                 Text('$especie · $estado', style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
-                                const SizedBox(height: 4),
-                                Row(children: [
-                                  const Icon(Icons.location_on, size: 13, color: appTeal),
-                                  const SizedBox(width: 2),
-                                  Text(ubicacion, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-                                ]),
+                                // El pin solo se muestra si hay ubicación que
+                                // mostrar — mismo criterio que el panel del
+                                // rescatista en home_screen.dart.
+                                if ((ubicacion as String).isNotEmpty) ...[
+                                  const SizedBox(height: 4),
+                                  Row(children: [
+                                    const Icon(Icons.location_on, size: 13, color: appTeal),
+                                    const SizedBox(width: 2),
+                                    Text(ubicacion, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                                  ]),
+                                ],
                               ])),
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
