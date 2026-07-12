@@ -260,12 +260,13 @@ class _ChatScreenState extends State<ChatScreen> {
     // el propio rescatista veía su nombre y rótulo en el encabezado, como
     // si hablara consigo mismo.
     final esConsulta  = (widget.animal['tipoSolicitud'] as String? ?? '').startsWith('consulta');
+    final esAlbergue  = (widget.animal['creadoPor'] as String? ?? '') == 'albergue';
     final contraparte = widget.esRescatista
         ? (widget.animal['adoptanteNombre'] as String? ?? 'Adoptante')
         : rescatista;
     final rotuloContraparte = esConsulta
         ? 'Negocio aliado'
-        : widget.esRescatista ? 'Adoptante' : 'Rescatista';
+        : widget.esRescatista ? 'Adoptante' : (esAlbergue ? 'Albergue' : 'Rescatista');
 
     return Scaffold(
       backgroundColor: appBg,
