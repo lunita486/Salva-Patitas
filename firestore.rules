@@ -105,9 +105,20 @@ service cloud.firestore {
     // ── chats ─────────────────────────────────────────────────────────
     // Un chat identifica a sus dos dueños (adoptanteId/rescatistaId). Los
     // chats sobre un animal además llevan `creadoPor` (rescatista/albergue)
-    // para separar bandejas en cuentas con doble rol — se valida contra los
-    // roles reales de `rescatistaId`, igual que en `rescates`. Y, como en
+    // para separar bandejas en cuentas con doble rol. Y, como en
     // `solicitudes`, los campos de identidad no se pueden reescribir después.
+    //
+    // La validación de `creadoPor` está anclada al documento REAL de
+    // `rescates` (rescatistaId + creadoPor deben coincidir con ese animal),
+    // no al rol ACTUAL de la cuenta — antes usaba tieneRol() para revisar
+    // los roles de hoy de rescatistaId, y una cuenta que alguna vez publicó
+    // como 'albergue' pero después cambió sus roles (ej. dejó de ser
+    // albergue) quedaba con todos sus animales viejos huérfanos: ningún
+    // adoptante podía volver a abrirles un chat nuevo, aunque el animal
+    // siguiera publicado y visible en el feed. Esto pasó de verdad: un
+    // rescate quedó con creadoPor:'albergue' apuntando a una cuenta cuyos
+    // roles ya no incluían 'albergue', y "Hacer una pregunta" tiraba
+    // permission-denied en silencio.
     match /chats/{chatId} {
       allow read: if signedIn() &&
         (resource.data.adoptanteId == uid() || resource.data.rescatistaId == uid());
@@ -115,7 +126,17 @@ service cloud.firestore {
         (request.resource.data.adoptanteId == uid() || request.resource.data.rescatistaId == uid()) &&
         (!('creadoPor' in request.resource.data) ||
           (request.resource.data.creadoPor in ['rescatista', 'albergue'] &&
-           tieneRol(request.resource.data.rescatistaId, request.resource.data.creadoPor)));
+           (
+             (request.resource.data.get('rescateId', '') != '' &&
+              get(/databases/$(database)/documents/rescates/$(request.resource.data.rescateId)).data.rescatistaId == request.resource.data.rescatistaId &&
+              get(/databases/$(database)/documents/rescates/$(request.resource.data.rescateId)).data.creadoPor == request.resource.data.creadoPor)
+             ||
+             // Fallback legado, sin rescateId (ver chat_screen.dart): no hay
+             // documento de rescate contra el cual anclar, así que se
+             // mantiene el chequeo de rol actual como antes.
+             (request.resource.data.get('rescateId', '') == '' &&
+              tieneRol(request.resource.data.rescatistaId, request.resource.data.creadoPor))
+           )));
       allow update: if signedIn() &&
         request.resource.data.adoptanteId == resource.data.adoptanteId &&
         request.resource.data.rescatistaId == resource.data.rescatistaId &&
