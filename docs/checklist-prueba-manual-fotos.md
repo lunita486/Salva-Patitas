@@ -84,6 +84,24 @@ Si algo falla, anotá en qué paso fue y qué mensaje/comportamiento viste.
 - [ ] Las descripciones de los animales se ven **sin comillas** alrededor
       (tarjeta del feed, detalle "Mi historia" y motivación del adoptante).
 
+## I. Arreglos del 12 de julio (re-verificar en la próxima versión)
+
+- [ ] En "Mis rescates" y en el perfil de adoptante, sin ciudad detectada
+      → NO se ve el pin de ubicación suelto (mismo arreglo de la sección H,
+      encontrado en 2 pantallas más).
+- [ ] Editar un animalito del albergue → el campo "Ubicación" aparece
+      **una sola vez** (antes salía duplicado).
+- [ ] Rescatista: en una solicitud de **hogar de paso** aprobada, tocar
+      "Ir al chat" → abre el chat (antes no hacía nada).
+- [ ] Rescatista: en un animal "En proceso de adopción", tocar "Contactar
+      adoptante" → abre el chat (antes no hacía nada).
+- [ ] En cualquier chat, el encabezado muestra a la **otra persona** (no a
+      vos mismo) — y si el animal es de un albergue, dice "Albergue" en
+      vez de "Rescatista".
+- [ ] Adoptante: tocar "Hacer una pregunta" sobre un animal publicado por
+      un **albergue** → abre el chat sin error (bug de datos real,
+      encontrado y corregido en las reglas de Firestore).
+
 ---
 
 **Si todo lo de arriba pasa:** A1 queda cerrado del todo, listo para
