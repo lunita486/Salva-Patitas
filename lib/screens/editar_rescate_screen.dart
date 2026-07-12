@@ -323,9 +323,7 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
                 const SizedBox(height: 20),
                 _campo('Nombre', _nombreCtl, 'ej. Luna'),
                 const SizedBox(height: 16),
-                _campo('Ubicación', _lugarCtl, 'ej. Laureles'),
-                const SizedBox(height: 8),
-                _locationField(),
+                _campoUbicacion(),
                 const SizedBox(height: 16),
                 _campo('Descripción', _descCtl, 'Cuéntanos sobre el animal...', maxLines: 3),
                 const SizedBox(height: 20),
@@ -479,41 +477,37 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
       ),
     ]);
 
-  Widget _locationField() {
+  /// Un solo campo, no dos: el texto se puede escribir a mano (como
+  /// siempre) O completar solo tocando el ícono de GPS a la derecha. Antes
+  /// había un campo de texto Y, debajo, una tarjeta aparte solo para el
+  /// detector — quedaba "ubicación" pedida dos veces en la misma pantalla.
+  Widget _campoUbicacion() {
     final obtenida = _latitud != null;
-    final ciudad = _lugarCtl.text;
-    return GestureDetector(
-      onTap: _detectandoUbicacion ? null : _obtenerUbicacionGPS,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        decoration: BoxDecoration(
-          color: obtenida ? appTeal.withValues(alpha: 0.08) : Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: obtenida ? appTeal : Colors.grey.shade300),
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('Ubicación', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1A1A1A))),
+      const SizedBox(height: 6),
+      TextField(
+        controller: _lugarCtl,
+        decoration: InputDecoration(
+          hintText: 'ej. Laureles',
+          hintStyle: TextStyle(color: Colors.grey.shade400),
+          filled: true, fillColor: Colors.white,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          suffixIcon: _detectandoUbicacion
+              ? const Padding(
+                  padding: EdgeInsets.all(14),
+                  child: SizedBox(width: 18, height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: appTeal)))
+              : IconButton(
+                  tooltip: 'Detectar mi ubicación',
+                  icon: Icon(obtenida ? Icons.check_circle : Icons.my_location,
+                      color: obtenida ? appTeal : Colors.grey.shade500),
+                  onPressed: _obtenerUbicacionGPS,
+                ),
         ),
-        child: Row(children: [
-          if (_detectandoUbicacion)
-            const SizedBox(width: 22, height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2, color: appTeal))
-          else
-            Icon(obtenida ? Icons.check_circle : Icons.my_location,
-                color: obtenida ? appTeal : Colors.grey.shade500, size: 22),
-          const SizedBox(width: 12),
-          Text(
-            _detectandoUbicacion
-                ? 'Detectando ubicación...'
-                : obtenida
-                    ? (ciudad.isNotEmpty ? '$ciudad ✓' : 'Ubicación detectada ✓')
-                    : 'Toca para detectar tu ubicación',
-            style: TextStyle(
-              fontSize: 14,
-              color: obtenida || _detectandoUbicacion ? appTeal : Colors.grey.shade500,
-              fontWeight: obtenida ? FontWeight.w600 : FontWeight.normal,
-            ),
-          ),
-        ]),
       ),
-    );
+    ]);
   }
 
   Widget _selector(String label, String valor, List<String> opts, ValueChanged<String> onChanged) =>
