@@ -666,6 +666,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         'rescatistaId':  dFinal['rescatistaId'] as String? ?? uid,
                         'rescateId':     docId,
                         'adoptanteId':   adoptanteIdEnProceso,
+                        'adoptanteNombre': dFinal['adoptanteNombre'],
                         'especie':       especie,
                         'creadoPor':     data['creadoPor'] as String? ?? 'rescatista',
                         'tipoSolicitud': dFinal['tipoSolicitud'] as String? ?? 'adopcion',

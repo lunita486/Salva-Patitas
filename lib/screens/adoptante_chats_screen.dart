@@ -165,6 +165,7 @@ class AdoptanteChatsScreen extends StatelessWidget {
                             animal: {
                               'nombre':        animalNombre,
                               'rescatista':    rescatista,
+                              'adoptanteNombre': d['adoptanteNombre'],
                               'especie':       especie,
                               'tipoSolicitud': tipoSolicitud,
                               'rescatistaId':  d['rescatistaId'] as String? ?? '',

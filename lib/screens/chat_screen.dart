@@ -255,6 +255,17 @@ class _ChatScreenState extends State<ChatScreen> {
     final fotoBase64  = widget.animal['fotoBase64'] as String?;
     final rescatista  = (widget.animal['rescatista'] as String?) ?? 'Rescatista';
     final emoji       = widget.animal['especie'] == 'Gato' ? '🐱' : '🐶';
+    // El encabezado muestra a la CONTRAPARTE: el rescatista chatea con el
+    // adoptante y viceversa. Antes mostraba siempre al rescatista, así que
+    // el propio rescatista veía su nombre y rótulo en el encabezado, como
+    // si hablara consigo mismo.
+    final esConsulta  = (widget.animal['tipoSolicitud'] as String? ?? '').startsWith('consulta');
+    final contraparte = widget.esRescatista
+        ? (widget.animal['adoptanteNombre'] as String? ?? 'Adoptante')
+        : rescatista;
+    final rotuloContraparte = esConsulta
+        ? 'Negocio aliado'
+        : widget.esRescatista ? 'Adoptante' : 'Rescatista';
 
     return Scaffold(
       backgroundColor: appBg,
@@ -271,13 +282,13 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
               CircleAvatar(
                 radius: 20, backgroundColor: appOrange,
-                child: Text(rescatista.isNotEmpty ? rescatista[0].toUpperCase() : 'R',
+                child: Text(contraparte.isNotEmpty ? contraparte[0].toUpperCase() : '?',
                     style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold)),
               ),
               const SizedBox(width: 10),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Row(children: [
-                  Text(rescatista,
+                  Text(contraparte,
                       style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
                   const SizedBox(width: 6),
                   Container(
@@ -287,9 +298,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 ]),
                 const SizedBox(height: 1),
                 Text(
-                  (widget.animal['tipoSolicitud'] as String? ?? '').startsWith('consulta')
-                      ? 'Negocio aliado'
-                      : 'Rescatista',
+                  rotuloContraparte,
                   style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
                 ),
               ])),
