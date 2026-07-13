@@ -98,7 +98,25 @@ class AdoptanteChatsScreen extends StatelessWidget {
           // es el aliado que la recibió. Si en cambio soy quien la mandó
           // (soy adoptanteId en este chat), la quiero ver en mi lista
           // general, porque no tengo otra pantalla donde aparezca.
-          if (tipo == 'consulta_aliado' && data['adoptanteId'] != uid) return false;
+          if (tipo == 'consulta_aliado') {
+            if (data['adoptanteId'] != uid) return false;
+            // creadoPor solo se guarda cuando contacté como rescatista o
+            // albergue (ver ChatsRepository.asegurarChatNegocio) — si lo
+            // contacté como ADOPTANTE, el campo no existe. Antes esto caía
+            // en el `?? 'rescatista'` de más abajo (pensado para chats de
+            // animal, donde el campo SIEMPRE debería estar) y una consulta
+            // mandada como adoptante terminaba mostrándose en la bandeja
+            // del rescatista — el bug real que esto arregla.
+            final creadoPorConsulta = data['creadoPor'] as String?;
+            if (!esRescatista) {
+              // Viendo como adoptante: acá van las que mandé CON ESE
+              // sombrero (sin creadoPor) — las que mandé como
+              // rescatista/albergue pertenecen a esas otras pestañas.
+              return creadoPorConsulta == null;
+            }
+            if (creadoPorConsulta == null) return false;
+            return esAlbergue ? creadoPorConsulta == 'albergue' : creadoPorConsulta == 'rescatista';
+          }
           // Una misma cuenta puede tener rol rescatista y albergue a la vez;
           // esto evita que se mezclen las conversaciones de un rol con el otro.
           if (esRescatista) {
