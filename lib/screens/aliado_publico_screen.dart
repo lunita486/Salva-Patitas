@@ -8,7 +8,8 @@ import 'chat_screen.dart';
 class AliadoPublicoScreen extends StatelessWidget {
   final String aliadoId;
   final bool esRescatista;
-  const AliadoPublicoScreen({super.key, required this.aliadoId, this.esRescatista = false});
+  final bool esAlbergue;
+  const AliadoPublicoScreen({super.key, required this.aliadoId, this.esRescatista = false, this.esAlbergue = false});
 
   static const _categoriaEmoji = {
     'Baño y peluquería': '🛁',
@@ -30,7 +31,7 @@ class AliadoPublicoScreen extends StatelessWidget {
         adoptanteNombre: FirebaseAuth.instance.currentUser?.displayName ?? 'Usuario',
         aliadoId: aliadoId,
         aliadoNombre: nombre,
-        contexto: esRescatista ? 'rescatista' : 'general',
+        contexto: !esRescatista ? 'general' : (esAlbergue ? 'albergue' : 'rescatista'),
         fotoBase64: fotoBase64,
       );
     } catch (_) {

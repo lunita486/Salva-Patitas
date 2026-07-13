@@ -119,6 +119,13 @@ service cloud.firestore {
     // rescate quedó con creadoPor:'albergue' apuntando a una cuenta cuyos
     // roles ya no incluían 'albergue', y "Hacer una pregunta" tiraba
     // permission-denied en silencio.
+    //
+    // Una consulta a un ALIADO (tipoSolicitud 'consulta_aliado') también usa
+    // `creadoPor` para separar la bandeja de rescatista y de albergue — pero
+    // ahí rescatistaId es siempre el aliado (nunca tiene rol
+    // rescatista/albergue), y quien realmente tiene ese rol es adoptanteId
+    // (quien contactó). No hay rescate contra el cual anclar, así que se
+    // valida con tieneRol() sobre adoptanteId en vez de rescatistaId.
     match /chats/{chatId} {
       allow read: if signedIn() &&
         (resource.data.adoptanteId == uid() || resource.data.rescatistaId == uid());
@@ -131,10 +138,15 @@ service cloud.firestore {
               get(/databases/$(database)/documents/rescates/$(request.resource.data.rescateId)).data.rescatistaId == request.resource.data.rescatistaId &&
               get(/databases/$(database)/documents/rescates/$(request.resource.data.rescateId)).data.creadoPor == request.resource.data.creadoPor)
              ||
-             // Fallback legado, sin rescateId (ver chat_screen.dart): no hay
-             // documento de rescate contra el cual anclar, así que se
-             // mantiene el chequeo de rol actual como antes.
+             (request.resource.data.get('tipoSolicitud', '') == 'consulta_aliado' &&
+              tieneRol(request.resource.data.adoptanteId, request.resource.data.creadoPor))
+             ||
+             // Fallback legado, sin rescateId ni consulta_aliado (ver
+             // chat_screen.dart): no hay documento de rescate contra el
+             // cual anclar, así que se mantiene el chequeo de rol actual
+             // como antes.
              (request.resource.data.get('rescateId', '') == '' &&
+              request.resource.data.get('tipoSolicitud', '') != 'consulta_aliado' &&
               tieneRol(request.resource.data.rescatistaId, request.resource.data.creadoPor))
            )));
       allow update: if signedIn() &&

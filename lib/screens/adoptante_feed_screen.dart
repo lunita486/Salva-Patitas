@@ -1084,7 +1084,8 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
 
 class AliadosScreen extends StatelessWidget {
   final bool esRescatista;
-  const AliadosScreen({super.key, this.esRescatista = false});
+  final bool esAlbergue;
+  const AliadosScreen({super.key, this.esRescatista = false, this.esAlbergue = false});
 
   @override
   Widget build(BuildContext context) {
@@ -1140,7 +1141,8 @@ class AliadosScreen extends StatelessWidget {
                     final uid    = aliados[i].id;
                     return GestureDetector(
                       onTap: () => Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => AliadoPublicoScreen(aliadoId: uid, esRescatista: esRescatista))),
+                          builder: (_) => AliadoPublicoScreen(
+                              aliadoId: uid, esRescatista: esRescatista, esAlbergue: esAlbergue))),
                       child: Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(

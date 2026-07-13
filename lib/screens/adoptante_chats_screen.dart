@@ -57,9 +57,16 @@ class AdoptanteChatsScreen extends StatelessWidget {
                           .where('tipoSolicitud', isEqualTo: 'consulta_aliado')
                           .snapshots(),
                       builder: (context, snapEnviadas) {
+                        // Un chat de consulta a un aliado puede aparecer en
+                        // LAS DOS queries a la vez si la propia cuenta es el
+                        // aliado (rescatistaId) y también quien lo contactó
+                        // (adoptanteId) — pasa de verdad probando con la
+                        // misma cuenta en varios roles. Se deduplica por id.
+                        final vistos = <String>{};
                         final combinados = <QueryDocumentSnapshot>[
-                          ...(snap.data?.docs ?? <QueryDocumentSnapshot>[]),
-                          ...(snapEnviadas.data?.docs ?? <QueryDocumentSnapshot>[]),
+                          for (final d in [...(snap.data?.docs ?? <QueryDocumentSnapshot>[]),
+                                            ...(snapEnviadas.data?.docs ?? <QueryDocumentSnapshot>[])])
+                            if (vistos.add(d.id)) d,
                         ];
                         return _listaChats(context, combinados);
                       },

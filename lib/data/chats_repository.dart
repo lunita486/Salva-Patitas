@@ -57,8 +57,9 @@ class ChatsRepository {
 
   /// Id determinístico para un chat de consulta con un negocio aliado (no es
   /// sobre un animal puntual, así que usa un esquema separado). `contexto`
-  /// distingue si la cuenta contactó como rescatista o como adoptante — son
-  /// conversaciones separadas a propósito.
+  /// distingue si la cuenta contactó como adoptante, rescatista o albergue —
+  /// son conversaciones separadas a propósito, igual que una cuenta con
+  /// doble rol nunca mezcla los chats de sus animales entre uno y otro.
   String idNegocio({required String aliadoId, required String adoptanteId, String contexto = 'general'}) =>
       '${aliadoId}_${adoptanteId}_negocio_$contexto';
 
@@ -98,6 +99,11 @@ class ChatsRepository {
         'rescatistaId':       aliadoId,
         if (fotoBase64 != null) 'fotoBase64': fotoBase64,
         'tipoSolicitud':      'consulta_aliado',
+        // Mismo campo que usan los chats de animal para separar bandejas de
+        // una cuenta con doble rol (ver AdoptanteChatsScreen) — sin esto,
+        // una consulta enviada como albergue quedaba indistinguible de una
+        // enviada como rescatista al filtrar la propia lista de chats.
+        if (contexto == 'rescatista' || contexto == 'albergue') 'creadoPor': contexto,
         'ultimoMensaje':      '',
         'ultimaHora':         '',
         'ultimoMensajeEn':    FieldValue.serverTimestamp(),

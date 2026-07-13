@@ -88,6 +88,40 @@ void main() {
       expect(idComoRescatista, isNot(idComoAdoptante));
     });
 
+    test('idNegocio también distingue rescatista de albergue (el bug real: se mezclaban '
+        'en una sola conversación porque contexto solo distinguía 2 casos, no 3)', () {
+      final idComoRescatista = repo.idNegocio(
+          aliadoId: 'aliado-1', adoptanteId: 'user-1', contexto: 'rescatista');
+      final idComoAlbergue = repo.idNegocio(
+          aliadoId: 'aliado-1', adoptanteId: 'user-1', contexto: 'albergue');
+      expect(idComoRescatista, isNot(idComoAlbergue));
+    });
+
+    test('asegurarChatNegocio guarda creadoPor cuando contexto es rescatista o albergue, '
+        'para que cada uno pueda filtrar su propia bandeja de chats enviados', () async {
+      final idRescatista = await repo.asegurarChatNegocio(
+        adoptanteId: 'user-1', adoptanteNombre: 'Ana',
+        aliadoId: 'aliado-1', aliadoNombre: 'Veterinaria la 30',
+        contexto: 'rescatista',
+      );
+      final idAlbergue = await repo.asegurarChatNegocio(
+        adoptanteId: 'user-1', adoptanteNombre: 'Ana',
+        aliadoId: 'aliado-1', aliadoNombre: 'Veterinaria la 30',
+        contexto: 'albergue',
+      );
+      expect((await firestore.collection('chats').doc(idRescatista).get())['creadoPor'], 'rescatista');
+      expect((await firestore.collection('chats').doc(idAlbergue).get())['creadoPor'], 'albergue');
+    });
+
+    test('asegurarChatNegocio NO guarda creadoPor cuando contexto es general (adoptante)', () async {
+      final chatId = await repo.asegurarChatNegocio(
+        adoptanteId: 'adoptante-1', adoptanteNombre: 'Ana',
+        aliadoId: 'aliado-1', aliadoNombre: 'Veterinaria la 30',
+      );
+      final doc = await firestore.collection('chats').doc(chatId).get();
+      expect(doc.data()!.containsKey('creadoPor'), false);
+    });
+
     test('asegurarChatNegocio no pisa datos si ya existe el chat', () async {
       final id1 = await repo.asegurarChatNegocio(
         adoptanteId: 'adoptante-1',

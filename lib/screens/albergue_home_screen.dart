@@ -1193,7 +1193,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
               ),
               GestureDetector(
                 onTap: () => Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => const AliadosScreen(esRescatista: true))),
+                    builder: (_) => const AliadosScreen(esRescatista: true, esAlbergue: true))),
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
                   Icon(Icons.store_outlined, color: Colors.grey.shade400, size: 24),
                   const SizedBox(height: 4),
