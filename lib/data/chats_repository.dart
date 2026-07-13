@@ -64,7 +64,9 @@ class ChatsRepository {
 
   /// Crea el chat de consulta a un negocio si no existe todavía. A diferencia
   /// de un chat de animal, acá no se pisa nada si ya existe (no hace falta
-  /// refrescar el nombre/foto del negocio en cada apertura).
+  /// refrescar el nombre/foto del negocio en cada apertura, y así tampoco se
+  /// resetean ultimoMensaje/noLeidos de una conversación que ya tiene
+  /// historial).
   Future<String> asegurarChatNegocio({
     required String adoptanteId,
     required String adoptanteNombre,
@@ -75,7 +77,19 @@ class ChatsRepository {
   }) async {
     final chatId = idNegocio(aliadoId: aliadoId, adoptanteId: adoptanteId, contexto: contexto);
     final ref = _db.collection('chats').doc(chatId);
-    if (!(await ref.get()).exists) {
+    // La primera vez que se contacta a un aliado el doc todavía no existe, y
+    // las reglas de Firestore no pueden confirmar "sos participante" sobre
+    // un documento que no está — el get() de abajo tira permission-denied
+    // (no es que falte permiso de verdad). Sin este try/catch esa excepción
+    // mataba el botón "Contactar" en silencio, para adoptante, rescatista Y
+    // albergue por igual (los tres pasan por el mismo código).
+    bool existe;
+    try {
+      existe = (await ref.get()).exists;
+    } catch (_) {
+      existe = false;
+    }
+    if (!existe) {
       await ref.set({
         'adoptanteId':        adoptanteId,
         'adoptanteNombre':    adoptanteNombre,

@@ -23,14 +23,23 @@ class AliadoPublicoScreen extends StatelessWidget {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     if (uid.isEmpty) return;
 
-    final chatId = await ChatsRepository().asegurarChatNegocio(
-      adoptanteId: uid,
-      adoptanteNombre: FirebaseAuth.instance.currentUser?.displayName ?? 'Usuario',
-      aliadoId: aliadoId,
-      aliadoNombre: nombre,
-      contexto: esRescatista ? 'rescatista' : 'general',
-      fotoBase64: fotoBase64,
-    );
+    String chatId;
+    try {
+      chatId = await ChatsRepository().asegurarChatNegocio(
+        adoptanteId: uid,
+        adoptanteNombre: FirebaseAuth.instance.currentUser?.displayName ?? 'Usuario',
+        aliadoId: aliadoId,
+        aliadoNombre: nombre,
+        contexto: esRescatista ? 'rescatista' : 'general',
+        fotoBase64: fotoBase64,
+      );
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('No se pudo abrir el chat. Intentá de nuevo.')));
+      }
+      return;
+    }
 
     if (!context.mounted) return;
     Navigator.push(context, MaterialPageRoute(
