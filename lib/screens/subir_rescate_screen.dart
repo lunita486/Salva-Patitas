@@ -260,6 +260,14 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
       // 1) Crear el doc SIN fotos todavía — storage.rules necesita que el
       // rescate ya exista (con el rescatistaId correcto) para poder
       // verificar dueño cuando se suba la foto en el paso 2.
+      //
+      // Cada paso de red tiene un .timeout() a propósito: sin conexión
+      // (ej. modo avión), tanto el write de Firestore como la subida a
+      // Storage se quedan esperando sin nunca completar ni fallar — el
+      // try/catch de acá abajo nunca llegaba a dispararse, y la app
+      // quedaba "colgada" (spinner infinito, sin ningún mensaje) hasta que
+      // volvía la señal. El timeout fuerza el error para que el catch
+      // pueda avisar y hacer el rollback.
       final ref = await RescatesRepository().crear(
         uid: uid,
         role: widget.esAlbergue ? CreatorRole.albergue : CreatorRole.rescatista,
@@ -286,7 +294,8 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
           'okConMascotas':    _okMascotas == 'Sí',
           'requiereExperiencia': _requiereExp == 'Sí',
         },
-      );
+      ).timeout(const Duration(seconds: 15), onTimeout: () =>
+          throw Exception('No hay conexión a internet. Revisá tu wifi/datos e intentá de nuevo.'));
       rescateId = ref.id;
 
       // 2) Foto obligatoria — si falla, no tiene sentido dejar un rescate
@@ -296,7 +305,8 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
         onProgreso: (p) {
           if (mounted) setState(() => _progreso = foto2Bytes != null ? p / 2 : p);
         },
-      );
+      ).timeout(const Duration(seconds: 45), onTimeout: () =>
+          throw Exception('No hay conexión a internet. Revisá tu wifi/datos e intentá de nuevo.'));
 
       // 3) Segunda foto — opcional: si falla, se publica igual sin ella en
       // vez de perder todo el trabajo ya hecho.
@@ -308,7 +318,8 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
             onProgreso: (p) {
               if (mounted) setState(() => _progreso = 0.5 + p / 2);
             },
-          );
+          ).timeout(const Duration(seconds: 45), onTimeout: () =>
+              throw Exception('tiempo agotado'));
         } catch (_) {
           foto2Fallo = true;
         }
@@ -318,7 +329,8 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
       await RescatesRepository().actualizar(rescateId, {
         'fotoUrl': fotoUrl,
         if (fotoUrl2 != null) 'fotoUrl2': fotoUrl2,
-      });
+      }).timeout(const Duration(seconds: 15), onTimeout: () =>
+          throw Exception('No hay conexión a internet. Revisá tu wifi/datos e intentá de nuevo.'));
 
       if (!mounted) return;
       showDialog(

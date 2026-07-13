@@ -109,6 +109,13 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> {
           // 1) Crear el doc SIN fotos — storage.rules necesita que exista
           // para verificar dueño al subir (mismo motivo que en el alta
           // individual, ver subir_rescate_screen.dart).
+          // Cada paso de red tiene un .timeout() a propósito — sin conexión
+          // (ej. modo avión a mitad de un lote), tanto el write de
+          // Firestore como la subida a Storage se quedan esperando sin
+          // completar ni fallar nunca, y ni el catch de acá abajo ni el
+          // "sigue con el resto del lote" llegan a dispararse: el lote
+          // entero queda colgado en el primer animal. Mismo bug y mismo
+          // arreglo que en subir_rescate_screen.dart.
           final ref = await RescatesRepository().crear(
             uid: uid,
             role: CreatorRole.albergue,
@@ -131,24 +138,30 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> {
               'okConMascotas':       true,
               'requiereExperiencia': false,
             },
-          );
+          ).timeout(const Duration(seconds: 15), onTimeout: () =>
+              throw Exception('No hay conexión a internet.'));
           rescateId = ref.id;
 
           // 2) Foto obligatoria.
-          final fotoUrl = await fotosRepo.subir(rescateId: rescateId, slot: 1, bytes: foto1Bytes);
+          final fotoUrl = await fotosRepo.subir(rescateId: rescateId, slot: 1, bytes: foto1Bytes)
+              .timeout(const Duration(seconds: 45), onTimeout: () =>
+                  throw Exception('No hay conexión a internet.'));
 
           // 3) Segunda foto — opcional, no aborta este animal si falla.
           String? fotoUrl2;
           if (foto2Bytes != null) {
             try {
-              fotoUrl2 = await fotosRepo.subir(rescateId: rescateId, slot: 2, bytes: foto2Bytes);
+              fotoUrl2 = await fotosRepo.subir(rescateId: rescateId, slot: 2, bytes: foto2Bytes)
+                  .timeout(const Duration(seconds: 45), onTimeout: () =>
+                      throw Exception('tiempo agotado'));
             } catch (_) {}
           }
 
           await RescatesRepository().actualizar(rescateId, {
             'fotoUrl': fotoUrl,
             if (fotoUrl2 != null) 'fotoUrl2': fotoUrl2,
-          });
+          }).timeout(const Duration(seconds: 15), onTimeout: () =>
+              throw Exception('No hay conexión a internet.'));
           publicados++;
         } catch (_) {
           // Este animal falló — no se aborta el lote entero (no tiene
