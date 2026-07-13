@@ -1038,6 +1038,11 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                     rescateId: rescateId,
                     estadoAdopcion: estadoAdopcion,
                     creadoPor: creadoPor,
+                    tamano: tamano,
+                    energia: a['energia'] as String?,
+                    okConNinos: a['okConNinos'] as bool?,
+                    okConMascotas: a['okConMascotas'] as bool?,
+                    requiereExperiencia: a['requiereExperiencia'] as bool?,
                   ),
                 ),
                 child: Container(
@@ -1200,9 +1205,11 @@ class AliadosScreen extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _MeInteresaSheet extends StatelessWidget {
-  final String nombre, especie, edad, ubicacion, rescatistaId, rescatista, rescateId, estadoAdopcion, creadoPor;
+  final String nombre, especie, edad, ubicacion, rescatistaId, rescatista, rescateId, estadoAdopcion, creadoPor, tamano;
   final List<String> tags;
   final String? fotoUrl;
+  final String? energia;
+  final bool? okConNinos, okConMascotas, requiereExperiencia;
 
   const _MeInteresaSheet({
     required this.nombre,
@@ -1215,7 +1222,12 @@ class _MeInteresaSheet extends StatelessWidget {
     required this.tags,
     required this.estadoAdopcion,
     required this.creadoPor,
+    required this.tamano,
     this.fotoUrl,
+    this.energia,
+    this.okConNinos,
+    this.okConMascotas,
+    this.requiereExperiencia,
   });
 
   @override
@@ -1247,6 +1259,18 @@ class _MeInteresaSheet extends StatelessWidget {
                   'fotoUrl': fotoUrl,
                   'tipoSolicitud': 'hogar_de_paso',
                   'creadoPor': creadoPor,
+                  // Etiquetas del animal para calcular compatibilidad (ver
+                  // solicitud_adopcion_screen.dart) — antes faltaban acá, así
+                  // que toda solicitud creada desde este sheet (incluida la
+                  // de "Adoptar", que también pasa por esta pantalla) guardaba
+                  // estos campos como null y compatibilidad.dart los
+                  // completaba con sus valores por defecto (ej. "Mediano"
+                  // aunque el animal fuera "Pequeño").
+                  'tamano': tamano,
+                  'energia': energia,
+                  'okConNinos': okConNinos,
+                  'okConMascotas': okConMascotas,
+                  'requiereExperiencia': requiereExperiencia,
                 }),
               ));
             },

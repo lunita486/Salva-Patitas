@@ -80,10 +80,21 @@ class FavoritosScreen extends StatelessWidget {
                       for (final r in rescatesSnap.data?.docs ?? [])
                         r.id: (r.data() as Map<String, dynamic>)['fotoUrl'] as String?,
                     };
+                    // `favoritos` nunca guardó las etiquetas del animal
+                    // (tamaño, energía, etc.) — el botón "Adoptar" de acá
+                    // armaba la solicitud sin ellas, y compatibilidad.dart
+                    // las completaba con sus valores por defecto (ej.
+                    // "Mediano" aunque el animal fuera "Pequeño"). Se leen
+                    // del rescate en vivo, igual que fotoPorRescateId.
+                    final rescatePorId = <String, Map<String, dynamic>>{
+                      for (final r in rescatesSnap.data?.docs ?? [])
+                        r.id: r.data() as Map<String, dynamic>,
+                    };
                     return _FavoritosGrid(
                       docs: docs,
                       estadoPorRescateId: estadoPorRescateId,
                       fotoPorRescateId: fotoPorRescateId,
+                      rescatePorId: rescatePorId,
                     );
                   },
                 );
@@ -100,10 +111,12 @@ class _FavoritosGrid extends StatelessWidget {
   final List<QueryDocumentSnapshot> docs;
   final Map<String, String> estadoPorRescateId;
   final Map<String, String?> fotoPorRescateId;
+  final Map<String, Map<String, dynamic>> rescatePorId;
   const _FavoritosGrid({
     required this.docs,
     required this.estadoPorRescateId,
     required this.fotoPorRescateId,
+    required this.rescatePorId,
   });
 
   @override
@@ -157,6 +170,7 @@ class _FavoritosGrid extends StatelessWidget {
                           final rescateId    = d['rescateId']    as String? ?? '';
                           final fotoUrl      = (d['fotoUrl'] as String?) ?? fotoPorRescateId[rescateId];
                           final emoji        = especie == 'Gato' ? '🐱' : '🐶';
+                          final rescate      = rescatePorId[rescateId] ?? const <String, dynamic>{};
 
                           final animalMap = {
                             'nombre': nombre,
@@ -168,6 +182,11 @@ class _FavoritosGrid extends StatelessWidget {
                             'rescatistaId': rescatistaId,
                             'rescateId': rescateId,
                             'fotoUrl': fotoUrl,
+                            'tamano': rescate['tamano'],
+                            'energia': rescate['energia'],
+                            'okConNinos': rescate['okConNinos'],
+                            'okConMascotas': rescate['okConMascotas'],
+                            'requiereExperiencia': rescate['requiereExperiencia'],
                             'creadoPor': d['creadoPor'] ?? 'rescatista',
                           };
 
