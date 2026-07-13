@@ -202,13 +202,19 @@ class AdoptanteChatsScreen extends StatelessWidget {
             : fotoUrl != null
                 ? NetworkImage(fotoUrl)
                 : null;
+        // Un negocio aliado sin logo no es un animal — antes caía en el
+        // mismo emoji 🐶/🐱 que un chat de animal sin foto, que no tiene
+        // sentido para una cafetería o veterinaria.
+        final esConsultaRow = tipoSolicitud.startsWith('consulta');
         Widget animalAvatar = fotoProvider != null
             ? CircleAvatar(
                 backgroundImage: fotoProvider,
                 onBackgroundImageError: (_, _) {},
                 radius: 28)
             : CircleAvatar(backgroundColor: appTeal.withOpacity(0.15), radius: 28,
-                child: Text(emoji, style: const TextStyle(fontSize: 26)));
+                child: esConsultaRow
+                    ? Text(inicial, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: appTeal))
+                    : Text(emoji, style: const TextStyle(fontSize: 26)));
 
         return GestureDetector(
           onTap: () => Navigator.push(context, MaterialPageRoute(

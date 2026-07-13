@@ -349,28 +349,27 @@ class _ChatScreenState extends State<ChatScreen> {
               boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2))],
             ),
             child: Row(children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: fotoUrl != null
-                  ? FotoUrl(
-                      url: fotoUrl,
-                      width: 48, height: 48,
-                      fallback: Container(
-                          width: 48, height: 48, color: const Color(0xFFD8F0E4),
-                          child: Center(child: Text(emoji, style: const TextStyle(fontSize: 26)))),
-                    )
-                  : fotoBase64 != null
-                    ? FotoSegura(
-                        base64: fotoBase64,
-                        width: 48, height: 48,
-                        fallback: Container(
-                            width: 48, height: 48, color: const Color(0xFFD8F0E4),
-                            child: Center(child: Text(emoji, style: const TextStyle(fontSize: 26)))),
-                      )
-                    : Container(
-                        width: 48, height: 48, color: const Color(0xFFD8F0E4),
-                        child: Center(child: Text(emoji, style: const TextStyle(fontSize: 26)))),
-              ),
+              Builder(builder: (_) {
+                // Un negocio aliado sin logo no es un animal — antes caía en
+                // el mismo fallback que un chat de animal (emoji 🐶/🐱), que
+                // no tiene sentido para una cafetería o veterinaria. Muestra
+                // la inicial del negocio en su lugar, como el resto de las
+                // pantallas de aliado (ver aliado_home_screen.dart).
+                final inicial = nombre.isNotEmpty ? nombre[0].toUpperCase() : '?';
+                final fallback = Container(
+                    width: 48, height: 48, color: const Color(0xFFD8F0E4),
+                    child: Center(child: esConsulta
+                        ? Text(inicial, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: appTeal))
+                        : Text(emoji, style: const TextStyle(fontSize: 26))));
+                return ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: fotoUrl != null
+                    ? FotoUrl(url: fotoUrl, width: 48, height: 48, fallback: fallback)
+                    : fotoBase64 != null
+                      ? FotoSegura(base64: fotoBase64, width: 48, height: 48, fallback: fallback)
+                      : fallback,
+                );
+              }),
               const SizedBox(width: 12),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(
