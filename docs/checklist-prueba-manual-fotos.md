@@ -102,6 +102,59 @@ Si algo falla, anotá en qué paso fue y qué mensaje/comportamiento viste.
       un **albergue** → abre el chat sin error (bug de datos real,
       encontrado y corregido en las reglas de Firestore).
 
+## J. Arreglos del 13 de julio (re-verificar en V15)
+
+### Chats
+- [ ] Abrir un chat de animal → el encabezado muestra la **foto real** de
+      la otra persona (si tiene foto de Google), no solo una inicial.
+- [ ] Contactar a un aliado como **Rescatista** y después al **mismo
+      aliado** como **Albergue** → son **dos conversaciones separadas**,
+      no se mezclan los mensajes.
+- [ ] Tu pestaña de Chats (como rescatista o como albergue) solo muestra
+      las conversaciones con aliados que vos mandaste con ESE rol — no ve
+      las que mandaste como adoptante, ni al revés.
+- [ ] Contactar a un aliado que todavía no subió su logo → el avatar
+      muestra la **inicial del negocio**, no un emoji de perro/gato.
+- [ ] En la lista de Conversaciones, el círculo chico de cada fila
+      (esquina inferior) muestra la foto real de la contraparte, no solo
+      una letra.
+- [ ] No aparecen conversaciones duplicadas en la lista.
+
+### Solicitudes
+- [ ] Panel del **albergue**: la sección "Solicitudes" muestra las
+      últimas 3 pendientes con el detalle del adoptante y el score de
+      compatibilidad — igual que el panel del rescatista (antes solo
+      tenía un contador).
+- [ ] El avatar de cada tarjeta de solicitud muestra la foto real del
+      adoptante, no la tuya.
+- [ ] Mandar una solicitud desde **"Me interesa ayudar"** (botón del
+      feed) → el panel de compatibilidad muestra el tamaño/energía real
+      del animal, no los valores por defecto ("Mediano", etc.).
+- [ ] Mandar una solicitud desde el botón **"Adoptar" en Favoritos** →
+      mismo chequeo que arriba.
+- [ ] Intentar **eliminar** un animal con una solicitud pendiente → la
+      app lo bloquea con un mensaje claro en vez de dejarte borrarlo.
+
+### Estados del animal
+- [ ] Marcar un animal **"Regresado"** y después aprobar una solicitud
+      nueva para ese mismo animal → se aprueba bien (antes quedaba
+      atascado, autorrechazándose para siempre).
+- [ ] En "Ya encontraron hogar" del albergue, los animales adoptados
+      tienen el mismo desplegable para cambiar estado que los activos
+      (antes tenían un ícono fijo, sin poder marcarlos "Regresado").
+
+### Publicar un rescate
+- [ ] Publicar un animal con conexión normal → sigue funcionando igual
+      que siempre.
+- [ ] Publicar **sin conexión** (modo avión) → después de unos segundos
+      aparece un mensaje de error claro; la app **no queda colgada**.
+- [ ] Lo mismo con **"Subir lote"**.
+
+### Negocios aliados
+- [ ] Los aliados que ya subieron su logo lo muestran correctamente en
+      "Negocios aliados", tanto para el rescatista/albergue como para el
+      adoptante.
+
 ---
 
 **Si todo lo de arriba pasa:** A1 queda cerrado del todo, listo para
