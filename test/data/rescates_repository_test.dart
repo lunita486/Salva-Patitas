@@ -97,6 +97,53 @@ void main() {
       expect(docs.docs.map((d) => d['nombre']), containsAll(['ConFecha', 'SinFecha']));
     });
 
+    group('cambiarEstadoAdopcion', () {
+      test('guarda el nuevo estado y los campos extra juntos', () async {
+        final ref = await firestore.collection('rescates').add({
+          'nombre': 'Henry', 'estadoAdopcion': 'Rescatado',
+        });
+        await repo.cambiarEstadoAdopcion(ref.id, 'Adoptado', extra: {'fechaAdopcion': Timestamp.now()});
+        final doc = await ref.get();
+        expect(doc['estadoAdopcion'], 'Adoptado');
+        expect(doc['fechaAdopcion'], isNotNull);
+      });
+
+      test('vuelve a "Rescatado" limpia adoptanteIdEnProceso (bug real: quedaba pegado y la '
+          'próxima solicitud aprobada se autorrechazaba para siempre, creyendo que el animal '
+          'seguía en proceso con el adoptante viejo)', () async {
+        final ref = await firestore.collection('rescates').add({
+          'nombre': 'Henry', 'estadoAdopcion': 'En proceso de adopción',
+          'adoptanteIdEnProceso': 'adoptante-viejo',
+        });
+        await repo.cambiarEstadoAdopcion(ref.id, 'Rescatado');
+        final doc = await ref.get();
+        expect(doc['estadoAdopcion'], 'Rescatado');
+        expect(doc.data()!.containsKey('adoptanteIdEnProceso'), false);
+      });
+
+      test('"Regresado" también limpia adoptanteIdEnProceso', () async {
+        final ref = await firestore.collection('rescates').add({
+          'nombre': 'Henry', 'estadoAdopcion': 'Hogar de paso',
+          'adoptanteIdEnProceso': 'adoptante-viejo',
+        });
+        await repo.cambiarEstadoAdopcion(ref.id, 'Regresado', extra: {'motivoRegreso': 'Mudanza'});
+        final doc = await ref.get();
+        expect(doc['estadoAdopcion'], 'Regresado');
+        expect(doc['motivoRegreso'], 'Mudanza');
+        expect(doc.data()!.containsKey('adoptanteIdEnProceso'), false);
+      });
+
+      test('"Adoptado" NO limpia adoptanteIdEnProceso (es el adoptante real, se conserva)', () async {
+        final ref = await firestore.collection('rescates').add({
+          'nombre': 'Henry', 'estadoAdopcion': 'En proceso de adopción',
+          'adoptanteIdEnProceso': 'el-adoptante',
+        });
+        await repo.cambiarEstadoAdopcion(ref.id, 'Adoptado');
+        final doc = await ref.get();
+        expect(doc['adoptanteIdEnProceso'], 'el-adoptante');
+      });
+    });
+
     test('misRescatesPorEstado filtra por uid, CreatorRole y estado a la vez', () async {
       const uid = 'user-3';
       await firestore.collection('rescates').add({

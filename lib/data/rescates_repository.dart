@@ -59,6 +59,30 @@ class RescatesRepository {
   Future<void> actualizar(String rescateId, Map<String, dynamic> cambios) =>
       _col.doc(rescateId).update(cambios);
 
+  /// Cambia `estadoAdopcion` desde el picker de estado (`CambiarEstadoSheet`).
+  /// [extra] son campos propios de ese estado (ej. `fechaAdopcion`,
+  /// `motivoRegreso`, `notaFallecido`).
+  ///
+  /// Al volver a 'Rescatado'/'Regresado'/'Fallecido' limpia
+  /// `adoptanteIdEnProceso` a propósito: ese campo lo escribe
+  /// `SolicitudesRepository.aprobarSiDisponible` para saber a quién le
+  /// pertenece el proceso activo, y si queda pegado después de que el
+  /// animal vuelve a estar disponible, la próxima solicitud que se intente
+  /// aprobar se autorrechaza para siempre (la transacción cree que YA hay
+  /// un adoptante con el proceso activo, aunque ese adoptante ya no tenga
+  /// nada que ver). Bug real: un animal "Regresado" y republicado como
+  /// disponible no dejaba aprobar ninguna solicitud nueva.
+  Future<void> cambiarEstadoAdopcion(String rescateId, String nuevoEstado, {
+    Map<String, dynamic> extra = const {},
+  }) {
+    final limpiaClaim = nuevoEstado == 'Rescatado' || nuevoEstado == 'Regresado' || nuevoEstado == 'Fallecido';
+    return _col.doc(rescateId).update({
+      'estadoAdopcion': nuevoEstado,
+      if (limpiaClaim) 'adoptanteIdEnProceso': FieldValue.delete(),
+      ...extra,
+    });
+  }
+
   /// Fallback para solicitudes viejas guardadas sin `rescateId`: busca el
   /// rescate por nombre+dueño y lo actualiza si lo encuentra. Si hay más de
   /// un animal con el mismo nombre bajo la misma cuenta, actualiza el

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'data/chats_repository.dart';
+import 'data/rescates_repository.dart';
 
 // ─── Constantes de color ──────────────────────────────────────────────────────
 
@@ -267,6 +268,26 @@ class CambiarEstadoSheet extends StatelessWidget {
     this.adoptanteIdEnProceso,
   });
 
+  /// Único punto de escritura del estado — pasa por
+  /// [RescatesRepository.cambiarEstadoAdopcion] (ver ARCHITECTURE.md) y
+  /// avisa si falla, en vez del `.update()` suelto y sin manejar de antes
+  /// (si fallaba, el sheet ya se había cerrado como si hubiera funcionado,
+  /// sin ningún aviso).
+  Future<bool> _actualizarEstado(BuildContext context, String nuevoEstado, {
+    Map<String, dynamic> extra = const {},
+  }) async {
+    try {
+      await RescatesRepository().cambiarEstadoAdopcion(docId, nuevoEstado, extra: extra);
+      return true;
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('No se pudo actualizar el estado. Intentá de nuevo.')));
+      }
+      return false;
+    }
+  }
+
   Future<void> _avisarAdoptanteFallecido(String nota) async {
     final adoptanteId = adoptanteIdEnProceso;
     if (adoptanteId == null || adoptanteId.isEmpty || nombre.isEmpty) return;
@@ -323,15 +344,12 @@ class CambiarEstadoSheet extends StatelessWidget {
       ..._estados.map((e) {
         final sel = e.$1 == estadoActual;
         return GestureDetector(
-          onTap: () {
+          onTap: () async {
             if (e.$1 != 'Regresado' && e.$1 != 'Fallecido') {
-              FirebaseFirestore.instance.collection('rescates').doc(docId)
-                  .update({
-                    'estadoAdopcion': e.$1,
-                    if (e.$1 == 'Adoptado')
-                      'fechaAdopcion': FieldValue.serverTimestamp(),
-                  });
-              Navigator.pop(context);
+              final ok = await _actualizarEstado(context, e.$1, extra: {
+                if (e.$1 == 'Adoptado') 'fechaAdopcion': FieldValue.serverTimestamp(),
+              });
+              if (ok && context.mounted) Navigator.pop(context);
               return;
             }
             final esFallecido = e.$1 == 'Fallecido';
@@ -362,17 +380,17 @@ class CambiarEstadoSheet extends StatelessWidget {
                         backgroundColor: esFallecido
                             ? const Color(0xFF78909C)
                             : const Color(0xFFD32F2F)),
-                    onPressed: () {
-                      FirebaseFirestore.instance.collection('rescates').doc(docId).update({
-                        'estadoAdopcion': e.$1,
-                        if (esFallecido && ctrl.text.trim().isNotEmpty)
-                          'notaFallecido': ctrl.text.trim()
-                        else if (!esFallecido)
-                          'motivoRegreso': ctrl.text.trim(),
-                      });
-                      if (esFallecido) _avisarAdoptanteFallecido(ctrl.text.trim());
+                    onPressed: () async {
+                      final motivo = ctrl.text.trim();
                       Navigator.pop(dlgCtx);
-                      Navigator.pop(sheetCtx);
+                      final ok = await _actualizarEstado(sheetCtx, e.$1, extra: {
+                        if (esFallecido && motivo.isNotEmpty)
+                          'notaFallecido': motivo
+                        else if (!esFallecido)
+                          'motivoRegreso': motivo,
+                      });
+                      if (esFallecido && ok) _avisarAdoptanteFallecido(motivo);
+                      if (ok && sheetCtx.mounted) Navigator.pop(sheetCtx);
                     },
                     child: const Text('Guardar', style: TextStyle(color: Colors.white)),
                   ),
