@@ -57,9 +57,9 @@ class AdoptanteChatsScreen extends StatelessWidget {
                           .where('tipoSolicitud', isEqualTo: 'consulta_aliado')
                           .snapshots(),
                       builder: (context, snapEnviadas) {
-                        final combinados = [
-                          ...(snap.data?.docs ?? []),
-                          ...(snapEnviadas.data?.docs ?? []),
+                        final combinados = <QueryDocumentSnapshot>[
+                          ...(snap.data?.docs ?? <QueryDocumentSnapshot>[]),
+                          ...(snapEnviadas.data?.docs ?? <QueryDocumentSnapshot>[]),
                         ];
                         return _listaChats(context, combinados);
                       },
