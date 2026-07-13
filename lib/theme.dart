@@ -242,6 +242,59 @@ class _AvatarPersonaState extends State<AvatarPersona> {
   }
 }
 
+/// Avatar de OTRO usuario de la app, identificado por su uid — busca su foto
+/// en usuarios/{userId}.foto (Google Auth photoURL, sincronizado en
+/// main.dart) y cae a la inicial mientras carga o si no tiene. Antes cada
+/// pantalla que necesitaba mostrar la foto de una contraparte (encabezado
+/// del chat, tarjeta de solicitud, fila de la lista de conversaciones)
+/// usaba la foto de la cuenta ACTUALMENTE logueada por error — se centraliza
+/// acá para no repetir el mismo bug en cada pantalla nueva.
+class AvatarUsuario extends StatefulWidget {
+  final String? userId;
+  final String inicial;
+  final double radius;
+  final Color backgroundColor;
+  final Color textColor;
+  const AvatarUsuario({
+    super.key,
+    required this.userId,
+    required this.inicial,
+    this.radius = 20,
+    this.backgroundColor = appTeal,
+    this.textColor = Colors.white,
+  });
+
+  @override
+  State<AvatarUsuario> createState() => _AvatarUsuarioState();
+}
+
+class _AvatarUsuarioState extends State<AvatarUsuario> {
+  late final Future<String?> _foto = _cargar();
+
+  Future<String?> _cargar() async {
+    final id = widget.userId;
+    if (id == null || id.isEmpty) return null;
+    try {
+      final doc = await FirebaseFirestore.instance.collection('usuarios').doc(id).get();
+      return doc.data()?['foto'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<String?>(
+    future: _foto,
+    builder: (context, snap) => AvatarPersona(
+      fotoUrl: snap.data,
+      inicial: widget.inicial,
+      radius: widget.radius,
+      backgroundColor: widget.backgroundColor,
+      textColor: widget.textColor,
+    ),
+  );
+}
+
 Color cicloColor(String s) => switch (s) {
   'En cuidado'             => appTeal,
   'Rescatado'              => appTeal,

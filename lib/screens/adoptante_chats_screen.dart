@@ -262,10 +262,18 @@ class AdoptanteChatsScreen extends StatelessWidget {
                 animalAvatar,
                 Positioned(
                   bottom: -2, left: -4,
-                  child: CircleAvatar(
-                    radius: 12, backgroundColor: avatarColor,
-                    child: Text(inicial, style: const TextStyle(fontSize: 10,
-                        color: Colors.white, fontWeight: FontWeight.bold)),
+                  // Antes esta esquina siempre mostraba solo la inicial —
+                  // ahora busca la foto real de la CONTRAPARTE (quien
+                  // recibe el mensaje si yo mandé, o quien lo mandó si yo
+                  // lo recibí), igual que ya se hace en el encabezado del
+                  // chat y en la tarjeta de solicitud.
+                  child: AvatarUsuario(
+                    userId: soyAdoptanteAqui
+                        ? (d['rescatistaId'] as String? ?? '')
+                        : (d['adoptanteId'] as String? ?? ''),
+                    inicial: inicial,
+                    radius: 12,
+                    backgroundColor: avatarColor,
                   ),
                 ),
               ]),

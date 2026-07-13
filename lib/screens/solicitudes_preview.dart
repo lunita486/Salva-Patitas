@@ -81,51 +81,6 @@ class SolicitudesPreview extends StatelessWidget {
   }
 }
 
-/// Avatar del ADOPTANTE que mandó la solicitud. Antes esta tarjeta usaba el
-/// mismo helper `_avatar()` del encabezado, que muestra la foto de la
-/// cuenta ACTUALMENTE logueada (el rescatista/albergue viendo su propio
-/// panel) — así que cada tarjeta de solicitud mostraba la foto de quien la
-/// estaba mirando, no la del adoptante real. Mismo patrón de bug que el
-/// encabezado del chat (ver chat_screen.dart) — se arregla igual, leyendo
-/// usuarios/{adoptanteId}.foto.
-class _AvatarAdoptante extends StatefulWidget {
-  final String? adoptanteId;
-  final String inicial;
-  final Color color;
-  final double radius;
-  const _AvatarAdoptante({required this.adoptanteId, required this.inicial, required this.color, required this.radius});
-
-  @override
-  State<_AvatarAdoptante> createState() => _AvatarAdoptanteState();
-}
-
-class _AvatarAdoptanteState extends State<_AvatarAdoptante> {
-  late final Future<String?> _foto = _cargar();
-
-  Future<String?> _cargar() async {
-    final id = widget.adoptanteId;
-    if (id == null || id.isEmpty) return null;
-    try {
-      final doc = await FirebaseFirestore.instance.collection('usuarios').doc(id).get();
-      return doc.data()?['foto'] as String?;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) => FutureBuilder<String?>(
-    future: _foto,
-    builder: (context, snap) => AvatarPersona(
-      fotoUrl: snap.data,
-      inicial: widget.inicial,
-      radius: widget.radius,
-      backgroundColor: widget.color,
-      textColor: Colors.white,
-    ),
-  );
-}
-
 Widget _solicitudDetalle(String ini, Color col, String nombre, String detalle,
     String tiempo, String animal, {String? docId, Map<String, dynamic>? data}) {
   final tipo        = data?['tipoSolicitud']    as String? ?? 'adopcion';
@@ -167,7 +122,7 @@ Widget _solicitudDetalle(String ini, Color col, String nombre, String detalle,
                 decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
             const SizedBox(height: 20),
             Row(children: [
-              _AvatarAdoptante(adoptanteId: adoptanteId, inicial: ini, color: col, radius: 22),
+              AvatarUsuario(userId: adoptanteId, inicial: ini, backgroundColor: col, radius: 22),
               const SizedBox(width: 12),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(nombre, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
@@ -363,7 +318,7 @@ Widget _solicitudDetalle(String ini, Color col, String nombre, String detalle,
           boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))]),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            _AvatarAdoptante(adoptanteId: adoptanteId, inicial: ini, color: col, radius: 20),
+            AvatarUsuario(userId: adoptanteId, inicial: ini, backgroundColor: col, radius: 20),
             const SizedBox(width: 12),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(nombre, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
