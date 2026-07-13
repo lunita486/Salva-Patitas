@@ -137,7 +137,7 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
         final data      = userSnap.data?.data() as Map<String, dynamic>? ?? {};
         final nombre    = data['aliadoNombre'] as String? ?? 'Mi negocio';
         final tipo      = data['aliadoTipo']   as String? ?? '';
-        final foto      = data['fotoBase64']   as String?;
+        final foto      = data['aliadoFotoBase64'] as String?;
         final iniciales = nombre.trim().split(' ')
             .take(2).map((w) => w.isNotEmpty ? w[0].toUpperCase() : '').join();
 

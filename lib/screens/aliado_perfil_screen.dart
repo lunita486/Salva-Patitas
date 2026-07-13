@@ -48,10 +48,10 @@ class _AliadoPerfilScreenState extends State<AliadoPerfilScreen> {
     if (!doc.exists || !mounted) return;
     final data = doc.data() as Map<String, dynamic>;
     setState(() {
-      _nombreCtl.text = data['aliadoNombre'] as String? ?? '';
-      _ciudadCtl.text = data['ciudad']       as String? ?? '';
-      _tipo           = data['aliadoTipo']   as String?;
-      _fotoBase64     = data['fotoBase64']   as String?;
+      _nombreCtl.text = data['aliadoNombre']     as String? ?? '';
+      _ciudadCtl.text = data['ciudad']           as String? ?? '';
+      _tipo           = data['aliadoTipo']       as String?;
+      _fotoBase64     = data['aliadoFotoBase64'] as String?;
     });
   }
 
@@ -79,7 +79,7 @@ class _AliadoPerfilScreenState extends State<AliadoPerfilScreen> {
       'aliadoNombre': _nombreCtl.text.trim(),
       'aliadoTipo':   _tipo ?? '',
       'ciudad':       _ciudadCtl.text.trim(),
-      if (_fotoBase64 != null) 'fotoBase64': _fotoBase64,
+      if (_fotoBase64 != null) 'aliadoFotoBase64': _fotoBase64,
     });
   }
 
