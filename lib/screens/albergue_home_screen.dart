@@ -19,6 +19,7 @@ import 'solicitudes_rescatista_screen.dart';
 import 'adoptante_chats_screen.dart';
 import 'albergue_perfil_screen.dart';
 import 'adoptante_feed_screen.dart' show AliadosScreen;
+import 'solicitudes_preview.dart';
 
 class AlbergueHomeScreen extends StatefulWidget {
   const AlbergueHomeScreen({super.key});
@@ -399,6 +400,11 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
               );
             },
           ),
+        ),
+        const SizedBox(height: 12),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
+          child: SolicitudesPreview(role: CreatorRole.albergue),
         ),
 
         const SizedBox(height: 20),
@@ -982,15 +988,18 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
         itemCount: sorted.length,
         separatorBuilder: (_, _) => const SizedBox(width: 10),
         itemBuilder: (ctx, i) {
-          final d         = sorted[i].data() as Map<String, dynamic>;
-          final nombre    = (d['nombre'] as String?)?.isNotEmpty == true
+          final d              = sorted[i].data() as Map<String, dynamic>;
+          final docId          = sorted[i].id;
+          final nombre         = (d['nombre'] as String?)?.isNotEmpty == true
               ? d['nombre'] as String : 'Sin nombre';
-          final especie   = d['especie']    as String? ?? 'Perro';
-          final fotoUrl   = d['fotoUrl']    as String?;
-          final emoji     = especie == 'Gato' ? '🐱' : '🐶';
+          final especie        = d['especie']        as String? ?? 'Perro';
+          final fotoUrl        = d['fotoUrl']        as String?;
+          final estadoAdopcion = d['estadoAdopcion'] as String? ?? 'Adoptado';
+          final emoji          = especie == 'Gato' ? '🐱' : '🐶';
+          final estadoColor    = cicloColor(estadoAdopcion);
 
           return Container(
-            width: 120,
+            width: 128,
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(16),
@@ -1018,22 +1027,51 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                             style: const TextStyle(fontSize: 32)))),
                 ),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
-                  child: Text(nombre,
-                      style: const TextStyle(fontSize: 12,
-                          fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A)),
-                      overflow: TextOverflow.ellipsis),
+                  padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(nombre,
+                        style: const TextStyle(fontSize: 12,
+                            fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A)),
+                        overflow: TextOverflow.ellipsis),
+                    const SizedBox(height: 6),
+                    // Mismo chip tappable que _jauriaCarousel — antes acá
+                    // solo había un ícono fijo, así que si un animal
+                    // "Adoptado" era devuelto no había forma de cambiarle
+                    // el estado desde el panel (había que ir a "Gestionar").
+                    GestureDetector(
+                      onTap: () => showModalBottomSheet(
+                        context: ctx,
+                        shape: const RoundedRectangleBorder(
+                            borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+                        builder: (_) => CambiarEstadoSheet(
+                          docId: docId,
+                          estadoActual: estadoAdopcion,
+                          nombre: nombre,
+                          adoptanteIdEnProceso: d['adoptanteIdEnProceso'] as String?,
+                        ),
+                      ),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: estadoColor.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: estadoColor.withValues(alpha: 0.35)),
+                        ),
+                        child: Row(children: [
+                          Expanded(
+                            child: Text(estadoAdopcion,
+                                style: TextStyle(fontSize: 9,
+                                    fontWeight: FontWeight.w700, color: estadoColor),
+                                overflow: TextOverflow.ellipsis),
+                          ),
+                          Icon(Icons.expand_more, size: 11, color: estadoColor),
+                        ]),
+                      ),
+                    ),
+                  ]),
                 ),
               ]),
-              Positioned(top: 6, right: 6,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                  decoration: BoxDecoration(
-                      color: const Color(0xFF2196F3),
-                      borderRadius: BorderRadius.circular(8)),
-                  child: const Text('🏠',
-                      style: TextStyle(fontSize: 10)),
-                )),
             ]),
           );
         },
