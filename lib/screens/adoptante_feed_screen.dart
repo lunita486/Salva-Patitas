@@ -628,7 +628,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                 final d      = aliados[i].data() as Map<String, dynamic>;
                 final nombre = d['aliadoNombre'] as String? ?? 'Aliado';
                 final tipo   = d['aliadoTipo']   as String? ?? '';
-                final foto   = d['fotoBase64']   as String?;
+                final foto   = d['aliadoFotoBase64'] as String?;
                 final ini    = nombre.isNotEmpty ? nombre[0].toUpperCase() : 'A';
                 final uid    = aliados[i].id;
 
@@ -1135,7 +1135,7 @@ class AliadosScreen extends StatelessWidget {
                     final d      = aliados[i].data() as Map<String, dynamic>;
                     final nombre = d['aliadoNombre'] as String? ?? 'Aliado';
                     final tipo   = d['aliadoTipo']   as String? ?? '';
-                    final foto   = d['fotoBase64']   as String?;
+                    final foto   = d['aliadoFotoBase64'] as String?;
                     final ini    = nombre.isNotEmpty ? nombre[0].toUpperCase() : 'A';
                     final uid    = aliados[i].id;
                     return GestureDetector(
