@@ -1,11 +1,12 @@
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme.dart';
 import '../services/notificaciones_service.dart';
+import '../data/auth_helper.dart';
+import '../data/chats_repository.dart';
 import '../data/usuarios_repository.dart';
 import 'adoptante_chats_screen.dart';
 import 'subir_servicio_screen.dart';
@@ -36,7 +37,7 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
     'Tienda':            Color(0xFF6A1B9A),
     'Adiestramiento':    Color(0xFFF57F17),
     'Transporte':        Color(0xFFE65100),
-    'Otro':              Color(0xFF1F8A62),
+    'Otro':              appTeal,
   };
 
   @override
@@ -69,7 +70,14 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
       ),
     );
     if (sel == null || !mounted) return;
-    await UsuariosRepository().actualizarRoles(_uid, sel);
+    try {
+      await UsuariosRepository().actualizarRoles(_uid, sel);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('No se pudo cambiar el rol. Revisá tu conexión e intentá de nuevo.'),
+          backgroundColor: msgError));
+    }
   }
 
   Future<void> _cerrarSesion() async {
@@ -91,8 +99,12 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
       ),
     );
     if (ok == true) {
-      await GoogleSignIn().signOut();
-      await FirebaseAuth.instance.signOut();
+      final cerro = await cerrarSesion();
+      if (!cerro && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            backgroundColor: msgError,
+            content: Text('Esperá unos segundos e intentá de nuevo.')));
+      }
     }
   }
 
@@ -149,6 +161,7 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                   onPressed: _cambiarRolDebug,
                   backgroundColor: Colors.purple.shade100,
                   elevation: 4,
+                  tooltip: 'Cambiar rol (debug)',
                   child: Icon(Icons.developer_mode, color: Colors.purple.shade700),
                 )
               : null,
@@ -207,7 +220,7 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                   padding: const EdgeInsets.fromLTRB(24, 28, 24, 28),
                   decoration: const BoxDecoration(
                     gradient: LinearGradient(
-                      colors: [Color(0xFF0A5C40), Color(0xFF1F8A62)],
+                      colors: [Color(0xFF0A5C40), appTeal],
                       begin: Alignment.topLeft, end: Alignment.bottomRight,
                     ),
                   ),
@@ -277,7 +290,7 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                   padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
                   child: Text('ACCIONES RÁPIDAS',
                       style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
-                          letterSpacing: 1.2, color: Colors.grey.shade500)),
+                          letterSpacing: 1.2, color: Colors.grey.shade700)),
                 ),
                 const SizedBox(height: 12),
                 Padding(
@@ -308,7 +321,7 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                       children: [
                         Text('CONVERSACIONES RECIENTES',
                             style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
-                                letterSpacing: 1.2, color: Colors.grey.shade500)),
+                                letterSpacing: 1.2, color: Colors.grey.shade700)),
                         GestureDetector(
                           onTap: () => Navigator.push(context, MaterialPageRoute(
                               builder: (_) => const AdoptanteChatsScreen(esRescatista: true, soloConsultas: true))),
@@ -327,7 +340,18 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                     final hora     = d['ultimaHora']      as String? ?? '';
                     final noLeidos = (d['noLeidosRescatista'] as int?) ?? 0;
                     final ini      = quien.isNotEmpty ? quien[0].toUpperCase() : 'U';
+                    // Con qué sombrero te escribió — sin esto, la misma
+                    // persona contactándote como adoptante, rescatista y
+                    // albergue aparece 3 veces con el mismo nombre y sin
+                    // forma de distinguirlas.
+                    final creadoPorConsulta = d['creadoPor'] as String?;
+                    final rotulo = creadoPorConsulta == 'albergue'
+                        ? 'Albergue'
+                        : creadoPorConsulta == 'rescatista'
+                            ? 'Rescatista'
+                            : 'Adoptante';
                     return Container(
+                      key: ValueKey(doc.id),
                       margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
@@ -337,16 +361,35 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                             blurRadius: 6, offset: const Offset(0, 2))],
                       ),
                       child: Row(children: [
-                        CircleAvatar(radius: 20, backgroundColor: appTeal.withValues(alpha: 0.12),
-                            child: Text(ini, style: const TextStyle(color: appTeal,
-                                fontWeight: FontWeight.bold, fontSize: 14))),
+                        AvatarUsuario(
+                          userId: d['adoptanteId'] as String?,
+                          inicial: ini,
+                          radius: 20,
+                          backgroundColor: appTeal.withValues(alpha: 0.12),
+                          textColor: appTeal,
+                          // ChatsRepository.campoLogoAdoptante es la única
+                          // fuente de "qué campo mirar para el logo de quien
+                          // contactó" — no volver a derivarlo acá a mano.
+                          campoLogoNegocio: ChatsRepository.campoLogoAdoptante(d),
+                        ),
                         const SizedBox(width: 12),
                         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text(quien, style: const TextStyle(fontSize: 13,
-                              fontWeight: FontWeight.w600, color: Color(0xFF1A1A1A))),
+                          Row(children: [
+                            Flexible(child: Text(quien, style: const TextStyle(fontSize: 13,
+                                fontWeight: FontWeight.w600, color: appInk),
+                                overflow: TextOverflow.ellipsis)),
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(color: appTeal.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(20)),
+                              child: Text(rotulo, style: const TextStyle(fontSize: 9,
+                                  fontWeight: FontWeight.w700, color: appTeal)),
+                            ),
+                          ]),
                           if (ultimo.isNotEmpty) ...[
                             const SizedBox(height: 2),
-                            Text(ultimo, style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                            Text(ultimo, style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
                                 maxLines: 1, overflow: TextOverflow.ellipsis),
                           ],
                         ])),
@@ -445,7 +488,7 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                 const Text('MIS SERVICIOS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
                     letterSpacing: 1.2, color: appTeal)),
                 const Text('Servicios activos', style: TextStyle(fontSize: 26,
-                    fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
+                    fontWeight: FontWeight.bold, color: appInk)),
               ])),
               GestureDetector(
                 onTap: () => Navigator.push(context, MaterialPageRoute(
@@ -471,7 +514,7 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                     Icon(Icons.spa_outlined, size: 56, color: Colors.grey.shade300),
                     const SizedBox(height: 16),
                     Text('Sin servicios publicados',
-                        style: TextStyle(fontSize: 15, color: Colors.grey.shade500)),
+                        style: TextStyle(fontSize: 15, color: Colors.grey.shade700)),
                     const SizedBox(height: 8),
                     Text('Toca "Nuevo" para agregar el primero',
                         style: TextStyle(fontSize: 13, color: Colors.grey.shade400)),
@@ -514,11 +557,11 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                               Text(sNombre, style: const TextStyle(fontSize: 15,
-                                  fontWeight: FontWeight.w700, color: Color(0xFF1A1A1A))),
+                                  fontWeight: FontWeight.w700, color: appInk)),
                               if (desc.isNotEmpty) ...[
                                 const SizedBox(height: 3),
                                 Text(desc, style: TextStyle(fontSize: 12,
-                                    color: Colors.grey.shade500),
+                                    color: Colors.grey.shade700),
                                     maxLines: 1, overflow: TextOverflow.ellipsis),
                               ],
                             ])),
@@ -556,7 +599,7 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                           const SizedBox(height: 12),
                           Row(children: [
                             _miniBtn(Icons.edit_outlined, 'Editar',
-                                Colors.grey.shade600, Colors.grey.shade50,
+                                Colors.grey.shade700, Colors.grey.shade50,
                                 Colors.grey.shade200, () => Navigator.push(context,
                                     MaterialPageRoute(builder: (_) =>
                                         SubirServicioScreen(docId: doc.id, data: d)))),
@@ -601,7 +644,7 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
           padding: const EdgeInsets.fromLTRB(24, 36, 24, 32),
           decoration: const BoxDecoration(
             gradient: LinearGradient(
-              colors: [Color(0xFF0A5C40), Color(0xFF1F8A62)],
+              colors: [Color(0xFF0A5C40), appTeal],
               begin: Alignment.topLeft, end: Alignment.bottomRight,
             ),
           ),
@@ -683,7 +726,7 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                   Icon(Icons.shield_outlined, size: 16, color: Colors.grey.shade500),
                   const SizedBox(width: 6),
                   Text('Política de Privacidad',
-                      style: TextStyle(fontSize: 13, color: Colors.grey.shade500,
+                      style: TextStyle(fontSize: 13, color: Colors.grey.shade700,
                           decoration: TextDecoration.underline)),
                 ]),
               ),

@@ -7,7 +7,9 @@ int calcularCompatibilidad(Map<String, dynamic> solicitud) {
   final energia    = solicitud['animalEnergia']  as String? ?? 'Tranquilo';
   final horas      = int.tryParse(solicitud['horasFuera']?.toString() ?? '0') ?? 0;
   final vivienda   = solicitud['vivienda']       as String? ?? '';
-  final tienePatio = vivienda == 'Casa con jardín';
+  // 'Finca' cuenta como "tiene patio" — es más espacio todavía que una
+  // casa con jardín, nunca menos.
+  final tienePatio = vivienda == 'Casa con jardín' || vivienda == 'Finca';
 
   if (energia == 'Tranquilo') {
     score += 20;
@@ -24,7 +26,10 @@ int calcularCompatibilidad(Map<String, dynamic> solicitud) {
   } else if (tamano == 'Mediano') {
     score += vivienda != 'Apartamento sin área exterior' ? 20 : 10;
   } else {
-    score += tienePatio ? 20 : (vivienda == 'Apartamento con balcón' ? 10 : 0);
+    // 'Casa sin jardín' entra en el mismo escalón que 'Apartamento con
+    // balcón' — sin patio pero con más margen que un apartamento cerrado.
+    score += tienePatio ? 20
+        : (vivienda == 'Apartamento con balcón' || vivienda == 'Casa sin jardín') ? 10 : 0;
   }
 
   final okNinos    = solicitud['animalOkConNinos']   as bool? ?? true;
@@ -80,7 +85,8 @@ List<(String, bool)> explicarCompatibilidad(Map<String, dynamic> sol) {
         : ('Animal mediano en apartamento sin área exterior', false));
   } else {
     if (tienePatio)                              reasons.add(('Animal grande, tiene jardín suficiente', true));
-    else if (vivienda == 'Apartamento con balcón') reasons.add(('Animal grande, el espacio es limitado', false));
+    else if (vivienda == 'Apartamento con balcón' || vivienda == 'Casa sin jardín')
+                                                  reasons.add(('Animal grande, el espacio es limitado', false));
     else                                          reasons.add(('Animal grande, necesita más espacio', false));
   }
 

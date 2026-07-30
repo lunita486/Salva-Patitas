@@ -1,13 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'dart:async';
-import 'dart:typed_data';
-import 'dart:ui' as ui;
-import 'package:flutter/rendering.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
 import '../theme.dart';
 import '../compatibilidad.dart';
 import '../data/rescates_repository.dart';
@@ -17,177 +13,8 @@ import 'albergue_publico_screen.dart';
 import 'aliado_publico_screen.dart';
 import 'solicitud_adopcion_screen.dart';
 import 'chat_screen.dart';
-
-// Tarjeta cuadrada (1080x1080) tipo post de Instagram, generada a partir de la
-// foto del animal para que compartir se vea como una publicación de marca en
-// vez de la foto pelada.
-class _ShareCard extends StatelessWidget {
-  final String nombre;
-  final String especie;
-  final String edad;
-  final String ubicacion;
-  final Uint8List fotoBytes;
-  const _ShareCard({
-    required this.nombre,
-    required this.especie,
-    required this.edad,
-    required this.ubicacion,
-    required this.fotoBytes,
-  });
-
-  @override
-  Widget build(BuildContext context) => Stack(fit: StackFit.expand, children: [
-        Image.memory(fotoBytes, fit: BoxFit.cover),
-        DecoratedBox(decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter, end: Alignment.bottomCenter,
-            colors: [Colors.transparent, Colors.black.withValues(alpha: 0.78)],
-            stops: const [0.35, 1.0],
-          ),
-        )),
-        Positioned(
-          top: 48, left: 48,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
-            decoration: BoxDecoration(color: appTeal, borderRadius: BorderRadius.circular(32)),
-            child: const Row(mainAxisSize: MainAxisSize.min, children: [
-              Text('🐾', style: TextStyle(fontSize: 26)),
-              SizedBox(width: 10),
-              Text('Salva Patitas', style: TextStyle(
-                  color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold)),
-            ]),
-          ),
-        ),
-        Positioned(
-          left: 48, right: 48, bottom: 56,
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              decoration: BoxDecoration(color: appOrange, borderRadius: BorderRadius.circular(32)),
-              child: const Text('¡Necesito un hogar!', style: TextStyle(
-                  color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold)),
-            ),
-            const SizedBox(height: 22),
-            Text(nombre, style: const TextStyle(
-                color: Colors.white, fontSize: 68, fontWeight: FontWeight.w900, height: 1.0)),
-            const SizedBox(height: 10),
-            Text(
-              [if (especie.isNotEmpty) especie, if (edad.isNotEmpty) edad].join(' · '),
-              style: const TextStyle(color: Colors.white70, fontSize: 30, fontWeight: FontWeight.w600),
-            ),
-            if (ubicacion.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Row(children: [
-                const Icon(Icons.location_on, color: Colors.white70, size: 26),
-                const SizedBox(width: 6),
-                Text(ubicacion, style: const TextStyle(color: Colors.white70, fontSize: 26)),
-              ]),
-            ],
-          ]),
-        ),
-      ]);
-}
-
-Future<Uint8List?> _renderShareCardToPng(BuildContext context, Widget card, {double size = 1080}) async {
-  final key = GlobalKey();
-  final overlay = Overlay.of(context, rootOverlay: true);
-  // La tarjeta se arma DENTRO del área visible (no fuera de pantalla): en
-  // algunos dispositivos, una imagen posicionada fuera de la vista nunca
-  // llega a pintarse (aunque los colores/textos sí), y la captura sale sin
-  // foto. Para que el usuario no vea el proceso, se tapa con un scrim +
-  // spinner por encima.
-  final cardEntry = OverlayEntry(
-    builder: (_) => Positioned(
-      left: 0, top: 0,
-      child: Material(
-        color: Colors.transparent,
-        child: RepaintBoundary(key: key, child: SizedBox(width: size, height: size, child: card)),
-      ),
-    ),
-  );
-  final scrimEntry = OverlayEntry(
-    builder: (_) => Positioned.fill(
-      child: Material(
-        color: Colors.black.withValues(alpha: 0.55),
-        child: const Center(
-          child: CircularProgressIndicator(color: Colors.white),
-        ),
-      ),
-    ),
-  );
-  overlay.insert(cardEntry);
-  overlay.insert(scrimEntry);
-  try {
-    // Espera de tiempo fijo, no endOfFrame — endOfFrame puede quedar
-    // colgado esperando un cuadro que nunca se vuelve a programar, y eso
-    // congela toda la pantalla (le pasó a una usuaria en un dispositivo real).
-    await Future.delayed(const Duration(milliseconds: 300));
-    final boundary = key.currentContext?.findRenderObject() as RenderRepaintBoundary?;
-    if (boundary == null) return null;
-    final image = await boundary.toImage(pixelRatio: 1.0).timeout(const Duration(seconds: 5));
-    final byteData = await image.toByteData(format: ui.ImageByteFormat.png)
-        .timeout(const Duration(seconds: 5));
-    return byteData?.buffer.asUint8List();
-  } finally {
-    scrimEntry.remove();
-    cardEntry.remove();
-  }
-}
-
-Future<void> compartirAnimal({
-  required BuildContext context,
-  required String nombre,
-  required String especie,
-  required String edad,
-  required String ubicacion,
-  required List<String> tags,
-  String? fotoUrl,
-}) async {
-  final emoji = especie == 'Gato' ? '🐱' : '🐶';
-  final tagsTexto = tags.isNotEmpty ? tags.map((t) => '✅ $t').join('  ') : '';
-  final texto = '$emoji *$nombre* necesita un hogar!\n'
-      '${[if (especie.isNotEmpty) especie, if (edad.isNotEmpty) edad].join(' · ')}\n'
-      '📍 $ubicacion\n'
-      '${tagsTexto.isNotEmpty ? '$tagsTexto\n' : ''}'
-      '\n¡Ayúdalo a encontrar familia descargando *Salva Patitas* 💚';
-
-  // La foto ya no es un string local (base64) — hay que bajarla de Storage
-  // antes de poder compartirla como archivo. Si falla (sin red, URL rota),
-  // se comparte solo el texto en vez de romper el flujo de compartir.
-  Uint8List? fotoBytes;
-  if (fotoUrl != null) {
-    try {
-      fotoBytes = await FirebaseStorage.instance.refFromURL(fotoUrl).getData();
-    } catch (_) {}
-  }
-  if (fotoBytes != null) {
-    Uint8List? cardBytes;
-    try {
-      // Decodifica la imagen ANTES de capturar la tarjeta — Image.memory no
-      // pinta de forma instantánea, y sin este paso la captura puede ganarle
-      // la carrera al decode y salir en negro.
-      final fotoProvider = MemoryImage(fotoBytes);
-      if (context.mounted) {
-        await precacheImage(fotoProvider, context);
-        if (context.mounted) {
-          cardBytes = await _renderShareCardToPng(
-            context,
-            _ShareCard(nombre: nombre, especie: especie, edad: edad, ubicacion: ubicacion, fotoBytes: fotoBytes),
-          );
-        }
-      }
-    } catch (_) {}
-    // fotoBytes ya se validó arriba (bytesFotoSegura), así que este
-    // fallback no puede volver a fallar por el mismo dato corrupto.
-    final xfile = cardBytes != null
-        ? XFile.fromData(cardBytes, mimeType: 'image/png', name: '$nombre.png')
-        : XFile.fromData(fotoBytes, mimeType: 'image/jpeg', name: '$nombre.jpg');
-    await Share.shareXFiles([xfile], text: texto);
-  } else {
-    await Share.share(texto);
-  }
-}
-
+import 'compartir_animal.dart';
+import 'visor_foto_completa.dart';
 
 class AdoptanteFeedScreen extends StatefulWidget {
   const AdoptanteFeedScreen();
@@ -211,6 +38,119 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
   // Antes se avanzaba _idx a mano Y la lista se achicaba sola cuando
   // Firestore confirmaba — las dos cosas juntas salteaban un animal.
   final Set<String> _favoritosRecientes = {};
+  // URLs cuya descarga ya se disparó de antemano — evita pedir la misma
+  // foto de nuevo en cada rebuild (el card se reconstruye seguido: cambia
+  // la distancia, el score, etc., sin que cambie el animal mostrado).
+  final Set<String> _fotosPrecacheadas = {};
+
+  /// Descarga por adelantado la 2da foto (y siguientes) de la tarjeta
+  /// visible — Image.network no empieza a pedir una foto hasta que su
+  /// widget realmente se construye, y la foto 2 vive detrás de un
+  /// ValueListenableBuilder que solo la construye cuando la persona ya
+  /// deslizó para verla. El resultado era un salto/demora visible justo
+  /// al deslizar (el bug real que reportó Eliza: "la segunda foto se
+  /// demora en cargar"). Precargando apenas se muestra el animal, para
+  /// cuando desliza la foto ya está lista en el caché de imágenes de
+  /// Flutter — la foto 1 no necesita esto porque Image.network ya la pide
+  /// sola al construirse (es la que se ve de entrada).
+  void _precacharUrls(Iterable<String> urls) {
+    for (final url in urls) {
+      if (_fotosPrecacheadas.add(url)) precacheImage(NetworkImage(url), context);
+    }
+  }
+
+  void _precachearFotosSiguientes(List<String> fotos) => _precacharUrls(fotos.skip(1));
+
+  /// Descarga por adelantado la(s) foto(s) del PRÓXIMO animal de la fila —
+  /// sin esto, tocar la X pedía la foto del siguiente animal recién al
+  /// construir esa tarjeta, con una demora visible antes de que apareciera
+  /// (el bug real: "cuando le doy X se demora mucho en cargar la próxima
+  /// foto"). Se llama con el animal actual ya visible, así que la descarga
+  /// corre en paralelo mientras la persona todavía lo está mirando — para
+  /// cuando toca X, la del siguiente ya está en el caché de imágenes.
+  void _precacharSiguienteAnimal(List<Map<String, dynamic>> animals, int idx) {
+    if (idx + 1 >= animals.length) return;
+    final siguiente = animals[idx + 1];
+    _precacharUrls([
+      if (siguiente['fotoUrl'] != null) siguiente['fotoUrl'] as String,
+      if (siguiente['fotoUrl2'] != null) siguiente['fotoUrl2'] as String,
+    ]);
+  }
+
+  /// Escribe `prefEspecie` — el mismo campo que lee/escribe
+  /// tipo_animal_screen.dart — así que este chip y esa pantalla de perfil
+  /// jamás pueden mostrar valores distintos entre sí: es una sola
+  /// preferencia guardada, con dos lugares para tocarla.
+  Future<void> _cambiarPrefEspecie(String valor) async {
+    if (_prefEspecie == valor) return;
+    // _idx también se reinicia: es una posición dentro de la lista YA
+    // filtrada, no la identidad de un animal puntual — si no se resetea,
+    // cambiar de filtro con el índice a mitad de la lista vieja podía caer
+    // directo en "Eso es todo por hoy" aunque el nuevo filtro sí tuviera
+    // animales, solo que menos que ese índice.
+    // _fotoPageNotifier también se reinicia: es "qué foto se está viendo",
+    // compartido entre todas las tarjetas, no algo propio de cada animal —
+    // si venías viendo la 2da foto de uno y el nuevo filtro te lleva a un
+    // animal con una sola foto, quedaba pidiendo una foto que no existía
+    // (RangeError, caso real reportado por Eliza con "Leoncio").
+    _fotoPageNotifier.value = 0;
+    setState(() { _prefEspecie = valor; _idx = 0; }); // sensación instantánea; _prefSub confirma después
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    await FirebaseFirestore.instance.collection('usuarios').doc(uid)
+        .set({'prefEspecie': valor}, SetOptions(merge: true));
+  }
+
+  /// Texto tipo "Perro · Pequeño · Cachorro" con los filtros que están
+  /// activos ahora mismo (omite los que están en su valor "sin filtro").
+  /// Se usa en _emptyState() para que quede clarísimo QUÉ combinación no
+  /// tiene animales — antes solo decía "ajustá tamaño/edad en tu perfil" en
+  /// genérico, y una tester probando con Perro+Pequeño+Cachorro (sin
+  /// animales así en el catálogo) pensó que la app tenía un error, en vez
+  /// de entender que esa combinación puntual estaba vacía.
+  String _resumenFiltros() {
+    final partes = <String>[
+      if (_prefEspecie != 'Ambos') _prefEspecie,
+      if (_prefTamano  != 'Cualquiera') _prefTamano,
+      if (_prefEdad    != 'Cualquiera') _prefEdad,
+    ];
+    return partes.join(' · ');
+  }
+
+  /// "Ver todos" desde el estado vacío ahora saca TODOS los filtros que
+  /// pueden estar bloqueando (especie, tamaño y edad juntos), no solo
+  /// especie — antes, si el bloqueo era tamaño/edad, el botón no podía
+  /// hacer nada y mandaba a la persona al perfil a mano.
+  Future<void> _limpiarFiltrosExtra() async {
+    _fotoPageNotifier.value = 0;
+    setState(() { _prefEspecie = 'Ambos'; _prefTamano = 'Cualquiera'; _prefEdad = 'Cualquiera'; _idx = 0; });
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    await FirebaseFirestore.instance.collection('usuarios').doc(uid).set({
+      'prefEspecie': 'Ambos', 'prefTamano': 'Cualquiera', 'prefEdad': 'Cualquiera',
+    }, SetOptions(merge: true));
+  }
+
+  // El widget del chip y el orden de las opciones viven en theme.dart
+  // (especieChip/especieOpciones) — se comparten con tipo_animal_screen.dart
+  // para que el feed y el perfil muestren siempre el mismo estilo y el
+  // mismo orden para esta misma preferencia.
+  Widget _chipsEspecie() => Padding(
+    padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+    child: SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(children: [
+        for (int i = 0; i < especieOpciones.length; i++) ...[
+          if (i > 0) const SizedBox(width: especieChipGap),
+          especieChip(
+            label: especieOpciones[i].$2,
+            active: _prefEspecie == especieOpciones[i].$1,
+            onTap: () => _cambiarPrefEspecie(especieOpciones[i].$1),
+          ),
+        ],
+      ]),
+    ),
+  );
 
   @override
   void initState() {
@@ -331,6 +271,10 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
       'creadoPor':    animal['creadoPor'] ?? 'rescatista',
       'creadoEn':     FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
+    FirebaseAnalytics.instance.logEvent(
+      name: 'favorito_agregado',
+      parameters: {'rescatista_id': (animal['rescatistaId'] as String?) ?? ''},
+    ).catchError((_) {});
   }
 
   @override
@@ -363,11 +307,23 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
       stream: RescatesRepository().feedPublico(),
       builder: (context, snap) {
         if (snap.hasError) return errorFeedState();
-        final firestoreDocs = (snap.data?.docs ?? []).where((doc) {
+        // Separado en 2 pasos (disponibles → firestoreDocs) para poder
+        // distinguir "no queda NADA en el catálogo" de "no queda nada CON
+        // ESTOS FILTROS" — antes era un solo .where() y _emptyState() no
+        // podía diferenciar los dos casos. Importa porque "Ver de nuevo"
+        // solo reinicia _idx a 0, y eso no sirve de nada si la lista
+        // filtrada ya está vacía (0 >= 0 sigue siendo cierto): el botón
+        // quedaba mudo para siempre apenas la especie/tamaño/edad elegidos
+        // no tenían ningún animal en ese momento — bug real reportado por
+        // una tester ("el botón Ver de nuevo no le funciona").
+        final disponibles = (snap.data?.docs ?? []).where((doc) {
           if (favRescateIds.contains(doc.id) || _favoritosRecientes.contains(doc.id)) return false;
           final d = doc.data() as Map<String, dynamic>;
           final estado = d['estadoAdopcion'] as String?;
-          if (!(estado == null || estado == 'Rescatado' || estado == 'Regresado' || estado == 'Hogar de paso')) return false;
+          return estado == null || estado == 'Rescatado' || estado == 'Regresado' || estado == 'Hogar de paso';
+        }).toList();
+        final firestoreDocs = disponibles.where((doc) {
+          final d = doc.data() as Map<String, dynamic>;
           final especie = d['especie'] as String? ?? 'Perro';
           if (_prefEspecie != 'Ambos' && especie != _prefEspecie) return false;
           final tamano = d['tamano'] as String? ?? '';
@@ -420,6 +376,8 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
               'okConNinos':          d['okConNinos'],
               'okConMascotas':       d['okConMascotas'],
               'requiereExperiencia': d['requiereExperiencia'],
+              'vacunado':            d['vacunado'],
+              'desparasitado':       d['desparasitado'],
               'urgencia':            d['urgencia'] ?? '',
               'creadoPor':           d['creadoPor'] ?? '',
             };
@@ -443,9 +401,12 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
           });
         }
 
-        if (_idx >= animals.length) return _emptyState();
+        if (_idx >= animals.length) {
+          return _emptyState(hayMasSinFiltros: disponibles.isNotEmpty && animals.isEmpty);
+        }
 
         final animal = animals[_idx];
+        _precacharSiguienteAnimal(animals, _idx);
 
         // Detectar si el más cercano está lejos (>500 km) — solo con posición precisa,
         // para evitar mostrar el aviso con la ubicación rápida/desactualizada inicial
@@ -462,24 +423,32 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
 
         final distancia = _distancia(animal);
         return Column(children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
-            child: SizedBox(
-              width: double.infinity,
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                if ((animal['ubicacion'] as String? ?? '').isNotEmpty)
-                  Text(
-                      distancia.isNotEmpty
-                          ? 'EN ${(animal['ubicacion'] as String? ?? '').toUpperCase()} · A ${distancia.toUpperCase()} DE TI'
-                          : 'EN ${(animal['ubicacion'] as String? ?? '').toUpperCase()}',
-                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
-                          letterSpacing: 1.2, color: appTeal)),
-                const Text('Animales disponibles',
-                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold,
-                        color: Color(0xFF1A1A1A))),
-              ]),
+          // Antes acá iba también un título grande "Animales disponibles" —
+          // con el saludo nuevo arriba de esta pantalla ("Encuentra a tu
+          // amigo fiel ideal"), quedaba un segundo título diciendo básicamente
+          // lo mismo, apilado antes de la tarjeta del animal — mucho scroll
+          // vertical para llegar a lo que importa. Se saca, y queda solo la
+          // línea de ubicación (información nueva, no repetida).
+          //
+          // Chips de especie: antes la única forma de filtrar por especie
+          // era entrar a Perfil → "Tipo de animal preferido", una pantalla
+          // aparte que casi nadie encontraba sola. Viven acá (no en
+          // home_screen.dart, que solo envuelve este feed) porque ya existe
+          // el estado reactivo de _prefEspecie con su propio listener —
+          // tocar un chip escribe el mismo campo `prefEspecie` que esa
+          // pantalla de perfil, así que nunca pueden quedar desincronizados
+          // entre sí (son la misma preferencia, vista desde dos lugares).
+          _chipsEspecie(),
+          if ((animal['ubicacion'] as String? ?? '').isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+              child: Text(
+                  distancia.isNotEmpty
+                      ? 'EN ${(animal['ubicacion'] as String? ?? '').toUpperCase()} · A ${distancia.toUpperCase()} DE TI'
+                      : 'EN ${(animal['ubicacion'] as String? ?? '').toUpperCase()}',
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
+                      letterSpacing: 1.2, color: appTeal)),
             ),
-          ),
           if (sinAnimalesCerca)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -514,12 +483,12 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 14),
             child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              _actionBtn(Icons.close, Colors.grey.shade200, Colors.grey.shade600, 52, () {
+              _actionBtn(Icons.close, Colors.grey.shade200, Colors.grey.shade700, 52, () {
                 _fotoPageNotifier.value = 0;
                 setState(() => _idx++);
               }),
               const SizedBox(width: 18),
-              _actionBtn(Icons.pets, Colors.white, const Color(0xFF1A1A1A), 46, () {
+              _actionBtn(Icons.pets, Colors.white, appInk, 46, () {
                 Navigator.push(context, MaterialPageRoute(
                     builder: (_) => AnimalDetalleScreen(animal: animal)));
               }),
@@ -537,6 +506,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                   if (!mounted) return;
                   if (favRescateId.isNotEmpty) setState(() => _favoritosRecientes.remove(favRescateId));
                   messenger.showSnackBar(const SnackBar(
+                      backgroundColor: msgError,
                       content: Text('No se pudo guardar el favorito. Intentá de nuevo.')));
                 }
               }),
@@ -549,45 +519,72 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
     );
   }
 
-  Widget _emptyState() {
+  Widget _emptyState({required bool hayMasSinFiltros}) {
     return SingleChildScrollView(
       child: Column(children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
-          child: SizedBox(
-            width: double.infinity,
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('SALVA PATITAS', style: TextStyle(fontSize: 11,
-                  fontWeight: FontWeight.w600, letterSpacing: 1.2, color: appTeal)),
-              const Text('Cerca de ti',
-                  style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
-            ]),
-          ),
-        ),
+        // Antes esta pantalla no tenía los chips de especie — si el filtro
+        // activo (ej. "Otros") no tenía animales para mostrar, quedaba en
+        // un callejón sin salida: "Ver de nuevo" solo reinicia el índice de
+        // la MISMA lista filtrada (sigue vacía), y sin los chips acá la
+        // única forma de volver a "Todos" era ir hasta el perfil (el bug
+        // real que reportó Eliza). Con los chips siempre visibles, cambiar
+        // de filtro nunca deja a nadie sin salida.
+        _chipsEspecie(),
+        // El título "SALVA PATITAS / Cerca de ti" que iba acá se sacó: ya
+        // está el saludo "Hola, Eliza" arriba de esta pantalla (home_screen.
+        // dart) y ahora también los chips — un tercer título repitiendo lo
+        // mismo era ruido antes de llegar al mensaje real (sugerencia real
+        // de Eliza).
         const SizedBox(height: 40),
         Container(
           width: 90, height: 90,
           decoration: BoxDecoration(
-            color: appOrange.withOpacity(0.15),
+            color: appOrange.withValues(alpha: 0.15),
             shape: BoxShape.circle,
           ),
           child: const Icon(Icons.pets, size: 44, color: appOrange),
         ),
         const SizedBox(height: 20),
-        const Text('Eso es todo por hoy',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
+        Text(hayMasSinFiltros ? 'Nada con estos filtros' : 'Eso es todo por hoy',
+            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: appInk)),
+        // Caso real: una tester probó Perro+Pequeño+Cachorro (sin ningún
+        // animal así en el catálogo) y pensó que la app tenía un error —
+        // acá se nombra la combinación exacta en vez de solo insinuar
+        // "ajustá tamaño/edad", para que quede claro que es ese filtro
+        // puntual el que no tiene resultados, no un bug.
+        if (hayMasSinFiltros) ...[
+          const SizedBox(height: 6),
+          Text('Filtros activos: ${_resumenFiltros()}',
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: appTeal)),
+        ],
         const SizedBox(height: 8),
-        Text('Vuelve mañana, nuevos amigos\nllegan cada día.',
+        Text(
+            hayMasSinFiltros
+                // Caso real: la especie/tamaño/edad elegidos no tienen
+                // ningún animal disponible AHORA, aunque el catálogo no
+                // esté vacío — "vuelve mañana" sería mentira acá, lo que
+                // hace falta es cambiar de filtro, no esperar.
+                ? 'Todavía no hay ningún animal con esa combinación exacta.'
+                : 'Vuelve mañana, nuevos amigos\nllegan cada día.',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 14, color: Colors.grey.shade600, height: 1.5)),
+            style: TextStyle(fontSize: 14, color: Colors.grey.shade700, height: 1.5)),
         const SizedBox(height: 24),
         GestureDetector(
-          onTap: () => setState(() => _idx = 0),
+          onTap: () {
+            // Ahora saca especie, tamaño Y edad juntos — antes solo tocaba
+            // especie, y si el bloqueo era tamaño/edad el botón no hacía
+            // nada (había que ir al perfil a mano para sacarlos).
+            if (hayMasSinFiltros) {
+              _limpiarFiltrosExtra();
+            } else {
+              setState(() => _idx = 0);
+            }
+          },
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 14),
             decoration: BoxDecoration(color: appOrange, borderRadius: BorderRadius.circular(30)),
-            child: const Text('Ver de nuevo',
-                style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
+            child: Text(hayMasSinFiltros ? 'Ver todos' : 'Ver de nuevo',
+                style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
           ),
         ),
         const SizedBox(height: 36),
@@ -633,8 +630,14 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                 final uid    = aliados[i].id;
 
                 return GestureDetector(
-                  onTap: () => Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => AliadoPublicoScreen(aliadoId: uid, esRescatista: false))),
+                  onTap: () {
+                    FirebaseAnalytics.instance.logEvent(
+                      name: 'vio_perfil_aliado',
+                      parameters: {'aliado_id': uid},
+                    ).catchError((_) {});
+                    Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => AliadoPublicoScreen(aliadoId: uid, esRescatista: false)));
+                  },
                   child: Container(
                     width: 100,
                     padding: const EdgeInsets.all(12),
@@ -660,13 +663,13 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                       }),
                       const SizedBox(height: 8),
                       Text(nombre, style: const TextStyle(fontSize: 11,
-                          fontWeight: FontWeight.w700, color: Color(0xFF1A1A1A)),
+                          fontWeight: FontWeight.w700, color: appInk),
                           textAlign: TextAlign.center, maxLines: 2,
                           overflow: TextOverflow.ellipsis),
                       if (tipo.isNotEmpty) ...[
                         const SizedBox(height: 2),
                         Text(tipo, style: TextStyle(fontSize: 9,
-                            color: Colors.grey.shade500),
+                            color: Colors.grey.shade700),
                             textAlign: TextAlign.center, maxLines: 1,
                             overflow: TextOverflow.ellipsis),
                       ],
@@ -700,6 +703,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
     final fotoUrl  = a['fotoUrl']  as String?;
     final fotoUrl2 = a['fotoUrl2'] as String?;
     final fotos = [if (fotoUrl != null) fotoUrl, if (fotoUrl2 != null) fotoUrl2];
+    _precachearFotosSiguientes(fotos);
     final nombre      = a['nombre']     as String;
     final edad        = a['edad']       as String;
     final raza        = a['raza']       as String;
@@ -720,7 +724,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
     final emoji           = especie == 'Gato' ? '🐱' : '🐶';
 
     Color scoreColor(int s) {
-      if (s >= 80) return const Color(0xFF1F8A62);
+      if (s >= 80) return appTeal;
       if (s >= 60) return const Color(0xFFE65100);
       return const Color(0xFFB71C1C);
     }
@@ -729,7 +733,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.09), blurRadius: 18, offset: const Offset(0, 4))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.09), blurRadius: 18, offset: const Offset(0, 4))],
       ),
       clipBehavior: Clip.hardEdge,
       child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -744,19 +748,49 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                 _fotoPageNotifier.value = curr - 1;
               }
             },
+            // La tarjeta recorta la foto para que se vea linda y llamativa
+            // (ver comentario de alignment más abajo) — tocarla abre la
+            // foto completa, sin recortar, para quien quiera ver al animal
+            // entero antes de decidir.
+            // Mismo clamp que el idxSeguro de acá abajo (caso "Leoncio"): sin
+            // esto, abrir la foto completa justo cuando el notifier todavía
+            // apunta al índice de un animal anterior con más fotos tira un
+            // RangeError al construir el PageController con initialPage
+            // fuera de rango.
+            onTap: fotos.isEmpty ? null : () {
+              final idxSeguro = _fotoPageNotifier.value < fotos.length ? _fotoPageNotifier.value : 0;
+              Navigator.push(context, MaterialPageRoute(
+                builder: (_) => VisorFotoCompleta(fotos: fotos, indiceInicial: idxSeguro),
+              ));
+            },
             child: SizedBox(
             height: 300,
             child: Stack(fit: StackFit.expand, children: [
               fotos.isNotEmpty
                 ? ValueListenableBuilder<int>(
                     valueListenable: _fotoPageNotifier,
-                    builder: (_, fotoIdx, _) => AnimatedSwitcher(
+                    builder: (_, fotoIdx, _) {
+                      // _fotoPageNotifier es UN solo contador compartido por
+                      // todas las tarjetas (no algo propio de cada animal).
+                      // Se reinicia a 0 en cada camino conocido que cambia de
+                      // animal (X, favorito, cambio de filtro, "ver de
+                      // nuevo") — pero un límite de seguridad acá evita que
+                      // un camino nuevo que se olvide de resetearlo vuelva a
+                      // romper la tarjeta con un RangeError (caso real:
+                      // "Leoncio", con 1 sola foto, mientras el índice seguía
+                      // en 1 de un animal anterior con 2).
+                      final idxSeguro = fotoIdx < fotos.length ? fotoIdx : 0;
+                      return AnimatedSwitcher(
                       duration: const Duration(milliseconds: 250),
                       child: SizedBox.expand(
-                        key: ValueKey(fotoIdx),
-                        child: FotoUrl(
-                          url: fotos[fotoIdx],
-                          fit: BoxFit.cover,
+                        key: ValueKey(idxSeguro),
+                        // FotoAnimal en vez de recorte: la foto se ve
+                        // ENTERA sobre un fondo de sí misma desenfocado —
+                        // ningún recorte fijo funcionaba para todas (el
+                        // ancla arriba rompía fotos con el animal abajo,
+                        // caso real "Tobyiii": se veía el mueble vacío).
+                        child: FotoAnimal(
+                          url: fotos[idxSeguro],
                           fallback: Container(
                             decoration: const BoxDecoration(
                               gradient: LinearGradient(
@@ -768,7 +802,8 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                           ),
                         ),
                       ),
-                    ),
+                      );
+                    },
                   )
                 : Container(
                     decoration: const BoxDecoration(
@@ -781,7 +816,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                   ),
               if (fotos.length > 1)
                 Positioned(
-                  top: 10, left: 0, right: 0,
+                  top: urgencia == 'Alta' ? 38 : 10, left: 0, right: 0,
                   child: ValueListenableBuilder<int>(
                     valueListenable: _fotoPageNotifier,
                     builder: (_, pageIdx, _) => Row(
@@ -809,7 +844,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       begin: Alignment.topCenter, end: Alignment.bottomCenter,
-                      colors: [Colors.transparent, Colors.black.withOpacity(0.68)],
+                      colors: [Colors.transparent, Colors.black.withValues(alpha: 0.68)],
                       stops: const [0.45, 1.0],
                     ),
                   ),
@@ -837,65 +872,99 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                     ),
                   ),
                 ),
-              if (ubicacion.isNotEmpty || distancia.isNotEmpty)
-                Positioned(top: urgencia == 'Alta' ? 40 : 12, left: 12,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.92),
-                        borderRadius: BorderRadius.circular(20)),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      const Icon(Icons.location_on, size: 12, color: appTeal),
-                      const SizedBox(width: 3),
-                      Text(
-                        ubicacion.isNotEmpty ? ubicacion : distancia,
-                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+              // El pin de ubicación y las insignias de la derecha (Hogar de
+              // paso/compatible/verificado) antes eran dos Positioned
+              // independientes con un hueco fijo de 90px calculado para
+              // nombres de ciudad cortos — con un nombre más largo (ej.
+              // "Schiffdorf") el pin se comía ese hueco y quedaba tapado
+              // por "Hogar de paso" (el bug real que encontró Eliza
+              // probando). Con un Row de verdad, el ancho del pin se mide
+              // según su texto y el Wrap de la derecha ocupa lo que sobra
+              // — nunca se pueden superponer, sea cual sea el idioma o
+              // largo del nombre de la ciudad.
+              Positioned(top: urgencia == 'Alta' ? 40 : 12, left: 12, right: 12,
+                // mainAxisAlignment.spaceBetween en vez de Expanded en el
+                // Wrap: con Expanded, el Wrap ocupaba TODO el ancho
+                // sobrante y WrapAlignment.end debía empujar su contenido
+                // al borde — pero con solo 1 o 2 insignias (menos ancho
+                // que el disponible) terminaban quedando bastante más al
+                // centro que pegadas al borde derecho (el caso real que
+                // reportó Eliza con "Eddy"). Con Flexible (no Expanded) +
+                // spaceBetween, el Wrap mide su propio contenido y el Row
+                // empuja ese bloque exacto contra el borde derecho — sin
+                // espacio de sobra que lo corra hacia el centro. Si el
+                // pin + las insignias no entran igual, Flexible deja que
+                // el pin achique su texto (ellipsis) y el Wrap pase a 2
+                // líneas, en vez de desbordar.
+                child: Row(crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                  if (ubicacion.isNotEmpty || distancia.isNotEmpty)
+                    Flexible(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.92),
+                            borderRadius: BorderRadius.circular(20)),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          const Icon(Icons.location_on, size: 12, color: appTeal),
+                          const SizedBox(width: 3),
+                          Flexible(child: Text(
+                              ubicacion.isNotEmpty ? ubicacion : distancia,
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600))),
+                        ]),
+                      ),
+                    )
+                  else
+                    const SizedBox.shrink(),
+                  Flexible(
+                    child: Wrap(
+                      alignment: WrapAlignment.end,
+                      spacing: 6, runSpacing: 6,
+                      children: [
+                      if (estadoAdopcion == 'Hogar de paso')
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                          decoration: BoxDecoration(color: appTeal, borderRadius: BorderRadius.circular(20)),
+                          child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                            Icon(Icons.home_outlined, size: 11, color: Colors.white),
+                            SizedBox(width: 3),
+                            Text('Hogar de paso', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white)),
+                          ]),
+                        ),
+                      if (estadoAdopcion == 'Regresado')
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                          decoration: BoxDecoration(color: const Color(0xFFE65100), borderRadius: BorderRadius.circular(20)),
+                          child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                            Icon(Icons.refresh, size: 11, color: Colors.white),
+                            SizedBox(width: 3),
+                            Text('Fue devuelto', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white)),
+                          ]),
+                        ),
+                      if (score >= 0)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                          decoration: BoxDecoration(
+                              color: scoreColor(score), borderRadius: BorderRadius.circular(20)),
+                          child: Text('$score% compatible',
+                              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white)),
+                        ),
+                      if (verificado)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                          decoration: BoxDecoration(color: appTeal, borderRadius: BorderRadius.circular(20)),
+                          child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                            Icon(Icons.verified, size: 11, color: Colors.white),
+                            SizedBox(width: 3),
+                            Text('Verificado',
+                                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.white)),
+                          ]),
+                        ),
                     ]),
-                  )),
-              Positioned(top: urgencia == 'Alta' ? 40 : 12, right: 12, left: 90,
-                child: Wrap(
-                  alignment: WrapAlignment.end,
-                  spacing: 6, runSpacing: 6,
-                  children: [
-                  if (estadoAdopcion == 'Hogar de paso')
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                      decoration: BoxDecoration(color: appTeal, borderRadius: BorderRadius.circular(20)),
-                      child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(Icons.home_outlined, size: 11, color: Colors.white),
-                        SizedBox(width: 3),
-                        Text('Hogar de paso', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white)),
-                      ]),
-                    ),
-                  if (estadoAdopcion == 'Regresado')
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                      decoration: BoxDecoration(color: const Color(0xFFE65100), borderRadius: BorderRadius.circular(20)),
-                      child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(Icons.refresh, size: 11, color: Colors.white),
-                        SizedBox(width: 3),
-                        Text('Fue devuelto', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white)),
-                      ]),
-                    ),
-                  if (score >= 0)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                      decoration: BoxDecoration(
-                          color: scoreColor(score), borderRadius: BorderRadius.circular(20)),
-                      child: Text('$score% compatible',
-                          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white)),
-                    ),
-                  if (verificado)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                      decoration: BoxDecoration(color: appTeal, borderRadius: BorderRadius.circular(20)),
-                      child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(Icons.verified, size: 11, color: Colors.white),
-                        SizedBox(width: 3),
-                        Text('Verificado',
-                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.white)),
-                      ]),
-                    ),
-                ])),
+                  ),
+                ]),
+              ),
               if (fotos.length > 1)
                 Positioned.fill(
                   child: ValueListenableBuilder<int>(
@@ -928,6 +997,30 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                   Text('$raza · $tamano',
                       style: const TextStyle(fontSize: 13, color: Colors.white70)),
                 ])),
+              // Señal de que la foto se puede tocar para verla completa —
+              // antes el gesto existía pero era invisible, nada indicaba
+              // que la foto respondía al toque. Va abajo a la derecha porque
+              // la franja superior está siempre ocupada (píldora de
+              // ubicación, puntitos del carrusel y las badges de
+              // compatible/verificado, que pueden ocupar varias filas):
+              // anclado arriba, la badge de "% compatible" se dibujaba
+              // encima y lo tapaba. Abajo a la izquierda va el nombre;
+              // esta esquina es la única siempre libre. Último en el Stack
+              // para pintarse sobre el degradado oscuro del pie de foto.
+              if (fotos.isNotEmpty)
+                Positioned(
+                  bottom: 14, right: 12,
+                  child: IgnorePointer(
+                    child: Container(
+                      padding: const EdgeInsets.all(7),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.38),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.zoom_out_map, color: Colors.white, size: 16),
+                    ),
+                  ),
+                ),
             ]),
           ),
           ),
@@ -944,9 +1037,9 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                 Wrap(spacing: 8, runSpacing: 6, children: tags.map((t) => Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                   decoration: BoxDecoration(
-                    border: Border.all(color: appTeal.withOpacity(0.5)),
+                    border: Border.all(color: appTeal.withValues(alpha: 0.5)),
                     borderRadius: BorderRadius.circular(20),
-                    color: appTeal.withOpacity(0.07),
+                    color: appTeal.withValues(alpha: 0.07),
                   ),
                   child: Text(t, style: const TextStyle(fontSize: 12, color: appTeal, fontWeight: FontWeight.w500)),
                 )).toList()),
@@ -958,9 +1051,15 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                   Expanded(
                     child: GestureDetector(
                     onTap: (creadoPor == 'albergue' && rescatistaId.isNotEmpty)
-                        ? () => Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => AlberguePublicoScreen(
-                                rescatistaId: rescatistaId)))
+                        ? () {
+                            FirebaseAnalytics.instance.logEvent(
+                              name: 'vio_perfil_albergue',
+                              parameters: {'albergue_id': rescatistaId},
+                            ).catchError((_) {});
+                            Navigator.push(context, MaterialPageRoute(
+                                builder: (_) => AlberguePublicoScreen(
+                                    rescatistaId: rescatistaId)));
+                          }
                         : null,
                     child: Row(children: [
                       AvatarPersona(
@@ -992,29 +1091,32 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                     ]),
                     ),
                   ),
-                  GestureDetector(
-                    onTap: () => compartirAnimal(
-                      context: context,
-                      nombre: nombre,
-                      especie: especie,
-                      edad: edad,
-                      ubicacion: ubicacion,
-                      tags: tags,
-                      fotoUrl: fotoUrl,
-                    ),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                      decoration: BoxDecoration(
-                        color: appTeal.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: appTeal.withValues(alpha: 0.25)),
+                  // Solo ícono, sin el texto "Compartir" que tenía antes —
+                  // mis_rescates_screen.dart ya mostraba este mismo botón
+                  // sin texto (con Tooltip), y tener las dos variantes en la
+                  // misma app era la inconsistencia real que notó Eliza.
+                  // El Tooltip conserva la accesibilidad que el texto daba.
+                  Tooltip(
+                    message: 'Compartir',
+                    child: GestureDetector(
+                      onTap: () => compartirAnimal(
+                        context: context,
+                        nombre: nombre,
+                        especie: especie,
+                        edad: edad,
+                        ubicacion: ubicacion,
+                        tags: tags,
+                        fotoUrl: fotoUrl,
                       ),
-                      child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(Icons.share_outlined, size: 14, color: appTeal),
-                        SizedBox(width: 5),
-                        Text('Compartir', style: TextStyle(fontSize: 12,
-                            fontWeight: FontWeight.w600, color: appTeal)),
-                      ]),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: appTeal.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: appTeal.withValues(alpha: 0.3)),
+                        ),
+                        child: const Icon(Icons.share_outlined, size: 16, color: appTeal),
+                      ),
                     ),
                   ),
                 ],
@@ -1074,137 +1176,11 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
       child: Container(
         width: size, height: size,
         decoration: BoxDecoration(color: bg, shape: BoxShape.circle,
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.12), blurRadius: 8, offset: const Offset(0, 3))]),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 8, offset: const Offset(0, 3))]),
         child: Icon(icon, color: iconColor, size: size * 0.40),
       ),
     );
 }
-
-// ─── Pantalla de Aliados ──────────────────────────────────────────────────────
-
-class AliadosScreen extends StatelessWidget {
-  final bool esRescatista;
-  final bool esAlbergue;
-  const AliadosScreen({super.key, this.esRescatista = false, this.esAlbergue = false});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: appBg,
-      body: SafeArea(
-        child: Column(children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 10, 20, 12),
-            child: Row(children: [
-              IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-                onPressed: () => Navigator.pop(context),
-              ),
-              const Expanded(child: Text('Negocios aliados',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold,
-                      color: Color(0xFF1A1A1A)))),
-            ]),
-          ),
-          Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('usuarios')
-                  .where('aliadoNombre', isGreaterThan: '')
-                  .snapshots(),
-              builder: (context, snap) {
-                final aliados = snap.data?.docs ?? [];
-                if (aliados.isEmpty) {
-                  return Center(
-                    child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                      const Text('🐾', style: TextStyle(fontSize: 48)),
-                      const SizedBox(height: 16),
-                      Text('Aún no hay negocios aliados',
-                          style: TextStyle(fontSize: 15, color: Colors.grey.shade500)),
-                    ]),
-                  );
-                }
-                return GridView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                    childAspectRatio: 0.78,
-                  ),
-                  itemCount: aliados.length,
-                  itemBuilder: (_, i) {
-                    final d      = aliados[i].data() as Map<String, dynamic>;
-                    final nombre = d['aliadoNombre'] as String? ?? 'Aliado';
-                    final tipo   = d['aliadoTipo']   as String? ?? '';
-                    final foto   = d['aliadoFotoBase64'] as String?;
-                    final ini    = nombre.isNotEmpty ? nombre[0].toUpperCase() : 'A';
-                    final uid    = aliados[i].id;
-                    return GestureDetector(
-                      onTap: () => Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => AliadoPublicoScreen(
-                              aliadoId: uid, esRescatista: esRescatista, esAlbergue: esAlbergue))),
-                      child: Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: [BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.06),
-                              blurRadius: 8, offset: const Offset(0, 2))],
-                        ),
-                        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                          Builder(builder: (_) {
-                            final fotoBytes = bytesFotoSegura(foto);
-                            return CircleAvatar(
-                              radius: 34,
-                              backgroundColor: appTeal.withValues(alpha: 0.12),
-                              backgroundImage: fotoBytes != null ? MemoryImage(fotoBytes) : null,
-                              onBackgroundImageError: fotoBytes != null ? (_, __) {} : null,
-                              child: fotoBytes == null
-                                  ? Text(ini, style: const TextStyle(
-                                      color: appTeal, fontWeight: FontWeight.bold, fontSize: 24))
-                                  : null,
-                            );
-                          }),
-                          const SizedBox(height: 10),
-                          Text(nombre,
-                              style: const TextStyle(fontSize: 13,
-                                  fontWeight: FontWeight.w700, color: Color(0xFF1A1A1A)),
-                              textAlign: TextAlign.center,
-                              maxLines: 2, overflow: TextOverflow.ellipsis),
-                          if (tipo.isNotEmpty) ...[
-                            const SizedBox(height: 4),
-                            Text(tipo,
-                                style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
-                                textAlign: TextAlign.center,
-                                maxLines: 1, overflow: TextOverflow.ellipsis),
-                          ],
-                          const SizedBox(height: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: appTeal.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: const Text('Ver servicios',
-                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
-                                    color: appTeal)),
-                          ),
-                        ]),
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-        ]),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 
 class _MeInteresaSheet extends StatelessWidget {
   final String nombre, especie, edad, ubicacion, rescatistaId, rescatista, rescateId, estadoAdopcion, creadoPor, tamano;
@@ -1325,9 +1301,9 @@ class _MeInteresaSheet extends StatelessWidget {
         const SizedBox(width: 14),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(titulo, style: const TextStyle(fontSize: 14,
-              fontWeight: FontWeight.w700, color: Color(0xFF1A1A1A))),
+              fontWeight: FontWeight.w700, color: appInk)),
           const SizedBox(height: 2),
-          Text(subtitulo, style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+          Text(subtitulo, style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
         ])),
         Icon(Icons.chevron_right, color: Colors.grey.shade400),
       ]),

@@ -42,14 +42,22 @@ class SolicitudesPreview extends StatelessWidget {
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
             child: Center(child: Text('No hay solicitudes por ahora.',
-                style: TextStyle(fontSize: 13, color: Colors.grey.shade500))),
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade700))),
           );
         }
         final limited = docs.take(3).toList();
         return Column(
           children: List.generate(limited.length, (i) {
             final d = limited[i].data();
-            final animal      = d['animalNombre'] as String? ?? 'Animal';
+            // "Sin nombre" es el texto de relleno que usan las pantallas
+            // que MUESTRAN un animal sin nombre propio — pero ese mismo
+            // texto quedó guardado tal cual en algunas solicitudes viejas
+            // (se copiaba el nombre ya resuelto para mostrar, no el dato
+            // real). Acá se trata igual que si no hubiera nombre, así no
+            // sale "Para Sin nombre" (caso real reportado por Eliza).
+            final animalRaw   = d['animalNombre'] as String?;
+            final animal      = (animalRaw == null || animalRaw.isEmpty || animalRaw == 'Sin nombre')
+                ? 'un animalito' : animalRaw;
             final nombre      = d['nombre']      as String? ?? '';
             final apellido    = d['apellido']    as String? ?? '';
             final integrantes = d['integrantes'] as String? ?? '';
@@ -63,6 +71,13 @@ class SolicitudesPreview extends StatelessWidget {
             final ini         = nombreCompleto.isNotEmpty ? nombreCompleto[0].toUpperCase() : 'A';
             final col         = i.isEven ? appTeal : appOrange;
             return Padding(
+              // Key por doc.id: sin esto, si la lista de pendientes cambia
+              // de orden (nueva solicitud, o una se aprueba/rechaza y sale
+              // de acá), Flutter puede reusar el State de AvatarUsuario de
+              // OTRA solicitud para esta posición, mostrando la foto de un
+              // adoptante equivocado (el `late final` de ese Future no se
+              // recalcula solo porque cambió el userId de afuera).
+              key: ValueKey(limited[i].id),
               padding: EdgeInsets.only(bottom: i < limited.length - 1 ? 10 : 0),
               child: _solicitudDetalle(ini, col, nombreCompleto, detalle, tiempo, animal,
                   docId: limited[i].id, data: d),
@@ -91,16 +106,17 @@ Widget _solicitudDetalle(String ini, Color col, String nombre, String detalle,
   final diasHogar   = (fechaInicio != null && fechaFin != null)
       ? fechaFin.difference(fechaInicio).inDays
       : null;
+  final fotoUrl     = data?['fotoUrl'] as String?;
   final score      = data != null ? calcularCompatibilidad(data) : -1;
-  final scoreColor = score >= 80 ? const Color(0xFF1F8A62) : score >= 60 ? const Color(0xFFE65100) : const Color(0xFFB71C1C);
+  final scoreColor = score >= 80 ? appTeal : score >= 60 ? const Color(0xFFE65100) : const Color(0xFFB71C1C);
 
   Widget infoFila(String emoji, String label, String valor) => Padding(
     padding: const EdgeInsets.only(bottom: 8),
     child: Row(children: [
       Text(emoji, style: const TextStyle(fontSize: 15)),
       const SizedBox(width: 8),
-      Expanded(child: Text(label, style: TextStyle(fontSize: 13, color: Colors.grey.shade600))),
-      Text(valor, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1A1A1A))),
+      Expanded(child: Text(label, style: TextStyle(fontSize: 13, color: Colors.grey.shade700))),
+      Text(valor, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: appInk)),
     ]),
   );
 
@@ -128,7 +144,7 @@ Widget _solicitudDetalle(String ini, Color col, String nombre, String detalle,
                 Text(nombre, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 4),
                 Row(children: [
-                  Text('Para $animal', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                  Text('Para $animal', style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
                   const SizedBox(width: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -197,7 +213,7 @@ Widget _solicitudDetalle(String ini, Color col, String nombre, String detalle,
               ]),
             ),
             const SizedBox(height: 20),
-            Text('Perfil del adoptante', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.grey.shade500)),
+            Text('Perfil del adoptante', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.grey.shade700)),
             const SizedBox(height: 10),
             infoFila('🏠', 'Vivienda', data?['vivienda'] ?? '-'),
             infoFila('⏰', 'Horas fuera al día', data?['horasFuera'] ?? '-'),
@@ -207,7 +223,7 @@ Widget _solicitudDetalle(String ini, Color col, String nombre, String detalle,
             infoFila('📚', 'Experiencia previa', (data?['experienciaPrevia'] as bool? ?? false) ? 'Sí' : 'No, primera mascota'),
             if (data?['motivacion'] != null) ...[
               const SizedBox(height: 16),
-              Text('Motivación', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.grey.shade500)),
+              Text('Motivación', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.grey.shade700)),
               const SizedBox(height: 6),
               Container(
                 width: double.infinity,
@@ -228,18 +244,20 @@ Widget _solicitudDetalle(String ini, Color col, String nombre, String detalle,
                       if (!ctx.mounted) return;
                       if (!resultado.aprobada) {
                         ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+                            backgroundColor: msgError,
                             content: Text(resultado.animalEliminado
-                                ? 'Este animal ya no existe (fue eliminado) — la solicitud se rechazó automáticamente.'
-                                : 'Este animal ya tenía un proceso aprobado con otro adoptante — '
-                                    'esta solicitud se rechazó automáticamente.')));
+                                ? 'Este animal ya no existe (fue eliminado). La solicitud se rechazó automáticamente.'
+                                : 'Este animal ya tenía un proceso aprobado con otro adoptante. '
+                                    'Esta solicitud se rechazó automáticamente.')));
                       } else if (!resultado.avisoOk) {
                         ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
+                            backgroundColor: msgAdvertencia,
                             content: Text('Solicitud aprobada, pero no pudimos avisarle al adoptante por chat. Escribile manualmente.')));
                       }
                     } catch (e) {
                       if (ctx.mounted) {
                         ScaffoldMessenger.of(ctx).showSnackBar(
-                            SnackBar(content: Text('No se pudo aprobar la solicitud: $e')));
+                            SnackBar(backgroundColor: msgError, content: Text('No se pudo aprobar la solicitud: $e')));
                       }
                     }
                   },
@@ -285,12 +303,13 @@ Widget _solicitudDetalle(String ini, Color col, String nombre, String detalle,
                               final avisoOk = await rechazarSolicitud(docId, data, motivoCtl.text.trim());
                               if (ctx.mounted && !avisoOk) {
                                 ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
+                                    backgroundColor: msgAdvertencia,
                                     content: Text('Solicitud rechazada, pero no pudimos avisarle al adoptante por chat.')));
                               }
                             } catch (e) {
                               if (ctx.mounted) {
                                 ScaffoldMessenger.of(ctx).showSnackBar(
-                                    SnackBar(content: Text('No se pudo rechazar la solicitud: $e')));
+                                    SnackBar(backgroundColor: msgError, content: Text('No se pudo rechazar la solicitud: $e')));
                               }
                             }
                           },
@@ -323,9 +342,9 @@ Widget _solicitudDetalle(String ini, Color col, String nombre, String detalle,
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(nombre, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
               const SizedBox(height: 2),
-              Text(detalle, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+              Text(detalle, style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
             ])),
-            Text(tiempo, style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+            Text(tiempo, style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
           ]),
           const SizedBox(height: 12),
           Row(children: [
@@ -333,9 +352,20 @@ Widget _solicitudDetalle(String ini, Color col, String nombre, String detalle,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(color: const Color(0xFFD8F0E4), borderRadius: BorderRadius.circular(12)),
               child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Container(width: 32, height: 32,
-                  decoration: BoxDecoration(color: Colors.brown.shade300, borderRadius: BorderRadius.circular(6)),
-                  child: const Icon(Icons.pets, size: 18, color: Colors.white)),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: fotoUrl != null
+                      ? FotoUrl(
+                          url: fotoUrl, width: 32, height: 32, fit: BoxFit.cover,
+                          alignment: Alignment.topCenter,
+                          fallback: Container(width: 32, height: 32,
+                              decoration: BoxDecoration(color: Colors.brown.shade300, borderRadius: BorderRadius.circular(6)),
+                              child: const Icon(Icons.pets, size: 18, color: Colors.white)),
+                        )
+                      : Container(width: 32, height: 32,
+                          decoration: BoxDecoration(color: Colors.brown.shade300, borderRadius: BorderRadius.circular(6)),
+                          child: const Icon(Icons.pets, size: 18, color: Colors.white)),
+                ),
                 const SizedBox(width: 8),
                 Text('Para $animal', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
               ]),

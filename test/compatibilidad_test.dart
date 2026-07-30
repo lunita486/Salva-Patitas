@@ -103,6 +103,23 @@ void main() {
         expect(conBalcon, conPatio - 10);
         expect(sinNada, conPatio - 20);
       });
+
+      // Faltaba esta opción de vivienda del todo (ni el dropdown de
+      // solicitud_adopcion_screen.dart la ofrecía) — el bug real que
+      // reportó un tester: alguien que vive en una casa sin jardín no
+      // tenía cómo decirlo, tenía que elegir "Casa con jardín" (mentira)
+      // o "Apartamento sin área exterior" (tampoco es su caso). Se la
+      // trata igual que "Apartamento con balcón": sin patio propio, pero
+      // con más margen que un apartamento cerrado.
+      test('Grande en "Casa sin jardín" puntúa igual que con balcón (10)', () {
+        final casaSinJardin = calcularCompatibilidad({
+          'animalTamano': 'Grande', 'vivienda': 'Casa sin jardín',
+        });
+        final conBalcon = calcularCompatibilidad({
+          'animalTamano': 'Grande', 'vivienda': 'Apartamento con balcón',
+        });
+        expect(casaSinJardin, conBalcon);
+      });
     });
 
     group('niños, mascotas y experiencia (mismo patrón en los tres)', () {

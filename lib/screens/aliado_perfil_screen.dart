@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
@@ -16,8 +17,12 @@ class AliadoPerfilScreen extends StatefulWidget {
 }
 
 class _AliadoPerfilScreenState extends State<AliadoPerfilScreen> {
-  final _nombreCtl  = TextEditingController();
-  final _ciudadCtl  = TextEditingController();
+  final _nombreCtl    = TextEditingController();
+  final _ciudadCtl    = TextEditingController();
+  final _telefonoCtl  = TextEditingController();
+  final _direccionCtl = TextEditingController();
+  final _emailCtl     = TextEditingController();
+  final _webCtl       = TextEditingController();
   String? _tipo;
   String? _fotoBase64;
   bool    _guardando = false;
@@ -48,10 +53,14 @@ class _AliadoPerfilScreenState extends State<AliadoPerfilScreen> {
     if (!doc.exists || !mounted) return;
     final data = doc.data() as Map<String, dynamic>;
     setState(() {
-      _nombreCtl.text = data['aliadoNombre']     as String? ?? '';
-      _ciudadCtl.text = data['ciudad']           as String? ?? '';
-      _tipo           = data['aliadoTipo']       as String?;
-      _fotoBase64     = data['aliadoFotoBase64'] as String?;
+      _nombreCtl.text    = data['aliadoNombre']     as String? ?? '';
+      _ciudadCtl.text    = data['ciudad']           as String? ?? '';
+      _telefonoCtl.text  = data['aliadoTelefono']  as String? ?? '';
+      _direccionCtl.text = data['aliadoDireccion'] as String? ?? '';
+      _emailCtl.text     = data['aliadoEmail']     as String? ?? '';
+      _webCtl.text       = data['aliadoSitioWeb']  as String? ?? '';
+      _tipo              = data['aliadoTipo']       as String?;
+      _fotoBase64        = data['aliadoFotoBase64'] as String?;
     });
   }
 
@@ -79,14 +88,34 @@ class _AliadoPerfilScreenState extends State<AliadoPerfilScreen> {
       'aliadoNombre': _nombreCtl.text.trim(),
       'aliadoTipo':   _tipo ?? '',
       'ciudad':       _ciudadCtl.text.trim(),
+      // Opcionales a propósito, mismo criterio que albergue_perfil_screen.dart.
+      // Prefijo "aliado" a propósito: ver el comentario largo en
+      // albergue_perfil_screen.dart — una cuenta con doble rol (albergue +
+      // aliado) compartía estos mismos campos genéricos entre los dos
+      // perfiles, y "email" además pisaba el email de LOGIN de la cuenta.
+      'aliadoTelefono':  _telefonoCtl.text.trim(),
+      'aliadoDireccion': _direccionCtl.text.trim(),
+      'aliadoEmail':     _emailCtl.text.trim(),
+      'aliadoSitioWeb':  _webCtl.text.trim(),
       if (_fotoBase64 != null) 'aliadoFotoBase64': _fotoBase64,
     });
+    if (!mounted) return;
+    setState(() => _guardando = false);
+    if (Navigator.canPop(context)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Perfil actualizado'), backgroundColor: msgExito));
+      Navigator.pop(context);
+    }
   }
 
   @override
   void dispose() {
     _nombreCtl.dispose();
     _ciudadCtl.dispose();
+    _telefonoCtl.dispose();
+    _direccionCtl.dispose();
+    _emailCtl.dispose();
+    _webCtl.dispose();
     super.dispose();
   }
 
@@ -111,7 +140,14 @@ class _AliadoPerfilScreenState extends State<AliadoPerfilScreen> {
       ),
     );
     if (sel == null) return;
-    await UsuariosRepository().actualizarRoles(uid, sel);
+    try {
+      await UsuariosRepository().actualizarRoles(uid, sel);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('No se pudo cambiar el rol. Revisá tu conexión e intentá de nuevo.'),
+          backgroundColor: msgError));
+    }
   }
 
   @override
@@ -124,6 +160,7 @@ class _AliadoPerfilScreenState extends State<AliadoPerfilScreen> {
               onPressed: _cambiarRolDebug,
               backgroundColor: Colors.purple.shade100,
               elevation: 4,
+              tooltip: 'Cambiar rol (debug)',
               child: Icon(Icons.developer_mode, color: Colors.purple.shade700),
             )
           : null,
@@ -145,10 +182,11 @@ class _AliadoPerfilScreenState extends State<AliadoPerfilScreen> {
               ),
               const SizedBox(height: 20),
               const Text('Configura tu negocio',
-                  style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
+                  style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: appInk,
+                      fontFamily: 'Baloo2')),
               const SizedBox(height: 6),
               Text('Esta información aparecerá en tu perfil público',
-                  style: TextStyle(fontSize: 14, color: Colors.grey.shade600)),
+                  style: TextStyle(fontSize: 14, color: Colors.grey.shade700)),
               const SizedBox(height: 32),
 
               // Foto
@@ -183,22 +221,62 @@ class _AliadoPerfilScreenState extends State<AliadoPerfilScreen> {
               ),
               const SizedBox(height: 28),
 
-              _campo(_nombreCtl, 'Nombre del negocio', Icons.business_outlined),
-              const SizedBox(height: 16),
-              _campo(_ciudadCtl, 'Ciudad', Icons.location_on_outlined),
-              const SizedBox(height: 16),
+              // Mismo estilo que "Configura tu albergue" (label arriba del
+              // campo, en vez del ícono + label flotante que tenía esta
+              // pantalla antes) — Eliza las comparó una al lado de la otra
+              // y pidió que las dos se vean con la misma tipografía.
+              perfilLabel('NOMBRE DEL NEGOCIO *'),
+              const SizedBox(height: 8),
+              perfilCampo(_nombreCtl, 'ej. Veterinaria La 30',
+                  autofocus: true, onChanged: (_) => setState(() {})),
+              const SizedBox(height: 24),
 
-              // Tipo
+              perfilLabel('CIUDAD *'),
+              const SizedBox(height: 8),
+              perfilCampo(_ciudadCtl, 'ej. Medellín, Bogotá, Santiago',
+                  onChanged: (_) => setState(() {})),
+              const SizedBox(height: 24),
+
+              // Teléfono/WhatsApp y dirección, opcionales — no van en
+              // _completo a propósito, un negocio recién sumándose puede
+              // no tener todavía un número de atención separado.
+              perfilLabel('TELÉFONO / WHATSAPP (OPCIONAL)'),
+              const SizedBox(height: 8),
+              perfilCampo(_telefonoCtl, 'ej. 300 123 4567',
+                  tipo: TextInputType.phone,
+                  formato: [FilteringTextInputFormatter.allow(RegExp(r'[0-9 +()-]'))]),
+              const SizedBox(height: 24),
+
+              perfilLabel('DIRECCIÓN (OPCIONAL)'),
+              const SizedBox(height: 8),
+              perfilCampo(_direccionCtl, 'ej. Calle 10 #43-12, El Poblado'),
+              const SizedBox(height: 24),
+
+              perfilLabel('EMAIL (OPCIONAL)'),
+              const SizedBox(height: 8),
+              perfilCampo(_emailCtl, 'ej. contacto@tunegocio.com',
+                  tipo: TextInputType.emailAddress),
+              const SizedBox(height: 24),
+
+              perfilLabel('PÁGINA WEB (OPCIONAL)'),
+              const SizedBox(height: 8),
+              perfilCampo(_webCtl, 'ej. www.tunegocio.com',
+                  tipo: TextInputType.url),
+              const SizedBox(height: 24),
+
+              // Tipo — mismo look que el resto de los campos (caja blanca
+              // sin ícono, radio 12): solo cambia que es un desplegable.
+              perfilLabel('TIPO DE NEGOCIO *'),
+              const SizedBox(height: 8),
               DropdownButtonFormField<String>(
-                value: _tipo,
+                initialValue: _tipo,
                 decoration: InputDecoration(
-                  labelText: 'Tipo de negocio',
-                  prefixIcon: const Icon(Icons.category_outlined),
                   filled: true,
                   fillColor: Colors.white,
                   border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(12),
                       borderSide: BorderSide.none),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 ),
                 items: _tipos.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
                 onChanged: (v) => setState(() => _tipo = v),
@@ -230,19 +308,4 @@ class _AliadoPerfilScreenState extends State<AliadoPerfilScreen> {
       ]),
     );
   }
-
-  Widget _campo(TextEditingController ctl, String label, IconData icon) =>
-      TextFormField(
-        controller: ctl,
-        onChanged: (_) => setState(() {}),
-        decoration: InputDecoration(
-          labelText: label,
-          prefixIcon: Icon(icon),
-          filled: true,
-          fillColor: Colors.white,
-          border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide.none),
-        ),
-      );
 }

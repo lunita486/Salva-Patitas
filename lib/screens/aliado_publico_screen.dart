@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
 import '../theme.dart';
 import '../data/chats_repository.dart';
 import 'chat_screen.dart';
@@ -24,23 +26,46 @@ class AliadoPublicoScreen extends StatelessWidget {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     if (uid.isEmpty) return;
 
+    final contexto = !esRescatista ? 'general' : (esAlbergue ? 'albergue' : 'rescatista');
+    // Al contactar "como albergue" hay que mostrar el nombre DEL ALBERGUE
+    // (ej. "La Perla"), no el nombre personal de Google de quien lo
+    // administra — el avatar de esa fila ya muestra el logo del albergue
+    // (AvatarUsuario con esNegocio), así que el nombre tiene que ser
+    // consistente con eso. Para rescatista/adoptante sí corresponde el
+    // nombre personal — no existe un "nombre de negocio" para un
+    // rescatista individual.
+    var nombreContacto = FirebaseAuth.instance.currentUser?.displayName ?? 'Usuario';
+    if (contexto == 'albergue') {
+      try {
+        final userDoc = await FirebaseFirestore.instance.collection('usuarios').doc(uid).get();
+        final albergueNombre = userDoc.data()?['albergueNombre'] as String?;
+        if (albergueNombre != null && albergueNombre.isNotEmpty) nombreContacto = albergueNombre;
+      } catch (_) {}
+    }
+
     String chatId;
     try {
       chatId = await ChatsRepository().asegurarChatNegocio(
         adoptanteId: uid,
-        adoptanteNombre: FirebaseAuth.instance.currentUser?.displayName ?? 'Usuario',
+        adoptanteNombre: nombreContacto,
         aliadoId: aliadoId,
         aliadoNombre: nombre,
-        contexto: !esRescatista ? 'general' : (esAlbergue ? 'albergue' : 'rescatista'),
+        contexto: contexto,
         fotoBase64: fotoBase64,
       );
     } catch (_) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            backgroundColor: msgError,
             content: Text('No se pudo abrir el chat. Intentá de nuevo.')));
       }
       return;
     }
+
+    FirebaseAnalytics.instance.logEvent(
+      name: 'aliado_contactado',
+      parameters: {'aliado_id': aliadoId},
+    ).catchError((_) {});
 
     if (!context.mounted) return;
     Navigator.push(context, MaterialPageRoute(
@@ -66,6 +91,10 @@ class AliadoPublicoScreen extends StatelessWidget {
         final data     = userSnap.data?.data() as Map<String, dynamic>? ?? {};
         final nombre   = data['aliadoNombre'] as String? ?? 'Aliado';
         final tipo     = data['aliadoTipo']   as String? ?? '';
+        final telefono = data['aliadoTelefono']  as String? ?? '';
+        final direccion= data['aliadoDireccion'] as String? ?? '';
+        final email    = data['aliadoEmail']     as String? ?? '';
+        final sitioWeb = data['aliadoSitioWeb']  as String? ?? '';
         final foto     = data['aliadoFotoBase64'] as String?;
         final iniciales = nombre.trim().split(' ')
             .take(2).map((w) => w.isNotEmpty ? w[0].toUpperCase() : '').join();
@@ -91,7 +120,7 @@ class AliadoPublicoScreen extends StatelessWidget {
                       padding: const EdgeInsets.fromLTRB(20, 56, 20, 28),
                       decoration: const BoxDecoration(
                         gradient: LinearGradient(
-                          colors: [Color(0xFF0A5C40), Color(0xFF1F8A62)],
+                          colors: [Color(0xFF0A5C40), appTeal],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
@@ -114,9 +143,17 @@ class AliadoPublicoScreen extends StatelessWidget {
                         Text(nombre, style: const TextStyle(
                             fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)),
                         if (tipo.isNotEmpty) ...[
-                          const SizedBox(height: 4),
-                          Text(tipo, style: TextStyle(
-                              fontSize: 13, color: Colors.white.withValues(alpha: 0.8))),
+                          const SizedBox(height: 6),
+                          // Mismo ícono por tipo que la grilla de "Negocios
+                          // aliados" (theme.dart) — acá en blanco porque el
+                          // fondo ya es un degradado oscuro, no una tarjeta
+                          // clara con pastel.
+                          Row(mainAxisSize: MainAxisSize.min, children: [
+                            Icon(aliadoTipoIcono(tipo), size: 14, color: Colors.white.withValues(alpha: 0.8)),
+                            const SizedBox(width: 5),
+                            Text(tipo, style: TextStyle(
+                                fontSize: 13, color: Colors.white.withValues(alpha: 0.8))),
+                          ]),
                         ],
                         const SizedBox(height: 20),
                         SizedBox(
@@ -143,6 +180,51 @@ class AliadoPublicoScreen extends StatelessWidget {
                   // Back button overlay
                   SliverToBoxAdapter(child: const SizedBox.shrink()),
 
+                  // Contacto (opcional)
+                  if (telefono.isNotEmpty || direccion.isNotEmpty || email.isNotEmpty || sitioWeb.isNotEmpty)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          if (direccion.isNotEmpty)
+                            _filaContacto(Icons.location_on_outlined, direccion),
+                          if (email.isNotEmpty)
+                            _filaContacto(Icons.email_outlined, email,
+                                onTap: () => launchUrl(Uri.parse('mailto:$email'))),
+                          if (sitioWeb.isNotEmpty)
+                            _filaContacto(Icons.language_outlined, sitioWeb,
+                                onTap: () => launchUrl(Uri.parse(sitioWebUrl(sitioWeb)),
+                                    mode: LaunchMode.externalApplication)),
+                          if (telefono.isNotEmpty)
+                            Padding(
+                              padding: EdgeInsets.only(top: (direccion.isNotEmpty || email.isNotEmpty || sitioWeb.isNotEmpty) ? 4 : 0),
+                              child: GestureDetector(
+                                onTap: () {
+                                  final url = whatsappUrl(telefono);
+                                  if (url != null) {
+                                    launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+                                  }
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF25D366).withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(color: const Color(0xFF25D366).withValues(alpha: 0.35)),
+                                  ),
+                                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                                    Icon(Icons.chat_bubble_outline, size: 15, color: Color(0xFF1E9E56)),
+                                    SizedBox(width: 6),
+                                    Text('Escribir por WhatsApp', style: TextStyle(
+                                        fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF1E9E56))),
+                                  ]),
+                                ),
+                              ),
+                            ),
+                        ]),
+                      ),
+                    ),
+
                   // Servicios
                   SliverToBoxAdapter(
                     child: Padding(
@@ -150,7 +232,7 @@ class AliadoPublicoScreen extends StatelessWidget {
                       child: Text(
                         servicios.isEmpty ? 'Sin servicios publicados' : 'SERVICIOS DISPONIBLES',
                         style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
-                            letterSpacing: 1.2, color: Colors.grey.shade500),
+                            letterSpacing: 1.2, color: Colors.grey.shade700),
                       ),
                     ),
                   ),
@@ -191,11 +273,11 @@ class AliadoPublicoScreen extends StatelessWidget {
                                   crossAxisAlignment: CrossAxisAlignment.start, children: [
                                 Text(sNombre, style: const TextStyle(
                                     fontSize: 15, fontWeight: FontWeight.w700,
-                                    color: Color(0xFF1A1A1A))),
+                                    color: appInk)),
                                 if (desc.isNotEmpty) ...[
                                   const SizedBox(height: 2),
                                   Text(desc, style: TextStyle(fontSize: 12,
-                                      color: Colors.grey.shade500),
+                                      color: Colors.grey.shade700),
                                       maxLines: 2, overflow: TextOverflow.ellipsis),
                                 ],
                               ])),
@@ -225,6 +307,7 @@ class AliadoPublicoScreen extends StatelessWidget {
                 backgroundColor: Colors.white,
                 foregroundColor: appTeal,
                 elevation: 2,
+                tooltip: 'Volver',
                 child: const Icon(Icons.arrow_back_ios_new, size: 16),
               ),
             ),
@@ -242,5 +325,23 @@ class AliadoPublicoScreen extends StatelessWidget {
       buf.write(s[i]);
     }
     return buf.toString();
+  }
+
+  /// Una línea de contacto (dirección/email/sitio web): ícono + texto,
+  /// tappable si se pasa [onTap] (email abre el cliente de correo, sitio
+  /// web abre el navegador — dirección no tiene onTap, es solo texto).
+  /// Mismo widget que albergue_publico_screen.dart.
+  Widget _filaContacto(IconData icono, String texto, {VoidCallback? onTap}) {
+    final fila = Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Icon(icono, size: 17, color: appTeal),
+        const SizedBox(width: 8),
+        Expanded(child: Text(texto,
+            style: TextStyle(fontSize: 13.5,
+                color: onTap != null ? appTeal : appInk))),
+      ]),
+    );
+    return onTap == null ? fila : GestureDetector(onTap: onTap, child: fila);
   }
 }

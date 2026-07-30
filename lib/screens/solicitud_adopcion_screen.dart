@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
 import '../theme.dart';
 import '../data/creator_role.dart';
 import '../data/solicitudes_repository.dart';
@@ -61,7 +62,7 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
     }
   }
 
-  static const _viviendaOpts   = ['Casa con jardín', 'Apartamento con balcón', 'Apartamento sin área exterior'];
+  static const _viviendaOpts   = ['Finca', 'Casa con jardín', 'Casa sin jardín', 'Apartamento con balcón', 'Apartamento sin área exterior'];
   static const _ninosOpts      = ['Sí', 'No'];
   static const _mascotasOpts   = ['Sí', 'No'];
   static const _experienciaOpts = ['Sí', 'No, sería mi primera mascota'];
@@ -74,10 +75,6 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
       _motivacionCtl.text.trim().isNotEmpty &&
       (_tipoSolicitud != 'hogar_de_paso' || (_fechaInicio != null && _fechaFin != null));
 
-  String _fmt(DateTime d) {
-    const m = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
-    return '${d.day} ${m[d.month - 1]} ${d.year}';
-  }
 
   Future<void> _enviar() async {
     setState(() => _enviando = true);
@@ -118,6 +115,13 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
           'animalRequiereExp':      widget.animal['requiereExperiencia'],
         },
       );
+      FirebaseAnalytics.instance.logEvent(
+        name: 'solicitud_enviada',
+        parameters: {
+          'tipo': _tipoSolicitud,
+          'rescatista_id': widget.animal['rescatistaId'] as String? ?? '',
+        },
+      ).catchError((_) {});
       // Guarda el perfil para el score de compatibilidad en el feed. Va en
       // preferencias/{uid} (privado, solo lo lee el dueño) y NO en
       // usuarios/{uid} — ese doc es legible por cualquier usuario logueado
@@ -137,7 +141,7 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al enviar: $e')));
+          SnackBar(backgroundColor: msgError, content: Text('Error al enviar: $e')));
     } finally {
       if (mounted) setState(() => _enviando = false);
     }
@@ -180,7 +184,7 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
                 const SizedBox(height: 24),
                 Text(
                   aprobada ? '¡Solicitud aprobada!' : 'Ya enviaste una solicitud',
-                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A)),
+                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: appInk),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 12),
@@ -189,7 +193,7 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
                       ? 'Tu solicitud para ${widget.animal['nombre']} fue aprobada. Revisa el chat para coordinar el encuentro.'
                       : 'Tu solicitud para ${widget.animal['nombre']} está pendiente de revisión. Te avisaremos por el chat.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 14, color: Colors.grey.shade600, height: 1.6),
+                  style: TextStyle(fontSize: 14, color: Colors.grey.shade700, height: 1.6),
                 ),
                 const SizedBox(height: 32),
                 SizedBox(
@@ -220,6 +224,7 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
             child: Row(children: [
               IconButton(
                 icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+                tooltip: 'Volver',
                 onPressed: () {
                   if (_step == 1) setState(() => _step = 0);
                   else Navigator.pop(context);
@@ -228,11 +233,12 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
               Expanded(child: Text(
                 _step == 0 ? 'Antes de continuar' :
                 _step == 1 ? 'Cuéntanos sobre ti' : '¡Solicitud enviada!',
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A)),
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: appInk,
+                    fontFamily: 'Baloo2'),
               )),
               if (_step < 2)
                 Text('${_step + 1} / 2',
-                    style: TextStyle(fontSize: 13, color: Colors.grey.shade500, fontWeight: FontWeight.w600)),
+                    style: TextStyle(fontSize: 13, color: Colors.grey.shade700, fontWeight: FontWeight.w600)),
             ]),
           ),
           if (_step < 2)
@@ -270,9 +276,14 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
         ClipRRect(
           borderRadius: BorderRadius.circular(20),
           child: fotoUrl != null
-            ? FotoUrl(
+            // FotoAnimal (no FotoUrl con recorte): a este tamaño de card, un
+            // retrato con el animal en la mitad inferior de la foto (como
+            // "Bruno Diaz", con el perrito abajo y puro fondo verde arriba)
+            // se veía como un bloque de color sólido sin ningún animal —
+            // mismo bug de "Tobyiii" ya resuelto en otras pantallas.
+            ? FotoAnimal(
                 url: fotoUrl,
-                height: 200, width: double.infinity, fit: BoxFit.cover,
+                height: 200, width: double.infinity,
                 fallback: Container(
                     height: 200, width: double.infinity,
                     decoration: const BoxDecoration(
@@ -301,7 +312,7 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
             const Text('🐾', style: TextStyle(fontSize: 32)),
             const SizedBox(height: 16),
             Text(
-              '"$nombre te está esperando."',
+              '$nombre te está esperando.',
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold,
                   color: Colors.white, height: 1.4),
@@ -336,7 +347,7 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
                   Text('Adoptar',
                       style: TextStyle(
                         fontSize: 13, fontWeight: FontWeight.bold,
-                        color: _tipoSolicitud == 'adopcion' ? Colors.white : const Color(0xFF1A1A1A),
+                        color: _tipoSolicitud == 'adopcion' ? Colors.white : appInk,
                       )),
                 ]),
               ),
@@ -345,7 +356,16 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
           const SizedBox(width: 12),
           Expanded(
             child: GestureDetector(
-              onTap: () => setState(() => _tipoSolicitud = 'hogar_de_paso'),
+              onTap: () {
+                // Solo en la transición real hacia hogar_de_paso — no en
+                // cada tap repetido sobre la misma pestaña ya activa.
+                if (_tipoSolicitud != 'hogar_de_paso') {
+                  FirebaseAnalytics.instance
+                      .logEvent(name: 'toco_ser_hogar_de_paso')
+                      .catchError((_) {});
+                }
+                setState(() => _tipoSolicitud = 'hogar_de_paso');
+              },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 150),
                 padding: const EdgeInsets.symmetric(vertical: 14),
@@ -363,7 +383,7 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
                   Text('Hogar de paso',
                       style: TextStyle(
                         fontSize: 13, fontWeight: FontWeight.bold,
-                        color: _tipoSolicitud == 'hogar_de_paso' ? Colors.white : const Color(0xFF1A1A1A),
+                        color: _tipoSolicitud == 'hogar_de_paso' ? Colors.white : appInk,
                       )),
                 ]),
               ),
@@ -392,7 +412,7 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
         GestureDetector(
           onTap: () => Navigator.pop(context),
           child: Text('Aún no estoy seguro/a',
-              style: TextStyle(fontSize: 14, color: Colors.grey.shade500,
+              style: TextStyle(fontSize: 14, color: Colors.grey.shade700,
                   decoration: TextDecoration.underline)),
         ),
         const SizedBox(height: 24),
@@ -410,9 +430,9 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
-            color: appTeal.withOpacity(0.08),
+            color: appTeal.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: appTeal.withOpacity(0.3)),
+            border: Border.all(color: appTeal.withValues(alpha: 0.3)),
           ),
           child: Row(children: [
             const Icon(Icons.person_rounded, color: appTeal, size: 20),
@@ -451,12 +471,12 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
           const SizedBox(height: 24),
           RichText(text: const TextSpan(
             text: 'Período del hogar de paso',
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF1A1A1A)),
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: appInk),
             children: [TextSpan(text: ' *', style: TextStyle(color: appTeal))],
           )),
           const SizedBox(height: 6),
           Text('📅  ¿Cuándo puedes recibirlo y hasta cuándo?',
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
           const SizedBox(height: 12),
           Row(children: [
             Expanded(child: _selectorFecha(
@@ -506,7 +526,7 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       RichText(text: TextSpan(
         text: titulo,
-        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF1A1A1A)),
+        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: appInk),
         children: const [
           TextSpan(text: ' *', style: TextStyle(color: appOrange, fontSize: 15)),
         ],
@@ -516,7 +536,7 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(14),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6)],
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6)],
         ),
         child: TextField(
           controller: ctl,
@@ -538,10 +558,10 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
       String seleccion, ValueChanged<String> onSelect) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(titulo,
-          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF1A1A1A))),
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: appInk)),
       const SizedBox(height: 4),
       Text('$icono  Elige una opción',
-          style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+          style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
       const SizedBox(height: 10),
       Wrap(spacing: 8, runSpacing: 8, children: opciones.map((o) {
         final sel = o == seleccion;
@@ -555,7 +575,7 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
               borderRadius: BorderRadius.circular(24),
               border: Border.all(color: sel ? appTeal : Colors.grey.shade300),
               boxShadow: sel ? [] :
-                  [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 4)],
+                  [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 4)],
             ),
             child: Text(o, style: TextStyle(
                 fontSize: 13, fontWeight: FontWeight.w600,
@@ -597,19 +617,19 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
             color: fecha != null ? appTeal : Colors.grey.shade300,
             width: fecha != null ? 1.5 : 1,
           ),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6)],
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6)],
         ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(label, style: TextStyle(fontSize: 11, color: Colors.grey.shade500, fontWeight: FontWeight.w600)),
+          Text(label, style: TextStyle(fontSize: 11, color: Colors.grey.shade700, fontWeight: FontWeight.w600)),
           const SizedBox(height: 4),
           Row(children: [
             Icon(Icons.calendar_today, size: 14, color: fecha != null ? appTeal : Colors.grey.shade400),
             const SizedBox(width: 6),
             Text(
-              fecha != null ? _fmt(fecha) : 'Seleccionar',
+              fecha != null ? formatearFecha(fecha) : 'Seleccionar',
               style: TextStyle(
                 fontSize: 13, fontWeight: FontWeight.w600,
-                color: fecha != null ? const Color(0xFF1A1A1A) : Colors.grey.shade400,
+                color: fecha != null ? appInk : Colors.grey.shade400,
               ),
             ),
           ]),
@@ -627,17 +647,17 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
           Container(
             width: 100, height: 100,
             decoration: BoxDecoration(
-                color: appTeal.withOpacity(0.12), shape: BoxShape.circle),
+                color: appTeal.withValues(alpha: 0.12), shape: BoxShape.circle),
             child: const Icon(Icons.favorite, color: appTeal, size: 50),
           ),
           const SizedBox(height: 28),
           const Text('¡Solicitud enviada!',
-              style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
+              style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: appInk)),
           const SizedBox(height: 12),
           Text(
             'Le avisamos a la rescatista.\nPronto sabrás si $nombre encontró su hogar contigo. 🌿',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 15, color: Colors.grey.shade600, height: 1.6),
+            style: TextStyle(fontSize: 15, color: Colors.grey.shade700, height: 1.6),
           ),
           const SizedBox(height: 36),
           SizedBox(
