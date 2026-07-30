@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme.dart';
+import '../data/rescates_repository.dart';
 import 'solicitud_adopcion_screen.dart';
 
 class FavoritosScreen extends StatelessWidget {
@@ -22,6 +23,7 @@ class FavoritosScreen extends StatelessWidget {
               Row(children: [
                 IconButton(
                   icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+                tooltip: 'Volver',
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                   onPressed: () => Navigator.pop(context),
@@ -31,7 +33,7 @@ class FavoritosScreen extends StatelessWidget {
               const Padding(
                 padding: EdgeInsets.only(left: 4),
                 child: Text('Tus favoritos',
-                    style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
+                    style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: appInk)),
               ),
             ]),
           ),
@@ -57,12 +59,7 @@ class FavoritosScreen extends StatelessWidget {
                     .toList();
 
                 return StreamBuilder<QuerySnapshot>(
-                  stream: rescateIds.isEmpty
-                      ? const Stream.empty()
-                      : FirebaseFirestore.instance
-                          .collection('rescates')
-                          .where(FieldPath.documentId, whereIn: rescateIds)
-                          .snapshots(),
+                  stream: RescatesRepository().porIds(rescateIds),
                   builder: (context, rescatesSnap) {
                     final estadoPorRescateId = <String, String>{
                       for (final r in rescatesSnap.data?.docs ?? [])
@@ -92,6 +89,7 @@ class FavoritosScreen extends StatelessWidget {
                     };
                     return _FavoritosGrid(
                       docs: docs,
+                      rescateIdsConsultados: rescateIds.toSet(),
                       estadoPorRescateId: estadoPorRescateId,
                       fotoPorRescateId: fotoPorRescateId,
                       rescatePorId: rescatePorId,
@@ -109,11 +107,13 @@ class FavoritosScreen extends StatelessWidget {
 
 class _FavoritosGrid extends StatelessWidget {
   final List<QueryDocumentSnapshot> docs;
+  final Set<String> rescateIdsConsultados;
   final Map<String, String> estadoPorRescateId;
   final Map<String, String?> fotoPorRescateId;
   final Map<String, Map<String, dynamic>> rescatePorId;
   const _FavoritosGrid({
     required this.docs,
+    required this.rescateIdsConsultados,
     required this.estadoPorRescateId,
     required this.fotoPorRescateId,
     required this.rescatePorId,
@@ -121,6 +121,22 @@ class _FavoritosGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Un rescate borrado desaparece de rescatesSnap, pero el favorito que
+    // lo apuntaba puede seguir existiendo (limpiarlo es best-effort desde
+    // el lado del rescatista — ver RescatesRepository.eliminar). Si el id
+    // SÍ se consultó y no vino en la respuesta, está borrado de verdad: se
+    // oculta acá para no mostrar un "Adoptar" fantasma sobre un animal que
+    // ya no existe. Si el id no llegó a consultarse (más de 30 favoritos,
+    // tope de whereIn), no se puede saber con certeza — se sigue mostrando
+    // con los datos guardados en el propio favorito, como siempre.
+    final docs = this.docs.where((d) {
+      final rescateId = (d.data() as Map<String, dynamic>)['rescateId'] as String? ?? '';
+      if (rescateId.isEmpty) return true;
+      final fueConsultado = rescateIdsConsultados.contains(rescateId);
+      final existeTodavia = estadoPorRescateId.containsKey(rescateId);
+      return !fueConsultado || existeTodavia;
+    }).toList();
+
     return CustomScrollView(
               slivers: [
                 SliverToBoxAdapter(
@@ -129,7 +145,7 @@ class _FavoritosGrid extends StatelessWidget {
                     child: Text(
                       docs.isEmpty ? 'SIN GUARDADOS' : '${docs.length} GUARDADO${docs.length == 1 ? "" : "S"}',
                       style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
-                          letterSpacing: 1.2, color: Colors.grey.shade500),
+                          letterSpacing: 1.2, color: Colors.grey.shade700),
                     ),
                   ),
                 ),
@@ -140,11 +156,11 @@ class _FavoritosGrid extends StatelessWidget {
                         Icon(Icons.favorite_border, size: 64, color: Colors.grey.shade300),
                         const SizedBox(height: 16),
                         const Text('Aún no tienes favoritos',
-                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: appInk)),
                         const SizedBox(height: 8),
                         Text('Toca ❤️ en las tarjetas para guardar\nanimalitos que te gusten.',
                             textAlign: TextAlign.center,
-                            style: TextStyle(fontSize: 14, color: Colors.grey.shade500, height: 1.5)),
+                            style: TextStyle(fontSize: 14, color: Colors.grey.shade700, height: 1.5)),
                       ]),
                     ),
                   )
@@ -168,7 +184,17 @@ class _FavoritosGrid extends StatelessWidget {
                           final rescatista   = d['rescatista']   as String? ?? 'Rescatista';
                           final rescatistaId = d['rescatistaId'] as String? ?? '';
                           final rescateId    = d['rescateId']    as String? ?? '';
-                          final fotoUrl      = (d['fotoUrl'] as String?) ?? fotoPorRescateId[rescateId];
+                          // La foto EN VIVO del rescate gana siempre que esté
+                          // disponible — la del favorito es una foto de una
+                          // sola vez tomada al guardarlo, y queda rota apenas
+                          // el rescatista edita las fotos después (el mismo
+                          // path de Storage se sobreescribe con un token
+                          // nuevo). Antes solo se recurría a la foto en vivo
+                          // cuando el campo del favorito estaba vacío — pero
+                          // "vacío" y "roto" no son lo mismo: un campo con una
+                          // URL vieja no está vacío, así que nunca se corregía
+                          // solo.
+                          final fotoUrl      = fotoPorRescateId[rescateId] ?? (d['fotoUrl'] as String?);
                           final emoji        = especie == 'Gato' ? '🐱' : '🐶';
                           final rescate      = rescatePorId[rescateId] ?? const <String, dynamic>{};
 
@@ -201,10 +227,14 @@ class _FavoritosGrid extends StatelessWidget {
                                 clipBehavior: Clip.hardEdge,
                                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                   Expanded(
+                                    // FotoAnimal en vez de recorte — mismo
+                                    // motivo que el feed y el detalle: la
+                                    // foto entera sobre fondo desenfocado
+                                    // (caso "Tobyiii", mueble vacío).
                                     child: fotoUrl != null
-                                      ? FotoUrl(
+                                      ? FotoAnimal(
                                           url: fotoUrl,
-                                          width: double.infinity, fit: BoxFit.cover,
+                                          width: double.infinity,
                                           fallback: Container(
                                               width: double.infinity,
                                               color: const Color(0xFFD8F0E4),
@@ -222,12 +252,12 @@ class _FavoritosGrid extends StatelessWidget {
                                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                       Text(nombre,
                                           style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold,
-                                              color: Color(0xFF1A1A1A)),
+                                              color: appInk),
                                           overflow: TextOverflow.ellipsis),
                                       const SizedBox(height: 2),
                                       Text(
                                         '${edad.isNotEmpty ? "$edad · " : ""}$ubicacion',
-                                        style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                                        style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                       const SizedBox(height: 8),
