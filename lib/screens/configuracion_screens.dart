@@ -15,13 +15,16 @@ class SettingsPageScaffold extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
           child: Row(children: [
-            GestureDetector(
-              onTap: () => Navigator.pop(context),
-              child: const Icon(Icons.arrow_back_ios_new, size: 20, color: Color(0xFF1A1A1A)),
+            Tooltip(
+              message: 'Volver',
+              child: GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: const Icon(Icons.arrow_back_ios_new, size: 20, color: appInk),
+              ),
             ),
             const SizedBox(width: 12),
             Text(title, style: const TextStyle(fontSize: 18,
-                fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
+                fontWeight: FontWeight.bold, color: appInk)),
           ]),
         ),
         Expanded(child: SingleChildScrollView(
@@ -47,7 +50,7 @@ class SettingsSwitchTile extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     margin: const EdgeInsets.symmetric(horizontal: 20),
     decoration: BoxDecoration(
-      color: Colors.white.withOpacity(0.8),
+      color: Colors.white.withValues(alpha: 0.8),
       borderRadius: BorderRadius.only(
         topLeft:     Radius.circular(last ? 0 : 16),
         topRight:    Radius.circular(last ? 0 : 16),
@@ -63,7 +66,7 @@ class SettingsSwitchTile extends StatelessWidget {
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(label, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
         const SizedBox(height: 2),
-        Text(subtitle, style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+        Text(subtitle, style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
       ])),
       Switch(value: value, onChanged: onChanged, activeColor: appTeal),
     ]),

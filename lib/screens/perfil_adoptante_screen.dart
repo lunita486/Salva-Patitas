@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme.dart';
+import '../data/auth_helper.dart';
 import '../data/usuarios_repository.dart';
 import 'mis_solicitudes_screen.dart';
 import 'tipo_animal_screen.dart';
@@ -34,9 +34,9 @@ class PerfilAdoptanteScreen extends StatelessWidget {
 
   Widget _settingsCard(List<Widget> items) => Container(
     decoration: BoxDecoration(
-      color: Colors.white.withOpacity(0.75),
+      color: Colors.white.withValues(alpha: 0.75),
       borderRadius: BorderRadius.circular(16),
-      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8)],
+      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8)],
     ),
     child: Column(children: items),
   );
@@ -52,7 +52,7 @@ class PerfilAdoptanteScreen extends StatelessWidget {
         child: Row(children: [
           Icon(icon, size: 20, color: color ?? Colors.grey.shade600),
           const SizedBox(width: 14),
-          Expanded(child: Text(label, style: TextStyle(fontSize: 15, color: color ?? const Color(0xFF1A1A1A)))),
+          Expanded(child: Text(label, style: TextStyle(fontSize: 15, color: color ?? appInk))),
           Icon(Icons.chevron_right, size: 20, color: Colors.grey.shade400),
         ]),
       ),
@@ -87,9 +87,12 @@ class PerfilAdoptanteScreen extends StatelessWidget {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               // Header
               Row(children: [
-                GestureDetector(
-                  onTap: () => Navigator.pop(context),
-                  child: const Icon(Icons.arrow_back_ios_new, size: 20, color: Color(0xFF1A1A1A)),
+                Tooltip(
+                  message: 'Volver',
+                  child: GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: const Icon(Icons.arrow_back_ios_new, size: 20, color: appInk),
+                  ),
                 ),
                 const SizedBox(width: 12),
                 const Text('PERFIL', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
@@ -111,7 +114,7 @@ class PerfilAdoptanteScreen extends StatelessWidget {
                   const SizedBox(width: 16),
                   Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(nombre, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold,
-                        color: Color(0xFF1A1A1A))),
+                        color: appInk)),
                   const SizedBox(height: 4),
                   Row(children: [
                     FutureBuilder<String>(
@@ -125,7 +128,7 @@ class PerfilAdoptanteScreen extends StatelessWidget {
                           Icon(Icons.location_on, size: 13, color: Colors.grey.shade500),
                           const SizedBox(width: 2),
                           Text(snap.data!,
-                              style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
+                              style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
                           const SizedBox(width: 6),
                           Text('·', style: TextStyle(fontSize: 13, color: Colors.grey.shade400)),
                           const SizedBox(width: 6),
@@ -143,7 +146,7 @@ class PerfilAdoptanteScreen extends StatelessWidget {
                           Icon(Icons.favorite_border, size: 13, color: Colors.grey.shade500),
                           const SizedBox(width: 2),
                           Text('$count favorito${count == 1 ? "" : "s"}',
-                              style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
+                              style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
                         ]);
                       },
                     ),
@@ -157,7 +160,7 @@ class PerfilAdoptanteScreen extends StatelessWidget {
                   letterSpacing: 1.2, color: appTeal)),
               const SizedBox(height: 8),
               const Text('Preferencias', style: TextStyle(fontSize: 24,
-                  fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
+                  fontWeight: FontWeight.bold, color: appInk, fontFamily: 'Baloo2')),
               const SizedBox(height: 16),
               _settingsCard([
                 _settingsRow('Mis solicitudes', Icons.assignment_outlined,
@@ -195,10 +198,15 @@ class PerfilAdoptanteScreen extends StatelessWidget {
                         TextButton(
                           onPressed: () async {
                             Navigator.pop(context);
-                            await GoogleSignIn().signOut();
-                            await FirebaseAuth.instance.signOut();
+                            final ok = await cerrarSesion();
                             if (context.mounted) {
-                              Navigator.of(context).popUntil((route) => route.isFirst);
+                              if (ok) {
+                                Navigator.of(context).popUntil((route) => route.isFirst);
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                                    backgroundColor: msgError,
+                                    content: Text('Esperá unos segundos e intentá de nuevo.')));
+                              }
                             }
                           },
                           child: const Text('Cerrar sesión', style: TextStyle(color: Colors.red)),
@@ -252,7 +260,7 @@ class _RolesSheetState extends State<_RolesSheet> {
         const Text('Mis roles', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         const SizedBox(height: 6),
         Text('Podés tener los dos roles al mismo tiempo',
-            style: TextStyle(fontSize: 13, color: Colors.grey.shade500)),
+            style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
         const SizedBox(height: 20),
         _rolTile('adoptante', '🐾 Adoptante', 'Busco animales para adoptar'),
         const SizedBox(height: 10),
@@ -293,9 +301,9 @@ class _RolesSheetState extends State<_RolesSheet> {
         child: Row(children: [
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(titulo, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700,
-                color: activo ? appTeal : const Color(0xFF1A1A1A))),
+                color: activo ? appTeal : appInk)),
             const SizedBox(height: 2),
-            Text(subtitulo, style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+            Text(subtitulo, style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
           ])),
           if (activo) const Icon(Icons.check_circle, color: appTeal, size: 22),
         ]),

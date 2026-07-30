@@ -34,11 +34,11 @@ class _UbicacionAlcanceScreenState extends State<UbicacionAlcanceScreen> {
       Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
         child: Text('Muéstrame animales a menos de:',
-            style: TextStyle(fontSize: 14, color: Colors.grey.shade600)),
+            style: TextStyle(fontSize: 14, color: Colors.grey.shade700)),
       ),
       Container(
         margin: const EdgeInsets.symmetric(horizontal: 20),
-        decoration: BoxDecoration(color: Colors.white.withOpacity(0.8),
+        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.8),
             borderRadius: BorderRadius.circular(16)),
         child: Column(
           children: _radios.asMap().entries.map((e) {
@@ -58,7 +58,7 @@ class _UbicacionAlcanceScreenState extends State<UbicacionAlcanceScreen> {
                   Expanded(child: Text(e.value,
                       style: TextStyle(fontSize: 15,
                           fontWeight: sel ? FontWeight.w600 : FontWeight.normal,
-                          color: sel ? appTeal : const Color(0xFF1A1A1A)))),
+                          color: sel ? appTeal : appInk))),
                   if (sel) const Icon(Icons.check, color: appTeal, size: 20),
                 ]),
               ),
@@ -70,7 +70,7 @@ class _UbicacionAlcanceScreenState extends State<UbicacionAlcanceScreen> {
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20),
         child: Text('Los animales fuera de este radio no aparecerán en tu feed.',
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
       ),
     ]),
   );
