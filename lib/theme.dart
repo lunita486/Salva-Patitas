@@ -1,9 +1,85 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show TextInputFormatter;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'data/chats_repository.dart';
 import 'data/rescates_repository.dart';
+
+// ─── Aviso de "esto está tardando" ────────────────────────────────────────────
+// El trío bool + Timer + cancelar-en-dispose se copiaba en 3 pantallas de
+// publicar/editar (hallazgo de auditoría de código) — cada una sigue
+// dibujando su propio aviso (se ven distinto a propósito, según dónde
+// aparece), este mixin solo centraliza CUÁNDO mostrarlo.
+mixin TardandoMuchoMixin<T extends StatefulWidget> on State<T> {
+  bool tardandoMucho = false;
+  Timer? _tardandoTimer;
+
+  void iniciarTimerTardando(Duration umbral) {
+    _tardandoTimer?.cancel();
+    tardandoMucho = false;
+    _tardandoTimer = Timer(umbral, () {
+      if (mounted) setState(() => tardandoMucho = true);
+    });
+  }
+
+  void cancelarTimerTardando() => _tardandoTimer?.cancel();
+
+  @override
+  void dispose() {
+    _tardandoTimer?.cancel();
+    super.dispose();
+  }
+}
+
+// ─── Fecha ────────────────────────────────────────────────────────────────────
+// El mismo arreglo de meses abreviados en español se copiaba, con leves
+// variaciones, en 6 pantallas distintas (hallazgo de auditoría de código) —
+// se centraliza acá para que un cambio de formato (o de idioma, algún día)
+// se aplique en un solo lugar.
+const _mesesAbreviados = [
+  'ene', 'feb', 'mar', 'abr', 'may', 'jun',
+  'jul', 'ago', 'sep', 'oct', 'nov', 'dic',
+];
+
+/// "15 jul" o "15 jul 2026" según [conAnio]. Pantallas con lógica propia de
+/// fecha relativa (ej. chat_screen.dart, que también muestra "Hoy"/"Ayer" y
+/// solo agrega el año si difiere del actual) siguen resolviendo esa parte
+/// ellas mismas y llaman a esta función solo para el "día mes [año]" final.
+String formatearFecha(DateTime d, {bool conAnio = true}) =>
+    '${d.day} ${_mesesAbreviados[d.month - 1]}${conAnio ? ' ${d.year}' : ''}';
+
+// ─── WhatsApp ─────────────────────────────────────────────────────────────────
+// Compartido entre albergue_publico_screen.dart y aliado_publico_screen.dart
+// (los dos muestran el mismo botón "Escribir por WhatsApp" si el perfil
+// cargó un teléfono).
+//
+/// Arma el link de WhatsApp a partir de lo que la persona haya escrito en
+/// "Teléfono/WhatsApp" (formato libre, con o sin +57, espacios, guiones).
+/// Si después de limpiar quedan los 10 dígitos típicos de un celular
+/// colombiano (empieza con 3), se antepone el indicativo 57 — si ya tiene
+/// otra cantidad de dígitos, se asume que la persona ya puso su propio
+/// indicativo y se usa tal cual.
+String? whatsappUrl(String telefono) {
+  final digitos = telefono.replaceAll(RegExp(r'[^0-9]'), '');
+  if (digitos.isEmpty) return null;
+  final conIndicativo = digitos.length == 10 && digitos.startsWith('3')
+      ? '57$digitos'
+      : digitos;
+  return 'https://wa.me/$conIndicativo';
+}
+
+/// Normaliza lo que la persona haya escrito en "Página web" (con o sin
+/// "http(s)://", con o sin "www.") a una URL abrible — si no escribió nada
+/// con esquema, se le antepone "https://" antes de abrirla.
+String sitioWebUrl(String sitioWeb) {
+  final limpio = sitioWeb.trim();
+  return limpio.startsWith('http://') || limpio.startsWith('https://')
+      ? limpio
+      : 'https://$limpio';
+}
 
 // ─── Constantes de color ──────────────────────────────────────────────────────
 
@@ -11,6 +87,164 @@ const appBg     = Color(0xFFDFFBEC);
 const appDark   = Color(0xFF162416);
 const appTeal   = Color(0xFF1F8A62);
 const appOrange = Color(0xFFD84E18);
+// El negro casi puro que en la práctica se usa para casi todo el texto de
+// la app (0xFF1A1A1A) — antes escrito a mano en decenas de lugares, sin
+// ningún token que lo agrupara (a diferencia de appDark, que existía pero
+// casi no se usaba). Mismo valor exacto, solo con nombre — no cambia
+// ningún color en pantalla, unifica cómo se referencia.
+const appInk    = Color(0xFF1A1A1A);
+
+// ─── Colores semánticos para SnackBars ───────────────────────────────────────
+// Antes, de 72 SnackBars en toda la app, solo 6 tenían un color puesto a
+// propósito (appTeal para éxito, naranja suelto para "pasó pero a medias")
+// — el resto caía en el gris casi negro por default de Flutter, sin ningún
+// criterio: un error de conexión, un campo faltante y "publicación
+// eliminada" se veían todos igual (lo que notó Eliza probando: "sale el
+// mensaje negro ese feo"). Estos 3 nombres son el criterio único de acá en
+// más — msgError para lo que bloqueó la acción, msgAdvertencia para lo que
+// pasó pero quedó a medias, msgExito para confirmaciones. Reusan colores
+// que la app ya tenía (el rojo de Eliminar/urgente, el naranja de marca, y
+// el verde de siempre) — no son colores nuevos.
+const msgError       = Color(0xFFD32F2F);
+const msgAdvertencia = appOrange;
+const msgExito       = appTeal;
+
+// ─── Ícono/color por tipo de negocio aliado ──────────────────────────────────
+// Un solo mapeo, reutilizado en la grilla de "Negocios aliados"
+// (adoptante_feed_screen.dart) y en el encabezado del perfil público del
+// aliado — así el mismo tipo (ej. "Veterinaria") se ve siempre con el mismo
+// ícono en toda la app, en vez de repetir un switch en cada pantalla.
+// Colores pastel (no los saturados de un mockup de referencia) para que
+// combinen con el resto de la paleta de la app en vez de competir con ella.
+IconData aliadoTipoIcono(String tipo) => switch (tipo) {
+  'Veterinaria'        => Icons.medical_services_outlined,
+  'Tienda de mascotas' => Icons.shopping_bag_outlined,
+  'Spa canino'         => Icons.self_improvement,
+  'Peluquería canina'  => Icons.content_cut,
+  _                    => Icons.pets,
+};
+
+Color aliadoTipoColorPastel(String tipo) => switch (tipo) {
+  'Veterinaria'        => const Color(0xFFD8ECE6),
+  'Tienda de mascotas' => const Color(0xFFFBE3D3),
+  'Spa canino'         => const Color(0xFFE6DFF4),
+  'Peluquería canina'  => const Color(0xFFFAE0E7),
+  _                    => const Color(0xFFE7EFEA),
+};
+
+Color aliadoTipoColorTexto(String tipo) => switch (tipo) {
+  'Veterinaria'        => appTeal,
+  'Tienda de mascotas' => const Color(0xFFB0501C),
+  'Spa canino'         => const Color(0xFF6C4FA0),
+  'Peluquería canina'  => const Color(0xFFC2447A),
+  _                    => const Color(0xFF5F6F68),
+};
+
+// ─── Umbral de "animal estancado" ────────────────────────────────────────────
+// Cuántos días sin encontrar hogar antes de mostrar el aviso naranja en
+// mis_rescates_screen.dart. Configurable por cada rescatista/albergue desde
+// su perfil (pedido explícito de Eliza — antes eran 30 días fijos para
+// todos) y guardado en `usuarios/{uid}.umbralEstancadoDias`. El umbral
+// "urgente" (rojo) no es una segunda configuración: se deriva como el
+// doble del elegido, misma proporción 30/60 que tenía el valor fijo.
+const umbralEstancadoDefault = 30;
+const umbralEstancadoOpciones = [
+  (15,  '15 días'),
+  (30,  '30 días'),
+  (60,  '2 meses'),
+  (90,  '3 meses'),
+  (180, '6 meses'),
+  (365, '1 año y más'),
+];
+
+int umbralEstancadoDe(Map<String, dynamic>? datosUsuario) =>
+    (datosUsuario?['umbralEstancadoDias'] as int?) ?? umbralEstancadoDefault;
+
+// ─── Chip de especie (Todos/Perros/Gatos/Otros) ──────────────────────────────
+// Un solo widget y una sola lista de opciones, reutilizados en el feed
+// (adoptante_feed_screen.dart) y en el perfil (tipo_animal_screen.dart) para
+// la misma preferencia (`prefEspecie`) — antes el perfil tenía su propio
+// estilo (pastillas negro/blanco, sin íconos) y su propio orden distinto al
+// del feed, dos versiones visualmente distintas de lo mismo (lo que notó
+// Eliza: "lindos en un lado, feos en el perfil").
+//
+// El valor real (lo que se guarda y se compara) va primero en cada tupla;
+// el label (con su emoji) es solo lo que se muestra — así "Ambos" se sigue
+// guardando igual que siempre aunque en pantalla diga "Todos".
+const especieOpciones = [
+  ('Ambos', 'Todos'),
+  ('Perro', '🐕 Perros'),
+  ('Gato',  '🐈 Gatos'),
+  ('Otro',  '🐾 Otros'),
+];
+
+// Espacio entre chips — un solo número compartido por el feed y el perfil,
+// junto con el padding/letra de acá abajo, para que los 4 (Todos/Perros/
+// Gatos/Otros) entren sin deslizar en la mayoría de los teléfonos (antes
+// con padding 14/letra 12.5 el cuarto chip quedaba cortado y había que
+// deslizar — sugerencia real de Eliza).
+const especieChipGap = 6.0;
+
+Widget especieChip({required String label, required bool active, required VoidCallback onTap}) {
+  return GestureDetector(
+    onTap: onTap,
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: active ? appTeal : Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: active ? appTeal : Colors.grey.shade300),
+      ),
+      child: Text(label, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700,
+          color: active ? Colors.white : appInk)),
+    ),
+  );
+}
+
+// ─── Campos de las pantallas "Configura tu albergue"/"Configura tu negocio" ──
+// Antes cada pantalla tenía su propia versión: albergue con label gris
+// arriba del campo, aliado con ícono + label flotante adentro. Un solo
+// estilo para las dos (Eliza las comparó una al lado de la otra y pidió
+// que se vean igual) — texto oscuro en vez del gris apagado que tenía
+// albergue, que es lo que a ella más le gustó de las dos.
+Widget perfilLabel(String texto) => Text(texto,
+    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
+        letterSpacing: 1.1, color: appDark));
+
+Widget perfilCampo(
+  TextEditingController ctl,
+  String hint, {
+  TextInputType tipo = TextInputType.text,
+  List<TextInputFormatter> formato = const [],
+  bool autofocus = false,
+  void Function(String)? onChanged,
+}) =>
+    TextField(
+      controller: ctl,
+      keyboardType: tipo,
+      inputFormatters: formato,
+      autofocus: autofocus,
+      onChanged: onChanged,
+      decoration: InputDecoration(
+        hintText: hint,
+        hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+        filled: true,
+        fillColor: Colors.white,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: appTeal, width: 2),
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      ),
+    );
 
 // ─── Paw print painter ───────────────────────────────────────────────────────
 
@@ -87,7 +321,7 @@ Widget errorFeedState({String mensaje = 'No se pudo cargar. Revisá tu conexión
         Icon(Icons.wifi_off_rounded, size: 48, color: Colors.grey.shade400),
         const SizedBox(height: 12),
         Text(mensaje, textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 14, color: Colors.grey.shade600, height: 1.4)),
+            style: TextStyle(fontSize: 14, color: Colors.grey.shade700, height: 1.4)),
       ]),
     ),
   );
@@ -152,6 +386,7 @@ class FotoUrl extends StatelessWidget {
   final double? width;
   final double? height;
   final BoxFit fit;
+  final Alignment alignment;
   const FotoUrl({
     super.key,
     required this.url,
@@ -159,6 +394,7 @@ class FotoUrl extends StatelessWidget {
     this.width,
     this.height,
     this.fit = BoxFit.cover,
+    this.alignment = Alignment.center,
   });
 
   @override
@@ -168,6 +404,7 @@ class FotoUrl extends StatelessWidget {
       width: width,
       height: height,
       fit: fit,
+      alignment: alignment,
       errorBuilder: (_, _, _) => fallback,
       loadingBuilder: (_, child, progress) {
         if (progress == null) return child;
@@ -182,6 +419,66 @@ class FotoUrl extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// Foto de animal a prueba de CUALQUIER encuadre: muestra la foto COMPLETA
+/// (BoxFit.contain, nunca recorta) y rellena las franjas sobrantes con la
+/// misma foto ampliada y desenfocada de fondo — la técnica estándar de las
+/// apps de fotos para encajar cualquier proporción en cualquier recuadro.
+///
+/// Existe porque ningún recorte fijo funciona para todas las fotos: el
+/// ancla arriba (Alignment.topCenter) salva a la mayoría (la cara suele
+/// estar cerca del borde superior) pero rompe fotos con el animal abajo —
+/// el bug real de "Tobyiii": un retrato vertical con el gato al fondo del
+/// mueble se veía como un mueble vacío en el feed, el detalle y favoritos.
+/// Con esta técnica el animal se ve entero SIEMPRE, sin elegir recorte,
+/// sin datos nuevos por foto y sin migrar las fotos existentes. Cuando la
+/// proporción de la foto ya calza con la del recuadro, el fondo borroso
+/// queda tapado por completo — se ve igual que antes.
+///
+/// Para miniaturas chicas (avatares de 64px en listas) conviene seguir
+/// usando [FotoUrl] con recorte: a ese tamaño el desenfoque se vuelve
+/// ruido y el recorte no molesta.
+class FotoAnimal extends StatelessWidget {
+  final String url;
+  final Widget fallback;
+  final double? width;
+  final double? height;
+  const FotoAnimal({
+    super.key,
+    required this.url,
+    required this.fallback,
+    this.width,
+    this.height,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: width,
+      height: height,
+      // ClipRect: el fondo cover se desborda del recuadro a propósito
+      // (para que el blur no muestre bordes transparentes) — sin el clip,
+      // pintaría encima de lo que rodee al widget.
+      child: ClipRect(
+        child: Stack(fit: StackFit.expand, children: [
+          // Fondo: misma foto, estirada a cubrir y desenfocada. Una sola
+          // descarga real: Image.network con la misma URL comparte el
+          // caché de imágenes de Flutter entre las dos capas.
+          ImageFiltered(
+            imageFilter: ImageFilter.blur(sigmaX: 14, sigmaY: 14, tileMode: TileMode.clamp),
+            child: FotoUrl(url: url, fit: BoxFit.cover, fallback: fallback),
+          ),
+          // Velo suave para que el fondo no compita con la foto nítida.
+          Container(color: Colors.black.withValues(alpha: 0.12)),
+          // La foto de verdad, entera. Sin fallback propio: si la carga
+          // falla, ya lo muestra la capa de fondo — dos fallbacks apilados
+          // se verían duplicados.
+          FotoUrl(url: url, fit: BoxFit.contain, fallback: const SizedBox.shrink()),
+        ]),
+      ),
     );
   }
 }
@@ -244,17 +541,33 @@ class _AvatarPersonaState extends State<AvatarPersona> {
 
 /// Avatar de OTRO usuario de la app, identificado por su uid — busca su foto
 /// en usuarios/{userId}.foto (Google Auth photoURL, sincronizado en
-/// main.dart) y cae a la inicial mientras carga o si no tiene. Antes cada
-/// pantalla que necesitaba mostrar la foto de una contraparte (encabezado
-/// del chat, tarjeta de solicitud, fila de la lista de conversaciones)
-/// usaba la foto de la cuenta ACTUALMENTE logueada por error — se centraliza
-/// acá para no repetir el mismo bug en cada pantalla nueva.
+/// main.dart). Si [campoLogoNegocio] no es null, prioriza ese campo (el logo
+/// que un albergue/aliado sube a propósito desde su perfil) sobre esa foto
+/// personal.
+///
+/// [campoLogoNegocio] es el NOMBRE del campo a leer, no un booleano, porque
+/// cada rol de negocio guarda su logo en un campo propio dentro del MISMO
+/// doc usuarios/{uid}: 'fotoBase64' es el logo de albergue,
+/// 'aliadoFotoBase64' el de aliado — una cuenta puede tener varios roles de
+/// negocio a la vez (ver ARCHITECTURE.md), así que "mostrar el logo" no
+/// alcanza, hay que decir CUÁL. Pasar el campo equivocado (o forzar siempre
+/// 'fotoBase64') es cómo un chat de consulta a un aliado terminaba
+/// mostrando la foto personal de la cuenta en vez del logo del negocio: ese
+/// logo vivía en 'aliadoFotoBase64' y nadie lo estaba pidiendo. null =
+/// mostrar siempre la foto personal.
+///
+/// Antes cada pantalla que necesitaba mostrar la foto de una contraparte
+/// (encabezado del chat, tarjeta de solicitud, fila de la lista de
+/// conversaciones) usaba la foto de la cuenta ACTUALMENTE logueada por
+/// error — se centraliza acá para no repetir el mismo bug en cada pantalla
+/// nueva.
 class AvatarUsuario extends StatefulWidget {
   final String? userId;
   final String inicial;
   final double radius;
   final Color backgroundColor;
   final Color textColor;
+  final String? campoLogoNegocio;
   const AvatarUsuario({
     super.key,
     required this.userId,
@@ -262,6 +575,7 @@ class AvatarUsuario extends StatefulWidget {
     this.radius = 20,
     this.backgroundColor = appTeal,
     this.textColor = Colors.white,
+    this.campoLogoNegocio,
   });
 
   @override
@@ -269,24 +583,28 @@ class AvatarUsuario extends StatefulWidget {
 }
 
 class _AvatarUsuarioState extends State<AvatarUsuario> {
-  late final Future<String?> _foto = _cargar();
+  late final Future<(String?, String?)> _foto = _cargar();
 
-  Future<String?> _cargar() async {
+  Future<(String?, String?)> _cargar() async {
     final id = widget.userId;
-    if (id == null || id.isEmpty) return null;
+    if (id == null || id.isEmpty) return (null, null);
     try {
       final doc = await FirebaseFirestore.instance.collection('usuarios').doc(id).get();
-      return doc.data()?['foto'] as String?;
+      final data = doc.data();
+      final campo = widget.campoLogoNegocio;
+      final fotoBase64 = campo != null ? (data?[campo] as String?) : null;
+      return (fotoBase64, data?['foto'] as String?);
     } catch (_) {
-      return null;
+      return (null, null);
     }
   }
 
   @override
-  Widget build(BuildContext context) => FutureBuilder<String?>(
+  Widget build(BuildContext context) => FutureBuilder<(String?, String?)>(
     future: _foto,
     builder: (context, snap) => AvatarPersona(
-      fotoUrl: snap.data,
+      fotoBase64: snap.data?.$1,
+      fotoUrl: snap.data?.$2,
       inicial: widget.inicial,
       radius: widget.radius,
       backgroundColor: widget.backgroundColor,
@@ -303,6 +621,7 @@ Color cicloColor(String s) => switch (s) {
   'Adoptado'               => const Color(0xFF2196F3),
   'Regresado'              => const Color(0xFFD32F2F),
   'Fallecido'              => const Color(0xFF78909C),
+  'Estancados'             => appOrange,
   _                        => Colors.grey,
 };
 
@@ -335,6 +654,7 @@ class CambiarEstadoSheet extends StatelessWidget {
     } catch (_) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            backgroundColor: msgError,
             content: Text('No se pudo actualizar el estado. Intentá de nuevo.')));
       }
       return false;
@@ -392,7 +712,7 @@ class CambiarEstadoSheet extends StatelessWidget {
       const SizedBox(height: 16),
       const Text('Estado del animal', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
       const SizedBox(height: 4),
-      Text('Toca para cambiar el estado', style: TextStyle(fontSize: 13, color: Colors.grey.shade500)),
+      Text('Toca para cambiar el estado', style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
       const SizedBox(height: 16),
       ..._estados.map((e) {
         final sel = e.$1 == estadoActual;
@@ -408,6 +728,13 @@ class CambiarEstadoSheet extends StatelessWidget {
             final esFallecido = e.$1 == 'Fallecido';
             final ctrl = TextEditingController();
             final sheetCtx = context;
+            // .then() en vez de un dispose() suelto después de showDialog:
+            // este showDialog no se espera (el onTap sigue corriendo, no es
+            // async void bloqueado acá), así que un dispose() puesto justo
+            // debajo se ejecutaría ANTES de que la persona llegue a escribir
+            // nada. .then() sí espera a que el diálogo se cierre de verdad
+            // (Cancelar o Guardar, los dos hacen Navigator.pop), sea cual
+            // sea el camino — recién ahí libera el controller.
             showDialog(
               context: context,
               builder: (dlgCtx) => AlertDialog(
@@ -449,7 +776,7 @@ class CambiarEstadoSheet extends StatelessWidget {
                   ),
                 ],
               ),
-            );
+            ).then((_) => ctrl.dispose());
           },
           child: Container(
             margin: const EdgeInsets.only(bottom: 8),
@@ -464,8 +791,8 @@ class CambiarEstadoSheet extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(e.$1, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600,
-                    color: sel ? cicloColor(e.$1) : const Color(0xFF1A1A1A))),
-                Text(e.$3, style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                    color: sel ? cicloColor(e.$1) : appInk)),
+                Text(e.$3, style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
               ])),
               if (sel) Icon(Icons.check_circle, color: cicloColor(e.$1), size: 20),
             ]),
