@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0+1
+version: 1.0.1+43
 
 environment:
   sdk: ^3.11.5
@@ -36,7 +36,15 @@ dependencies:
   firebase_core: ^3.13.0
   cloud_firestore: ^5.6.9
   firebase_auth: ^5.5.2
-  google_sign_in: ^6.2.2
+  # v7: rediseño completo del plugin (singleton + Credential Manager en
+  # Android). Migrado a propósito desde la 6.x, que usaba el SDK viejo de
+  # Google (hoy deprecado) y tenía un bug documentado de "Concurrent
+  # operations detected": si una llamada nativa se colgaba, su bandera
+  # interna de "operación en curso" quedaba trabada para siempre y TODO
+  # intento posterior de login/logout se colgaba también — el bug real de
+  # Eliza: cambiar de cuenta funcionaba 2 veces y a la 3ra quedaba el
+  # spinner infinito. Ver lib/data/auth_helper.dart.
+  google_sign_in: ^7.2.0
   geolocator: ^13.0.1
   geocoding: ^3.0.0
   share_plus: ^10.1.4
@@ -44,6 +52,7 @@ dependencies:
   firebase_messaging: ^15.2.5
   url_launcher: ^6.3.0
   firebase_storage: ^12.4.4
+  firebase_analytics: ^11.4.5
 
 dev_dependencies:
   flutter_test:
@@ -71,8 +80,10 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
-  assets:
-    - assets/
+  # assets/icon.png no se declara acá a propósito: solo lo usa
+  # flutter_launcher_icons (ver la sección de arriba) para generar los
+  # íconos de la app en tiempo de build — no hace falta empaquetarlo
+  # como asset de runtime, nada en lib/ lo lee.
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
@@ -99,3 +110,11 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+  fonts:
+    - family: Baloo2
+      fonts:
+        - asset: assets/fonts/Baloo2-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Baloo2-ExtraBold.ttf
+          weight: 800
