@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../data/auth_helper.dart';
 import '../theme.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -13,21 +12,32 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   bool _cargando = false;
 
+  // Toda la mecánica (Google → Firebase, timeouts, el candado contra
+  // operaciones apiladas) vive en auth_helper.dart — esta pantalla solo
+  // traduce el desenlace a UI. Si el login sale bien no hay que navegar
+  // nada: AuthWrapper (main.dart) reacciona solo al cambio de sesión.
   Future<void> _loginGoogle() async {
     setState(() => _cargando = true);
     try {
-      final googleUser = await GoogleSignIn().signIn();
-      if (googleUser == null) { setState(() => _cargando = false); return; }
-      final googleAuth = await googleUser.authentication;
-      final credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken:     googleAuth.idToken,
-      );
-      await FirebaseAuth.instance.signInWithCredential(credential);
-    } catch (e) {
+      final resultado = await iniciarSesionGoogle();
+      if (!mounted) return;
+      switch (resultado) {
+        case ResultadoLogin.ok:
+          break;
+        case ResultadoLogin.cancelado:
+          setState(() => _cargando = false);
+          break;
+        case ResultadoLogin.ocupado:
+          setState(() => _cargando = false);
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              backgroundColor: msgError,
+              content: Text('Esperá unos segundos e intentá de nuevo.')));
+      }
+    } catch (_) {
       if (mounted) {
         setState(() => _cargando = false);
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            backgroundColor: msgError,
             content: Text('No se pudo iniciar sesión. Revisá tu conexión e intentá de nuevo.')));
       }
     }
@@ -54,10 +64,10 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 24),
                 const Text('Salva Patitas',
                     style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold,
-                        color: Color(0xFF1A1A1A))),
+                        color: appInk)),
                 const SizedBox(height: 8),
                 Text('Conectamos animales con familias',
-                    style: TextStyle(fontSize: 15, color: Colors.grey.shade600)),
+                    style: TextStyle(fontSize: 15, color: Colors.grey.shade700)),
                 const Spacer(),
                 SizedBox(
                   width: double.infinity,
@@ -65,7 +75,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     onPressed: _cargando ? null : _loginGoogle,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.white,
-                      foregroundColor: const Color(0xFF1A1A1A),
+                      foregroundColor: appInk,
                       elevation: 2,
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -94,7 +104,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: RichText(
                     textAlign: TextAlign.center,
                     text: TextSpan(
-                      style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
                       children: const [
                         TextSpan(text: 'Al continuar aceptás nuestra '),
                         TextSpan(
