@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'creator_role.dart';
+import 'firestore_resiliencia.dart';
 
 /// Única puerta de entrada a la colección `solicitudes`. Ver ARCHITECTURE.md.
 ///
@@ -33,17 +34,66 @@ class SolicitudesRepository {
       _col.where('adoptanteId', isEqualTo: uid).snapshots();
 
   /// Hay al menos una solicitud PENDIENTE sobre este animal — se usa para
-  /// bloquear el borrado del rescate mientras alguien espera respuesta. Si
-  /// no se revisa esto, borrar el animal y después aprobar esa solicitud
-  /// revienta: la transacción de [aprobarSiDisponible] intenta actualizar
-  /// un documento de `rescates` que ya no existe.
+  /// bloquear el borrado del rescate mientras alguien espera respuesta,
+  /// para no dejarlo esperando una respuesta que nunca va a llegar.
+  ///
+  /// Este chequeo es una cortesía de UX, NO la barrera de datos real: si
+  /// una solicitud pendiente se le escapa (borrado con caché desactualizada)
+  /// y el animal se elimina igual, [aprobarSiDisponible] ya se protege sola
+  /// — detecta que el rescate no existe y auto-rechaza la solicitud con un
+  /// motivo honesto (`animalEliminado`). Nada se corrompe. Por eso acá se
+  /// puede ser tolerante a fallas de red en vez de bloquear a la usuaria.
+  ///
+  /// Dos capas de tolerancia:
+  ///  1. Reintento corto (ver [_conReintento]) — cubre el tropiezo de
+  ///     "recién vuelve la señal y el canal está reconectando".
+  ///  2. Si el servidor sigue sin responder, se consulta la COPIA LOCAL
+  ///     (Source.cache). Tras salir de modo avión, la reconexión del canal
+  ///     de Firestore puede tardar hasta ~1 minuto (backoff exponencial), y
+  ///     el reintento corto no alcanza — el bug real: internet ya puesto y
+  ///     "no pudimos verificar si se puede eliminar" en cada tap, tanto
+  ///     desde la canequita como desde editar → eliminar.
+  /// Solo si hasta la caché falla (rarísimo) se propaga el error y las
+  /// pantallas muestran el mensaje de conexión.
   Future<bool> tienePendientesPara(String rescateId) async {
-    final res = await _col
+    final q = _col
         .where('rescateId', isEqualTo: rescateId)
         .where('estado', isEqualTo: 'pendiente')
-        .limit(1)
-        .get();
-    return res.docs.isNotEmpty;
+        .limit(1);
+    try {
+      final res = await conReintento(() => q.get());
+      return res.docs.isNotEmpty;
+    } catch (_) {
+      final res = await q.get(const GetOptions(source: Source.cache));
+      return res.docs.isNotEmpty;
+    }
+  }
+
+  /// True si [rescateId] tuvo ALGUNA VEZ una solicitud aprobada (adopción
+  /// u hogar de paso) — sin importar el estado ACTUAL del animal. Usado
+  /// para bloquear el borrado incluso si alguien revirtió el estado a
+  /// "Rescatado" a mano: una vez que un adoptante real pasó por acá, el
+  /// registro queda protegido igual que "Adoptado"/"Hogar de paso" activo.
+  /// Bug real reportado por Eliza: un animal pasó de "En proceso de
+  /// adopción" a "Rescatado" (revirtiendo el estado a mano) y se pudo
+  /// eliminar, dejando la solicitud del adoptante ("aprobada") apuntando a
+  /// un rescate que ya no existe.
+  ///
+  /// Mismo criterio de tolerancia a fallas que [tienePendientesPara]: si
+  /// el servidor no responde, reintenta una vez, y si sigue sin responder
+  /// cae a la copia local en caché.
+  Future<bool> tuvoSolicitudAprobada(String rescateId) async {
+    final q = _col
+        .where('rescateId', isEqualTo: rescateId)
+        .where('estado', isEqualTo: 'aprobada')
+        .limit(1);
+    try {
+      final res = await conReintento(() => q.get());
+      return res.docs.isNotEmpty;
+    } catch (_) {
+      final res = await q.get(const GetOptions(source: Source.cache));
+      return res.docs.isNotEmpty;
+    }
   }
 
   /// Estado de la solicitud pendiente/aprobada que ya tenga [uid] sobre este
@@ -83,6 +133,18 @@ class SolicitudesRepository {
 
   Future<void> cambiarEstado(String solicitudId, String estado) =>
       _col.doc(solicitudId).update({'estado': estado});
+
+  /// Registra que el adoptante aceptó el compromiso de adopción
+  /// (esterilización, no reventa, devolución en vez de abandono) — la
+  /// versión simple de "registro del acuerdo de adopción": no hay firma
+  /// dibujada ni PDF, la constancia es que quedó ligada a la cuenta
+  /// autenticada del adoptante, con la fecha del servidor, dentro de la
+  /// misma solicitud ya aprobada. Solo el propio adoptante puede llamarlo
+  /// (ver firestore.rules) y solo una vez la solicitud está aprobada.
+  Future<void> aceptarAcuerdo(String solicitudId) => _col.doc(solicitudId).update({
+        'acuerdoAceptado': true,
+        'acuerdoAceptadoEn': FieldValue.serverTimestamp(),
+      });
 
   /// Rechaza una solicitud dejando registrado el motivo (a diferencia de
   /// [cambiarEstado], que no toca `motivoRechazo`).

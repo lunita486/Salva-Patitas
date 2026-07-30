@@ -1,9 +1,31 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 import 'package:patitas_medellin/data/creator_role.dart';
 import 'package:patitas_medellin/data/solicitudes_repository.dart';
 
+// fake_cloud_firestore no simula fallas transitorias de red — para probar
+// el reintento de tienePendientesPara() hace falta controlar a mano cuándo
+// falla get() (mismo patrón que rescate_fotos_repository_test.dart).
+class MockFirebaseFirestore extends Mock implements FirebaseFirestore {}
+
+class MockCollectionReference extends Mock
+    implements CollectionReference<Map<String, dynamic>> {}
+
+class MockQuery extends Mock implements Query<Map<String, dynamic>> {}
+
+class MockQuerySnapshot extends Mock
+    implements QuerySnapshot<Map<String, dynamic>> {}
+
+class MockQueryDocumentSnapshot extends Mock
+    implements QueryDocumentSnapshot<Map<String, dynamic>> {}
+
 void main() {
+  // Para poder stubear query.get(any()) — mocktail necesita un valor de
+  // respaldo registrado para tipos propios como GetOptions.
+  setUpAll(() => registerFallbackValue(const GetOptions()));
+
   group('SolicitudesRepository', () {
     late FakeFirebaseFirestore firestore;
     late SolicitudesRepository repo;
@@ -101,6 +123,15 @@ void main() {
       final doc = await ref.get();
       expect(doc['estado'], 'rechazada');
       expect(doc['motivoRechazo'], 'No cumple con los requisitos');
+    });
+
+    test('aceptarAcuerdo marca acuerdoAceptado=true y guarda la fecha del servidor '
+        '("registro del acuerdo de adopción", versión simple sin firma ni PDF)', () async {
+      final ref = await firestore.collection('solicitudes').add({'estado': 'aprobada'});
+      await repo.aceptarAcuerdo(ref.id);
+      final doc = await ref.get();
+      expect(doc['acuerdoAceptado'], true);
+      expect(doc['acuerdoAceptadoEn'], isNotNull);
     });
 
     test('rechazarCompetidoras rechaza las demás solicitudes PENDIENTES por el mismo animal, '
@@ -254,6 +285,161 @@ void main() {
 
       test('false si no hay ninguna solicitud para ese rescateId', () async {
         expect(await repo.tienePendientesPara('sin-solicitudes'), false);
+      });
+
+      test('si la consulta falla una vez (ej. señal recién recuperada de '
+          'modo avión, el canal de Firestore todavía reconectando) '
+          'reintenta sola y no hace falta salir y volver a entrar — el bug '
+          'real: "vuelvo a tener señal y quiero borrar, y sigue diciendo '
+          'que no puede verificar la conexión"', () async {
+        final db = MockFirebaseFirestore();
+        final col = MockCollectionReference();
+        final query = MockQuery();
+        final snapshot = MockQuerySnapshot();
+        when(() => db.collection('solicitudes')).thenReturn(col);
+        when(() => col.where(any(), isEqualTo: any(named: 'isEqualTo')))
+            .thenReturn(query);
+        when(() => query.where(any(), isEqualTo: any(named: 'isEqualTo')))
+            .thenReturn(query);
+        when(() => query.limit(any())).thenReturn(query);
+        when(() => snapshot.docs).thenReturn([]);
+        var intentos = 0;
+        when(() => query.get()).thenAnswer((_) {
+          intentos++;
+          if (intentos == 1) {
+            throw FirebaseException(plugin: 'cloud_firestore', code: 'unavailable');
+          }
+          return Future.value(snapshot);
+        });
+
+        final repoConMock = SolicitudesRepository(db: db);
+        expect(await repoConMock.tienePendientesPara('rescate-1'), false);
+        expect(intentos, 2);
+      });
+
+      test('si el servidor sigue sin responder tras el reintento (la '
+          'reconexión tras modo avión puede tardar hasta ~1 minuto de '
+          'backoff), cae a la copia LOCAL: caché sin pendientes → deja '
+          'borrar — el bug real: internet ya puesto y "no pudimos verificar '
+          'si se puede eliminar" en cada tap, canequita y editar → eliminar', () async {
+        final db = MockFirebaseFirestore();
+        final col = MockCollectionReference();
+        final query = MockQuery();
+        final snapshotCache = MockQuerySnapshot();
+        when(() => db.collection('solicitudes')).thenReturn(col);
+        when(() => col.where(any(), isEqualTo: any(named: 'isEqualTo')))
+            .thenReturn(query);
+        when(() => query.where(any(), isEqualTo: any(named: 'isEqualTo')))
+            .thenReturn(query);
+        when(() => query.limit(any())).thenReturn(query);
+        when(() => query.get()).thenThrow(
+            FirebaseException(plugin: 'cloud_firestore', code: 'unavailable'));
+        // Solo el pedido explícito a la caché local responde — si el código
+        // pidiera otra fuente, no matchea ningún stub y el test falla.
+        when(() => query.get(any(
+                that: isA<GetOptions>()
+                    .having((o) => o.source, 'source', Source.cache))))
+            .thenAnswer((_) async => snapshotCache);
+        when(() => snapshotCache.docs).thenReturn([]);
+
+        final repoConMock = SolicitudesRepository(db: db);
+        expect(await repoConMock.tienePendientesPara('rescate-1'), false);
+      });
+
+      test('la caída a caché también BLOQUEA el borrado si la copia local '
+          'sí conoce una solicitud pendiente — tolerar la falla de red no '
+          'significa ignorar lo que el teléfono ya sabe', () async {
+        final db = MockFirebaseFirestore();
+        final col = MockCollectionReference();
+        final query = MockQuery();
+        final snapshotCache = MockQuerySnapshot();
+        final docPendiente = MockQueryDocumentSnapshot();
+        when(() => db.collection('solicitudes')).thenReturn(col);
+        when(() => col.where(any(), isEqualTo: any(named: 'isEqualTo')))
+            .thenReturn(query);
+        when(() => query.where(any(), isEqualTo: any(named: 'isEqualTo')))
+            .thenReturn(query);
+        when(() => query.limit(any())).thenReturn(query);
+        when(() => query.get()).thenThrow(
+            FirebaseException(plugin: 'cloud_firestore', code: 'unavailable'));
+        when(() => query.get(any())).thenAnswer((_) async => snapshotCache);
+        when(() => snapshotCache.docs).thenReturn([docPendiente]);
+
+        final repoConMock = SolicitudesRepository(db: db);
+        expect(await repoConMock.tienePendientesPara('rescate-1'), true);
+      });
+
+      test('si el servidor falla dos veces Y hasta la caché local falla '
+          '(rarísimo) propaga el error — el llamador (mis_rescates_screen.dart, '
+          'editar_rescate_screen.dart) necesita la excepción para avisar '
+          '"revisá tu conexión"', () async {
+        final db = MockFirebaseFirestore();
+        final col = MockCollectionReference();
+        final query = MockQuery();
+        when(() => db.collection('solicitudes')).thenReturn(col);
+        when(() => col.where(any(), isEqualTo: any(named: 'isEqualTo')))
+            .thenReturn(query);
+        when(() => query.where(any(), isEqualTo: any(named: 'isEqualTo')))
+            .thenReturn(query);
+        when(() => query.limit(any())).thenReturn(query);
+        when(() => query.get()).thenThrow(
+            FirebaseException(plugin: 'cloud_firestore', code: 'unavailable'));
+        when(() => query.get(any())).thenThrow(
+            FirebaseException(plugin: 'cloud_firestore', code: 'unavailable'));
+
+        final repoConMock = SolicitudesRepository(db: db);
+        await expectLater(
+          repoConMock.tienePendientesPara('rescate-1'),
+          throwsA(isA<FirebaseException>()),
+        );
+      });
+    });
+
+    group('tuvoSolicitudAprobada', () {
+      test('true si hay una solicitud aprobada para ese rescateId', () async {
+        await firestore.collection('solicitudes').add({
+          'rescateId': 'eddy-1', 'estado': 'aprobada',
+        });
+        expect(await repo.tuvoSolicitudAprobada('eddy-1'), true);
+      });
+
+      test('false si la única solicitud está pendiente o fue rechazada — '
+          'a diferencia de tienePendientesPara, acá solo importa "aprobada"', () async {
+        await firestore.collection('solicitudes').add({
+          'rescateId': 'eddy-1', 'estado': 'pendiente',
+        });
+        expect(await repo.tuvoSolicitudAprobada('eddy-1'), false);
+      });
+
+      test('false si no hay ninguna solicitud para ese rescateId', () async {
+        expect(await repo.tuvoSolicitudAprobada('sin-solicitudes'), false);
+      });
+
+      test('sigue el mismo criterio de tolerancia a fallas que '
+          'tienePendientesPara: reintenta una vez antes de rendirse', () async {
+        final db = MockFirebaseFirestore();
+        final col = MockCollectionReference();
+        final query = MockQuery();
+        final snapshot = MockQuerySnapshot();
+        when(() => db.collection('solicitudes')).thenReturn(col);
+        when(() => col.where(any(), isEqualTo: any(named: 'isEqualTo')))
+            .thenReturn(query);
+        when(() => query.where(any(), isEqualTo: any(named: 'isEqualTo')))
+            .thenReturn(query);
+        when(() => query.limit(any())).thenReturn(query);
+        when(() => snapshot.docs).thenReturn([]);
+        var intentos = 0;
+        when(() => query.get()).thenAnswer((_) {
+          intentos++;
+          if (intentos == 1) {
+            throw FirebaseException(plugin: 'cloud_firestore', code: 'unavailable');
+          }
+          return Future.value(snapshot);
+        });
+
+        final repoConMock = SolicitudesRepository(db: db);
+        expect(await repoConMock.tuvoSolicitudAprobada('rescate-1'), false);
+        expect(intentos, 2);
       });
     });
   });

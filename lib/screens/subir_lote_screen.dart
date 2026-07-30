@@ -1,14 +1,14 @@
+import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:image/image.dart' as img;
+import 'package:firebase_analytics/firebase_analytics.dart';
 import '../theme.dart';
 import '../data/creator_role.dart';
 import '../data/rescates_repository.dart';
-import '../data/rescate_fotos_repository.dart';
+import '../data/foto_normalizador.dart';
 
 class SubirLoteScreen extends StatefulWidget {
   const SubirLoteScreen({super.key});
@@ -20,13 +20,20 @@ class _AnimalDraft {
   XFile foto1;
   XFile? foto2;
   final TextEditingController nombreCtl = TextEditingController();
+  final TextEditingController descCtl = TextEditingController();
   String? especieOverride;
   String? urgenciaOverride;
-  _AnimalDraft({required this.foto1, this.foto2});
-  void dispose() => nombreCtl.dispose();
+  // foto2 se asigna siempre después, por separado (ver _pickSegundaFoto
+  // más abajo) — nunca al construir el draft, así que el constructor no
+  // lo recibe como parámetro (el campo en sí sí se usa, y mucho).
+  _AnimalDraft({required this.foto1});
+  void dispose() {
+    nombreCtl.dispose();
+    descCtl.dispose();
+  }
 }
 
-class _SubirLoteScreenState extends State<SubirLoteScreen> {
+class _SubirLoteScreenState extends State<SubirLoteScreen> with TardandoMuchoMixin {
   final _picker = ImagePicker();
   int _paso = 0;
 
@@ -38,6 +45,10 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> {
   final List<_AnimalDraft> _animales = [];
   bool _publicando = false;
   int _procesados = 0;
+  // Mismo motivo que en subir_rescate_screen.dart: sin señal, el contador
+  // "Publicando X de N" se queda pegado en el animal que está trabado
+  // (hasta 45s en la foto obligatoria) sin ningún otro aviso — parecía
+  // colgada.
 
   @override
   void initState() {
@@ -70,23 +81,81 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> {
     if (img != null && mounted) setState(() => _animales[index].foto2 = img);
   }
 
-  /// Mismo tratamiento de bytes que subir_rescate_screen.dart — unificado
-  /// para que un lote no suba fotos más pesadas de lo necesario solo por
-  /// no pasar por la misma recompresión.
-  Future<Uint8List> _normalizarFoto(String path) async {
-    final bytes = await File(path).readAsBytes();
-    final decoded = img.decodeImage(bytes);
-    if (decoded == null) return bytes;
-    final rotated = img.bakeOrientation(decoded);
-    final resized = rotated.width > 1000
-        ? img.copyResize(rotated, width: 1000)
-        : rotated;
-    return img.encodeJpg(resized, quality: 80);
-  }
-
   Future<void> _publicar() async {
+    // Aviso, no bloqueo, y ANTES de arrancar el lote (no tiene sentido
+    // interrumpir a mitad de un lote que ya está publicando). Chequea dos
+    // cosas: nombres que ya existen en tus animales publicados como
+    // albergue (el lote siempre publica con ese rol — mismo motivo que en
+    // el alta individual, ver subir_rescate_screen.dart: no cruza con lo
+    // que hayas publicado como rescatista, son dos "negocios" distintos
+    // aunque el login sea el mismo), y nombres repetidos dentro del propio
+    // lote (sin ir a la red, comparando entre sí). En los dos casos se
+    // compara nombre + especie juntos — un "Richard" perro no debería
+    // chocar con un "Richard" gato.
+    final animalesConNombre = _animales.where((a) => a.nombreCtl.text.trim().isNotEmpty).toList();
+    // Fuera del if (no solo declarado adentro): publicarUno() más abajo lo
+    // necesita para dejar el mismo rastro de auditoría que el alta
+    // individual (ver _duplicadoDeId en subir_rescate_screen.dart) en cada
+    // animal que se publicó pese al aviso de nombre repetido.
+    final repetidos = <String>{};
+    if (animalesConNombre.isNotEmpty) {
+      final uidActual = FirebaseAuth.instance.currentUser?.uid ?? '';
+      // Una sola consulta para todo el lote, no una por animal (mismo
+      // filtro rescatistaId+creadoPor cada vez — hallazgo de auditoría).
+      final existentes = await RescatesRepository()
+          .nombresExistentes(uid: uidActual, role: CreatorRole.albergue);
+      for (final a in animalesConNombre) {
+        final nombreAnimal = a.nombreCtl.text.trim();
+        final especieAnimal = a.especieOverride ?? _especie;
+        final clave = '${nombreAnimal.toLowerCase()}_$especieAnimal';
+        if (existentes.contains(clave)) {
+          repetidos.add(nombreAnimal);
+        }
+      }
+      final vistos = <String>{};
+      for (final a in animalesConNombre) {
+        final clave = '${a.nombreCtl.text.trim().toLowerCase()}_${a.especieOverride ?? _especie}';
+        if (!vistos.add(clave)) repetidos.add(a.nombreCtl.text.trim());
+      }
+      if (repetidos.isNotEmpty) {
+        if (!mounted) return;
+        final continuar = await showDialog<bool>(
+          context: context,
+          builder: (dlgCtx) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text('Nombres repetidos'),
+            content: Text('Ya tenés (o estás por subir más de una vez en este lote) '
+                'un animal llamado: ${repetidos.join(", ")}. Si es a propósito, '
+                'podés publicar igual.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dlgCtx, false),
+                child: const Text('Cancelar'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(dlgCtx, true),
+                child: const Text('Publicar igual', style: TextStyle(color: appTeal)),
+              ),
+            ],
+          ),
+        );
+        if (continuar != true) return;
+      }
+    }
+
+    // Faltaba: si la persona sale de la pantalla mientras las consultas de
+    // arriba todavía estaban en curso (conexión lenta, sin duplicados), el
+    // setState() de acá abajo corría igual sobre una pantalla ya cerrada
+    // (hallazgo de auditoría de código).
+    if (!mounted) return;
     setState(() { _publicando = true; _procesados = 0; });
-    final fotosRepo = RescateFotosRepository();
+    // El umbral crece con la cantidad de animales — todos suben sus fotos
+    // al mismo tiempo, así que un lote de 3 mueve más datos en total que
+    // uno de 1, y tarda más de forma normal y esperable. Con el límite fijo
+    // de 6s (pensado para 1 animal), el aviso de "esto está tardando" salía
+    // seguido en lotes de 3+ animales aunque todo estuviera funcionando
+    // bien — el bug real que reportó Eliza.
+    iniciarTimerTardando(Duration(seconds: 6 + 5 * (_animales.length - 1)));
     final fallidos = <String>[];
     var publicados = 0;
     try {
@@ -97,26 +166,37 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> {
       if (albergueNombre != null && albergueNombre.isNotEmpty) nombre = albergueNombre;
       final fotoAlbergue = userDoc.data()?['fotoBase64'] as String?;
 
-      for (var i = 0; i < _animales.length; i++) {
-        final a = _animales[i];
+      // Cada animal se publica en paralelo, no uno atrás del otro — antes
+      // el lote entero esperaba a que el animal 1 terminara (crear doc +
+      // subir fotos + actualizar) para recién ahí arrancar el animal 2,
+      // sumando los tiempos de cada uno en vez de que corrieran juntos.
+      // Con 2 animales, eso duplicaba la espera sin necesidad (el bug real
+      // que reportó Eliza: "la creación del lote tarda mucho, y eso que
+      // solo cargué dos animalitos"). Cada animal sigue teniendo su propio
+      // try/catch y su propio rollback — uno que falla no aborta a los
+      // demás, sigan corriendo en paralelo o no.
+      Future<void> publicarUno(_AnimalDraft a, int i) async {
         final nombreAnimal = a.nombreCtl.text.trim().isNotEmpty
             ? a.nombreCtl.text.trim() : 'Animal ${i + 1}';
-        String? rescateId;
         try {
-          final foto1Bytes = await _normalizarFoto(a.foto1.path);
-          final foto2Bytes = a.foto2 != null ? await _normalizarFoto(a.foto2!.path) : null;
+          // normalizarFoto() corre en su propio isolate (compute()) — así
+          // el procesamiento de fotos de ESTE animal corre en paralelo
+          // real con el de los demás animales del lote, y con la foto 2 de
+          // este mismo animal. Antes, aunque los animales se publicaban
+          // "en paralelo" con Future.wait, esta parte (CPU, sincrónica, en
+          // el isolate principal) igual se serializaba entre todos —
+          // el paralelismo era ilusorio en la parte que más tiempo tomaba.
+          final normalizadas = await Future.wait([
+            normalizarFoto(a.foto1.path),
+            if (a.foto2 != null) normalizarFoto(a.foto2!.path),
+          ]);
 
-          // 1) Crear el doc SIN fotos — storage.rules necesita que exista
-          // para verificar dueño al subir (mismo motivo que en el alta
-          // individual, ver subir_rescate_screen.dart).
-          // Cada paso de red tiene un .timeout() a propósito — sin conexión
-          // (ej. modo avión a mitad de un lote), tanto el write de
-          // Firestore como la subida a Storage se quedan esperando sin
-          // completar ni fallar nunca, y ni el catch de acá abajo ni el
-          // "sigue con el resto del lote" llegan a dispararse: el lote
-          // entero queda colgado en el primer animal. Mismo bug y mismo
-          // arreglo que en subir_rescate_screen.dart.
-          final ref = await RescatesRepository().crear(
+          // "Crear doc sin fotos → subir en paralelo → vincular", con
+          // rollback automático si algo falla, vive en
+          // RescatesRepository.publicarConFotos — antes esa secuencia
+          // estaba duplicada acá y en subir_rescate_screen.dart (hallazgo
+          // de auditoría de código).
+          await RescatesRepository().publicarConFotos(
             uid: uid,
             role: CreatorRole.albergue,
             datos: {
@@ -126,9 +206,16 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> {
               'estado':              'Sano',
               'urgencia':            a.urgenciaOverride ?? _urgencia,
               'ubicacion':           _ciudad,
-              'descripcion':         '',
+              'descripcion':         a.descCtl.text.trim(),
               'estadoAdopcion':      'Rescatado',
               'rescatistaNombre':    nombre,
+              // Mismo rastro de auditoría que el alta individual: se avisó
+              // un nombre repetido y se publicó igual a propósito — útil
+              // para poder encontrar y limpiar duplicados reales después,
+              // sin necesitar el id exacto del otro doc (acá puede haber
+              // más de un candidato: contra lo ya publicado, o contra otro
+              // animal del mismo lote).
+              if (repetidos.contains(nombreAnimal)) 'duplicadoConfirmadoEn': FieldValue.serverTimestamp(),
               if (fotoAlbergue != null) 'rescatistaFotoBase64': fotoAlbergue,
               'edad':                'Adulto',
               'genero':              'No sé',
@@ -137,72 +224,68 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> {
               'okConNinos':          true,
               'okConMascotas':       true,
               'requiereExperiencia': false,
+              // Por defecto, no asumido — igual que en el alta individual,
+              // se puede corregir después editando cada animal cuando se
+              // sepa de verdad (ej. tras la visita al veterinario).
+              'vacunado':            'Aún no lo sé',
+              'desparasitado':       'Aún no lo sé',
             },
-          ).timeout(const Duration(seconds: 15), onTimeout: () =>
-              throw Exception('No hay conexión a internet.'));
-          rescateId = ref.id;
-
-          // 2) Foto obligatoria.
-          final fotoUrl = await fotosRepo.subir(rescateId: rescateId, slot: 1, bytes: foto1Bytes)
-              .timeout(const Duration(seconds: 45), onTimeout: () =>
-                  throw Exception('No hay conexión a internet.'));
-
-          // 3) Segunda foto — opcional, no aborta este animal si falla.
-          String? fotoUrl2;
-          if (foto2Bytes != null) {
-            try {
-              fotoUrl2 = await fotosRepo.subir(rescateId: rescateId, slot: 2, bytes: foto2Bytes)
-                  .timeout(const Duration(seconds: 45), onTimeout: () =>
-                      throw Exception('tiempo agotado'));
-            } catch (_) {}
-          }
-
-          await RescatesRepository().actualizar(rescateId, {
-            'fotoUrl': fotoUrl,
-            if (fotoUrl2 != null) 'fotoUrl2': fotoUrl2,
-          }).timeout(const Duration(seconds: 15), onTimeout: () =>
-              throw Exception('No hay conexión a internet.'));
+            fotos: normalizadas,
+          );
+          FirebaseAnalytics.instance.logEvent(
+            name: 'animal_publicado',
+            parameters: {
+              'especie': a.especieOverride ?? _especie,
+              'creado_por': 'albergue',
+            },
+          ).catchError((_) {});
           publicados++;
         } catch (_) {
           // Este animal falló — no se aborta el lote entero (no tiene
-          // sentido perder los N-1 que sí funcionaron). Se hace rollback
-          // solo de este animal y se sigue con el resto; al final se
-          // informa cuáles quedaron pendientes.
-          // try/catch por paso (no .catchError) — mismo motivo que en
-          // subir_rescate_screen.dart: un catchError mal tipado revienta
-          // dentro de este catch y aborta el lote entero en silencio.
-          if (rescateId != null) {
-            final id = rescateId;
-            try { await RescatesRepository().eliminar(id); } catch (_) {}
-            try { await fotosRepo.eliminarTodas(id); } catch (_) {}
-          }
+          // sentido perder los N-1 que sí funcionaron). El rollback de
+          // este animal ya lo hace publicarConFotos internamente; acá solo
+          // queda anotarlo como pendiente y seguir con el resto.
           fallidos.add(nombreAnimal);
         }
         if (mounted) setState(() => _procesados++);
       }
+
+      await Future.wait(
+          [for (var i = 0; i < _animales.length; i++) publicarUno(_animales[i], i)]);
 
       if (!mounted) return;
       Navigator.pop(context);
       if (fallidos.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('$publicados animales publicados 🐾'),
-          backgroundColor: appTeal,
+          backgroundColor: msgExito,
           behavior: SnackBarBehavior.floating,
         ));
       } else {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('$publicados publicados. No se pudieron publicar: ${fallidos.join(", ")}.'),
-          backgroundColor: Colors.orange.shade700,
+          backgroundColor: msgAdvertencia,
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 6),
         ));
       }
-    } catch (e) {
+    } catch (_) {
+      // Rama poco común (algo falló ANTES/AFUERA del try/catch por animal
+      // de más arriba, que ya cubre el caso normal de "se cayó la señal a
+      // mitad de un animal puntual") — pero el mensaje y el volver a la
+      // pantalla principal tienen que ser los mismos que el resto, no un
+      // SnackBar rojo distinto dejando a la persona parada acá.
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('No se pudo publicar el lote. Revisá tu conexión e intentá de nuevo.'),
+        backgroundColor: msgError,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 6),
+      ));
     } finally {
-      if (mounted) setState(() => _publicando = false);
+      cancelarTimerTardando();
+      if (mounted) setState(() { _publicando = false; tardandoMucho = false; });
     }
   }
 
@@ -232,6 +315,7 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> {
     child: Row(children: [
       IconButton(
         icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+                tooltip: 'Volver',
         onPressed: () {
           if (_paso > 0) setState(() => _paso--);
           else Navigator.pop(context);
@@ -239,12 +323,12 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> {
       ),
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         const Text('Subir lote',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: appInk)),
         Text(
           _paso == 0 ? 'Selecciona las fotos'
               : _paso == 1 ? 'Datos comunes para todos'
               : 'Revisa cada animal',
-          style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+          style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
       ])),
     ]),
   );
@@ -350,7 +434,7 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> {
                   style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: appTeal)),
               const SizedBox(height: 4),
               Text('Selecciona varias a la vez: 1 foto = 1 animal',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
             ]),
           ),
         ),
@@ -358,7 +442,7 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> {
         const SizedBox(height: 20),
         Row(children: [
           Text('${_animales.length} ${_animales.length == 1 ? "animal" : "animales"}',
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF1A1A1A))),
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: appInk)),
           const Spacer(),
           GestureDetector(
             onTap: _pickFotosConConfirmacion,
@@ -583,10 +667,61 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> {
                         ? const Color(0xFFE65100) : appTeal,
                 onChanged: (v) => setState(() => a.urgenciaOverride = v),
               ),
-              if (_ciudad.isNotEmpty) _miniChip(_ciudad, Colors.grey.shade500),
+              if (_ciudad.isNotEmpty) _miniChip(_ciudad, Colors.grey.shade700),
             ]),
           ])),
         ]),
+          const SizedBox(height: 10),
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            Text('Descripción (opcional)',
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade700, fontWeight: FontWeight.w600)),
+            GestureDetector(
+              onTap: () {
+                final nombre = a.nombreCtl.text.trim().isNotEmpty
+                    ? a.nombreCtl.text.trim() : 'Animal ${i + 1}';
+                final plantilla =
+                    '$nombre fue encontrado/a [contá cómo o dónde lo/la encontraste]. '
+                    'Lo/la que lo/la hace único/a es [una costumbre, gesto o anécdota que lo/la describa]. '
+                    'Ya pasó por mucho. Ahora solo le falta alguien que decida quedarse. '
+                    '¿Serás vos?';
+                setState(() {
+                  a.descCtl.value = TextEditingValue(
+                    text: plantilla,
+                    selection: TextSelection.collapsed(offset: plantilla.length),
+                  );
+                });
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: appTeal.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: appTeal.withValues(alpha: 0.3)),
+                ),
+                child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                  Text('✨', style: TextStyle(fontSize: 10)),
+                  SizedBox(width: 3),
+                  Text('Usar plantilla',
+                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: appTeal)),
+                ]),
+              ),
+            ),
+          ]),
+          const SizedBox(height: 6),
+          TextField(
+            controller: a.descCtl,
+            maxLines: 3,
+            decoration: InputDecoration(
+              hintText: 'Estado del animal, dónde fue encontrado, necesidades especiales...',
+              hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 12),
+              filled: true,
+              fillColor: const Color(0xFFF7F7F7),
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            ),
+            style: const TextStyle(fontSize: 13),
+          ),
           ]),
         );
     },
@@ -609,12 +744,20 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> {
               elevation: 0,
             ),
             child: _publicando
-                ? Row(mainAxisSize: MainAxisSize.min, children: [
-                    const SizedBox(height: 20, width: 20,
-                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
-                    const SizedBox(width: 10),
-                    Text('Publicando $_procesados de ${_animales.length}...',
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white)),
+                ? Column(mainAxisSize: MainAxisSize.min, children: [
+                    Row(mainAxisSize: MainAxisSize.min, children: [
+                      const SizedBox(height: 20, width: 20,
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
+                      const SizedBox(width: 10),
+                      Text('Publicando $_procesados de ${_animales.length}...',
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white)),
+                    ]),
+                    if (tardandoMucho) ...[
+                      const SizedBox(height: 6),
+                      const Text('Esto está tardando más de lo normal. Revisá tu conexión',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontSize: 11, color: Colors.white70)),
+                    ],
                   ])
                 : Text('Publicar ${_animales.length} animales 🐾',
                     style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
@@ -645,7 +788,7 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> {
 
   Widget _label(String t) => Text(t,
       style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
-          letterSpacing: 1.1, color: Colors.grey.shade500));
+          letterSpacing: 1.1, color: Colors.grey.shade700));
 
   Widget _chips(List<String> opts, String sel, ValueChanged<String> fn, Color color) =>
       Wrap(spacing: 8, runSpacing: 8, children: opts.map((o) {

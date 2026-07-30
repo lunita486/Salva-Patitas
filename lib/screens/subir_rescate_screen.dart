@@ -1,16 +1,17 @@
+import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:image/image.dart' as img;
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
 import '../theme.dart';
 import '../data/creator_role.dart';
 import '../data/rescates_repository.dart';
-import '../data/rescate_fotos_repository.dart';
+import '../data/foto_normalizador.dart';
+import 'editar_rescate_screen.dart';
 
 class SubirRescateScreen extends StatefulWidget {
   final bool esAlbergue;
@@ -19,7 +20,7 @@ class SubirRescateScreen extends StatefulWidget {
   State<SubirRescateScreen> createState() => _SubirRescateScreenState();
 }
 
-class _SubirRescateScreenState extends State<SubirRescateScreen> {
+class _SubirRescateScreenState extends State<SubirRescateScreen> with TardandoMuchoMixin {
   final _picker    = ImagePicker();
   final _nombreCtl = TextEditingController();
   final _lugarCtl  = TextEditingController();
@@ -38,6 +39,13 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
   String _okMascotas   = 'Sí';
   String _requiereExp  = 'No';
   String _tipoRaza     = 'Criolla';
+  // 'Aún no lo sé' por defecto, no 'No' — un animal recién rescatado de la
+  // calle todavía no pasó por veterinario, y forzar Sí/No hacía que la
+  // gente adivinara o dejara el dato mal puesto sin querer (sugerencia
+  // real de un tester que rescató un gato de la calle y no tenía cómo
+  // saberlo en el momento de publicar).
+  String _vacunado      = 'Aún no lo sé';
+  String _desparasitado = 'Aún no lo sé';
 
   static const _especies      = ['Perro', 'Gato', 'Otro'];
   static const _estados       = ['Sano', 'Herido', 'En tratamiento', 'Crítico'];
@@ -47,12 +55,13 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
   static const _edades        = ['Cachorro', 'Adulto', 'Senior'];
   static const _generos       = ['Macho', 'Hembra', 'No sé'];
   static const _siNoOpts      = ['Sí', 'No'];
+  static const _saludOpts     = ['Sí', 'No', 'Aún no lo sé'];
   static const _tipoRazaOpts  = ['Criolla', 'Raza definida'];
 
   Color _urgenciaColor(String u) => switch (u) {
     'Alta'  => const Color(0xFFD32F2F),
     'Media' => const Color(0xFFE65100),
-    _       => const Color(0xFF1F8A62),
+    _       => appTeal,
   };
 
   Future<void> _pickFoto() async {
@@ -72,13 +81,18 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Cámara no disponible, usa la galería'),
-        backgroundColor: appTeal,
+        backgroundColor: msgAdvertencia,
       ));
     }
   }
 
   bool _publicando = false;
   double _progreso = 0;
+  // Mientras no hay señal, la subida no tiene bytes que transferir todavía
+  // — _progreso se queda en 0 y el botón solo muestra un círculo girando,
+  // sin ningún texto, hasta que el timeout de 45s se cumple. Sin este
+  // aviso parecía que la app estaba colgada (el bug real que reportó
+  // Eliza: "el mensaje se demora mucho en presentarse").
   bool _detectandoUbicacion = false;
   double? _latitud;
   double? _longitud;
@@ -108,7 +122,7 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
     if (!serviceEnabled) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Activa el GPS en tu dispositivo')));
+        const SnackBar(content: Text('Activa el GPS en tu dispositivo'), backgroundColor: msgError));
       setState(() => _detectandoUbicacion = false);
       return;
     }
@@ -128,8 +142,10 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
       // de la app no hace falta que busque nada por su cuenta.
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: const Text('Permiso de ubicación bloqueado.'),
+        backgroundColor: msgError,
         action: SnackBarAction(
           label: 'Abrir Ajustes',
+          textColor: Colors.white,
           onPressed: () => Geolocator.openAppSettings(),
         ),
         duration: const Duration(seconds: 8),
@@ -172,31 +188,88 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
       setState(() => _detectandoUbicacion = false);
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('No se pudo detectar tu ubicación. Podés tocar para '
-              'reintentar, o publicar igual sin ubicación exacta.')));
+              'reintentar, o publicar igual sin ubicación exacta.'),
+          backgroundColor: msgError));
     }
   }
 
-  /// Comprime la foto a JPEG liviano antes de subirla a Storage. El límite
-  /// de 1000px ya no es por el límite de 1 MiB de un doc de Firestore (las
-  /// fotos ya no viven ahí) — se mantiene igual que antes solo para no
-  /// subir fotos más pesadas de lo necesario para el feed/detalle.
-  Future<Uint8List> _normalizarFoto(String path) async {
-    final bytes = await File(path).readAsBytes();
-    final decoded = img.decodeImage(bytes);
-    if (decoded == null) return bytes;
-    final rotated = img.bakeOrientation(decoded);
-    final resized = rotated.width > 1000
-        ? img.copyResize(rotated, width: 1000)
-        : rotated;
-    return img.encodeJpg(resized, quality: 80);
-  }
+  // Cuando la usuaria confirma "Publicar igual" habiendo un duplicado, se
+  // guarda el rastro en el nuevo doc (con qué otro animal se cruzó y
+  // cuándo) — un aviso que se puede ignorar sin dejar huella se siente
+  // como "¿entonces para qué avisó?", y sin este dato no hay forma de
+  // encontrar después, desde la base, qué publicaciones fueron duplicados
+  // confirmados a propósito para poder limpiarlas.
+  String? _duplicadoDeId;
 
   Future<void> _publicar() async {
     if (_fotos.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Debes agregar al menos una foto del animal')));
+        const SnackBar(content: Text('Debes agregar al menos una foto del animal'), backgroundColor: msgError));
       return;
     }
+    _duplicadoDeId = null;
+    // Aviso, no bloqueo: si ya tenés otro animal publicado con este mismo
+    // nombre EN ESTE MISMO ROL, lo más común es que sea una carga duplicada
+    // por accidente — pero un nombre repetido entre dos animales reales
+    // también puede pasar, así que se deja publicar igual si es a
+    // propósito. No cruza rescatista con albergue de la misma cuenta: son
+    // dos "negocios" distintos aunque el login sea el mismo.
+    final nombreIngresado = _nombreCtl.text.trim();
+    if (nombreIngresado.isNotEmpty) {
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      final duplicado = await RescatesRepository().buscarDuplicado(
+        uid: uid,
+        nombre: nombreIngresado,
+        role: widget.esAlbergue ? CreatorRole.albergue : CreatorRole.rescatista,
+        especie: _especie,
+      );
+      if (!mounted) return;
+      if (duplicado != null) {
+        // 3 salidas en vez de 2: "Ver ficha existente" además de
+        // cancelar/continuar, para no dejar a la usuaria adivinando cuál
+        // es el otro animal — antes solo podía cancelar y buscarlo ella
+        // misma en "Mis animales".
+        final accion = await showDialog<String>(
+          context: context,
+          builder: (dlgCtx) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text('Posible animal duplicado'),
+            content: Text('Ya tenés otro animal llamado "$nombreIngresado" '
+                '($_especie). Si es a propósito (dos animales distintos con '
+                'el mismo nombre, uno que volvió, etc.) podés publicar igual. '
+                'Si fue sin querer, revisá la ficha existente primero.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dlgCtx, 'cancelar'),
+                child: const Text('Cancelar'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(dlgCtx, 'ver'),
+                child: const Text('Ver ficha existente'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(dlgCtx, 'continuar'),
+                child: const Text('Publicar igual', style: TextStyle(color: appTeal)),
+              ),
+            ],
+          ),
+        );
+        if (accion == 'ver') {
+          if (!mounted) return;
+          Navigator.push(context, MaterialPageRoute(
+              builder: (_) => EditarRescateScreen(docId: duplicado.id, data: duplicado.data())));
+          return;
+        }
+        if (accion != 'continuar') return;
+        _duplicadoDeId = duplicado.id;
+      }
+    }
+    // El diálogo de "posible duplicado" de arriba también es un await —
+    // sin este chequeo, si la persona salía de la pantalla justo mientras
+    // decidía "Publicar igual", el showDialog de abajo (unas líneas más)
+    // usaba un context que ya no era válido (use_build_context_synchronously,
+    // hallazgo real de la auditoría previa a subir a Play).
+    if (!mounted) return;
     // La ubicación ya no bloquea la publicación — antes, si el GPS fallaba
     // o tardaba (señal débil, permiso recién concedido, lo que sea), el
     // rescatista quedaba sin poder publicar y sin un aviso claro de por qué.
@@ -209,7 +282,7 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: const Text('Sin ubicación detectada'),
           content: const Text(
-              'No se detectó tu ubicación GPS. Podés publicar igual — el animal '
+              'No se detectó tu ubicación GPS. Podés publicar igual. El animal '
               'no va a aparecer con distancia en el feed hasta que agregues la '
               'ubicación más tarde, editando la publicación.'),
           actions: [
@@ -235,14 +308,16 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
       }
     }
     setState(() { _publicando = true; _progreso = 0; });
-
-    final fotosRepo = RescateFotosRepository();
-    String? rescateId;
-    var foto2Fallo = false;
+    iniciarTimerTardando(const Duration(seconds: 6));
 
     try {
-      final foto1Bytes = await _normalizarFoto(_fotos[0].path);
-      final foto2Bytes = _fotos.length > 1 ? await _normalizarFoto(_fotos[1].path) : null;
+      // Las dos fotos se normalizan en paralelo — normalizarFoto() corre
+      // en su propio isolate (compute()), así que esto sí es paralelismo
+      // real, no solo dos await seguidos en el mismo hilo.
+      final normalizadas = await Future.wait([
+        normalizarFoto(_fotos[0].path),
+        if (_fotos.length > 1) normalizarFoto(_fotos[1].path),
+      ]);
 
       final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
       var nombrePublicador = FirebaseAuth.instance.currentUser?.displayName ?? 'Rescatista';
@@ -257,18 +332,11 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
         fotoPublicadorUrl = FirebaseAuth.instance.currentUser?.photoURL;
       }
 
-      // 1) Crear el doc SIN fotos todavía — storage.rules necesita que el
-      // rescate ya exista (con el rescatistaId correcto) para poder
-      // verificar dueño cuando se suba la foto en el paso 2.
-      //
-      // Cada paso de red tiene un .timeout() a propósito: sin conexión
-      // (ej. modo avión), tanto el write de Firestore como la subida a
-      // Storage se quedan esperando sin nunca completar ni fallar — el
-      // try/catch de acá abajo nunca llegaba a dispararse, y la app
-      // quedaba "colgada" (spinner infinito, sin ningún mensaje) hasta que
-      // volvía la señal. El timeout fuerza el error para que el catch
-      // pueda avisar y hacer el rollback.
-      final ref = await RescatesRepository().crear(
+      // "Crear doc sin fotos → subir en paralelo → vincular", con rollback
+      // automático si algo falla, vive en RescatesRepository.publicarConFotos
+      // — antes esa secuencia estaba duplicada acá y en
+      // subir_lote_screen.dart (hallazgo de auditoría de código).
+      final resultado = await RescatesRepository().publicarConFotos(
         uid: uid,
         role: widget.esAlbergue ? CreatorRole.albergue : CreatorRole.rescatista,
         datos: {
@@ -293,44 +361,26 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
           'okConNinos':       _okNinos == 'Sí',
           'okConMascotas':    _okMascotas == 'Sí',
           'requiereExperiencia': _requiereExp == 'Sí',
+          // String, no bool: a diferencia de los de arriba, acá "Aún no lo
+          // sé" es una tercera respuesta honesta y real, no una falta de
+          // dato — un animal recién rescatado de la calle todavía no pasó
+          // por veterinario cuando se publica.
+          'vacunado':         _vacunado,
+          'desparasitado':    _desparasitado,
+          if (_duplicadoDeId != null) 'duplicadoDeId': _duplicadoDeId,
+          if (_duplicadoDeId != null) 'duplicadoConfirmadoEn': FieldValue.serverTimestamp(),
         },
-      ).timeout(const Duration(seconds: 15), onTimeout: () =>
-          throw Exception('No hay conexión a internet. Revisá tu wifi/datos e intentá de nuevo.'));
-      rescateId = ref.id;
+        fotos: normalizadas,
+        onProgreso: (p) { if (mounted) setState(() => _progreso = p); },
+      );
 
-      // 2) Foto obligatoria — si falla, no tiene sentido dejar un rescate
-      // sin ninguna foto: se hace rollback completo (ver catch de abajo).
-      final fotoUrl = await fotosRepo.subir(
-        rescateId: rescateId, slot: 1, bytes: foto1Bytes,
-        onProgreso: (p) {
-          if (mounted) setState(() => _progreso = foto2Bytes != null ? p / 2 : p);
+      FirebaseAnalytics.instance.logEvent(
+        name: 'animal_publicado',
+        parameters: {
+          'especie': _especie,
+          'creado_por': widget.esAlbergue ? 'albergue' : 'rescatista',
         },
-      ).timeout(const Duration(seconds: 45), onTimeout: () =>
-          throw Exception('No hay conexión a internet. Revisá tu wifi/datos e intentá de nuevo.'));
-
-      // 3) Segunda foto — opcional: si falla, se publica igual sin ella en
-      // vez de perder todo el trabajo ya hecho.
-      String? fotoUrl2;
-      if (foto2Bytes != null) {
-        try {
-          fotoUrl2 = await fotosRepo.subir(
-            rescateId: rescateId, slot: 2, bytes: foto2Bytes,
-            onProgreso: (p) {
-              if (mounted) setState(() => _progreso = 0.5 + p / 2);
-            },
-          ).timeout(const Duration(seconds: 45), onTimeout: () =>
-              throw Exception('tiempo agotado'));
-        } catch (_) {
-          foto2Fallo = true;
-        }
-      }
-
-      // 4) Vincular las fotos ya subidas al doc.
-      await RescatesRepository().actualizar(rescateId, {
-        'fotoUrl': fotoUrl,
-        if (fotoUrl2 != null) 'fotoUrl2': fotoUrl2,
-      }).timeout(const Duration(seconds: 15), onTimeout: () =>
-          throw Exception('No hay conexión a internet. Revisá tu wifi/datos e intentá de nuevo.'));
+      ).catchError((_) {});
 
       if (!mounted) return;
       showDialog(
@@ -341,7 +391,7 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
           content: Text('${_nombreCtl.text.isEmpty ? "El animal" : _nombreCtl.text} '
               'fue publicado con urgencia $_urgencia'
               '${_lugarCtl.text.isNotEmpty ? ' en ${_lugarCtl.text}' : ''}.'
-              '${foto2Fallo ? ' La segunda foto no se pudo subir — podés agregarla después editando la publicación.' : ''}'),
+              '${resultado.foto2Fallo ? ' La segunda foto no se pudo subir. Podés agregarla después editando la publicación.' : ''}'),
           actions: [
             TextButton(
               onPressed: () { Navigator.pop(context); Navigator.pop(context); },
@@ -350,23 +400,27 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
           ],
         ),
       );
-    } catch (e) {
-      // Rollback: si el doc llegó a crearse pero algo después falló (la
-      // foto obligatoria, o el paso 4), no dejar un rescate fantasma sin
-      // datos — se borra el doc y cualquier foto que haya llegado a subir.
-      // try/catch por paso (no .catchError): un catchError con el tipo
-      // equivocado revienta DENTRO de este catch y el SnackBar de abajo
-      // nunca llega a mostrarse — el bug de "toco publicar y no pasa nada".
-      if (rescateId != null) {
-        final id = rescateId;
-        try { await RescatesRepository().eliminar(id); } catch (_) {}
-        try { await fotosRepo.eliminarTodas(id); } catch (_) {}
-      }
+    } catch (_) {
+      // El rollback (borrar doc + fotos si algo falló a mitad de camino)
+      // ya lo hace RescatesRepository.publicarConFotos internamente —
+      // acá solo queda avisar.
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al publicar: $e')));
+      // Mismo estilo y comportamiento que subir_lote_screen.dart (a
+      // propósito, ver ese archivo): vuelve a la pantalla principal en vez
+      // de dejar a la persona parada en el formulario con el error — antes
+      // los dos flujos (uno y en lote) reaccionaban distinto ante la misma
+      // falla de conexión, algo que reportó Eliza probando en modo avión.
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('No se pudo publicar ${_nombreCtl.text.isEmpty ? "el animal" : _nombreCtl.text}. '
+            'Revisá tu conexión e intentá de nuevo.'),
+        backgroundColor: msgError,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 6),
+      ));
     } finally {
-      if (mounted) setState(() => _publicando = false);
+      cancelarTimerTardando();
+      if (mounted) setState(() { _publicando = false; tardandoMucho = false; });
     }
   }
 
@@ -422,6 +476,16 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
                   const SizedBox(height: 8),
                   _chips(_estados, _estado, (v) => setState(() => _estado = v), appTeal),
                   const SizedBox(height: 20),
+                  _section('¿Está vacunado?'),
+                  const SizedBox(height: 8),
+                  _chips(_saludOpts, _vacunado,
+                      (v) => setState(() => _vacunado = v), appTeal),
+                  const SizedBox(height: 20),
+                  _section('¿Está desparasitado?'),
+                  const SizedBox(height: 8),
+                  _chips(_saludOpts, _desparasitado,
+                      (v) => setState(() => _desparasitado = v), appTeal),
+                  const SizedBox(height: 20),
                   _section('Urgencia'),
                   const SizedBox(height: 8),
                   _chips(_urgencias, _urgencia,
@@ -430,7 +494,7 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
                   _sectionLabel('Compatibilidad para adopción'),
                   const SizedBox(height: 4),
                   Text('Estas etiquetas ayudan a encontrar el hogar ideal',
-                      style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
                   const SizedBox(height: 16),
                   _section('Nivel de energía'),
                   const SizedBox(height: 8),
@@ -522,11 +586,13 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
     child: Row(children: [
       IconButton(
         icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+                tooltip: 'Volver',
         onPressed: () => Navigator.pop(ctx),
       ),
       const Expanded(
         child: Text('Subir un rescate',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: appInk,
+                fontFamily: 'Baloo2')),
       ),
     ]),
   );
@@ -564,14 +630,14 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
     child: Container(
       width: 90, height: 90,
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.8),
+        color: Colors.white.withValues(alpha: 0.8),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: appTeal.withOpacity(0.4), width: 1.5),
+        border: Border.all(color: appTeal.withValues(alpha: 0.4), width: 1.5),
       ),
       child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
         const Icon(Icons.add_a_photo_outlined, color: appTeal, size: 28),
         const SizedBox(height: 4),
-        Text(_fotos.isEmpty ? 'Agregar' : '${_fotos.length}/2', style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+        Text(_fotos.isEmpty ? 'Agregar' : '${_fotos.length}/2', style: TextStyle(fontSize: 11, color: Colors.grey.shade700)),
       ]),
     ),
   );
@@ -604,7 +670,7 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
             duration: const Duration(milliseconds: 160),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             decoration: BoxDecoration(
-              color: sel ? activeColor : Colors.white.withOpacity(0.85),
+              color: sel ? activeColor : Colors.white.withValues(alpha: 0.85),
               borderRadius: BorderRadius.circular(20),
               border: Border.all(color: sel ? activeColor : Colors.grey.shade300),
             ),
@@ -620,8 +686,8 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
         _section(label),
         const SizedBox(height: 8),
         Container(
-          decoration: BoxDecoration(color: Colors.white.withOpacity(0.88), borderRadius: BorderRadius.circular(14),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6)]),
+          decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.88), borderRadius: BorderRadius.circular(14),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6)]),
           child: TextField(
             controller: ctl, maxLines: maxLines,
             decoration: InputDecoration(
@@ -641,10 +707,10 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         decoration: BoxDecoration(
-          color: obtenida ? appTeal.withOpacity(0.08) : Colors.white.withOpacity(0.88),
+          color: obtenida ? appTeal.withValues(alpha: 0.08) : Colors.white.withValues(alpha: 0.88),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: obtenida ? appTeal : Colors.grey.shade300),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6)],
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6)],
         ),
         child: Row(children: [
           if (_detectandoUbicacion)
@@ -652,7 +718,7 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
                 child: CircularProgressIndicator(strokeWidth: 2, color: appTeal))
           else
             Icon(obtenida ? Icons.check_circle : Icons.my_location,
-                color: obtenida ? appTeal : Colors.grey.shade500, size: 22),
+                color: obtenida ? appTeal : Colors.grey.shade700, size: 22),
           const SizedBox(width: 12),
           Text(
             _detectandoUbicacion
@@ -662,7 +728,7 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
                     : 'Toca para detectar tu ubicación',
             style: TextStyle(
               fontSize: 14,
-              color: obtenida || _detectandoUbicacion ? appTeal : Colors.grey.shade500,
+              color: obtenida || _detectandoUbicacion ? appTeal : Colors.grey.shade700,
               fontWeight: obtenida ? FontWeight.w600 : FontWeight.normal,
             ),
           ),
@@ -682,15 +748,27 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> {
         elevation: 0,
       ),
       child: _publicando
-          ? Row(mainAxisSize: MainAxisSize.min, children: [
-              SizedBox(height: 20, width: 20,
-                  child: CircularProgressIndicator(
-                      color: Colors.white, strokeWidth: 2,
-                      value: _progreso > 0 ? _progreso : null)),
-              if (_progreso > 0) ...[
-                const SizedBox(width: 10),
-                Text('${(_progreso * 100).round()}%',
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white)),
+          ? Column(mainAxisSize: MainAxisSize.min, children: [
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                SizedBox(height: 20, width: 20,
+                    child: CircularProgressIndicator(
+                        color: Colors.white, strokeWidth: 2,
+                        value: _progreso > 0 ? _progreso : null)),
+                if (_progreso > 0) ...[
+                  const SizedBox(width: 10),
+                  Text('${(_progreso * 100).round()}%',
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white)),
+                ],
+              ]),
+              // Sin señal, la subida no tiene bytes que transferir todavía
+              // — _progreso se queda en 0 y el círculo gira sin ningún
+              // texto durante hasta 45s (el timeout de la foto). Sin este
+              // aviso parecía que la app estaba colgada.
+              if (tardandoMucho) ...[
+                const SizedBox(height: 6),
+                const Text('Esto está tardando más de lo normal. Revisá tu conexión',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 11, color: Colors.white70)),
               ],
             ])
           : const Text('Publicar rescate 🐾', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),

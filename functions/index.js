@@ -1,7 +1,8 @@
-const { onDocumentCreated, onDocumentUpdated } = require('firebase-functions/v2/firestore');
+const { onDocumentCreated, onDocumentUpdated, onDocumentDeleted } = require('firebase-functions/v2/firestore');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { getMessaging } = require('firebase-admin/messaging');
+const { getStorage } = require('firebase-admin/storage');
 
 initializeApp();
 
@@ -91,6 +92,44 @@ exports.onCambioEstadoSolicitud = onDocumentUpdated(
       await notificar(adoptanteId, '¡Tu solicitud fue aprobada! 🐾', `¡Felicidades! Tu solicitud para ${animal} fue aprobada.`);
     } else {
       await notificar(adoptanteId, 'Solicitud no aceptada', `Tu solicitud para ${animal} no fue aceptada esta vez.`);
+    }
+  }
+);
+
+// Rescate borrado → limpia lo que le quedaba apuntando, sin importar si
+// el borrado se aplicó al toque (con señal) o recién se sincronizó más
+// tarde (Firestore encola escrituras sin conexión; Storage no). Este
+// trigger corre en el servidor cuando el documento YA desapareció de
+// verdad, así que cubre el caso offline que el cliente nunca puede
+// garantizar por su cuenta — antes, borrar sin señal (o perder la señal
+// a mitad del borrado) dejaba las fotos huérfanas en Storage para
+// siempre. RescatesRepository.eliminar() ya hace esta misma limpieza de
+// favoritos del lado del cliente cuando SÍ hay señal (para que
+// desaparezca al toque); esto es la red de seguridad que garantiza que
+// pase siempre, tarde o temprano, sin depender de reglas de seguridad ni
+// de que el rescatista siga conectado.
+exports.onRescateEliminado = onDocumentDeleted(
+  'rescates/{rescateId}',
+  async (event) => {
+    const rescateId = event.params.rescateId;
+
+    try {
+      await getStorage().bucket().deleteFiles({ prefix: `rescates/${rescateId}/` });
+    } catch (e) {
+      console.error(`No se pudieron borrar las fotos de ${rescateId}:`, e.message);
+    }
+
+    try {
+      const db = getFirestore();
+      const favoritos = await db.collection('favoritos')
+          .where('rescateId', '==', rescateId).get();
+      if (!favoritos.empty) {
+        const batch = db.batch();
+        favoritos.forEach((doc) => batch.delete(doc.ref));
+        await batch.commit();
+      }
+    } catch (e) {
+      console.error(`No se pudieron borrar los favoritos de ${rescateId}:`, e.message);
     }
   }
 );
