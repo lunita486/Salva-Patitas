@@ -52,3 +52,7 @@ functions/node_modules/
 /android/key.properties
 *.jks
 *.keystore
+
+# Builds locales (APK/AAB de prueba) — no deben subirse al repo
+*.apk
+*.aab
