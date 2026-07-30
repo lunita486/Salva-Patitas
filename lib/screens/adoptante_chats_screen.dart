@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../data/chats_repository.dart';
 import '../theme.dart';
 import 'chat_screen.dart';
 
@@ -21,13 +22,16 @@ class AdoptanteChatsScreen extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
               child: Row(children: [
-                GestureDetector(
-                  onTap: () => Navigator.pop(context),
-                  child: const Icon(Icons.arrow_back_ios_new, size: 20, color: Color(0xFF1A1A1A)),
+                Tooltip(
+                  message: 'Volver',
+                  child: GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: const Icon(Icons.arrow_back_ios_new, size: 20, color: appInk),
+                  ),
                 ),
                 const SizedBox(width: 12),
                 const Text('Conversaciones', style: TextStyle(fontSize: 20,
-                    fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
+                    fontWeight: FontWeight.bold, color: appInk, fontFamily: 'Baloo2')),
               ]),
             ),
             Expanded(
@@ -166,7 +170,7 @@ class AdoptanteChatsScreen extends StatelessWidget {
           Icon(Icons.chat_bubble_outline, size: 64, color: Colors.grey.shade300),
           const SizedBox(height: 16),
           Text('Aún no tienes conversaciones',
-              style: TextStyle(color: Colors.grey.shade500, fontSize: 16, fontWeight: FontWeight.w600)),
+              style: TextStyle(color: Colors.grey.shade700, fontSize: 16, fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 40),
@@ -188,13 +192,26 @@ class AdoptanteChatsScreen extends StatelessWidget {
         final d             = docs[i].data() as Map<String, dynamic>;
         final animalNombre  = d['animalNombre']    as String? ?? 'Animal';
         final rescatista    = d['rescatista']      as String? ?? 'Rescatista';
-        // "Soy adoptanteId en ESTE chat" en vez de confiar en el flag de
-        // pantalla `esRescatista`: una consulta que YO le mandé a un
-        // aliado me deja como adoptanteId aunque esté mirando la lista en
-        // modo rescatista (ver comentario más arriba) — si acá se siguiera
-        // usando el flag de pantalla, se mostraría mi propio nombre en vez
-        // del nombre del aliado, y el chat abriría con el rol invertido.
-        final soyAdoptanteAqui = d['adoptanteId'] == uid;
+        final tipoSolicitud = d['tipoSolicitud'] as String? ?? 'adopcion';
+        // Para un chat de ANIMAL, la query de arriba ya garantiza de qué
+        // lado estoy sin ambigüedad: si esRescatista es true, vino de
+        // .where('rescatistaId', isEqualTo: uid) — soy rescatistaId en
+        // TODOS esos docs, sin importar si adoptanteId TAMBIÉN resulta ser
+        // mi uid (contactarme a mí mismo, un caso real al probar con una
+        // sola cuenta en varios roles). Adivinar por uid ahí es lo que
+        // rompía: la fila mostraba mi propio nombre de negocio en vez del
+        // de quien me escribió.
+        //
+        // Para una CONSULTA A UN ALIADO sí hace falta adivinar por uid —
+        // esta lista, fuera de soloConsultas, mezcla "lo que recibí como
+        // aliado" con "lo que mandé como rescatista/albergue" en un solo
+        // stream, y un doc puede caer de cualquiera de los dos lados. En
+        // soloConsultas (la bandeja propia del aliado) esa mezcla no
+        // existe: la query ya garantiza rescatistaId==uid para todos, así
+        // que tampoco hay que adivinar ahí.
+        final soyAdoptanteAqui = tipoSolicitud == 'consulta_aliado'
+            ? (!soloConsultas && d['adoptanteId'] == uid)
+            : !esRescatista;
         final nombreMostrar = soyAdoptanteAqui
             ? rescatista
             : (d['adoptanteNombre'] as String? ?? 'Adoptante');
@@ -206,11 +223,16 @@ class AdoptanteChatsScreen extends StatelessWidget {
         // fuera de esta migración) — se revisan los dos.
         final fotoUrl       = d['fotoUrl']       as String?;
         final fotoBase64    = d['fotoBase64']    as String?;
-        final tipoSolicitud = d['tipoSolicitud'] as String? ?? 'adopcion';
         final campoBadge    = soyAdoptanteAqui ? 'noLeidosAdoptante' : 'noLeidosRescatista';
         final noLeidos      = (d[campoBadge]    as int?) ?? 0;
         final emoji         = especie == 'Gato' ? '🐱' : '🐶';
         final inicial       = nombreMostrar.isNotEmpty ? nombreMostrar[0].toUpperCase() : 'A';
+        // Para la insignia de la esquina cuando soy yo quien mandó la
+        // consulta (ver más abajo): ahí se muestra MI propia identidad, no
+        // la del aliado, así que necesita MI inicial — la de `inicial` de
+        // arriba es la del aliado (nombreMostrar), no serviría de fallback.
+        final miNombre      = FirebaseAuth.instance.currentUser?.displayName ?? '';
+        final inicialPropia = miNombre.isNotEmpty ? miNombre[0].toUpperCase() : 'A';
         final avatarColors  = [appOrange, appTeal, const Color(0xFF7C6FCD), const Color(0xFF4CAF50)];
         final avatarColor   = avatarColors[nombreMostrar.length % avatarColors.length];
 
@@ -229,12 +251,23 @@ class AdoptanteChatsScreen extends StatelessWidget {
                 backgroundImage: fotoProvider,
                 onBackgroundImageError: (_, _) {},
                 radius: 28)
-            : CircleAvatar(backgroundColor: appTeal.withOpacity(0.15), radius: 28,
+            : CircleAvatar(backgroundColor: appTeal.withValues(alpha: 0.15), radius: 28,
                 child: esConsultaRow
                     ? Text(inicial, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: appTeal))
                     : Text(emoji, style: const TextStyle(fontSize: 26)));
 
         return GestureDetector(
+          // Key por doc.id: sin esto, cuando el stream reordena la lista
+          // (un mensaje nuevo sube una conversación al principio), Flutter
+          // reutiliza el State de "lo que estaba en esa posición" para la
+          // fila nueva — y el Future ya resuelto de AvatarUsuario (que se
+          // calcula una sola vez con `late final`) se queda pegado
+          // mostrando la foto de la conversación VIEJA que ocupaba esa
+          // posición, aunque el nombre y el mensaje sí se actualicen bien
+          // (esos se recalculan en cada build, no quedan cacheados en un
+          // State). Bug real: el badge de "todo mascotas" mostraba el logo
+          // de una cuenta completamente distinta.
+          key: ValueKey(docs[i].id),
           onTap: () => Navigator.push(context, MaterialPageRoute(
             builder: (_) => ChatScreen(
               esRescatista: !soyAdoptanteAqui,
@@ -246,6 +279,7 @@ class AdoptanteChatsScreen extends StatelessWidget {
                 'especie':       especie,
                 'tipoSolicitud': tipoSolicitud,
                 'rescatistaId':  d['rescatistaId'] as String? ?? '',
+                'creadoPor':     d['creadoPor'] as String?,
                 'ubicacion':     '',
                 'descripcion':   '',
                 'tags':          <String>[],
@@ -255,32 +289,61 @@ class AdoptanteChatsScreen extends StatelessWidget {
               }),
           )),
           child: Container(
-            color: Colors.white.withOpacity(noLeidos > 0 ? 0.7 : 0.4),
+            color: Colors.white.withValues(alpha: noLeidos > 0 ? 0.7 : 0.4),
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
             child: Row(children: [
               Stack(clipBehavior: Clip.none, children: [
                 animalAvatar,
                 Positioned(
                   bottom: -2, left: -4,
-                  // Antes esta esquina siempre mostraba solo la inicial —
-                  // ahora busca la foto real de la CONTRAPARTE (quien
-                  // recibe el mensaje si yo mandé, o quien lo mandó si yo
-                  // lo recibí), igual que ya se hace en el encabezado del
-                  // chat y en la tarjeta de solicitud.
+                  // Acá solo se decide QUÉ LADO del chat mostrar — CÓMO
+                  // mostrarlo (qué campo de usuarios/{uid} leer para su
+                  // logo) lo responde ChatsRepository.campoLogo*, la única
+                  // fuente de esa regla en toda la app. Antes esa segunda
+                  // parte se re-adivinaba acá a mano con creadoPor y
+                  // tipoSolicitud, distinto de como lo hacían las otras
+                  // pantallas, y cada combinación de roles nueva encontraba
+                  // un caso que alguna adivinanza no cubría — la causa real
+                  // de que este bug volviera con roles distintos cada vez.
+                  //
+                  // Qué lado mostrar sí es decisión de esta pantalla, según
+                  // qué ya se ve GRANDE arriba (animalAvatar):
+                  //  · Chat de animal: arriba está el animal, así que acá va
+                  //    la CONTRAPARTE (quien recibe el mensaje si yo mandé,
+                  //    o quien lo mandó si yo lo recibí).
+                  //  · Consulta a un aliado: arriba SIEMPRE se ve al aliado
+                  //    (fotoBase64 del chat, fijado al crearlo, sin importar
+                  //    quién mire) — así que acá va siempre el lado
+                  //    adoptanteId: yo mismo si fui quien escribió (mostrando
+                  //    con qué sombrero lo hice, la info que la fila no
+                  //    muestra en ningún otro lado), o quien me contactó si
+                  //    soy el aliado.
                   child: AvatarUsuario(
-                    userId: soyAdoptanteAqui
-                        ? (d['rescatistaId'] as String? ?? '')
-                        : (d['adoptanteId'] as String? ?? ''),
-                    inicial: inicial,
+                    userId: tipoSolicitud == 'consulta_aliado'
+                        ? (d['adoptanteId'] as String? ?? '')
+                        : (soyAdoptanteAqui
+                            ? (d['rescatistaId'] as String? ?? '')
+                            : (d['adoptanteId'] as String? ?? '')),
+                    inicial: tipoSolicitud == 'consulta_aliado' && soyAdoptanteAqui
+                        ? inicialPropia
+                        : inicial,
                     radius: 12,
                     backgroundColor: avatarColor,
+                    campoLogoNegocio: tipoSolicitud == 'consulta_aliado'
+                        ? ChatsRepository.campoLogoAdoptante(d)
+                        : (soyAdoptanteAqui
+                            ? ChatsRepository.campoLogoRescatista(d)
+                            : ChatsRepository.campoLogoAdoptante(d)),
                   ),
                 ),
               ]),
               const SizedBox(width: 14),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Row(children: [
-                  Text(nombreMostrar, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  Flexible(
+                    child: Text(nombreMostrar, overflow: TextOverflow.ellipsis, maxLines: 1,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  ),
                   const SizedBox(width: 6),
                   Container(width: 8, height: 8,
                       decoration: const BoxDecoration(color: Color(0xFF4CAF50), shape: BoxShape.circle)),
@@ -290,7 +353,7 @@ class AdoptanteChatsScreen extends StatelessWidget {
                 const SizedBox(height: 2),
                 Row(children: [
                   Text(tipoSolicitud == 'consulta_aliado' ? 'Con ' : 'Sobre ',
-                      style: TextStyle(fontSize: 13, color: Colors.grey.shade500)),
+                      style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
                   Text(animalNombre, style: TextStyle(fontSize: 13,
                       fontWeight: FontWeight.w600, color: Colors.grey.shade700)),
                 ]),
@@ -299,7 +362,7 @@ class AdoptanteChatsScreen extends StatelessWidget {
                   Expanded(
                     child: Text(ultimoMensaje.isNotEmpty ? ultimoMensaje : 'Inicia la conversación',
                         style: TextStyle(fontSize: 13,
-                            color: noLeidos > 0 ? const Color(0xFF1A1A1A) : Colors.grey.shade500,
+                            color: noLeidos > 0 ? appInk : Colors.grey.shade700,
                             fontWeight: noLeidos > 0 ? FontWeight.w600 : FontWeight.normal),
                         maxLines: 1, overflow: TextOverflow.ellipsis),
                   ),

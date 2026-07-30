@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
 import '../theme.dart';
 import '../data/chats_repository.dart';
+import '../data/rescates_repository.dart';
 
 class ChatScreen extends StatefulWidget {
   final Map<String, dynamic> animal;
@@ -27,27 +29,60 @@ class _ChatScreenState extends State<ChatScreen> {
   late final Future<void> _chatListo;
   // Foto de perfil de la CONTRAPARTE (no la propia). Se resuelve leyendo el
   // doc del chat (que siempre tiene adoptanteId/rescatistaId, sin importar
-  // qué pantalla haya abierto este ChatScreen) y de ahí el campo `foto` de
-  // usuarios/{id} — así no depende de que cada sitio de navegación pase la
-  // foto de la otra persona en el mapa `animal`.
-  late final Future<String?> _fotoContraparte;
+  // qué pantalla haya abierto este ChatScreen) y de ahí usuarios/{id} — así
+  // no depende de que cada sitio de navegación pase la foto de la otra
+  // persona en el mapa `animal`.
+  //
+  // Devuelve (fotoBase64, foto): fotoBase64 (el logo que un albergue sube a
+  // propósito desde su perfil) solo se completa cuando la contraparte se
+  // muestra en su capacidad de negocio — la misma cuenta puede tener rol de
+  // albergue Y de adoptante a la vez (ver ARCHITECTURE.md), y ese mismo doc
+  // usuarios/{id} es compartido: si siempre se mirara fotoBase64, un chat
+  // donde la contraparte actúa como ADOPTANTE mostraría el logo de SU
+  // PROPIO albergue en vez de su foto personal — mismo bug que ya se
+  // arregló en AvatarUsuario (theme.dart), acá vive aparte porque este
+  // encabezado tiene su propia lógica de carga, no reutiliza ese widget.
+  // Ver el detalle completo (chat de animal vs. consulta a un negocio,
+  // y quién mira cada uno) en los comentarios de _cargarFotoContraparte.
+  late final Future<(String?, String?)> _fotoContraparte;
 
-  Future<String?> _cargarFotoContraparte() async {
+  Future<(String?, String?)> _cargarFotoContraparte() async {
     final esConsulta = (widget.animal['tipoSolicitud'] as String? ?? '').startsWith('consulta');
-    if (esConsulta) return null;
+    // Consulta a un negocio Y yo soy quien contactó (no el negocio): la
+    // contraparte es el aliado, y su logo ya viene fijo en
+    // widget.animal['fotoBase64'] (denormalizado al crear el chat) — no
+    // hace falta ir a buscarlo de nuevo acá.
+    //
+    // Pero si soy EL ALIADO viendo mi propio chat, la contraparte es quien
+    // me escribió — antes esta función cortaba acá para CUALQUIER consulta
+    // sin importar quién mira, así que el aliado veía SU PROPIO logo
+    // reflejado en el encabezado en vez de la foto de quien le escribió.
+    if (esConsulta && !widget.esRescatista) return (null, null);
     try {
       await _chatListo;
       final chatDoc = await FirebaseFirestore.instance.collection('chats').doc(_chatId).get();
       final d = chatDoc.data();
-      if (d == null) return null;
+      if (d == null) return (null, null);
       final contraparteId = widget.esRescatista
           ? (d['adoptanteId'] as String? ?? '')
           : (d['rescatistaId'] as String? ?? '');
-      if (contraparteId.isEmpty) return null;
+      if (contraparteId.isEmpty) return (null, null);
       final userDoc = await FirebaseFirestore.instance.collection('usuarios').doc(contraparteId).get();
-      return userDoc.data()?['foto'] as String?;
+      final data = userDoc.data();
+      // ChatsRepository.campoLogo* dice exactamente qué campo de
+      // usuarios/{uid} mirar para el logo de negocio de la contraparte (o
+      // ninguno) — única fuente de esa regla en toda la app. Antes esta
+      // pantalla re-adivinaba la misma pregunta con su propia lectura de
+      // creadoPor, en paralelo a como lo hacía (distinto) la lista de
+      // chats — dos adivinanzas separadas para el mismo dato terminaban
+      // desincronizadas para algunas combinaciones de roles.
+      final campoLogo = widget.esRescatista
+          ? ChatsRepository.campoLogoAdoptante(d)
+          : ChatsRepository.campoLogoRescatista(d);
+      final fotoBase64 = campoLogo != null ? (data?[campoLogo] as String?) : null;
+      return (fotoBase64, data?['foto'] as String?);
     } catch (_) {
-      return null;
+      return (null, null);
     }
   }
 
@@ -162,10 +197,22 @@ class _ChatScreenState extends State<ChatScreen> {
         'hora':     _nowTime(),
         'creadoEn': FieldValue.serverTimestamp(),
       });
+      // Se registra CADA mensaje, no solo "el primero" — distinguir el
+      // primero de una conversación requeriría otra lectura extra (contar
+      // mensajes previos) solo para este dato. Alcanza para el embudo: si
+      // el evento existe al menos una vez para un chat, hubo conversación.
+      FirebaseAnalytics.instance.logEvent(
+        name: 'mensaje_enviado',
+        parameters: {
+          'emisor': widget.esRescatista ? 'rescatista' : 'adoptante',
+          'tipo_solicitud': widget.animal['tipoSolicitud'] as String? ?? 'adopcion',
+        },
+      ).catchError((_) {});
     } catch (e) {
       if (!mounted) return;
       _msgCtl.text = trimmed;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          backgroundColor: msgError,
           content: Text('No se pudo enviar el mensaje. Intentá de nuevo.')));
       return;
     }
@@ -195,9 +242,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final diff  = hoy.difference(dia).inDays;
     if (diff == 0) return 'Hoy';
     if (diff == 1) return 'Ayer';
-    const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
-    final anio = d.year != ahora.year ? ' ${d.year}' : '';
-    return '${d.day} ${meses[d.month - 1]}$anio';
+    return formatearFecha(d, conAnio: d.year != ahora.year);
   }
 
   Widget _separadorFecha(String label) => Padding(
@@ -207,7 +252,7 @@ class _ChatScreenState extends State<ChatScreen> {
           Expanded(child: Divider(color: Colors.grey.shade300, thickness: 1)),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: Text(label, style: TextStyle(fontSize: 11, color: Colors.grey.shade500, fontWeight: FontWeight.w500)),
+            child: Text(label, style: TextStyle(fontSize: 11, color: Colors.grey.shade700, fontWeight: FontWeight.w500)),
           ),
           Expanded(child: Divider(color: Colors.grey.shade300, thickness: 1)),
           const SizedBox(width: 16),
@@ -234,7 +279,7 @@ class _ChatScreenState extends State<ChatScreen> {
             bottomLeft:  Radius.circular(isMine ? 18 : 4),
             bottomRight: Radius.circular(isMine ? 4  : 18),
           ),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 6, offset: const Offset(0, 2))],
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 6, offset: const Offset(0, 2))],
         ),
         child: Column(
           crossAxisAlignment: isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
@@ -242,13 +287,13 @@ class _ChatScreenState extends State<ChatScreen> {
             Text(text,
                 style: TextStyle(
                     fontSize: 14,
-                    color: isMine ? Colors.white : const Color(0xFF1A1A1A),
+                    color: isMine ? Colors.white : appInk,
                     height: 1.4)),
             const SizedBox(height: 4),
             Text(time,
                 style: TextStyle(
                     fontSize: 10,
-                    color: isMine ? Colors.white.withOpacity(0.7) : Colors.grey.shade400)),
+                    color: isMine ? Colors.white.withValues(alpha: 0.7) : Colors.grey.shade400)),
           ],
         ),
       ),
@@ -266,7 +311,7 @@ class _ChatScreenState extends State<ChatScreen> {
     return _estadoBadge(
       esHogar ? '🏡 Hogar de paso' : '🏠 En adopción',
       esHogar ? const Color(0xFFD8F0E4) : const Color(0xFFF9DDD5),
-      esHogar ? const Color(0xFF1F8A62) : const Color(0xFF8B3A1F),
+      esHogar ? appTeal : const Color(0xFF8B3A1F),
     );
   }
 
@@ -290,8 +335,20 @@ class _ChatScreenState extends State<ChatScreen> {
     final contraparte = widget.esRescatista
         ? (widget.animal['adoptanteNombre'] as String? ?? 'Adoptante')
         : rescatista;
+    // En una consulta, "Negocio aliado" solo es la contraparte para quien
+    // CONTACTÓ al negocio. Si quien mira es EL ALIADO (esRescatista: los
+    // aliados ocupan el lado rescatistaId, ver ChatsRepository), la
+    // contraparte es quien le escribió — y `creadoPor` dice con qué sombrero
+    // lo hizo (misma regla que ya usa la bandeja del aliado para su rótulo).
+    // Antes decía "Negocio aliado" para los dos lados, así que el aliado veía
+    // su propio rol bajo el nombre de su cliente.
+    final creadoPor = widget.animal['creadoPor'] as String? ?? '';
     final rotuloContraparte = esConsulta
-        ? 'Negocio aliado'
+        ? (widget.esRescatista
+            ? (creadoPor == 'albergue'
+                ? 'Albergue'
+                : creadoPor == 'rescatista' ? 'Rescatista' : 'Adoptante')
+            : 'Negocio aliado')
         : widget.esRescatista ? 'Adoptante' : (esAlbergue ? 'Albergue' : 'Rescatista');
 
     return Scaffold(
@@ -305,13 +362,18 @@ class _ChatScreenState extends State<ChatScreen> {
             child: Row(children: [
               IconButton(
                 icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+                tooltip: 'Volver',
                 onPressed: () => Navigator.pop(context),
               ),
-              FutureBuilder<String?>(
+              FutureBuilder<(String?, String?)>(
                 future: _fotoContraparte,
+                // esConsulta && !esRescatista: yo contacté al negocio, la
+                // contraparte es el aliado — su logo fijo (widget.animal).
+                // En cualquier otro caso (incluyendo esConsulta && soy el
+                // aliado) se usa lo recién buscado por _cargarFotoContraparte.
                 builder: (context, snap) => AvatarPersona(
-                  fotoBase64: esConsulta ? fotoBase64 : null,
-                  fotoUrl: esConsulta ? null : snap.data,
+                  fotoBase64: (esConsulta && !widget.esRescatista) ? fotoBase64 : snap.data?.$1,
+                  fotoUrl: (esConsulta && !widget.esRescatista) ? null : snap.data?.$2,
                   inicial: contraparte.isNotEmpty ? contraparte[0].toUpperCase() : '?',
                   radius: 20,
                   backgroundColor: appOrange,
@@ -321,8 +383,17 @@ class _ChatScreenState extends State<ChatScreen> {
               const SizedBox(width: 10),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Row(children: [
-                  Text(contraparte,
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
+                  // Flexible + ellipsis: un nombre largo (pasa seguido con
+                  // nombre y apellido completos) empujaba el puntito de
+                  // "en línea" fuera de la pantalla y desbordaba el
+                  // encabezado — acá y en cualquier otra fila de nombre en
+                  // la app conviene el mismo tratamiento.
+                  Flexible(
+                    child: Text(contraparte,
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: appInk)),
+                  ),
                   const SizedBox(width: 6),
                   Container(
                     width: 8, height: 8,
@@ -332,7 +403,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 const SizedBox(height: 1),
                 Text(
                   rotuloContraparte,
-                  style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
                 ),
               ])),
               const SizedBox(width: 36),
@@ -346,7 +417,7 @@ class _ChatScreenState extends State<ChatScreen> {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(16),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2))],
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
             ),
             child: Row(children: [
               Builder(builder: (_) {
@@ -364,7 +435,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 return ClipRRect(
                   borderRadius: BorderRadius.circular(10),
                   child: fotoUrl != null
-                    ? FotoUrl(url: fotoUrl, width: 48, height: 48, fallback: fallback)
+                    ? FotoUrl(url: fotoUrl, width: 48, height: 48, alignment: Alignment.topCenter, fallback: fallback)
                     : fotoBase64 != null
                       ? FotoSegura(base64: fotoBase64, width: 48, height: 48, fallback: fallback)
                       : fallback,
@@ -376,7 +447,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   (widget.animal['tipoSolicitud'] as String? ?? '') == 'consulta_aliado'
                       ? 'Conversando con $nombre'
                       : 'Conversando sobre $nombre${edad.isNotEmpty ? " · $edad" : ""}',
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1A1A1A)),
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: appInk),
                 ),
                 const SizedBox(height: 4),
                 Builder(builder: (_) {
@@ -404,16 +475,13 @@ class _ChatScreenState extends State<ChatScreen> {
                   // mismo nombre bajo la misma cuenta en distinto rol).
                   if (rescateId.isNotEmpty) {
                     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                      stream: FirebaseFirestore.instance.collection('rescates')
-                          .doc(rescateId).snapshots(),
+                      stream: RescatesRepository().porId(rescateId),
                       builder: (_, snap) => badgeFor(snap.data?.data()?['estadoAdopcion'] as String?),
                     );
                   }
                   return StreamBuilder<QuerySnapshot>(
-                    stream: FirebaseFirestore.instance.collection('rescates')
-                        .where('rescatistaId', isEqualTo: rescatistaId)
-                        .where('nombre', isEqualTo: nombre)
-                        .limit(1).snapshots(),
+                    stream: RescatesRepository().porNombreYDueno(
+                        rescatistaId: rescatistaId, nombre: nombre),
                     builder: (_, snap) {
                       final docs = snap.data?.docs ?? [];
                       final estadoReal = docs.isNotEmpty
@@ -450,14 +518,14 @@ class _ChatScreenState extends State<ChatScreen> {
                   return Center(
                     child: Text('No se pudieron cargar los mensajes.\nSalí y volvé a entrar al chat.',
                         textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 13, color: Colors.grey.shade500)),
+                        style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
                   );
                 }
                 final docs = snap.data?.docs ?? [];
                 if (docs.isEmpty) {
                   return Center(
                     child: Text('Sé el primero en escribir 🐾',
-                        style: TextStyle(fontSize: 13, color: Colors.grey.shade500)),
+                        style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
                   );
                 }
                 WidgetsBinding.instance.addPostFrameCallback((_) {

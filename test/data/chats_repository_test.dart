@@ -68,6 +68,68 @@ void main() {
       expect(doc.data()!.containsKey('fotoBase64'), false);
     });
 
+    // campoLogoRescatista / campoLogoAdoptante son LA única fuente de "qué
+    // campo de usuarios/{uid} mirar para el logo de negocio de cada lado de
+    // un chat". Antes cada pantalla derivaba esto por su cuenta y cada
+    // combinación de roles nueva encontraba una pantalla equivocada — tres
+    // bugs de "foto equivocada en el chat" en una sola sesión. Derivan de
+    // campos que todos los chats tienen desde siempre, así que también
+    // cubren los documentos viejos sin migración.
+    group('campoLogo* (única fuente del logo por lado, los 4 roles)', () {
+      test('chat de animal publicado como albergue: lado dueño → logo de '
+          'albergue; lado adoptante → foto personal', () {
+        final chat = {'creadoPor': 'albergue'};
+        expect(ChatsRepository.campoLogoRescatista(chat), 'fotoBase64');
+        expect(ChatsRepository.campoLogoAdoptante(chat), null);
+      });
+
+      test('chat de animal publicado como rescatista: ambos lados son '
+          'personas, sin logo', () {
+        final chat = {'creadoPor': 'rescatista'};
+        expect(ChatsRepository.campoLogoRescatista(chat), null);
+        expect(ChatsRepository.campoLogoAdoptante(chat), null);
+      });
+
+      test('chat de animal legado sin creadoPor ni tipoSolicitud: foto '
+          'personal en ambos lados, nunca crashea', () {
+        expect(ChatsRepository.campoLogoRescatista({}), null);
+        expect(ChatsRepository.campoLogoAdoptante({}), null);
+      });
+
+      test('consulta a un aliado: el lado del aliado usa SIEMPRE su logo de '
+          'negocio (aliadoFotoBase64), sin importar con qué sombrero lo '
+          'contactaron — el bug real: pedía el campo del logo de albergue, '
+          'que el aliado no tiene, y caía a la foto personal de la cuenta', () {
+        for (final creadoPor in ['albergue', 'rescatista', null]) {
+          final chat = <String, dynamic>{
+            'tipoSolicitud': 'consulta_aliado',
+            'creadoPor': ?creadoPor,
+          };
+          expect(ChatsRepository.campoLogoRescatista(chat), 'aliadoFotoBase64',
+              reason: 'contactado con sombrero: ${creadoPor ?? "adoptante"}');
+        }
+      });
+
+      test('consulta a un aliado: el lado de quien contactó depende de su '
+          'sombrero — albergue muestra su logo, rescatista y adoptante su '
+          'foto personal', () {
+        expect(
+          ChatsRepository.campoLogoAdoptante(
+              {'tipoSolicitud': 'consulta_aliado', 'creadoPor': 'albergue'}),
+          'fotoBase64',
+        );
+        expect(
+          ChatsRepository.campoLogoAdoptante(
+              {'tipoSolicitud': 'consulta_aliado', 'creadoPor': 'rescatista'}),
+          null,
+        );
+        expect(
+          ChatsRepository.campoLogoAdoptante({'tipoSolicitud': 'consulta_aliado'}),
+          null,
+        );
+      });
+    });
+
     test('asegurarChatNegocio guarda tipoSolicitud consulta_aliado (el campo que faltaba)', () async {
       final chatId = await repo.asegurarChatNegocio(
         adoptanteId: 'adoptante-1',
@@ -120,6 +182,19 @@ void main() {
       );
       final doc = await firestore.collection('chats').doc(chatId).get();
       expect(doc.data()!.containsKey('creadoPor'), false);
+    });
+
+    test('un chat de consulta recién creado por asegurarChatNegocio produce, '
+        'vía campoLogo*, el logo del aliado de un lado y el sombrero real de '
+        'quien contactó del otro (integración creación → lectura)', () async {
+      final chatId = await repo.asegurarChatNegocio(
+        adoptanteId: 'user-1', adoptanteNombre: 'Ana',
+        aliadoId: 'aliado-1', aliadoNombre: 'Veterinaria la 30',
+        contexto: 'albergue',
+      );
+      final d = (await firestore.collection('chats').doc(chatId).get()).data()!;
+      expect(ChatsRepository.campoLogoRescatista(d), 'aliadoFotoBase64');
+      expect(ChatsRepository.campoLogoAdoptante(d), 'fotoBase64');
     });
 
     test('asegurarChatNegocio no pisa datos si ya existe el chat', () async {

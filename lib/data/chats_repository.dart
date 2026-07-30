@@ -9,6 +9,50 @@ class ChatsRepository {
   ChatsRepository({FirebaseFirestore? db}) : _db = db ?? FirebaseFirestore.instance;
   final FirebaseFirestore _db;
 
+  /// Qué campo de usuarios/{uid} contiene el logo de negocio del lado
+  /// `rescatistaId` de este chat — o null si ese lado no actúa como negocio
+  /// (se muestra su foto personal).
+  ///
+  /// ÚNICA fuente de esta decisión para toda la app, junto con
+  /// [campoLogoAdoptante]. Antes cada pantalla (lista de chats, bandeja del
+  /// aliado, encabezado del chat) la re-derivaba por su cuenta a partir de
+  /// `creadoPor`/`tipoSolicitud`, cada una a su manera — y cada combinación
+  /// nueva de roles encontraba alguna pantalla cuya derivación no la cubría.
+  /// Tres bugs distintos de "muestra la foto equivocada" en una sola sesión
+  /// salieron de esa duplicación.
+  ///
+  /// Funciona por derivación pura sobre campos que todos los chats tienen
+  /// desde siempre (`tipoSolicitud`, `creadoPor`), a propósito: así cubre
+  /// también los chats viejos, sin necesitar migrar/backfillear documentos.
+  ///
+  /// La regla: en una consulta a un negocio, `rescatistaId` es el ALIADO —
+  /// siempre contactado en su capacidad de negocio, así que su logo vive
+  /// SIEMPRE en 'aliadoFotoBase64' (campo separado del logo de albergue
+  /// 'fotoBase64', porque una misma cuenta puede tener ambos roles a la
+  /// vez; si no subió logo, la pantalla cae sola a su foto personal). En un
+  /// chat de animal, `rescatistaId` es quien publicó, y `creadoPor` dice con
+  /// qué rol: 'albergue' tiene logo, 'rescatista' es una persona.
+  static String? campoLogoRescatista(Map<String, dynamic> chat) {
+    if ((chat['tipoSolicitud'] as String?) == 'consulta_aliado') {
+      return 'aliadoFotoBase64';
+    }
+    return (chat['creadoPor'] as String?) == 'albergue' ? 'fotoBase64' : null;
+  }
+
+  /// Análogo de [campoLogoRescatista] para el lado `adoptanteId` del chat.
+  ///
+  /// En una consulta a un negocio, `adoptanteId` es quien contactó y
+  /// `creadoPor` dice con qué sombrero lo hizo ('albergue' → su logo,
+  /// 'rescatista' o ausente/adoptante → su foto personal). En un chat de
+  /// animal, `adoptanteId` es siempre alguien interesado en adoptar — nunca
+  /// actúa como negocio ahí.
+  static String? campoLogoAdoptante(Map<String, dynamic> chat) {
+    if ((chat['tipoSolicitud'] as String?) == 'consulta_aliado') {
+      return (chat['creadoPor'] as String?) == 'albergue' ? 'fotoBase64' : null;
+    }
+    return null;
+  }
+
   /// Id determinístico para un chat sobre un animal puntual: el mismo par
   /// (animal, adoptante) siempre da el mismo id, sin importar qué pantalla
   /// lo abra ni quién escriba primero.
