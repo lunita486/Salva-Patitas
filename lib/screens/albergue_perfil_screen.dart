@@ -18,8 +18,13 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
   final _nombreCtl    = TextEditingController();
   final _ciudadCtl    = TextEditingController();
   final _capacidadCtl = TextEditingController();
+  final _telefonoCtl  = TextEditingController();
+  final _direccionCtl = TextEditingController();
+  final _emailCtl     = TextEditingController();
+  final _webCtl       = TextEditingController();
   String? _tipo;
   String? _fotoBase64;
+  int     _umbralEstancado = umbralEstancadoDefault;
   bool   _guardando = false;
 
   @override
@@ -38,8 +43,13 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
       _nombreCtl.text    = data['albergueNombre'] as String? ?? '';
       _ciudadCtl.text    = data['ciudad']         as String? ?? '';
       _capacidadCtl.text = (data['capacidadTotal'] as int?)?.toString() ?? '';
+      _telefonoCtl.text  = data['albergueTelefono']  as String? ?? '';
+      _direccionCtl.text = data['albergueDireccion'] as String? ?? '';
+      _emailCtl.text     = data['albergueEmail']     as String? ?? '';
+      _webCtl.text       = data['albergueSitioWeb']  as String? ?? '';
       _tipo              = data['albergueTipo']   as String?;
       _fotoBase64        = data['fotoBase64']     as String?;
+      _umbralEstancado   = umbralEstancadoDe(data);
     });
   }
 
@@ -67,7 +77,14 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
       ),
     );
     if (sel == null || !mounted) return;
-    await UsuariosRepository().actualizarRoles(uid, sel);
+    try {
+      await UsuariosRepository().actualizarRoles(uid, sel);
+    } catch (_) {
+      if (!ctx.mounted) return;
+      ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
+          content: Text('No se pudo cambiar el rol. Revisá tu conexión e intentá de nuevo.'),
+          backgroundColor: msgError));
+    }
   }
 
   Future<void> _pickFoto() async {
@@ -100,13 +117,29 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
       'albergueTipo':      _tipo ?? '',
       'ciudad':            _ciudadCtl.text.trim(),
       'capacidadTotal':    int.tryParse(_capacidadCtl.text.trim()) ?? 0,
+      // Opcionales a propósito: un albergue chico recién arrancando puede
+      // no tener todavía un número separado del personal o una dirección
+      // fija — no debería trabarlo para poder crear su perfil.
+      //
+      // Prefijo "albergue" a propósito (no "telefono"/"email" genérico):
+      // una misma cuenta puede tener rol de albergue Y de aliado a la vez, y
+      // los dos guardaban antes en los mismos campos genéricos — llenar el
+      // contacto del albergue pisaba (y se mostraba) en el perfil de aliado
+      // también, y encima "email" genérico chocaba con el email de LOGIN de
+      // la cuenta que ya escribía usuarios_repository.dart. Bug real
+      // reportado por Eliza probando con una cuenta de doble rol.
+      'albergueTelefono':  _telefonoCtl.text.trim(),
+      'albergueDireccion': _direccionCtl.text.trim(),
+      'albergueEmail':     _emailCtl.text.trim(),
+      'albergueSitioWeb':  _webCtl.text.trim(),
+      'umbralEstancadoDias': _umbralEstancado,
       if (_fotoBase64 != null) 'fotoBase64': _fotoBase64,
     });
     if (!mounted) return;
     setState(() => _guardando = false);
     if (Navigator.canPop(context)) {
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Perfil actualizado'), backgroundColor: appTeal));
+          const SnackBar(content: Text('Perfil actualizado'), backgroundColor: msgExito));
       Navigator.pop(context);
     }
   }
@@ -116,6 +149,10 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
     _nombreCtl.dispose();
     _ciudadCtl.dispose();
     _capacidadCtl.dispose();
+    _telefonoCtl.dispose();
+    _direccionCtl.dispose();
+    _emailCtl.dispose();
+    _webCtl.dispose();
     super.dispose();
   }
 
@@ -133,6 +170,7 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
               Builder(builder: (ctx) => Navigator.canPop(ctx)
                   ? IconButton(
                       icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+                tooltip: 'Volver',
                       onPressed: () => Navigator.pop(ctx),
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
@@ -143,10 +181,10 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
               // Header
               const Text('Configura tu albergue',
                   style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold,
-                      color: Color(0xFF1A1A1A))),
+                      color: appInk, fontFamily: 'Baloo2')),
               const SizedBox(height: 6),
               Text('Esta información aparecerá en tu perfil oficial.',
-                  style: TextStyle(fontSize: 14, color: Colors.grey.shade600)),
+                  style: TextStyle(fontSize: 14, color: Colors.grey.shade700)),
               const SizedBox(height: 32),
 
               // Logo / foto del albergue
@@ -161,7 +199,7 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: Colors.white,
-                          border: Border.all(color: const Color(0xFF1F8A62), width: 2.5),
+                          border: Border.all(color: appTeal, width: 2.5),
                           image: fotoBytes != null
                               ? DecorationImage(
                                   image: MemoryImage(fotoBytes),
@@ -171,7 +209,7 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
                         ),
                         child: fotoBytes == null
                             ? const Icon(Icons.add_a_photo_outlined,
-                                color: Color(0xFF1F8A62), size: 32)
+                                color: appTeal, size: 32)
                             : null,
                       ),
                       if (fotoBytes != null)
@@ -180,7 +218,7 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
                           child: Container(
                             width: 30, height: 30,
                             decoration: BoxDecoration(
-                              color: const Color(0xFF1F8A62),
+                              color: appTeal,
                               shape: BoxShape.circle,
                               border: Border.all(color: Colors.white, width: 2),
                             ),
@@ -195,19 +233,19 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
               Center(
                 child: Text(
                   _fotoBase64 == null ? 'Agrega el logo de tu albergue (opcional)' : 'Toca para cambiar',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
                 ),
               ),
               const SizedBox(height: 28),
 
               // Nombre
-              _label('NOMBRE DEL ALBERGUE *'),
+              perfilLabel('NOMBRE DEL ALBERGUE *'),
               const SizedBox(height: 8),
-              _campo(_nombreCtl, 'ej. Centro de Bienestar Animal La Perla', autofocus: true),
+              perfilCampo(_nombreCtl, 'ej. Centro de Bienestar Animal La Perla', autofocus: true),
               const SizedBox(height: 24),
 
               // Tipo
-              _label('TIPO DE ORGANIZACIÓN *'),
+              perfilLabel('TIPO DE ORGANIZACIÓN *'),
               const SizedBox(height: 10),
               Wrap(spacing: 8, runSpacing: 8,
                 children: _tipos.map((t) {
@@ -218,10 +256,10 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
                       duration: const Duration(milliseconds: 150),
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
                       decoration: BoxDecoration(
-                        color: sel ? const Color(0xFF1A1A1A) : Colors.white,
+                        color: sel ? appInk : Colors.white,
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                          color: sel ? const Color(0xFF1A1A1A) : Colors.grey.shade300,
+                          color: sel ? appInk : Colors.grey.shade300,
                         ),
                       ),
                       child: Text(t, style: TextStyle(
@@ -235,20 +273,80 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
               const SizedBox(height: 24),
 
               // Capacidad
-              _label('CAPACIDAD TOTAL DE ANIMALES *'),
+              perfilLabel('CAPACIDAD TOTAL DE ANIMALES *'),
               const SizedBox(height: 8),
-              _campo(_capacidadCtl, 'ej. 220',
+              perfilCampo(_capacidadCtl, 'ej. 220',
                   tipo: TextInputType.number,
                   formato: [FilteringTextInputFormatter.digitsOnly]),
               const SizedBox(height: 6),
               Text('Cuántos animales puede albergar tu organización.',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
               const SizedBox(height: 24),
 
               // Ciudad
-              _label('CIUDAD *'),
+              perfilLabel('CIUDAD *'),
               const SizedBox(height: 8),
-              _campo(_ciudadCtl, 'ej. Medellín, Bogotá, Santiago'),
+              perfilCampo(_ciudadCtl, 'ej. Medellín, Bogotá, Santiago'),
+              const SizedBox(height: 24),
+
+              // Teléfono/WhatsApp (opcional) — se guarda tal cual lo
+              // escriba la persona; al mostrarlo en el perfil público se
+              // limpia y arma como link directo a WhatsApp (wa.me), no
+              // solo un número para copiar a mano.
+              perfilLabel('TELÉFONO / WHATSAPP (OPCIONAL)'),
+              const SizedBox(height: 8),
+              perfilCampo(_telefonoCtl, 'ej. 300 123 4567',
+                  tipo: TextInputType.phone,
+                  formato: [FilteringTextInputFormatter.allow(RegExp(r'[0-9 +()-]'))]),
+              const SizedBox(height: 24),
+
+              // Dirección (opcional)
+              perfilLabel('DIRECCIÓN (OPCIONAL)'),
+              const SizedBox(height: 8),
+              perfilCampo(_direccionCtl, 'ej. Calle 10 #43-12, El Poblado'),
+              const SizedBox(height: 24),
+
+              // Email (opcional)
+              perfilLabel('EMAIL (OPCIONAL)'),
+              const SizedBox(height: 8),
+              perfilCampo(_emailCtl, 'ej. contacto@tuAlbergue.org',
+                  tipo: TextInputType.emailAddress),
+              const SizedBox(height: 24),
+
+              // Página web (opcional)
+              perfilLabel('PÁGINA WEB (OPCIONAL)'),
+              const SizedBox(height: 8),
+              perfilCampo(_webCtl, 'ej. www.tuAlbergue.org',
+                  tipo: TextInputType.url),
+              const SizedBox(height: 24),
+
+              // Umbral de "animal estancado" — a partir de cuánto tiempo
+              // sin encontrar hogar se muestra el aviso en "Mis animales".
+              // Antes eran 30 días fijos para todos; cada albergue conoce
+              // mejor su propio ritmo de adopciones (pedido de Eliza).
+              perfilLabel('AVISO DE ANIMAL SIN ADOPTAR, DESPUÉS DE...'),
+              const SizedBox(height: 10),
+              Wrap(spacing: 8, runSpacing: 8,
+                children: umbralEstancadoOpciones.map((o) {
+                  final sel = o.$1 == _umbralEstancado;
+                  return GestureDetector(
+                    onTap: () => setState(() => _umbralEstancado = o.$1),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+                      decoration: BoxDecoration(
+                        color: sel ? appOrange : Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: sel ? appOrange : Colors.grey.shade300),
+                      ),
+                      child: Text(o.$2, style: TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w600,
+                        color: sel ? Colors.white : Colors.grey.shade700,
+                      )),
+                    ),
+                  );
+                }).toList(),
+              ),
               const SizedBox(height: 36),
 
               // Botón
@@ -259,7 +357,7 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
                   child: ElevatedButton(
                     onPressed: (_completo && !_guardando) ? _guardar : null,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF1A1A1A),
+                      backgroundColor: appInk,
                       foregroundColor: Colors.white,
                       disabledBackgroundColor: Colors.grey.shade300,
                       padding: const EdgeInsets.symmetric(vertical: 16),
@@ -282,18 +380,21 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
           Positioned(
             top: MediaQuery.of(context).padding.top + 8,
             right: 16,
-            child: Builder(builder: (ctx) => GestureDetector(
-              onTap: () => _cambiarRolDebug(ctx),
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.purple.shade100,
-                  shape: BoxShape.circle,
-                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12),
-                      blurRadius: 4, offset: const Offset(0, 2))],
+            child: Builder(builder: (ctx) => Tooltip(
+              message: 'Cambiar rol (debug)',
+              child: GestureDetector(
+                onTap: () => _cambiarRolDebug(ctx),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.purple.shade100,
+                    shape: BoxShape.circle,
+                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12),
+                        blurRadius: 4, offset: const Offset(0, 2))],
+                  ),
+                  child: Icon(Icons.developer_mode,
+                      color: Colors.purple.shade700, size: 18),
                 ),
-                child: Icon(Icons.developer_mode,
-                    color: Colors.purple.shade700, size: 18),
               ),
             )),
           ),
@@ -301,40 +402,4 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
     );
   }
 
-  Widget _label(String t) => Text(t,
-      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
-          letterSpacing: 1.1, color: Colors.grey.shade500));
-
-  Widget _campo(
-    TextEditingController ctl,
-    String hint, {
-    TextInputType tipo = TextInputType.text,
-    List<TextInputFormatter> formato = const [],
-    bool autofocus = false,
-  }) =>
-      TextField(
-        controller: ctl,
-        keyboardType: tipo,
-        inputFormatters: formato,
-        autofocus: autofocus,
-        decoration: InputDecoration(
-          hintText: hint,
-          hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
-          filled: true,
-          fillColor: Colors.white,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none,
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none,
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFF1F8A62), width: 2),
-          ),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        ),
-      );
 }

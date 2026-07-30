@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme.dart';
+import '../data/auth_helper.dart';
 import '../data/creator_role.dart';
 import '../data/rescates_repository.dart';
 import '../data/solicitudes_repository.dart';
@@ -28,6 +28,22 @@ class PerfilRescatistaScreen extends StatelessWidget {
     await UsuariosRepository().actualizarRoles(uid, seleccion);
   }
 
+  Future<void> _configurarUmbralEstancado(BuildContext context) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final doc = await FirebaseFirestore.instance.collection('usuarios').doc(uid).get();
+    if (!context.mounted) return;
+    final seleccion = await showModalBottomSheet<int>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => _UmbralEstancadoSheet(actual: umbralEstancadoDe(doc.data())),
+    );
+    if (seleccion == null) return;
+    await FirebaseFirestore.instance.collection('usuarios').doc(uid)
+        .update({'umbralEstancadoDias': seleccion});
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
@@ -46,6 +62,7 @@ class PerfilRescatistaScreen extends StatelessWidget {
               Row(children: [
                 IconButton(
                   icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+                tooltip: 'Volver',
                   onPressed: () => Navigator.pop(context),
                 ),
                 const Spacer(),
@@ -57,13 +74,13 @@ class PerfilRescatistaScreen extends StatelessWidget {
                     child: Text(nombre.isNotEmpty ? nombre[0].toUpperCase() : 'R',
                         style: const TextStyle(fontSize: 36, color: Colors.white, fontWeight: FontWeight.bold))),
               const SizedBox(height: 14),
-              Text(nombre, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
+              Text(nombre, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: appInk)),
               const SizedBox(height: 4),
-              Text(email, style: TextStyle(fontSize: 13, color: Colors.grey.shade500)),
+              Text(email, style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
               const SizedBox(height: 6),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                decoration: BoxDecoration(color: appTeal.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
+                decoration: BoxDecoration(color: appTeal.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(20)),
                 child: const Text('Rescatista 🦺', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: appTeal)),
               ),
               const SizedBox(height: 32),
@@ -106,6 +123,21 @@ class PerfilRescatistaScreen extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               GestureDetector(
+                onTap: () => _configurarUmbralEstancado(context),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
+                  child: Row(children: [
+                    Icon(Icons.schedule, color: appOrange, size: 20),
+                    const SizedBox(width: 12),
+                    const Expanded(child: Text('Aviso de animal sin adoptar',
+                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600))),
+                    Icon(Icons.chevron_right, color: Colors.grey.shade400),
+                  ]),
+                ),
+              ),
+              const SizedBox(height: 16),
+              GestureDetector(
                 onTap: () => launchUrl(
                   Uri.parse('https://lunita486.github.io/Salva-Patitas/privacidad.html'),
                   mode: LaunchMode.externalApplication,
@@ -116,7 +148,7 @@ class PerfilRescatistaScreen extends StatelessWidget {
                     Icon(Icons.shield_outlined, size: 16, color: Colors.grey.shade500),
                     const SizedBox(width: 6),
                     Text('Política de Privacidad',
-                        style: TextStyle(fontSize: 13, color: Colors.grey.shade500,
+                        style: TextStyle(fontSize: 13, color: Colors.grey.shade700,
                             decoration: TextDecoration.underline)),
                   ]),
                 ),
@@ -133,10 +165,15 @@ class PerfilRescatistaScreen extends StatelessWidget {
                     TextButton(
                       onPressed: () async {
                         Navigator.pop(dlgCtx);
-                        await GoogleSignIn().signOut();
-                        await FirebaseAuth.instance.signOut();
+                        final ok = await cerrarSesion();
                         if (context.mounted) {
-                          Navigator.of(context).popUntil((route) => route.isFirst);
+                          if (ok) {
+                            Navigator.of(context).popUntil((route) => route.isFirst);
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                                backgroundColor: msgError,
+                                content: Text('Esperá unos segundos e intentá de nuevo.')));
+                          }
                         }
                       },
                       child: const Text('Cerrar sesión', style: TextStyle(color: Colors.red)),
@@ -170,11 +207,11 @@ class PerfilRescatistaScreen extends StatelessWidget {
     child: Container(
       padding: const EdgeInsets.symmetric(vertical: 18),
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8)]),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8)]),
       child: Column(children: [
         Text(n, style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: color)),
         const SizedBox(height: 4),
-        Text(lbl, style: TextStyle(fontSize: 12, color: Colors.grey.shade500, height: 1.3), textAlign: TextAlign.center),
+        Text(lbl, style: TextStyle(fontSize: 12, color: Colors.grey.shade700, height: 1.3), textAlign: TextAlign.center),
       ]),
     ),
   );
@@ -218,7 +255,7 @@ class _RolesSheetState extends State<_RolesSheet> {
         const Text('Mis roles', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         const SizedBox(height: 6),
         Text('Podés tener los dos roles al mismo tiempo',
-            style: TextStyle(fontSize: 13, color: Colors.grey.shade500)),
+            style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
         const SizedBox(height: 20),
         _rolTile('adoptante', '🐾 Adoptante', 'Busco animales para adoptar'),
         const SizedBox(height: 10),
@@ -256,13 +293,81 @@ class _RolesSheetState extends State<_RolesSheet> {
         child: Row(children: [
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(titulo, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700,
-                color: activo ? appTeal : const Color(0xFF1A1A1A))),
+                color: activo ? appTeal : appInk)),
             const SizedBox(height: 2),
-            Text(subtitulo, style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+            Text(subtitulo, style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
           ])),
           if (activo) const Icon(Icons.check_circle, color: appTeal, size: 22),
         ]),
       ),
+    );
+  }
+}
+
+class _UmbralEstancadoSheet extends StatefulWidget {
+  final int actual;
+  const _UmbralEstancadoSheet({required this.actual});
+  @override
+  State<_UmbralEstancadoSheet> createState() => _UmbralEstancadoSheetState();
+}
+
+class _UmbralEstancadoSheetState extends State<_UmbralEstancadoSheet> {
+  late int _umbral;
+
+  @override
+  void initState() {
+    super.initState();
+    _umbral = widget.actual;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Container(width: 36, height: 4,
+            decoration: BoxDecoration(color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2))),
+        const SizedBox(height: 16),
+        const Text('Aviso de animal sin adoptar', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 6),
+        Text('Después de cuánto tiempo sin encontrar hogar querés que te avisemos',
+            style: TextStyle(fontSize: 13, color: Colors.grey.shade700), textAlign: TextAlign.center),
+        const SizedBox(height: 20),
+        Wrap(spacing: 8, runSpacing: 8, alignment: WrapAlignment.center,
+          children: umbralEstancadoOpciones.map((o) {
+            final sel = o.$1 == _umbral;
+            return GestureDetector(
+              onTap: () => setState(() => _umbral = o.$1),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+                decoration: BoxDecoration(
+                  color: sel ? appOrange : Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: sel ? appOrange : Colors.grey.shade200),
+                ),
+                child: Text(o.$2, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
+                    color: sel ? Colors.white : appInk)),
+              ),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 24),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: () => Navigator.pop(context, _umbral),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: appTeal, foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              elevation: 0,
+            ),
+            child: const Text('Guardar', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+          ),
+        ),
+      ]),
     );
   }
 }

@@ -2,12 +2,12 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme.dart';
 import '../services/notificaciones_service.dart';
+import '../data/auth_helper.dart';
 import '../data/creator_role.dart';
 import '../data/rescates_repository.dart';
 import '../data/solicitudes_repository.dart';
@@ -18,8 +18,9 @@ import 'mis_rescates_screen.dart';
 import 'solicitudes_rescatista_screen.dart';
 import 'adoptante_chats_screen.dart';
 import 'albergue_perfil_screen.dart';
-import 'adoptante_feed_screen.dart' show AliadosScreen;
+import 'aliados_screen.dart';
 import 'solicitudes_preview.dart';
+import 'hogares_de_paso_screen.dart';
 
 class AlbergueHomeScreen extends StatefulWidget {
   const AlbergueHomeScreen({super.key});
@@ -28,6 +29,10 @@ class AlbergueHomeScreen extends StatefulWidget {
 }
 
 class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
+  // A partir de acá la barra de capacidad ya se pinta en rojo (ver
+  // `_panel`) — este aviso lo hace explícito con texto, en vez de dejar
+  // que la persona tenga que notar sola el cambio de color.
+  static const _pctAvisoCapacidad = 0.9;
   int _nav = 0;
   final _uid = FirebaseAuth.instance.currentUser?.uid ?? '';
   final _rescatesRepo = RescatesRepository();
@@ -37,6 +42,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
   void initState() {
     super.initState();
     _verificarVencimientos();
+    _verificarSeguimientoPostAdopcion();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         NotificacionesService.guardarToken();
@@ -48,34 +54,18 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
   // Mismo aviso automático que tiene el rescatista (home_screen.dart) para
   // los "hogar de paso" vencidos — antes solo corría ahí, así que un
   // albergue con animales en hogar de paso nunca los veía revisados.
+  // Ambas centralizadas en solicitudes_rescatista_screen.dart — antes
+  // duplicadas byte a byte con home_screen.dart (hallazgo de auditoría de
+  // código).
   Future<void> _verificarVencimientos() async {
-    if (_uid.isEmpty) return;
-    final ahora = DateTime.now();
-    final snap = await _rescatesRepo.misRescatesPorEstado(
-      uid: _uid,
-      role: CreatorRole.albergue,
-      estadoAdopcion: 'Hogar de paso',
-    );
-    for (final doc in snap.docs) {
-      final d = doc.data();
-      final fechaFin = (d['fechaFinHogar'] as Timestamp?)?.toDate();
-      if (fechaFin == null) continue;
-      if (fechaFin.isAfter(ahora)) continue;
-      if (d['vencimientoAvisado'] == true) continue;
-      final nombre      = d['nombre']            as String? ?? 'El animal';
-      final adoptanteId = d['adoptanteIdEnProceso'] as String?;
-      final msg = '📋 El período de hogar de paso de $nombre ha vencido. '
-          'Por favor coordina la devolución o el proceso de adopción definitivo. 🐾';
-      await enviarMensajeChat(
-        adoptanteId ?? '',
-        nombre,
-        msg,
-        fotoUrl: d['fotoUrl'] as String?,
-        rescateId: doc.id,
-        creadoPor: 'albergue',
-      );
-      await doc.reference.update({'vencimientoAvisado': true});
-    }
+    if (!mounted) return;
+    await verificarVencimientos(context,
+        uid: _uid, role: CreatorRole.albergue, creadoPor: 'albergue');
+  }
+
+  Future<void> _verificarSeguimientoPostAdopcion() async {
+    await verificarSeguimientoPostAdopcion(
+        uid: _uid, role: CreatorRole.albergue, creadoPor: 'albergue');
   }
 
   Future<void> _uploadFotoPerfil() async {
@@ -95,11 +85,11 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
           .update({'fotoBase64': b64});
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Foto de perfil actualizada'), backgroundColor: appTeal));
+          const SnackBar(content: Text('Foto de perfil actualizada'), backgroundColor: msgExito));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No se pudo subir la foto: $e')));
+          SnackBar(backgroundColor: msgError, content: Text('No se pudo subir la foto: $e')));
     }
   }
 
@@ -125,7 +115,14 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
       ),
     );
     if (seleccion == null || !mounted) return;
-    await UsuariosRepository().actualizarRoles(_uid, seleccion);
+    try {
+      await UsuariosRepository().actualizarRoles(_uid, seleccion);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('No se pudo cambiar el rol. Revisá tu conexión e intentá de nuevo.'),
+          backgroundColor: msgError));
+    }
   }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> get _rescatesStream =>
@@ -157,9 +154,21 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                 return const Center(child: CircularProgressIndicator(color: appTeal));
               }
               final rescates = rSnap.data?.docs ?? [];
+              // "En cuidado" = físicamente presente en tu espacio, no
+              // "animales de los que sos responsable en total". Por eso:
+              // - "Regresado" SÍ cuenta: volvió de verdad a estar con vos,
+              //   ocupando capacidad real (antes no se contaba acá, y el %
+              //   de ocupación mentía hacia abajo apenas alguien devolvía
+              //   un animal — bug real que reportó Eliza probando:
+              //   "regresaron 2 animalitos y la app sigue mostrando solo 1").
+              // - "Hogar de paso" NO cuenta: el animal está en la casa de
+              //   otra persona, no en la tuya — libera capacidad real,
+              //   aunque sigas siendo responsable de ese caso (pedido
+              //   explícito de Eliza: "si tengo 3 y uno está en hogar de
+              //   paso, debería mostrar 2 en cuidado, no 3").
               final enCuidado  = rescates.where((d) {
                 final e = (d.data() as Map)['estadoAdopcion'] as String? ?? 'Rescatado';
-                return e == 'Rescatado' || e == 'Hogar de paso';
+                return e == 'Rescatado' || e == 'Regresado';
               }).length;
               final enAdopcion = rescates.where((d) =>
                 (d.data() as Map)['estadoAdopcion'] == 'En proceso de adopción').length;
@@ -202,6 +211,13 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
       int capacidad, int enCuidado, int enAdopcion,
       int adoptados, int totalActivos, double pct,
       List<QueryDocumentSnapshot> rescates) {
+    // Con capacidades chicas, el % solo no alcanza a avisar con margen: con
+    // capacidad=3, no existe ningún totalActivos entero entre el 90% (2.7)
+    // y el 100% — se salta directo del "sin aviso" al "ya lleno". Por eso
+    // el aviso de abajo se dispara con esta condición O el porcentaje de
+    // siempre — alcanza que se cumpla una de las dos (pedido real de
+    // Eliza, probando con un albergue de capacidad chica).
+    final lugaresLibres = capacidad > 0 ? capacidad - totalActivos : null;
     return SingleChildScrollView(
       padding: const EdgeInsets.only(bottom: 100),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -211,18 +227,21 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
             alignment: Alignment.centerRight,
             child: Padding(
               padding: const EdgeInsets.only(right: 16, top: 8),
-              child: GestureDetector(
-                onTap: _cambiarRolDebug,
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.purple.shade100,
-                    shape: BoxShape.circle,
-                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12),
-                        blurRadius: 4, offset: const Offset(0, 2))],
+              child: Tooltip(
+                message: 'Cambiar rol (debug)',
+                child: GestureDetector(
+                  onTap: _cambiarRolDebug,
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.purple.shade100,
+                      shape: BoxShape.circle,
+                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12),
+                          blurRadius: 4, offset: const Offset(0, 2))],
+                    ),
+                    child: Icon(Icons.developer_mode,
+                        color: Colors.purple.shade700, size: 18),
                   ),
-                  child: Icon(Icons.developer_mode,
-                      color: Colors.purple.shade700, size: 18),
                 ),
               ),
             ),
@@ -235,13 +254,13 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
           padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
           decoration: BoxDecoration(
             gradient: const LinearGradient(
-              colors: [Color(0xFF0A5C40), Color(0xFF1F8A62)],
+              colors: [Color(0xFF0A5C40), appTeal],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
             borderRadius: BorderRadius.circular(24),
             boxShadow: [
-              BoxShadow(color: const Color(0xFF1F8A62).withValues(alpha: 0.35),
+              BoxShadow(color: appTeal.withValues(alpha: 0.35),
                   blurRadius: 20, offset: const Offset(0, 8)),
             ],
           ),
@@ -277,7 +296,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                     color: Colors.white.withValues(alpha: 0.75))),
                 const SizedBox(height: 2),
                 Text(nombre, style: const TextStyle(fontSize: 22,
-                    fontWeight: FontWeight.bold, color: Colors.white),
+                    fontWeight: FontWeight.bold, color: Colors.white, fontFamily: 'Baloo2'),
                     overflow: TextOverflow.ellipsis),
                 if (tipo.isNotEmpty || ciudad.isNotEmpty) ...[
                   const SizedBox(height: 3),
@@ -314,21 +333,16 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
             // Barra de capacidad
             if (capacidad > 0) ...[
               const SizedBox(height: 20),
-              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                Text('$totalActivos de $capacidad animales',
-                    style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.8),
-                        fontWeight: FontWeight.w600)),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text('${(pct * 100).round()}% ocupado',
-                      style: const TextStyle(fontSize: 11,
-                          fontWeight: FontWeight.w700, color: Colors.white)),
-                ),
-              ]),
+              // Antes también se mostraba el porcentaje ("67% ocupado") al
+              // lado de "N de M animales" — confundía más de lo que ayudaba
+              // (Eliza esperaba ver el 90% del umbral interno reflejado acá,
+              // en vez del porcentaje real de ocupación). El umbral del 90%
+              // sigue existiendo por dentro (define cuándo la barra se pone
+              // roja y cuándo aparece el aviso), solo se dejó de mostrar el
+              // número.
+              Text('$totalActivos de $capacidad animales',
+                  style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.8),
+                      fontWeight: FontWeight.w600)),
               const SizedBox(height: 8),
               ClipRRect(
                 borderRadius: BorderRadius.circular(6),
@@ -340,6 +354,26 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                       pct >= 0.9 ? Colors.red.shade300 : Colors.white),
                 ),
               ),
+              if (pct >= _pctAvisoCapacidad || (lugaresLibres != null && lugaresLibres <= 1)) ...[
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Icon(Icons.warning_amber_rounded, size: 14, color: Colors.amber.shade200),
+                    const SizedBox(width: 6),
+                    Expanded(child: Text(
+                      pct >= 1.0
+                          ? 'Llegaste al límite de capacidad. Considerá frenar nuevos ingresos.'
+                          : 'Cerca del límite de capacidad. Considerá acelerar adopciones.',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white),
+                    )),
+                  ]),
+                ),
+              ],
             ],
           ]),
         ),
@@ -409,6 +443,32 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
 
         const SizedBox(height: 20),
 
+        // ── Red de hogares de paso ───────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: GestureDetector(
+            onTap: () => Navigator.push(ctx, MaterialPageRoute(
+                builder: (_) => const HogaresDePasoScreen())),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
+              child: Row(children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(color: appTeal.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
+                  child: const Text('🫶', style: TextStyle(fontSize: 18)),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(child: Text('Red de hogares de paso',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600))),
+                Icon(Icons.chevron_right, color: Colors.grey.shade400),
+              ]),
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 20),
+
         // ── Jauría ────────────────────────────────────────────────────────────
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -449,7 +509,16 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
             const SizedBox(height: 28),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: _sectionHeader('YA ENCONTRARON HOGAR 🏡',
+              child: _sectionHeader('ENCONTRARON HOGAR 🏡',
+                // "Gestionar" (no "Ver todos") y verde (no el azul suelto
+                // que no es de la paleta) — mismo texto y color que el
+                // botón gemelo de "LA JAURÍA" de arriba, que hace
+                // exactamente el mismo tipo de navegación. "Ver todos" era
+                // engañoso: la fila de acá abajo YA muestra todos los
+                // adoptados sin límite, nada queda escondido — lo que este
+                // botón realmente ofrece es ir a editar/compartir/eliminar,
+                // acciones que la tarjeta chica del carrusel no tiene
+                // (sugerencia real de Eliza).
                 trailing: GestureDetector(
                   onTap: () => Navigator.push(ctx, MaterialPageRoute(
                       builder: (_) => TodosLosRescatesScreen(
@@ -457,15 +526,14 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF2196F3).withValues(alpha: 0.1),
+                      color: appTeal.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                          color: const Color(0xFF2196F3).withValues(alpha: 0.3)),
+                      border: Border.all(color: appTeal.withValues(alpha: 0.3)),
                     ),
-                    child: const Text('Ver todos',
+                    child: const Text('Gestionar',
                         style: TextStyle(fontSize: 12,
                             fontWeight: FontWeight.w700,
-                            color: Color(0xFF2196F3))),
+                            color: appTeal)),
                   ),
                 ),
               ),
@@ -495,7 +563,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
           padding: const EdgeInsets.fromLTRB(24, 36, 24, 32),
           decoration: const BoxDecoration(
             gradient: LinearGradient(
-              colors: [Color(0xFF0A5C40), Color(0xFF1F8A62)],
+              colors: [Color(0xFF0A5C40), appTeal],
               begin: Alignment.topLeft, end: Alignment.bottomRight,
             ),
           ),
@@ -597,8 +665,12 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                     ),
                   );
                   if (confirmar == true) {
-                    await GoogleSignIn().signOut();
-                    await FirebaseAuth.instance.signOut();
+                    final ok = await cerrarSesion();
+                    if (!ok && ctx.mounted) {
+                      ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
+                          backgroundColor: msgError,
+                          content: Text('Esperá unos segundos e intentá de nuevo.')));
+                    }
                   }
                 },
                 icon: const Icon(Icons.logout, size: 18),
@@ -623,7 +695,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                   Icon(Icons.shield_outlined, size: 16, color: Colors.grey.shade500),
                   const SizedBox(width: 6),
                   Text('Política de Privacidad',
-                      style: TextStyle(fontSize: 13, color: Colors.grey.shade500,
+                      style: TextStyle(fontSize: 13, color: Colors.grey.shade700,
                           decoration: TextDecoration.underline)),
                 ]),
               ),
@@ -646,10 +718,10 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
       Icon(icono, size: 20, color: appTeal),
       const SizedBox(width: 14),
       Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(label, style: TextStyle(fontSize: 11, color: Colors.grey.shade500,
+        Text(label, style: TextStyle(fontSize: 11, color: Colors.grey.shade700,
             fontWeight: FontWeight.w600)),
         const SizedBox(height: 2),
-        Text(valor, style: const TextStyle(fontSize: 14, color: Color(0xFF1A1A1A),
+        Text(valor, style: const TextStyle(fontSize: 14, color: appInk,
             fontWeight: FontWeight.w500)),
       ]),
     ]),
@@ -687,7 +759,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                 fontWeight: FontWeight.bold, color: color, height: 1)),
             const SizedBox(height: 3),
             Text(label, style: TextStyle(fontSize: 10,
-                color: Colors.grey.shade500, fontWeight: FontWeight.w600),
+                color: Colors.grey.shade700, fontWeight: FontWeight.w600),
                 overflow: TextOverflow.ellipsis),
           ]),
         ),
@@ -703,42 +775,48 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF0A5C40), Color(0xFF1F8A62)],
+          colors: [Color(0xFF0A5C40), appTeal],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: const Color(0xFF1F8A62).withValues(alpha: 0.35),
+        boxShadow: [BoxShadow(color: appTeal.withValues(alpha: 0.35),
             blurRadius: 12, offset: const Offset(0, 5))],
       ),
       child: Row(children: [
-        // Icono apilado: 3 patitas
+        // Icono apilado: 3 animalitos distintos (antes eran 3 patitas
+        // blancas idénticas — "lindo, con colorcito", pedido real de
+        // Eliza) — el emoji de cada uno ya trae su propio color, no hace
+        // falta pintarlo a mano.
         SizedBox(
           width: 52, height: 52,
           child: Stack(children: [
             Positioned(left: 0, bottom: 0,
               child: Container(
                 width: 36, height: 36,
+                alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.15),
+                  color: Colors.white.withValues(alpha: 0.9),
                   borderRadius: BorderRadius.circular(10)),
-                child: const Icon(Icons.pets, color: Colors.white, size: 20),
+                child: const Text('🐶', style: TextStyle(fontSize: 19)),
               )),
             Positioned(right: 0, bottom: 0,
               child: Container(
                 width: 28, height: 28,
+                alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.12),
+                  color: Colors.white.withValues(alpha: 0.85),
                   borderRadius: BorderRadius.circular(8)),
-                child: const Icon(Icons.pets, color: Colors.white70, size: 15),
+                child: const Text('🐱', style: TextStyle(fontSize: 15)),
               )),
             Positioned(top: 0, left: 8,
               child: Container(
                 width: 24, height: 24,
+                alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.1),
+                  color: Colors.white.withValues(alpha: 0.8),
                   borderRadius: BorderRadius.circular(7)),
-                child: const Icon(Icons.pets, color: Colors.white54, size: 13),
+                child: const Text('🐰', style: TextStyle(fontSize: 13)),
               )),
           ]),
         ),
@@ -778,38 +856,80 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
             blurRadius: 8, offset: const Offset(0, 3))],
       ),
       child: Row(children: [
-        // Icono: patita + cámara
-        Stack(clipBehavior: Clip.none, children: [
-          Container(
-            width: 44, height: 44,
-            decoration: BoxDecoration(
-              color: appTeal.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12)),
-            child: const Icon(Icons.pets, color: appTeal, size: 24),
-          ),
-          Positioned(right: -4, bottom: -4,
-            child: Container(
-              width: 20, height: 20,
-              decoration: const BoxDecoration(
-                  color: appOrange, shape: BoxShape.circle),
-              child: const Icon(Icons.add, color: Colors.white, size: 14),
-            )),
-        ]),
+        // Mismo círculo naranja con "+" que usa el rescatista en su propio
+        // "Subir un rescate" (home_screen.dart, _ctaCard) — Eliza lo vio ahí
+        // y pidió el mismo acá, en vez del combo con emoji que había antes.
+        Container(width: 44, height: 44,
+          decoration: const BoxDecoration(color: appOrange, shape: BoxShape.circle),
+          child: const Icon(Icons.add, color: Colors.white, size: 24)),
         const SizedBox(width: 18),
         const Text('Subir uno solo',
             style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
-                color: Color(0xFF1A1A1A))),
+                color: appInk)),
         const Spacer(),
         Icon(Icons.chevron_right, color: Colors.grey.shade400),
       ]),
     ),
   );
 
+  // Antes copiado byte a byte en las dos tarjetas de animal de este archivo
+  // (la de "La Jauría" y la de "Ya encontraron hogar") — hallazgo de
+  // auditoría de código. Devuelve SizedBox.shrink() (sin alto, invisible)
+  // cuando no corresponde mostrar el botón, así el llamador lo agrega
+  // siempre como un solo ítem de la lista, sin repetir el `if` en cada
+  // lugar.
+  Widget _botonContactar(BuildContext ctx, {
+    required String docId,
+    required String nombre,
+    required String especie,
+    required String? fotoUrl,
+    required Map<String, dynamic> d,
+  }) {
+    final estadoAdopcion = d['estadoAdopcion'] as String? ?? '';
+    final adoptanteIdEnProceso = d['adoptanteIdEnProceso'] as String? ?? '';
+    if (!(estadoAdopcion == 'Hogar de paso' || estadoAdopcion == 'En proceso de adopción') ||
+        adoptanteIdEnProceso.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      const SizedBox(height: 6),
+      GestureDetector(
+        onTap: () => contactarPersonaEnProceso(
+          ctx,
+          docId: docId,
+          nombre: nombre,
+          especie: especie,
+          fotoUrl: fotoUrl,
+          creadoPor: d['creadoPor'] as String?,
+          adoptanteIdEnProceso: adoptanteIdEnProceso,
+        ),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 5),
+          decoration: BoxDecoration(color: appOrange, borderRadius: BorderRadius.circular(8)),
+          child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Icon(Icons.chat_bubble_outline, size: 11, color: Colors.white),
+            SizedBox(width: 4),
+            Text('Contactar', style: TextStyle(fontSize: 9,
+                fontWeight: FontWeight.w700, color: Colors.white)),
+          ]),
+        ),
+      ),
+    ]);
+  }
+
   Widget _sectionHeader(String label, {Widget? trailing}) =>
     Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-      Text(label, style: const TextStyle(fontSize: 16,
-          fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
-      ?trailing,
+      // Expanded + ellipsis: sin esto, un título largo (ej. "YA ENCONTRARON
+      // HOGAR 🏡") empujaba el botón "Gestionar" fuera de pantalla en vez
+      // de acortarse — el botón quedaba cortado (bug real reportado por
+      // Eliza probando en el celular).
+      Expanded(
+        child: Text(label, overflow: TextOverflow.ellipsis, maxLines: 1,
+            style: const TextStyle(fontSize: 16,
+                fontWeight: FontWeight.bold, color: appInk)),
+      ),
+      if (trailing != null) ...[const SizedBox(width: 8), trailing],
     ]);
 
   Widget _jauriaCarousel(List<QueryDocumentSnapshot> rescates) {
@@ -818,7 +938,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
         padding: const EdgeInsets.symmetric(vertical: 16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('Aún no tienes animales publicados.',
-              style: TextStyle(color: Colors.grey.shade500, fontSize: 13)),
+              style: TextStyle(color: Colors.grey.shade700, fontSize: 13)),
           const SizedBox(height: 10),
           GestureDetector(
             onTap: () => Navigator.push(context, MaterialPageRoute(
@@ -864,7 +984,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
           final emoji          = especie == 'Gato' ? '🐱' : '🐶';
           final esNuevo        = ts != null &&
               DateTime.now().difference(ts.toDate()).inHours < 24;
-          final fechaStr       = ts != null ? _fmtFecha(ts.toDate()) : '';
+          final fechaStr       = ts != null ? formatearFecha(ts.toDate(), conAnio: false) : '';
           final estadoColor    = cicloColor(estadoAdopcion);
 
           return Container(
@@ -879,8 +999,12 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
             child: Stack(children: [
               Column(children: [
                 Expanded(
+                  // FotoAnimal en vez de recorte — mismo caso "Tobyiii" que
+                  // el feed del adoptante: esta tarjeta del panel de
+                  // albergue es grande y el recorte fijo podía dejar
+                  // afuera al animal entero en fotos verticales.
                   child: fotoUrl != null
-                    ? FotoUrl(
+                    ? FotoAnimal(
                         url: fotoUrl,
                         width: double.infinity,
                         fallback: Container(
@@ -900,13 +1024,13 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(nombre,
                         style: const TextStyle(fontSize: 12,
-                            fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A)),
+                            fontWeight: FontWeight.bold, color: appInk),
                         overflow: TextOverflow.ellipsis),
                     const SizedBox(height: 2),
                     Text(
                       [if (edad.isNotEmpty) edad, if (fechaStr.isNotEmpty) fechaStr]
                           .join(' · '),
-                      style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+                      style: TextStyle(fontSize: 10, color: Colors.grey.shade700),
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 6),
@@ -942,6 +1066,12 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                         ]),
                       ),
                     ),
+                    // Antes el albergue no tenía NINGUNA forma de contactar
+                    // a quien tiene el animal en "Hogar de paso" o "En
+                    // proceso de adopción" — este botón solo existía en el
+                    // panel del rescatista (home_screen.dart), nunca acá.
+                    _botonContactar(ctx, docId: docId, nombre: nombre,
+                        especie: especie, fotoUrl: fotoUrl, d: d),
                   ]),
                 ),
               ]),
@@ -1010,8 +1140,10 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
             child: Stack(children: [
               Column(children: [
                 Expanded(
+                  // FotoAnimal en vez de recorte — mismo motivo que la
+                  // otra tarjeta de arriba (caso "Tobyiii").
                   child: fotoUrl != null
-                    ? FotoUrl(
+                    ? FotoAnimal(
                         url: fotoUrl,
                         width: double.infinity,
                         fallback: Container(
@@ -1031,7 +1163,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(nombre,
                         style: const TextStyle(fontSize: 12,
-                            fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A)),
+                            fontWeight: FontWeight.bold, color: appInk),
                         overflow: TextOverflow.ellipsis),
                     const SizedBox(height: 6),
                     // Mismo chip tappable que _jauriaCarousel — antes acá
@@ -1069,6 +1201,8 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                         ]),
                       ),
                     ),
+                    _botonContactar(ctx, docId: docId, nombre: nombre,
+                        especie: especie, fotoUrl: fotoUrl, d: d),
                   ]),
                 ),
               ]),
@@ -1077,12 +1211,6 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
         },
       ),
     );
-  }
-
-  String _fmtFecha(DateTime d) {
-    const m = ['ene','feb','mar','abr','may','jun',
-                'jul','ago','sep','oct','nov','dic'];
-    return '${d.day} ${m[d.month - 1]}';
   }
 
   // ── Bottom nav ───────────────────────────────────────────────────────────────

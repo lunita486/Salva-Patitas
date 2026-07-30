@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../theme.dart';
 import 'animal_detalle_screen.dart';
 
@@ -19,6 +20,10 @@ class AlberguePublicoScreen extends StatelessWidget {
         final nombre   = data['albergueNombre'] as String? ?? data['displayName'] as String? ?? 'Albergue';
         final tipo     = data['albergueTipo']   as String? ?? '';
         final capacidad= (data['capacidadTotal'] as int?) ?? 0;
+        final telefono = data['albergueTelefono']  as String? ?? '';
+        final direccion= data['albergueDireccion'] as String? ?? '';
+        final email    = data['albergueEmail']     as String? ?? '';
+        final sitioWeb = data['albergueSitioWeb']  as String? ?? '';
         final foto64   = data['fotoBase64']     as String?;
         final iniciales= nombre.trim().split(' ')
             .take(2).map((w) => w.isNotEmpty ? w[0].toUpperCase() : '').join();
@@ -54,7 +59,7 @@ class AlberguePublicoScreen extends StatelessWidget {
                         height: 230,
                         decoration: const BoxDecoration(
                           gradient: LinearGradient(
-                            colors: [Color(0xFF0A5C40), Color(0xFF1F8A62)],
+                            colors: [Color(0xFF0A5C40), appTeal],
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                           ),
@@ -69,6 +74,7 @@ class AlberguePublicoScreen extends StatelessWidget {
                               child: IconButton(
                                 icon: const Icon(Icons.arrow_back_ios_new,
                                     color: Colors.white, size: 20),
+                                tooltip: 'Volver',
                                 onPressed: () => Navigator.pop(context),
                               ),
                             ),
@@ -135,11 +141,56 @@ class AlberguePublicoScreen extends StatelessWidget {
                         if (capacidad > 0) ...[
                           const SizedBox(width: 10),
                           _statChip('$capacidad',
-                              'capacidad', Colors.grey.shade500),
+                              'capacidad', Colors.grey.shade700),
                         ],
                       ]),
                     ),
                   ),
+
+                  // ── Contacto (opcional) ─────────────────────────────────────
+                  if (telefono.isNotEmpty || direccion.isNotEmpty || email.isNotEmpty || sitioWeb.isNotEmpty)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          if (direccion.isNotEmpty)
+                            _filaContacto(Icons.location_on_outlined, direccion),
+                          if (email.isNotEmpty)
+                            _filaContacto(Icons.email_outlined, email,
+                                onTap: () => launchUrl(Uri.parse('mailto:$email'))),
+                          if (sitioWeb.isNotEmpty)
+                            _filaContacto(Icons.language_outlined, sitioWeb,
+                                onTap: () => launchUrl(Uri.parse(sitioWebUrl(sitioWeb)),
+                                    mode: LaunchMode.externalApplication)),
+                          if (telefono.isNotEmpty)
+                            Padding(
+                              padding: EdgeInsets.only(top: (direccion.isNotEmpty || email.isNotEmpty || sitioWeb.isNotEmpty) ? 4 : 0),
+                              child: GestureDetector(
+                                onTap: () {
+                                  final url = whatsappUrl(telefono);
+                                  if (url != null) {
+                                    launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+                                  }
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF25D366).withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(color: const Color(0xFF25D366).withValues(alpha: 0.35)),
+                                  ),
+                                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                                    Icon(Icons.chat_bubble_outline, size: 15, color: Color(0xFF1E9E56)),
+                                    SizedBox(width: 6),
+                                    Text('Escribir por WhatsApp', style: TextStyle(
+                                        fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF1E9E56))),
+                                  ]),
+                                ),
+                              ),
+                            ),
+                        ]),
+                      ),
+                    ),
 
                   // ── Sección ──────────────────────────────────────────────────
                   SliverToBoxAdapter(
@@ -149,7 +200,7 @@ class AlberguePublicoScreen extends StatelessWidget {
                           style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
-                              color: Color(0xFF1A1A1A))),
+                              color: appInk)),
                     ),
                   ),
 
@@ -193,6 +244,23 @@ class AlberguePublicoScreen extends StatelessWidget {
     );
   }
 
+  /// Una línea de contacto (dirección/email/sitio web): ícono + texto,
+  /// tappable si se pasa [onTap] (email abre el cliente de correo, sitio
+  /// web abre el navegador — dirección no tiene onTap, es solo texto).
+  Widget _filaContacto(IconData icono, String texto, {VoidCallback? onTap}) {
+    final fila = Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Icon(icono, size: 17, color: appTeal),
+        const SizedBox(width: 8),
+        Expanded(child: Text(texto,
+            style: TextStyle(fontSize: 13.5,
+                color: onTap != null ? appTeal : appInk))),
+      ]),
+    );
+    return onTap == null ? fila : GestureDetector(onTap: onTap, child: fila);
+  }
+
   Widget _statChip(String valor, String label, Color color) => Expanded(
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 14),
@@ -217,7 +285,7 @@ class AlberguePublicoScreen extends StatelessWidget {
             Text(label,
                 style: TextStyle(
                     fontSize: 11,
-                    color: Colors.grey.shade500,
+                    color: Colors.grey.shade700,
                     fontWeight: FontWeight.w600)),
           ]),
         ),
@@ -260,6 +328,8 @@ class AlberguePublicoScreen extends StatelessWidget {
       'okConNinos':          d['okConNinos'],
       'okConMascotas':       d['okConMascotas'],
       'requiereExperiencia': d['requiereExperiencia'],
+      'vacunado':            d['vacunado'],
+      'desparasitado':       d['desparasitado'],
       'verificado':          d['verificado'] ?? false,
       'urgencia':            urgencia,
       'creadoPor':           d['creadoPor'] ?? 'albergue',
@@ -283,8 +353,12 @@ class AlberguePublicoScreen extends StatelessWidget {
         child: Stack(children: [
           Column(children: [
             Expanded(
+              // FotoAnimal en vez de recorte — mismo caso "Tobyiii": esta
+              // tarjeta del perfil público del albergue es grande y el
+              // recorte fijo podía dejar afuera al animal entero en fotos
+              // verticales (ver solicitud_adopcion_screen.dart).
               child: fotoUrl != null
-                  ? FotoUrl(
+                  ? FotoAnimal(
                       url: fotoUrl,
                       width: double.infinity,
                       fallback: Container(
@@ -310,12 +384,12 @@ class AlberguePublicoScreen extends StatelessWidget {
                     style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFF1A1A1A)),
+                        color: appInk),
                     overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 3),
                 Text([especie, if (edad.isNotEmpty) edad].join(' · '),
                     style: TextStyle(
-                        fontSize: 11, color: Colors.grey.shade500)),
+                        fontSize: 11, color: Colors.grey.shade700)),
                 const SizedBox(height: 6),
                 Container(
                   padding: const EdgeInsets.symmetric(

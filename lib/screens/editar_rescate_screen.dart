@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:io';
@@ -7,7 +8,8 @@ import 'package:geocoding/geocoding.dart';
 import '../theme.dart';
 import '../data/rescates_repository.dart';
 import '../data/rescate_fotos_repository.dart';
-import '../data/solicitudes_repository.dart';
+import '../data/foto_normalizador.dart';
+import 'visor_foto_completa.dart';
 
 class EditarRescateScreen extends StatefulWidget {
   final String docId;
@@ -17,7 +19,7 @@ class EditarRescateScreen extends StatefulWidget {
   State<EditarRescateScreen> createState() => _EditarRescateScreenState();
 }
 
-class _EditarRescateScreenState extends State<EditarRescateScreen> {
+class _EditarRescateScreenState extends State<EditarRescateScreen> with TardandoMuchoMixin {
   late TextEditingController _nombreCtl;
   late TextEditingController _descCtl;
   late TextEditingController _lugarCtl;
@@ -31,12 +33,23 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
   late String _okNinos;
   late String _okMascotas;
   late String _requiereExp;
+  late String _vacunado;
+  late String _desparasitado;
   bool _guardando = false;
   String? _fotoUrlExistente;
   String? _foto2UrlExistente;
   XFile? _nuevaFoto;
   XFile? _nuevaFoto2;
   final _picker = ImagePicker();
+
+  // Publicar un rescate nuevo (subir_rescate_screen.dart) ya exige al
+  // menos una foto, pero acá al editar se podía quitar la única que tenía
+  // y guardar igual — el animal quedaba sin ninguna foto para siempre
+  // (sugerencia real de Eliza: la foto debería ser requerida, no opcional,
+  // en todos los flujos, no solo al publicar por primera vez).
+  bool get _tieneAlMenosUnaFoto =>
+      _nuevaFoto != null || _fotoUrlExistente != null ||
+      _nuevaFoto2 != null || _foto2UrlExistente != null;
 
   bool _detectandoUbicacion = false;
   double? _latitud;
@@ -51,6 +64,7 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
   static const _edades    = ['Cachorro', 'Adulto', 'Senior'];
   static const _generos   = ['Macho', 'Hembra', 'No sé'];
   static const _siNo      = ['Sí', 'No'];
+  static const _saludOpts = ['Sí', 'No', 'Aún no lo sé'];
 
   @override
   void initState() {
@@ -69,6 +83,11 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
     _okNinos   = (d['okConNinos']    as bool? ?? false) ? 'Sí' : 'No';
     _okMascotas= (d['okConMascotas'] as bool? ?? false) ? 'Sí' : 'No';
     _requiereExp=(d['requiereExperiencia'] as bool? ?? false) ? 'Sí' : 'No';
+    // String, no bool — y con fallback a 'Aún no lo sé' para animales
+    // publicados antes de que existiera este campo, no a 'No' (que
+    // afirmaría algo que no se sabe).
+    _vacunado      = d['vacunado']      as String? ?? 'Aún no lo sé';
+    _desparasitado = d['desparasitado'] as String? ?? 'Aún no lo sé';
     _fotoUrlExistente  = d['fotoUrl']  as String?;
     _foto2UrlExistente = d['fotoUrl2'] as String?;
     // num→toDouble y no "as double": si algún doc trae la coordenada como
@@ -91,7 +110,7 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
     if (!serviceEnabled) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Activa el GPS en tu dispositivo')));
+        const SnackBar(content: Text('Activa el GPS en tu dispositivo'), backgroundColor: msgError));
       setState(() => _detectandoUbicacion = false);
       return;
     }
@@ -110,8 +129,10 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
       // directo la pantalla de permisos, no solo el texto "andá a Ajustes".
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: const Text('Permiso de ubicación bloqueado.'),
+        backgroundColor: msgError,
         action: SnackBarAction(
           label: 'Abrir Ajustes',
+          textColor: Colors.white,
           onPressed: () => Geolocator.openAppSettings(),
         ),
         duration: const Duration(seconds: 8),
@@ -148,7 +169,8 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
       if (!mounted) return;
       setState(() => _detectandoUbicacion = false);
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('No se pudo detectar tu ubicación. Podés reintentar tocando de nuevo.')));
+          content: Text('No se pudo detectar tu ubicación. Podés reintentar tocando de nuevo.'),
+          backgroundColor: msgError));
     }
   }
 
@@ -193,22 +215,58 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
     );
   }
 
+  // Guard de reentrada — mismo motivo que en mis_rescates_screen.dart: el
+  // chequeo de solicitudes pendientes tarda un momento sin mostrar nada, y
+  // un segundo toque a "Eliminar publicación" en esa ventana apilaba dos
+  // diálogos de confirmación (uno seguía preguntando por un animal que el
+  // otro ya había borrado).
+  bool _eliminando = false;
+
   Future<void> _eliminar() async {
+    // Silencioso a propósito (el aviso de "hay una eliminación en curso"
+    // que hubo acá un tiempo generaba confusión y se quitó — ver la
+    // historia completa del guard en mis_rescates_screen.dart). Esta
+    // pantalla es de UN solo animal, así que el guard solo puede frenar
+    // el doble toque sobre ese mismo animal — y ese caso no necesita
+    // aviso: el primer toque ya está mostrando el diálogo de confirmación
+    // o el "Eliminando a…" un instante después.
+    if (_eliminando) return;
+    _eliminando = true;
+    try {
+      await _eliminarImpl();
+    } finally {
+      _eliminando = false;
+    }
+  }
+
+  Future<void> _eliminarImpl() async {
     final nombre = _nombreCtl.text.trim().isNotEmpty ? _nombreCtl.text.trim() : 'este animal';
 
-    // Si hay una solicitud pendiente sobre este animal, no se deja borrar:
-    // aprobar esa solicitud después revienta contra un rescate que ya no
-    // existe (tx.update de aprobarSiDisponible tira invalid-argument).
-    final tienePendientes = await SolicitudesRepository().tienePendientesPara(widget.docId);
+    // Los 3 chequeos de elegibilidad viven centralizados en
+    // RescatesRepository.bloqueoParaEliminar — antes estaban duplicados
+    // acá y en mis_rescates_screen.dart (hallazgo de auditoría de código).
+    // Sin este bloqueo, aprobar una solicitud después revienta contra un
+    // rescate que ya no existe (tx.update de aprobarSiDisponible tira
+    // invalid-argument) — el bug real que reportó Eliza.
+    (String, String)? bloqueo;
+    try {
+      bloqueo = await RescatesRepository()
+          .bloqueoParaEliminar(rescateId: widget.docId, nombre: nombre);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('No pudimos verificar si se puede eliminar. Revisá tu conexión e intentá de nuevo.'),
+          backgroundColor: msgError));
+      return;
+    }
     if (!mounted) return;
-    if (tienePendientes) {
+    if (bloqueo != null) {
       await showDialog<void>(
         context: context,
         builder: (dlgCtx) => AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Text('No se puede eliminar todavía'),
-          content: Text('$nombre tiene una solicitud esperando respuesta. '
-              'Aprobala o rechazala primero, y después podés eliminar la publicación.'),
+          title: Text(bloqueo!.$1),
+          content: Text(bloqueo.$2),
           actions: [
             TextButton(onPressed: () => Navigator.pop(dlgCtx), child: const Text('Entendido')),
           ],
@@ -232,22 +290,66 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
         ],
       ),
     );
-    if (confirmar != true) return;
+    if (confirmar != true || !mounted) return;
     setState(() => _guardando = true);
+    // Mismo feedback persistente que en mis_rescates_screen.dart: sin
+    // señal hay hasta ~20s de timeouts encadenados, y el spinner de
+    // _guardando (pensado para el botón de guardar) no le dice a nadie
+    // que hay un BORRADO en curso. Los desenlaces lo reemplazan con
+    // hideCurrentSnackBar antes de mostrarse.
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('Eliminando a $nombre…'),
+      duration: const Duration(seconds: 30),
+    ));
     try {
-      await RescatesRepository().eliminar(widget.docId);
-      // Best-effort: borrar también las fotos de Storage para no dejarlas
-      // huérfanas pagando almacenamiento indefinidamente. try/catch, no
-      // .catchError — un catchError mal tipado revienta acá y el flujo
-      // muere en silencio antes del SnackBar.
-      try { await RescateFotosRepository().eliminarTodas(widget.docId); } catch (_) {}
+      // Fotos ANTES que el documento, a propósito: storage.rules verifica
+      // el dueño de una foto leyendo el documento de rescates — con el doc
+      // ya borrado, esa lectura falla y el borrado de fotos era rechazado
+      // en silencio: cada animal eliminado dejaba sus fotos huérfanas
+      // pagando almacenamiento para siempre. Best-effort igual (try/catch,
+      // no .catchError — un catchError mal tipado revienta acá y el flujo
+      // muere en silencio antes del SnackBar).
+      try {
+        await RescateFotosRepository().eliminarTodas(widget.docId)
+            .timeout(const Duration(seconds: 10));
+      } catch (_) {}
+      // Con timeout: sin señal, .delete() se encola y su Future no
+      // resuelve hasta reconectar — sin límite, la pantalla quedaba con el
+      // spinner para siempre. El TimeoutException cae al catch de abajo,
+      // que para ese caso muestra el mensaje honesto ("se va a completar
+      // al volver la señal") — el borrado encolado SÍ se aplica solo.
+      await RescatesRepository().eliminar(widget.docId)
+          .timeout(const Duration(seconds: 12));
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Publicación eliminada'), backgroundColor: appTeal));
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(content: Text('Publicación eliminada'), backgroundColor: msgExito));
+      Navigator.pop(context);
+    } on TimeoutException {
+      // Timeout ≠ error: el borrado quedó encolado y se completa solo al
+      // reconectar (y la Cloud Function onRescateEliminado limpia fotos y
+      // favoritos en el servidor cuando eso pase). El animal ya
+      // desapareció de las listas, así que para la persona esto ES un
+      // borrado exitoso — mismo mensaje y misma salida que el camino con
+      // señal. Acá hubo un tiempo un aviso naranja de "está tardando" y
+      // generaba confusión (ver mis_rescates_screen.dart).
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(content: Text('Publicación eliminada'), backgroundColor: msgExito));
       Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(
+          content: Text(RescatesRepository.mensajeErrorEliminar(e)),
+          backgroundColor: msgError,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 6),
+        ));
     } finally {
       if (mounted) setState(() => _guardando = false);
     }
@@ -257,57 +359,172 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
   /// nueva → subirla (sobreescribe el mismo path); sin cambios → mantener
   /// la URL que ya había, sin tocar Storage; se quitó sin reemplazarla →
   /// borrarla de Storage para no dejarla huérfana pagando almacenamiento.
+  // Timeouts a propósito (mismo motivo que subir_rescate_screen.dart): a
+  // diferencia del `.update()` de Firestore de más abajo, Storage NO
+  // encola solo las subidas/borrados sin señal — sin este límite, una foto
+  // nueva o un borrado se quedaban esperando para siempre en modo avión, y
+  // el catch de _guardar() nunca llegaba a dispararse.
   Future<String?> _resolverSlot({
     required int slot,
     required XFile? nuevaFoto,
     required String? urlExistente,
   }) async {
     if (nuevaFoto != null) {
-      final bytes = await File(nuevaFoto.path).readAsBytes();
-      return RescateFotosRepository().subir(rescateId: widget.docId, slot: slot, bytes: bytes);
+      // Mismo normalizador que subir_rescate_screen.dart/subir_lote_screen.dart
+      // (recorte a 1000px, JPEG q80, corrige orientación) — antes esta
+      // pantalla subía los bytes crudos del picker, así que una foto podía
+      // quedar con distinta calidad/orientación según si se agregó al
+      // publicar o al editar después (hallazgo de auditoría de código).
+      final bytes = await normalizarFoto(nuevaFoto.path);
+      return RescateFotosRepository()
+          .subir(rescateId: widget.docId, slot: slot, bytes: bytes)
+          .timeout(const Duration(seconds: 45));
     }
     if (urlExistente != null) return urlExistente;
-    await RescateFotosRepository().eliminar(rescateId: widget.docId, slot: slot);
+    // Red de seguridad, independiente de la detección de promoción de
+    // _guardar: JAMÁS borrar un archivo que la ficha va a seguir
+    // referenciando desde el otro campo. Si por cualquier camino futuro
+    // este slot se resuelve como "vacío" mientras el otro campo todavía
+    // apunta a su archivo, borrar dejaría la ficha apuntando a una foto
+    // muerta (el emoji en el feed) — el modo de falla del bug de
+    // "rarito 2" / "eddy 2.0". Con este guard el peor caso pasa a ser
+    // benigno: queda un archivo con nombre "cruzado" pero la foto se
+    // sigue viendo. Para que una foto se rompa tendrían que fallar la
+    // detección de _guardar Y este chequeo a la vez.
+    //
+    // Si el otro slot tiene una foto NUEVA elegida, su campo va a quedar
+    // apuntando a su propio archivo recién subido — este archivo queda
+    // sin referencias y sí se puede borrar.
+    final urlDelOtroSlot   = slot == 1 ? _foto2UrlExistente : _fotoUrlExistente;
+    final nuevaDelOtroSlot = slot == 1 ? _nuevaFoto2 : _nuevaFoto;
+    final referenciadoPorOtroSlot = nuevaDelOtroSlot == null &&
+        RescateFotosRepository.urlApuntaASlot(urlDelOtroSlot, slot);
+    if (!referenciadoPorOtroSlot) {
+      await RescateFotosRepository()
+          .eliminar(rescateId: widget.docId, slot: slot)
+          .timeout(const Duration(seconds: 10));
+    }
     return null;
   }
 
   Future<void> _guardar() async {
-    setState(() => _guardando = true);
+    if (!_tieneAlMenosUnaFoto) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('El animal necesita al menos una foto. Agregá una antes de guardar.'),
+          backgroundColor: msgError));
+      return;
+    }
+    setState(() { _guardando = true; });
+    iniciarTimerTardando(const Duration(seconds: 8));
     try {
-      final fotoUrl = await _resolverSlot(
-          slot: 1, nuevaFoto: _nuevaFoto, urlExistente: _fotoUrlExistente);
-      final fotoUrl2 = await _resolverSlot(
-          slot: 2, nuevaFoto: _nuevaFoto2, urlExistente: _foto2UrlExistente);
+      final String? fotoUrl;
+      final String? fotoUrl2;
+      // Se quitó la foto 1 y la 2 quedó ocupando su lugar (la "promoción"
+      // de _fotoSection): _fotoUrlExistente apunta al archivo foto2.jpg.
+      // Hay que mover el archivo de verdad — si solo se copiara la URL
+      // entre campos, la resolución del slot 2 de abajo borraría foto2.jpg
+      // como "slot vacío" y fotoUrl quedaría apuntando a un archivo
+      // borrado (bug real: "rarito 2" mostrando el emoji en el feed con
+      // su ficha apuntando a una foto que ya no existía). El chequeo por
+      // path (y no comparando contra la URL inicial) también repara docs
+      // que ya quedaron cruzados por este bug antes del arreglo.
+      final promocionPendiente = _nuevaFoto == null &&
+          RescateFotosRepository.urlApuntaASlot(_fotoUrlExistente, 2);
+      if (promocionPendiente) {
+        // Secuencial a propósito: moverFoto lee y borra foto2.jpg, y la
+        // resolución del slot 2 puede subir una foto nueva a ese mismo
+        // path (quitar la 1 y agregar otra segunda foto en la misma
+        // edición) — en paralelo se pisarían.
+        final fotoMovida = await RescateFotosRepository()
+            .moverFoto(rescateId: widget.docId, deSlot: 2, aSlot: 1)
+            .timeout(const Duration(seconds: 60));
+        // moverFoto() devuelve null tanto si movió con éxito "nada" (no
+        // hay archivo de origen) como si el archivo ya no estaba en
+        // Storage por un desfasaje previo — en ese segundo caso, este
+        // campo YA tenía una URL válida en Firestore (por eso se detectó
+        // la promoción). Null acá no significa "sin foto": significa "no
+        // hubo nada que mover", así que se mantiene la URL existente en
+        // vez de borrarla — perder la referencia sería peor que dejarla
+        // como estaba (hallazgo de auditoría de código).
+        fotoUrl = fotoMovida ?? _fotoUrlExistente;
+        fotoUrl2 = await _resolverSlot(
+            slot: 2, nuevaFoto: _nuevaFoto2, urlExistente: _foto2UrlExistente);
+      } else {
+        // Los dos slots se resuelven en paralelo, no uno atrás del otro — son
+        // independientes (cada uno sube/borra su propio archivo), así que
+        // esperarlos de a uno duplicaba el tiempo de espera sin necesidad.
+        final resultados = await Future.wait([
+          _resolverSlot(slot: 1, nuevaFoto: _nuevaFoto, urlExistente: _fotoUrlExistente),
+          _resolverSlot(slot: 2, nuevaFoto: _nuevaFoto2, urlExistente: _foto2UrlExistente),
+        ]);
+        fotoUrl  = resultados[0];
+        fotoUrl2 = resultados[1];
+      }
 
-      await RescatesRepository().actualizar(widget.docId, {
-        'nombre':      _nombreCtl.text.trim(),
-        'descripcion': _descCtl.text.trim(),
-        'ubicacion':   _lugarCtl.text.trim(),
-        'especie':     _especie,
-        'estado':      _estado,
-        'urgencia':    _urgencia,
-        'energia':     _energia,
-        'tamano':      _tamano,
-        'edad':        _edad,
-        'genero':      _genero,
-        'okConNinos':          _okNinos    == 'Sí',
-        'okConMascotas':       _okMascotas == 'Sí',
-        'requiereExperiencia': _requiereExp == 'Sí',
-        'fotoUrl':  fotoUrl  ?? FieldValue.delete(),
-        'fotoUrl2': fotoUrl2 ?? FieldValue.delete(),
-        if (_latitud    != null) 'latitud':    _latitud,
-        if (_longitud   != null) 'longitud':   _longitud,
-        if (_paisCodigo.isNotEmpty) 'paisCodigo': _paisCodigo,
-      });
+      // Sin timeout a propósito, a diferencia de todo lo demás en esta
+      // función: un `.update()` de Firestore sin señal NO se pierde — el
+      // SDK lo encola solo y lo aplica apenas vuelva la conexión (esto es
+      // justo lo que pasó probando en modo avión: el cambio terminó
+      // guardándose al recuperar señal). Cortarlo con un timeout y avisar
+      // "no se pudo guardar" sería mentirle a la persona — el cambio SÍ se
+      // va a guardar. `guardadoConfirmado` distingue si ya llegó la
+      // confirmación del servidor o si sigue en cola, para avisar la
+      // verdad en cada caso — pero en los dos se libera la pantalla, que
+      // es el problema real que reportó Eliza (spinner sin salida).
+      var guardadoConfirmado = true;
+      try {
+        await RescatesRepository().actualizar(widget.docId, {
+          'nombre':      _nombreCtl.text.trim(),
+          'descripcion': _descCtl.text.trim(),
+          'ubicacion':   _lugarCtl.text.trim(),
+          'especie':     _especie,
+          'estado':      _estado,
+          'urgencia':    _urgencia,
+          'energia':     _energia,
+          'tamano':      _tamano,
+          'edad':        _edad,
+          'genero':      _genero,
+          'okConNinos':          _okNinos    == 'Sí',
+          'okConMascotas':       _okMascotas == 'Sí',
+          'requiereExperiencia': _requiereExp == 'Sí',
+          'vacunado':            _vacunado,
+          'desparasitado':       _desparasitado,
+          'fotoUrl':  fotoUrl  ?? FieldValue.delete(),
+          'fotoUrl2': fotoUrl2 ?? FieldValue.delete(),
+          if (_latitud    != null) 'latitud':    _latitud,
+          if (_longitud   != null) 'longitud':   _longitud,
+          if (_paisCodigo.isNotEmpty) 'paisCodigo': _paisCodigo,
+        }).timeout(const Duration(seconds: 20));
+      } on TimeoutException {
+        guardadoConfirmado = false;
+      }
+
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('¡Cambios guardados!'), backgroundColor: appTeal));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(guardadoConfirmado
+            ? '¡Cambios guardados!'
+            : 'Esto está tardando. Tu cambio se va a guardar solo apenas vuelva la señal.'),
+        backgroundColor: guardadoConfirmado ? msgExito : msgAdvertencia,
+        behavior: SnackBarBehavior.floating,
+        duration: Duration(seconds: guardadoConfirmado ? 4 : 6),
+      ));
       Navigator.pop(context);
-    } catch (e) {
+    } catch (_) {
+      // Acá sí es una falla real de verdad (subir/borrar una foto en
+      // Storage, que a diferencia de Firestore no se reintenta solo sin
+      // señal) — mismo estilo y comportamiento que
+      // subir_rescate_screen.dart/subir_lote_screen.dart.
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('No se pudo guardar. Revisá tu conexión e intentá de nuevo.'),
+        backgroundColor: msgError,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 6),
+      ));
     } finally {
-      if (mounted) setState(() => _guardando = false);
+      cancelarTimerTardando();
+      if (mounted) setState(() { _guardando = false; tardandoMucho = false; });
     }
   }
 
@@ -322,10 +539,12 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
             child: Row(children: [
               IconButton(
                 icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+                tooltip: 'Volver',
                 onPressed: () => Navigator.pop(context),
               ),
               const Expanded(child: Text('Editar animal',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A)))),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: appInk,
+                      fontFamily: 'Baloo2'))),
               if (_guardando)
                 const SizedBox(width: 20, height: 20,
                     child: CircularProgressIndicator(color: appTeal, strokeWidth: 2))
@@ -336,6 +555,15 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
                 ),
             ]),
           ),
+          if (tardandoMucho)
+            Container(
+              width: double.infinity,
+              color: Colors.orange.shade50,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              child: Text('Esto está tardando más de lo normal. Revisá tu conexión',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 11.5, color: Colors.orange.shade900)),
+            ),
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -355,6 +583,10 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
                 _selector('Especie', _especie, _especies, (v) => setState(() => _especie = v)),
                 const SizedBox(height: 12),
                 _selector('Estado de salud', _estado, _estados, (v) => setState(() => _estado = v)),
+                const SizedBox(height: 12),
+                _selector('¿Vacunado?', _vacunado, _saludOpts, (v) => setState(() => _vacunado = v)),
+                const SizedBox(height: 12),
+                _selector('¿Desparasitado?', _desparasitado, _saludOpts, (v) => setState(() => _desparasitado = v)),
                 const SizedBox(height: 12),
                 _selector('Urgencia', _urgencia, _urgencias, (v) => setState(() => _urgencia = v)),
                 const SizedBox(height: 20),
@@ -402,7 +634,7 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
   }
 
   Widget _seccion(String t) => Text(t,
-      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.2, color: Colors.grey.shade500));
+      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.2, color: Colors.grey.shade700));
 
   Widget _fotoSection() {
     final bool tiene1 = _nuevaFoto != null || _fotoUrlExistente != null;
@@ -414,13 +646,30 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
       items.add(_fotoThumbEdit(
         file: _nuevaFoto,
         url: _fotoUrlExistente,
-        onRemove: () => setState(() { _nuevaFoto = null; _fotoUrlExistente = null; }),
+        slot: 1,
+        // Si se borra la foto 1 y la 2 existe, la 2 pasa a ocupar el slot 1
+        // en vez de dejar un hueco: todas las pantallas que muestran "la
+        // foto" del animal (Mis animales, solicitudes, chats, etc.) solo
+        // miran fotoUrl (slot 1), nunca fotoUrl2 — un hueco ahí las deja
+        // mostrando el emoji de repuesto aunque sí haya una foto guardada.
+        onRemove: () => setState(() {
+          if (_nuevaFoto2 != null || _foto2UrlExistente != null) {
+            _nuevaFoto = _nuevaFoto2;
+            _fotoUrlExistente = _foto2UrlExistente;
+            _nuevaFoto2 = null;
+            _foto2UrlExistente = null;
+          } else {
+            _nuevaFoto = null;
+            _fotoUrlExistente = null;
+          }
+        }),
       ));
     }
     if (tiene2) {
       items.add(_fotoThumbEdit(
         file: _nuevaFoto2,
         url: _foto2UrlExistente,
+        slot: 2,
         onRemove: () => setState(() { _nuevaFoto2 = null; _foto2UrlExistente = null; }),
       ));
     }
@@ -431,21 +680,28 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
     return Wrap(spacing: 10, runSpacing: 10, children: items);
   }
 
-  Widget _fotoThumbEdit({XFile? file, String? url, required VoidCallback onRemove}) {
+  Widget _fotoThumbEdit({XFile? file, String? url, required int slot, required VoidCallback onRemove}) {
     return Stack(children: [
-      ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: file != null
-            ? Image.file(File(file.path), width: 90, height: 90, fit: BoxFit.cover)
-            : FotoUrl(
-                url: url!,
-                width: 90, height: 90,
-                fallback: Container(
+      GestureDetector(
+        // Tocar la foto misma la reemplaza directo (cámara/galería) — antes
+        // solo se podía quitar con la "x" y agregar de nuevo aparte, un
+        // flujo de 2 pasos que invitaba a guardar a mitad de camino.
+        onTap: () => _mostrarOpcionesFoto(slot),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: file != null
+              ? Image.file(File(file.path), width: 90, height: 90, fit: BoxFit.cover)
+              : FotoUrl(
+                  url: url!,
                   width: 90, height: 90,
-                  color: Colors.grey.shade200,
-                  child: Icon(Icons.broken_image_outlined, color: Colors.grey.shade400),
+                  alignment: Alignment.topCenter,
+                  fallback: Container(
+                    width: 90, height: 90,
+                    color: Colors.grey.shade200,
+                    child: Icon(Icons.broken_image_outlined, color: Colors.grey.shade400),
+                  ),
                 ),
-              ),
+        ),
       ),
       Positioned(
         top: 4, right: 4,
@@ -458,6 +714,25 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
           ),
         ),
       ),
+      // Ver ampliada — solo para la foto ya subida (file == null); una foto
+      // recién elegida de la galería no tiene URL de red que mostrarle al
+      // visor, y ya se ve completa en el picker mismo. Ícono aparte (no el
+      // mismo toque que la foto) porque acá tocar la foto ya reemplaza —
+      // pedido de Eliza al agregar esto también para rescatista/albergue,
+      // igual que ya existía para el adoptante.
+      if (file == null && url != null)
+        Positioned(
+          bottom: 4, left: 4,
+          child: GestureDetector(
+            onTap: () => Navigator.push(context, MaterialPageRoute(
+                builder: (_) => VisorFotoCompleta(fotos: [url], indiceInicial: 0))),
+            child: Container(
+              decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+              padding: const EdgeInsets.all(4),
+              child: const Icon(Icons.zoom_in, size: 14, color: Colors.white),
+            ),
+          ),
+        ),
     ]);
   }
 
@@ -476,7 +751,7 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
           const SizedBox(height: 4),
           Text(
             nextSlot == 1 ? 'Agregar' : '1/2',
-            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
           ),
         ]),
       ),
@@ -485,7 +760,7 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
 
   Widget _campo(String label, TextEditingController ctl, String hint, {int maxLines = 1}) =>
     Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1A1A1A))),
+      Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: appInk)),
       const SizedBox(height: 6),
       TextField(
         controller: ctl,
@@ -507,7 +782,7 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
   Widget _campoUbicacion() {
     final obtenida = _latitud != null;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text('Ubicación', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1A1A1A))),
+      Text('Ubicación', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: appInk)),
       const SizedBox(height: 6),
       TextField(
         controller: _lugarCtl,
@@ -525,7 +800,7 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
               : IconButton(
                   tooltip: 'Detectar mi ubicación',
                   icon: Icon(obtenida ? Icons.check_circle : Icons.my_location,
-                      color: obtenida ? appTeal : Colors.grey.shade500),
+                      color: obtenida ? appTeal : Colors.grey.shade700),
                   onPressed: _obtenerUbicacionGPS,
                 ),
         ),
@@ -535,7 +810,7 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
 
   Widget _selector(String label, String valor, List<String> opts, ValueChanged<String> onChanged) =>
     Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1A1A1A))),
+      Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: appInk)),
       const SizedBox(height: 6),
       Wrap(spacing: 8, children: opts.map((o) {
         final sel = o == valor;
@@ -550,7 +825,7 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> {
               border: Border.all(color: sel ? appTeal : Colors.grey.shade300),
             ),
             child: Text(o, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
-                color: sel ? Colors.white : Colors.grey.shade600)),
+                color: sel ? Colors.white : Colors.grey.shade700)),
           ),
         );
       }).toList()),

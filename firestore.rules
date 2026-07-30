@@ -77,11 +77,23 @@ service cloud.firestore {
       // su propia solicitud (no podía tocar el animal, pero sí falsear el
       // estado y disparar el push de "¡tu solicitud fue aprobada!" sin que
       // nadie del otro lado la hubiera aprobado en realidad).
-      allow update: if signedIn() &&
-        resource.data.rescatistaId == uid() &&
-        resource.data.estado == 'pendiente' &&
-        request.resource.data.estado in ['aprobada', 'rechazada'] &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'motivoRechazo']);
+      //
+      // Segunda rama: el adoptante SÍ puede escribir, pero solo
+      // `acuerdoAceptado`/`acuerdoAceptadoEn` ("registro del acuerdo de
+      // adopción" — ver SolicitudesRepository.aceptarAcuerdo), y solo una
+      // vez la solicitud ya está aprobada, y solo poniéndolo en `true`
+      // (nunca puede desmarcarlo una vez aceptado).
+      allow update: if signedIn() && (
+        (resource.data.rescatistaId == uid() &&
+         resource.data.estado == 'pendiente' &&
+         request.resource.data.estado in ['aprobada', 'rechazada'] &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'motivoRechazo']))
+        ||
+        (resource.data.adoptanteId == uid() &&
+         resource.data.estado == 'aprobada' &&
+         request.resource.data.acuerdoAceptado == true &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['acuerdoAceptado', 'acuerdoAceptadoEn']))
+      );
     }
 
     // ── preferencias ──────────────────────────────────────────────────
@@ -95,7 +107,26 @@ service cloud.firestore {
     }
 
     // ── favoritos ─────────────────────────────────────────────────────
+    // `rescatistaId` también puede leer/borrar (no solo `adoptanteId`):
+    // al borrar un rescate, RescatesRepository.eliminar() limpia los
+    // favoritos que le apuntan para que no queden huérfanos mostrando un
+    // animal que ya no existe como si siguiera disponible — eso corre con
+    // la sesión del rescatista/albergue, no la del adoptante dueño del
+    // favorito. La query que hace esa limpieza filtra por rescatistaId
+    // (no trae favoritos ajenos), así que ampliar acá no expone nada que
+    // ese dueño no pueda ya inferir de sus propios rescates.
     match /favoritos/{favId} {
+      // Solo el adoptante dueño lee/borra sus favoritos. La limpieza de
+      // favoritos huérfanos cuando un rescatista borra su animal NO
+      // necesita este permiso: la corre el Cloud Function
+      // onRescateEliminado (functions/index.js) con privilegios de
+      // administrador, que ignora estas reglas — garantizado, sin
+      // depender de que el rescatista tenga señal en ese momento. Ampliar
+      // esto a `rescatistaId == uid()` (como estuvo antes) le daba a
+      // cualquier rescatista/albergue permiso para leer y borrar los
+      // favoritos de CUALQUIER adoptante sobre sus animales, en cualquier
+      // momento — no solo durante una limpieza real (hallazgo de
+      // auditoría de código).
       allow read, delete: if signedIn() && resource.data.adoptanteId == uid();
       allow create: if signedIn() && request.resource.data.adoptanteId == uid();
       allow update: if signedIn() && resource.data.adoptanteId == uid() &&
@@ -172,6 +203,15 @@ service cloud.firestore {
       allow read: if true;
       allow create: if signedIn() && request.resource.data.aliadoId == uid() && hasRole('aliado');
       allow update, delete: if signedIn() && resource.data.aliadoId == uid();
+    }
+
+    // ── hogaresDePaso ─────────────────────────────────────────────────
+    // Roster de personas de confianza para hogar de paso — privado, solo
+    // lo ve/edita el albergue dueño (`albergueId`). Solo para albergues,
+    // no rescatistas (decisión de producto: mejoras_albergue.html).
+    match /hogaresDePaso/{docId} {
+      allow read, update, delete: if signedIn() && resource.data.albergueId == uid();
+      allow create: if signedIn() && request.resource.data.albergueId == uid();
     }
 
     // ── solicitudes_rescatista ────────────────────────────────────────

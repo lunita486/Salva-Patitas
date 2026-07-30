@@ -10,7 +10,6 @@ import '../data/creator_role.dart';
 import '../data/rescates_repository.dart';
 import '../data/solicitudes_repository.dart';
 import '../data/usuarios_repository.dart';
-import '../data/chats_repository.dart';
 import 'subir_rescate_screen.dart';
 import 'solicitudes_rescatista_screen.dart';
 import 'adoptante_chats_screen.dart';
@@ -19,7 +18,7 @@ import 'favoritos_screen.dart';
 import 'perfil_adoptante_screen.dart';
 import 'mis_rescates_screen.dart';
 import 'adoptante_feed_screen.dart';
-import 'chat_screen.dart';
+import 'aliados_screen.dart';
 import 'mis_solicitudes_screen.dart';
 import 'solicitudes_preview.dart';
 
@@ -51,6 +50,7 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _cargarRol();
     _verificarVencimientos();
+    _verificarSeguimientoPostAdopcion();
     _detectarCiudad();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -118,40 +118,34 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
     if (seleccion == null) return;
-    await UsuariosRepository().actualizarRoles(uid, seleccion);
+    try {
+      await UsuariosRepository().actualizarRoles(uid, seleccion);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('No se pudo cambiar el rol. Revisá tu conexión e intentá de nuevo.'),
+          backgroundColor: msgError));
+      return;
+    }
+    if (!mounted) return;
     await _cargarRol();
   }
 
 
+  // Ambas centralizadas en solicitudes_rescatista_screen.dart — antes
+  // duplicadas byte a byte con albergue_home_screen.dart (hallazgo de
+  // auditoría de código).
   Future<void> _verificarVencimientos() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    final ahora = DateTime.now();
-    final snap = await _rescatesRepo.misRescatesPorEstado(
-      uid: uid,
-      role: CreatorRole.rescatista,
-      estadoAdopcion: 'Hogar de paso',
-    );
-    for (final doc in snap.docs) {
-      final d = doc.data();
-      final fechaFin = (d['fechaFinHogar'] as Timestamp?)?.toDate();
-      if (fechaFin == null) continue;
-      if (fechaFin.isAfter(ahora)) continue;
-      if (d['vencimientoAvisado'] == true) continue;
-      final nombre      = d['nombre']           as String? ?? 'El animal';
-      final adoptanteId = d['adoptanteIdEnProceso'] as String?;
-      final msg = '📋 El período de hogar de paso de $nombre ha vencido. '
-          'Por favor coordina la devolución o el proceso de adopción definitivo. 🐾';
-      await enviarMensajeChat(
-        adoptanteId ?? '',
-        nombre,
-        msg,
-        fotoUrl: d['fotoUrl'] as String?,
-        rescateId: doc.id,
-        creadoPor: 'rescatista',
-      );
-      await doc.reference.update({'vencimientoAvisado': true});
-    }
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (!mounted) return;
+    await verificarVencimientos(context,
+        uid: uid, role: CreatorRole.rescatista, creadoPor: 'rescatista');
+  }
+
+  Future<void> _verificarSeguimientoPostAdopcion() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    await verificarSeguimientoPostAdopcion(
+        uid: uid, role: CreatorRole.rescatista, creadoPor: 'rescatista');
   }
 
   Widget _rolToggle() {
@@ -159,9 +153,9 @@ class _HomeScreenState extends State<HomeScreen> {
     if (visibles.length <= 1) return const SizedBox.shrink();
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.80),
+        color: Colors.white.withValues(alpha: 0.80),
         borderRadius: BorderRadius.circular(25),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 6, offset: const Offset(0, 2))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 6, offset: const Offset(0, 2))],
       ),
       padding: const EdgeInsets.all(4),
       child: Row(
@@ -179,12 +173,12 @@ class _HomeScreenState extends State<HomeScreen> {
               duration: const Duration(milliseconds: 180),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
               decoration: BoxDecoration(
-                color: activo ? const Color(0xFF1A1A1A) : Colors.transparent,
+                color: activo ? appInk : Colors.transparent,
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(label,
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
-                    color: activo ? Colors.white : Colors.grey.shade500)),
+                    color: activo ? Colors.white : Colors.grey.shade700)),
             ),
           );
         }).toList(),
@@ -218,6 +212,7 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: _cambiarRolDebug,
               backgroundColor: Colors.purple.shade100,
               elevation: 4,
+              tooltip: 'Cambiar rol (debug)',
               child: Icon(Icons.developer_mode, color: Colors.purple.shade700),
             )
           : null,
@@ -236,12 +231,14 @@ class _HomeScreenState extends State<HomeScreen> {
           _avatar('A', appOrange),
         ]),
         const SizedBox(height: 24),
-        const Text('Hola,', style: TextStyle(fontSize: 18, color: Color(0xFF444444))),
-        const SizedBox(height: 2),
-        Row(children: [
-          Text('${FirebaseAuth.instance.currentUser?.displayName?.split(' ').first ?? 'Rescatista'} ',
-              style: const TextStyle(fontSize: 38, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
-          const Text('🌿', style: TextStyle(fontSize: 28)),
+        // Mismo estándar que el saludo de la vista adoptante (una sola línea
+        // en negrita) — antes era "Hola," gris arriba y el nombre grande
+        // debajo, un estilo distinto al del resto de la app.
+        Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+          Text('Hola, ${FirebaseAuth.instance.currentUser?.displayName?.split(' ').first ?? 'Rescatista'} ',
+              style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: appInk,
+                  fontFamily: 'Baloo2')),
+          const Padding(padding: EdgeInsets.only(bottom: 4), child: Text('🐾', style: TextStyle(fontSize: 26))),
         ]),
         const SizedBox(height: 4),
         // El ícono solo tiene sentido junto a un texto — antes se mostraba
@@ -286,7 +283,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ]),
       const SizedBox(height: 6),
-      Text(title, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
+      Text(title, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: appInk)),
     ],
   );
 
@@ -309,7 +306,7 @@ class _HomeScreenState extends State<HomeScreen> {
           if (docs.isEmpty) {
             return Center(
               child: Text('Aún no tienes rescates publicados.',
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+                  style: TextStyle(color: Colors.grey.shade700, fontSize: 13)),
             );
           }
           return ListView.separated(
@@ -338,63 +335,21 @@ class _HomeScreenState extends State<HomeScreen> {
                     adoptanteIdEnProceso: data['adoptanteIdEnProceso'] as String?,
                   ),
                 ),
-                onContactarAdoptante: estadoAdopcion == 'En proceso de adopción' ? () async {
-                  final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-                  final adoptanteIdEnProceso = data['adoptanteIdEnProceso'] as String? ?? '';
-                  QueryDocumentSnapshot<Map<String, dynamic>>? chatDoc;
-                  Map<String, dynamic>? d;
-                  // try/catch: leer un chat que NO existe da permission-denied
-                  // con nuestras reglas — sin esto la excepción mataba el
-                  // onTap y "Contactar adoptante" no hacía nada.
-                  try {
-                    if (adoptanteIdEnProceso.isNotEmpty) {
-                      final doc = await FirebaseFirestore.instance.collection('chats')
-                          .doc(ChatsRepository().idAnimal(rescateId: docId, adoptanteId: adoptanteIdEnProceso))
-                          .get();
-                      if (doc.exists) d = doc.data();
-                    } else {
-                      final chats = await FirebaseFirestore.instance.collection('chats')
-                          .where('animalNombre', isEqualTo: nombre)
-                          .where('rescatistaId', isEqualTo: uid)
-                          .limit(1).get();
-                      if (chats.docs.isNotEmpty) {
-                        chatDoc = chats.docs.first;
-                        d = chatDoc.data();
-                      }
-                    }
-                  } catch (_) {
-                    d = null;
-                  }
-                  if (!context.mounted) return;
-                  // Sin chat previo pero con adoptante conocido: se abre el
-                  // chat igual con chatId null y ChatScreen lo crea — antes
-                  // el botón simplemente no hacía nada en este caso.
-                  if (d == null && adoptanteIdEnProceso.isEmpty) return;
-                  final dFinal = d ?? const <String, dynamic>{};
-                  final chatId = d == null
-                      ? null
-                      : adoptanteIdEnProceso.isNotEmpty
-                          ? ChatsRepository().idAnimal(rescateId: docId, adoptanteId: adoptanteIdEnProceso)
-                          : chatDoc!.id;
-                  Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => ChatScreen(
-                      esRescatista: true,
-                      chatId: chatId,
-                      animal: {
-                        'nombre':        nombre,
-                        'rescatista':    FirebaseAuth.instance.currentUser?.displayName ?? 'Rescatista',
-                        'rescatistaId':  dFinal['rescatistaId'] as String? ?? uid,
-                        'rescateId':     docId,
-                        'adoptanteId':   adoptanteIdEnProceso,
-                        'adoptanteNombre': dFinal['adoptanteNombre'],
-                        'especie':       especie,
-                        'creadoPor':     data['creadoPor'] as String? ?? 'rescatista',
-                        'tipoSolicitud': dFinal['tipoSolicitud'] as String? ?? 'adopcion',
-                        'fotoUrl':       dFinal['fotoUrl'] ?? data['fotoUrl'],
-                      },
-                    ),
-                  ));
-                } : null,
+                // 'Hogar de paso' antes se quedaba afuera de esta condición
+                // sin querer: el rescatista aprobaba un hogar de paso y no
+                // tenía forma de contactar a esa persona (el bug real que
+                // reportó Eliza).
+                onContactarAdoptante: (estadoAdopcion == 'En proceso de adopción' || estadoAdopcion == 'Hogar de paso')
+                    ? () => contactarPersonaEnProceso(
+                        context,
+                        docId: docId,
+                        nombre: nombre,
+                        especie: especie,
+                        fotoUrl: fotoUrl,
+                        creadoPor: data['creadoPor'] as String?,
+                        adoptanteIdEnProceso: data['adoptanteIdEnProceso'] as String? ?? '',
+                      )
+                    : null,
               );
             },
           );
@@ -409,14 +364,20 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       width: 150,
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2))]),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))]),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         ClipRRect(
           borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+          // FotoAnimal en vez de recorte — esta tarjeta (el resumen de "tus
+          // animales" en el panel del rescatista) es lo bastante grande
+          // como para sufrir el mismo caso "Tobyiii" que el feed del
+          // adoptante ya tenía arreglado; el rescatista se había quedado
+          // viendo sus propios animalitos peor que como los ve quien
+          // adopta.
           child: fotoUrl != null
-            ? FotoUrl(
+            ? FotoAnimal(
                 url: fotoUrl,
-                height: 100, width: double.infinity, fit: BoxFit.cover,
+                height: 100, width: double.infinity,
                 fallback: Container(
                     height: 100, width: double.infinity,
                     color: const Color(0xFFD8F0E4),
@@ -434,7 +395,7 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(nombre, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                 overflow: TextOverflow.ellipsis),
-            Text(especie, style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+            Text(especie, style: TextStyle(fontSize: 11, color: Colors.grey.shade700)),
             const SizedBox(height: 8),
             GestureDetector(
               onTap: onCambiarEstado,
@@ -442,9 +403,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                 decoration: BoxDecoration(
-                  color: color.withOpacity(0.12),
+                  color: color.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: color.withOpacity(0.4)),
+                  border: Border.all(color: color.withValues(alpha: 0.4)),
                 ),
                 child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                   Flexible(child: Text(estado,
@@ -483,12 +444,35 @@ class _HomeScreenState extends State<HomeScreen> {
   // ── Vista Adoptante ───────────────────────────────────────────────────────
 
   Widget _adoptanteView(BuildContext ctx) {
+    // Mismo saludo que la vista del rescatista ("Hola, Eliza 🐾"), pero más
+    // compacto — acá abajo sigue el feed, que YA trae su propio encabezado
+    // (chips de especie + ubicación + la tarjeta del animal), así que el
+    // saludo no puede ocupar tanto como en el panel del rescatista (ahí no
+    // hay nada debajo compitiendo por el espacio). Antes esto + el título
+    // repetido del feed obligaba a hacer mucho scroll para llegar a la
+    // tarjeta.
+    //
+    // El subtítulo "Encuentra a tu amigo fiel ideal" que iba acá se sacó
+    // para hacerle lugar a los chips de especie del feed (Todos/Perros/
+    // Gatos/Otros) sin agregar altura nueva — era puramente decorativo, no
+    // informaba nada que los chips no cubran mejor (sugerencia real de
+    // Eliza: la fila de chips por sí sola ya dejaba la pantalla muy llena).
+    final nombre = FirebaseAuth.instance.currentUser?.displayName?.split(' ').first ?? 'Adoptante';
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-          child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [_rolToggle(), _avatar('A', appOrange)]),
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [_rolToggle(), _avatar('A', appOrange)]),
+            const SizedBox(height: 12),
+            Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+              Text('Hola, $nombre ',
+                  style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: appInk,
+                      fontFamily: 'Baloo2')),
+              const Padding(padding: EdgeInsets.only(bottom: 2), child: Text('🐾', style: TextStyle(fontSize: 20))),
+            ]),
+          ]),
         ),
         const Expanded(child: AdoptanteFeedScreen()),
       ],
@@ -496,7 +480,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _label(String t) => Text(t, style: TextStyle(
-      fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 1.2, color: Colors.grey.shade600));
+      fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 1.2, color: Colors.grey.shade700));
 
   Widget _statsRowDynamic() {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
@@ -531,7 +515,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 stream: _rescatesRepo.misRescates(uid: uid, role: CreatorRole.rescatista),
                 builder: (context, rescSnap) {
                   final total = (rescSnap.data?.docs ?? []).length;
-                  return _stat('$total', 'Animales\nrescatados', Colors.white, const Color(0xFF1A1A1A));
+                  return _stat('$total', 'Animales\nrescatados', Colors.white, appInk);
                 },
               )),
             ]);
@@ -547,7 +531,7 @@ class _HomeScreenState extends State<HomeScreen> {
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(n, style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: nc)),
       const SizedBox(height: 4),
-      Text(lbl, style: TextStyle(fontSize: 12, color: Colors.grey.shade600, height: 1.3)),
+      Text(lbl, style: TextStyle(fontSize: 12, color: Colors.grey.shade700, height: 1.3)),
     ]),
   );
 
@@ -558,7 +542,7 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF0A5C40), Color(0xFF1F8A62)],
+          colors: [Color(0xFF0A5C40), appTeal],
           begin: Alignment.topLeft, end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(20),
@@ -580,7 +564,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _bottomNav() => Container(
     decoration: BoxDecoration(color: Colors.white,
-      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 12, offset: const Offset(0, -2))]),
+      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 12, offset: const Offset(0, -2))]),
     child: SafeArea(
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),

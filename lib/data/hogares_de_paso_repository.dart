@@ -1,0 +1,123 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+/// Única puerta de entrada a la colección `hogaresDePaso` — el roster de
+/// personas de confianza para hogar de paso de un albergue (mejora
+/// "Red de voluntarios/hogares de paso" comparada contra software real de
+/// shelters). Solo para albergues, no rescatistas — ver ARCHITECTURE.md.
+class HogaresDePasoRepository {
+  HogaresDePasoRepository({FirebaseFirestore? db}) : _db = db ?? FirebaseFirestore.instance;
+  final FirebaseFirestore _db;
+
+  CollectionReference<Map<String, dynamic>> get _col => _db.collection('hogaresDePaso');
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> deAlbergue(String albergueId) =>
+      _col.where('albergueId', isEqualTo: albergueId).snapshots();
+
+  /// Se llama al aprobar una solicitud de hogar de paso: si esa persona ya
+  /// está en la red, suma 1 a `vecesAyudo`; si es la primera vez, la agrega.
+  ///
+  /// Antes de crear una fila nueva, revisa dos casos (en orden):
+  /// 1. ¿Ya hay una fila vinculada a esta MISMA cuenta (`adoptanteId`)? —
+  ///    no es la primera vez que ayuda, sumar ahí.
+  /// 2. ¿Hay una fila agregada A MANO con el mismo email, todavía sin
+  ///    vincular a ninguna cuenta? — es la misma persona que alguien había
+  ///    anotado antes de que existiera cuenta suya en la app; se fusiona
+  ///    (se le pone el vínculo real) en vez de crear una fila duplicada.
+  ///    Pedido real de Eliza: agregó a "David Casas" a mano, y preguntó
+  ///    qué pasaba si esa misma persona después ayudaba de verdad por la
+  ///    app — sin esto, quedaban dos filas para la misma persona.
+  ///
+  /// Los dos chequeos son QUERIES (`where`), no un `get()` por id — a
+  /// propósito: `firestore.rules` deniega la LECTURA de un documento
+  /// puntual que no existe (`resource` es null ahí), pero una query nunca
+  /// tiene ese problema porque solo evalúa contra documentos que sí
+  /// existen (si no hay ninguno, devuelve vacío sin necesitar permiso
+  /// sobre nada). Mismo motivo por el que el fallback final usa
+  /// `set(merge: true)` en vez de `get()` + branch.
+  Future<void> registrarAyuda({
+    required String albergueId,
+    required String adoptanteId,
+    required String nombre,
+    String? email,
+  }) async {
+    if (adoptanteId.isEmpty) return;
+
+    final porCuenta = await _col
+        .where('albergueId', isEqualTo: albergueId)
+        .where('adoptanteId', isEqualTo: adoptanteId)
+        .limit(1)
+        .get();
+    if (porCuenta.docs.isNotEmpty) {
+      await porCuenta.docs.first.reference.update({
+        if (nombre.isNotEmpty) 'nombre': nombre,
+        'vecesAyudo': FieldValue.increment(1),
+        'ultimaVez': FieldValue.serverTimestamp(),
+      });
+      return;
+    }
+
+    if (email != null && email.isNotEmpty) {
+      final porEmail = await _col
+          .where('albergueId', isEqualTo: albergueId)
+          .where('email', isEqualTo: email)
+          .where('adoptanteId', isEqualTo: '')
+          .limit(1)
+          .get();
+      if (porEmail.docs.isNotEmpty) {
+        await porEmail.docs.first.reference.update({
+          'adoptanteId': adoptanteId,
+          if (nombre.isNotEmpty) 'nombre': nombre,
+          'vecesAyudo': FieldValue.increment(1),
+          'ultimaVez': FieldValue.serverTimestamp(),
+        });
+        return;
+      }
+    }
+
+    await _col.doc('${albergueId}_$adoptanteId').set({
+      'albergueId': albergueId,
+      'adoptanteId': adoptanteId,
+      if (email != null && email.isNotEmpty) 'email': email,
+      if (nombre.isNotEmpty) 'nombre': nombre,
+      'agregadoManualmente': false,
+      'vecesAyudo': FieldValue.increment(1),
+      'ultimaVez': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
+  /// Agregar a mano a alguien de confianza que el albergue ya conoce fuera
+  /// de la app — no hace falta que haya pasado por una solicitud todavía.
+  /// El email es opcional pero es lo que permite fusionar esta fila más
+  /// adelante si esa persona termina ayudando de verdad por la app (ver
+  /// [registrarAyuda]).
+  Future<void> agregarManual({
+    required String albergueId,
+    required String nombre,
+    String telefono = '',
+    String notas = '',
+    String email = '',
+  }) =>
+      _col.add({
+        'albergueId': albergueId,
+        'adoptanteId': '',
+        'nombre': nombre,
+        'telefono': telefono,
+        'notas': notas,
+        'email': email,
+        'vecesAyudo': 0,
+        'ultimaVez': null,
+        'creadoEn': FieldValue.serverTimestamp(),
+        'agregadoManualmente': true,
+      });
+
+  /// Las filas que se agregan solas (al aprobar una solicitud) nacen sin
+  /// teléfono ni notas — esto deja completarlos después, tanto para esas
+  /// como para las agregadas a mano (pedido real de Eliza). También deja
+  /// completar el email de una fila agregada a mano que no lo tenía, para
+  /// que pueda fusionarse más adelante si esa persona ayuda de verdad.
+  Future<void> actualizarContacto(String docId,
+          {required String telefono, required String notas, String email = ''}) =>
+      _col.doc(docId).update({'telefono': telefono, 'notas': notas, 'email': email});
+
+  Future<void> eliminar(String docId) => _col.doc(docId).delete();
+}

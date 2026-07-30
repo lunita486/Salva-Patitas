@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme.dart';
+import 'visor_foto_completa.dart';
 import 'chat_screen.dart';
 import 'solicitud_adopcion_screen.dart';
 
@@ -34,6 +35,8 @@ class _AnimalDetalleScreenState extends State<AnimalDetalleScreen> {
     final descripcion = animal['descripcion'] as String;
     final tags        = (animal['tags'] as List).cast<String>();
     final emoji       = animal['especie'] == 'Gato' ? '🐱' : '🐶';
+    final vacunado      = (animal['vacunado']      as String?) ?? 'Aún no lo sé';
+    final desparasitado = (animal['desparasitado'] as String?) ?? 'Aún no lo sé';
 
     final fotos          = [?fotoUrl, ?fotoUrl2];
     final estadoAdopcion = animal['estadoAdopcion'] as String? ?? '';
@@ -47,22 +50,33 @@ class _AnimalDetalleScreenState extends State<AnimalDetalleScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Row(children: [
-              _circleBtn(Icons.arrow_back_ios_new, () => Navigator.pop(context)),
+              _circleBtn(Icons.arrow_back_ios_new, () => Navigator.pop(context), label: 'Volver'),
               Expanded(child: Text(nombre,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A)))),
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: appInk,
+                      fontFamily: 'Baloo2'))),
               const SizedBox(width: 36),
             ]),
           ),
           // Photo carousel — FUERA del scroll para que el swipe no compita
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Stack(children: [
+            // Tocar la foto la abre completa, sin recortar y con zoom —
+            // igual que en la tarjeta del feed. El carrusel de acá recorta
+            // con BoxFit.cover exactamente igual, pero este toque nunca
+            // estuvo conectado: el ítem del checklist ("tocar la foto en el
+            // feed o en el detalle → se abre completa") lo prometía y en el
+            // detalle no pasaba nada.
+            child: GestureDetector(
+              onTap: fotos.isEmpty ? null : () => Navigator.push(context, MaterialPageRoute(
+                builder: (_) => VisorFotoCompleta(fotos: fotos, indiceInicial: _paginaFoto),
+              )),
+              child: Stack(children: [
               ClipRRect(
                 borderRadius: BorderRadius.circular(20),
                 child: fotos.isEmpty
                   ? Container(
-                      height: 260, width: double.infinity,
+                      height: 380, width: double.infinity,
                       decoration: const BoxDecoration(
                         gradient: LinearGradient(
                           colors: [Color(0xFF3D7A52), Color(0xFF1F4A30)],
@@ -72,15 +86,17 @@ class _AnimalDetalleScreenState extends State<AnimalDetalleScreen> {
                       child: Center(child: Text(emoji, style: const TextStyle(fontSize: 90))),
                     )
                   : SizedBox(
-                      height: 260,
+                      height: 380,
                       child: PageView.builder(
                         controller: _pageCtrl,
                         itemCount: fotos.length,
                         onPageChanged: (i) => setState(() => _paginaFoto = i),
-                        itemBuilder: (_, i) => FotoUrl(
+                        // FotoAnimal en vez de recorte — mismo motivo que
+                        // en la tarjeta del feed: la foto entera sobre un
+                        // fondo de sí misma desenfocado (caso "Tobyiii").
+                        itemBuilder: (_, i) => FotoAnimal(
                           url: fotos[i],
                           width: double.infinity,
-                          fit: BoxFit.cover,
                           fallback: Container(
                             decoration: const BoxDecoration(
                               gradient: LinearGradient(
@@ -111,7 +127,25 @@ class _AnimalDetalleScreenState extends State<AnimalDetalleScreen> {
                     )),
                   ),
                 ),
+              // Misma señal visual que en la tarjeta del feed: sin el
+              // ícono, la única forma de descubrir que la foto se puede
+              // tocar era por casualidad.
+              if (fotos.isNotEmpty)
+                Positioned(
+                  bottom: 12, right: 12,
+                  child: IgnorePointer(
+                    child: Container(
+                      padding: const EdgeInsets.all(7),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.38),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.zoom_out_map, color: Colors.white, size: 16),
+                    ),
+                  ),
+                ),
             ]),
+            ),
           ),
           // Scrollable content
           Expanded(
@@ -131,7 +165,7 @@ class _AnimalDetalleScreenState extends State<AnimalDetalleScreen> {
                     style: const TextStyle(fontSize: 36, fontWeight: FontWeight.bold, color: Color(0xFF1B3A1F))),
                 const SizedBox(height: 4),
                 Text([raza, if (genero.isNotEmpty && genero != 'No sé') genero, if (edad.isNotEmpty) edad].join(' · '),
-                    style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
+                    style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
                 const SizedBox(height: 12),
                 // Chips
                 if (tags.isNotEmpty) Wrap(spacing: 8, runSpacing: 6,
@@ -142,6 +176,19 @@ class _AnimalDetalleScreenState extends State<AnimalDetalleScreen> {
                     child: Text(t,
                         style: const TextStyle(fontSize: 12, color: Color(0xFF8B3A1F), fontWeight: FontWeight.w500)),
                   )).toList()),
+                const SizedBox(height: 22),
+                // Salud — sugerencia real de un tester: el adoptante
+                // necesita saber esto de antemano porque va a tener que
+                // asumir esos gastos si todavía falta. "Aún no lo sé" se
+                // muestra igual que Sí/No (no se oculta): es información
+                // real y honesta, no un dato faltante.
+                const Text('SALUD',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.2, color: appTeal)),
+                const SizedBox(height: 10),
+                Wrap(spacing: 8, runSpacing: 6, children: [
+                  _pill(null, 'Vacunado: $vacunado'),
+                  _pill(null, 'Desparasitado: $desparasitado'),
+                ]),
                 const SizedBox(height: 22),
                 // Historia
                 if (descripcion.isNotEmpty) ...[
@@ -210,13 +257,16 @@ class _AnimalDetalleScreenState extends State<AnimalDetalleScreen> {
     );
   }
 
-  Widget _circleBtn(IconData icon, VoidCallback onTap) => GestureDetector(
-    onTap: onTap,
-    child: Container(
-      width: 36, height: 36,
-      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.85), shape: BoxShape.circle,
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.07), blurRadius: 6)]),
-      child: Icon(icon, size: 16, color: const Color(0xFF444444)),
+  Widget _circleBtn(IconData icon, VoidCallback onTap, {String? label}) => Tooltip(
+    message: label ?? '',
+    child: GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 36, height: 36,
+        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.85), shape: BoxShape.circle,
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.07), blurRadius: 6)]),
+        child: Icon(icon, size: 16, color: const Color(0xFF444444)),
+      ),
     ),
   );
 

@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
 import '../theme.dart';
 import '../compatibilidad.dart';
 import '../data/creator_role.dart';
 import '../data/solicitudes_repository.dart';
 import '../data/rescates_repository.dart';
 import '../data/chats_repository.dart';
+import '../data/hogares_de_paso_repository.dart';
 import 'chat_screen.dart';
 
 // ── Funciones top-level reutilizables por home_screen y solicitudes_screen ──
@@ -26,8 +28,21 @@ Future<bool> enviarMensajeChat(String adoptanteId, String animalNombre, String t
     if (rescateId != null && rescateId.isNotEmpty) {
       chatRef = FirebaseFirestore.instance.collection('chats')
           .doc(ChatsRepository().idAnimal(rescateId: rescateId, adoptanteId: adoptanteId));
-      final snap = await chatRef.get();
-      if (snap.exists) existing = snap;
+      // Mismo caso que asegurarChatNegocio (ver chats_repository.dart): leer
+      // un chat que TODAVÍA no existe da permission-denied con nuestras
+      // reglas (no pueden probar "sos participante" de un doc que no está)
+      // — no es que falte permiso de verdad. Sin este try/catch, esa
+      // excepción se colaba hasta el catch general de más abajo y todo el
+      // aviso por chat fallaba en silencio justo en el caso más común: la
+      // primera vez que se aprueba/rechaza una solicitud, cuando adoptante
+      // y rescatista todavía no habían chateado antes — el bug real: "sale
+      // siempre el mensaje de que no pudimos avisarle al adoptante".
+      try {
+        final snap = await chatRef.get();
+        if (snap.exists) existing = snap;
+      } catch (_) {
+        existing = null;
+      }
     } else {
       final chats = await FirebaseFirestore.instance.collection('chats')
           .where('adoptanteId', isEqualTo: adoptanteId)
@@ -176,10 +191,25 @@ Future<({bool aprobada, bool animalEliminado, bool avisoOk})> aprobarSolicitud(S
     aprobada = true;
   }
 
+  if (aprobada) {
+    FirebaseAnalytics.instance.logEvent(
+      name: 'solicitud_aprobada',
+      parameters: {'tipo': tipoSolicitud, 'rescatista_id': rescatistaId},
+    ).catchError((_) {});
+  }
+
   if (!aprobada) {
     // Perdió la carrera, o el animal ya no existe: se le avisa a ESTE
     // adoptante que ya no pudo ser, igual que se les avisa a las
     // competidoras más abajo.
+    FirebaseAnalytics.instance.logEvent(
+      name: 'solicitud_rechazada',
+      parameters: {
+        'tipo': tipoSolicitud,
+        'rescatista_id': rescatistaId,
+        'motivo': animalEliminado ? 'animal_eliminado' : 'perdio_carrera',
+      },
+    ).catchError((_) {});
     if (adoptanteId.isEmpty || animalNombre.isEmpty) {
       return (aprobada: false, animalEliminado: animalEliminado, avisoOk: true);
     }
@@ -192,6 +222,20 @@ Future<({bool aprobada, bool animalEliminado, bool avisoOk})> aprobarSolicitud(S
         creadoPor: creadoPor,
         especie: d['especie'] as String?);
     return (aprobada: false, animalEliminado: animalEliminado, avisoOk: avisoOk);
+  }
+
+  if (tipoSolicitud == 'hogar_de_paso' && creadoPor == 'albergue' && adoptanteId.isNotEmpty) {
+    // Red de hogares de paso — solo para albergues (decisión de producto).
+    // Best-effort: el roster es una mejora secundaria, si falla no debe
+    // tumbar la aprobación real que la persona pidió.
+    try {
+      await HogaresDePasoRepository().registrarAyuda(
+        albergueId: rescatistaId,
+        adoptanteId: adoptanteId,
+        nombre: d['nombre'] as String? ?? '',
+        email: d['email'] as String?,
+      );
+    } catch (_) {}
   }
 
   if (animalNombre.isNotEmpty) {
@@ -241,6 +285,14 @@ Future<bool> rechazarSolicitud(String docId, Map<String, dynamic> d, String moti
         'Luego de revisar tu solicitud, en esta ocasión no podemos continuar con el proceso. '
         '¡Esperamos que pronto encuentres a tu compañero perfecto! 🐾';
   await SolicitudesRepository().rechazar(docId, texto);
+  FirebaseAnalytics.instance.logEvent(
+    name: 'solicitud_rechazada',
+    parameters: {
+      'tipo': d['tipoSolicitud'] as String? ?? 'adopcion',
+      'rescatista_id': d['rescatistaId'] as String? ?? '',
+      'motivo': 'explicito',
+    },
+  ).catchError((_) {});
   final adoptanteId = d['adoptanteId'] as String? ?? '';
   final fotoUrl     = d['fotoUrl']     as String?;
   final rescateId   = d['rescateId']   as String? ?? '';
@@ -251,6 +303,247 @@ Future<bool> rechazarSolicitud(String docId, Map<String, dynamic> d, String moti
         especie: d['especie'] as String?);
   }
   return true;
+}
+
+/// Abre (o crea) el chat con quien tiene este animal en proceso — "Hogar de
+/// paso" o "En proceso de adopción" — desde cualquier tarjeta de animal del
+/// rescatista/albergue. Antes esta búsqueda vivía copiada dentro de
+/// home_screen.dart, y solo habilitada para 'En proceso de adopción' —
+/// "Hogar de paso" se quedó afuera sin querer (el bug real que reportó
+/// Eliza: aprobó un hogar de paso y no encontró forma de contactar a la
+/// persona, ni en el panel principal ni en "Mis rescates", que nunca tuvo
+/// este botón). Una sola copia evita que el próximo arreglo se aplique en
+/// una pantalla y se olvide en las demás.
+Future<void> contactarPersonaEnProceso(BuildContext context, {
+  required String docId,
+  required String nombre,
+  required String especie,
+  String? fotoUrl,
+  String? creadoPor,
+  required String adoptanteIdEnProceso,
+}) async {
+  final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+  QueryDocumentSnapshot<Map<String, dynamic>>? chatDoc;
+  Map<String, dynamic>? d;
+  // try/catch: leer un chat que NO existe da permission-denied con
+  // nuestras reglas — sin esto la excepción mataba el onTap y "Contactar"
+  // no hacía nada.
+  try {
+    if (adoptanteIdEnProceso.isNotEmpty) {
+      final doc = await FirebaseFirestore.instance.collection('chats')
+          .doc(ChatsRepository().idAnimal(rescateId: docId, adoptanteId: adoptanteIdEnProceso))
+          .get();
+      if (doc.exists) d = doc.data();
+    } else {
+      // Dato legado sin adoptanteIdEnProceso: se cae al viejo match por
+      // nombre+dueño.
+      final chats = await FirebaseFirestore.instance.collection('chats')
+          .where('animalNombre', isEqualTo: nombre)
+          .where('rescatistaId', isEqualTo: uid)
+          .limit(1).get();
+      if (chats.docs.isNotEmpty) {
+        chatDoc = chats.docs.first;
+        d = chatDoc.data();
+      }
+    }
+  } catch (_) {
+    d = null;
+  }
+  // Sin chat previo pero con adoptante conocido: se abre el chat igual con
+  // chatId null y ChatScreen lo crea. Pero sin chat previo tampoco hay
+  // adoptanteNombre denormalizado en ningún lado — sin este fallback, el
+  // encabezado mostraba el literal "Adoptante" en vez del nombre real la
+  // primera vez que se contacta a alguien recién aprobado.
+  String? nombreAdoptanteFallback;
+  if (d == null && adoptanteIdEnProceso.isNotEmpty) {
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('usuarios').doc(adoptanteIdEnProceso).get();
+      nombreAdoptanteFallback = userDoc.data()?['nombre'] as String?;
+    } catch (_) {}
+  }
+  if (!context.mounted) return;
+  if (d == null && adoptanteIdEnProceso.isEmpty) return;
+  final dFinal = d ?? const <String, dynamic>{};
+  final chatId = d == null
+      ? null
+      : adoptanteIdEnProceso.isNotEmpty
+          ? ChatsRepository().idAnimal(rescateId: docId, adoptanteId: adoptanteIdEnProceso)
+          : chatDoc!.id;
+  Navigator.push(context, MaterialPageRoute(
+    builder: (_) => ChatScreen(
+      esRescatista: true,
+      chatId: chatId,
+      animal: {
+        'nombre':          nombre,
+        'rescatista':      FirebaseAuth.instance.currentUser?.displayName ?? 'Rescatista',
+        'rescatistaId':    dFinal['rescatistaId'] as String? ?? uid,
+        'rescateId':       docId,
+        'adoptanteId':     adoptanteIdEnProceso,
+        'adoptanteNombre': dFinal['adoptanteNombre'] as String? ?? nombreAdoptanteFallback,
+        'especie':         especie,
+        'creadoPor':       dFinal['creadoPor'] as String? ?? creadoPor ?? 'rescatista',
+        'tipoSolicitud':   dFinal['tipoSolicitud'] as String? ?? 'adopcion',
+        'fotoUrl':         dFinal['fotoUrl'] ?? fotoUrl,
+      },
+    ),
+  ));
+}
+
+/// Avisos automáticos de "el hogar de paso vence mañana / ya venció" — antes
+/// duplicado byte a byte entre home_screen.dart (rescatista) y
+/// albergue_home_screen.dart (hallazgo de auditoría de código). [role] y
+/// [creadoPor] son la única diferencia real entre las dos copias que
+/// reemplaza; se llama una vez por panel, típicamente desde `initState`.
+Future<void> verificarVencimientos(
+  BuildContext context, {
+  required String uid,
+  required CreatorRole role,
+  required String creadoPor,
+}) async {
+  if (uid.isEmpty) return;
+  final ahora = DateTime.now();
+  final hoySinHora = DateTime(ahora.year, ahora.month, ahora.day);
+  final snap = await RescatesRepository().misRescatesPorEstado(
+    uid: uid,
+    role: role,
+    estadoAdopcion: 'Hogar de paso',
+  );
+  // Nombres avisados en esta pasada — antes el mensaje solo entraba al chat
+  // con el adoptante y quien publicó no se enteraba salvo que abriera esa
+  // conversación puntual; ahora se le avisa acá mismo en su panel (pedido
+  // de Eliza).
+  final avisados = <String>[];
+  // Aviso previo (1 día antes) — flag propio (`avisoPrevioAvisado`),
+  // separado de `vencimientoAvisado`, para que las dos notificaciones
+  // (antes/después) no se pisen entre sí. Pedido explícito de Eliza: antes
+  // solo se avisaba DESPUÉS de vencido, sin ningún margen para coordinar
+  // con tiempo la devolución.
+  final porVencer = <String>[];
+  for (final doc in snap.docs) {
+    final d = doc.data();
+    final fechaFin = (d['fechaFinHogar'] as Timestamp?)?.toDate();
+    if (fechaFin == null) continue;
+    final nombre      = d['nombre']            as String? ?? 'El animal';
+    final adoptanteId = d['adoptanteIdEnProceso'] as String?;
+    if (fechaFin.isAfter(ahora)) {
+      final finSinHora = DateTime(fechaFin.year, fechaFin.month, fechaFin.day);
+      final diasRestantes = finSinHora.difference(hoySinHora).inDays;
+      if (diasRestantes == 1 && d['avisoPrevioAvisado'] != true) {
+        final msg = '📋 El período de hogar de paso de $nombre vence mañana. '
+            'Coordiná con tiempo la devolución o el proceso de adopción definitivo. 🐾';
+        // Solo se marca "avisado" si el mensaje realmente se guardó — antes
+        // se marcaba igual aunque enviarMensajeChat() fallara, y ese aviso
+        // quedaba perdido para siempre (nunca se reintentaba en la próxima
+        // apertura de la app). El bug real que encontró Eliza probando con
+        // Sarita: el aviso figuraba como enviado pero el chat nunca tuvo
+        // el mensaje.
+        final avisoOk = await enviarMensajeChat(
+          adoptanteId ?? '',
+          nombre,
+          msg,
+          fotoUrl: d['fotoUrl'] as String?,
+          rescateId: doc.id,
+          creadoPor: creadoPor,
+        );
+        if (avisoOk) {
+          await doc.reference.update({'avisoPrevioAvisado': true});
+          porVencer.add(nombre);
+        }
+      }
+      continue;
+    }
+    if (d['vencimientoAvisado'] == true) continue;
+    final msg = '📋 El período de hogar de paso de $nombre ha vencido. '
+        'Por favor coordina la devolución o el proceso de adopción definitivo. 🐾';
+    final avisoOk = await enviarMensajeChat(
+      adoptanteId ?? '',
+      nombre,
+      msg,
+      fotoUrl: d['fotoUrl'] as String?,
+      rescateId: doc.id,
+      creadoPor: creadoPor,
+    );
+    if (avisoOk) {
+      await doc.reference.update({'vencimientoAvisado': true});
+      avisados.add(nombre);
+    }
+  }
+  if (!context.mounted) return;
+  if (avisados.isNotEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      backgroundColor: msgAdvertencia,
+      duration: const Duration(seconds: 6),
+      content: Text(avisados.length == 1
+          ? '📋 Venció el hogar de paso de ${avisados.first}. Le avisamos al adoptante por chat.'
+          : '📋 Venció el hogar de paso de ${avisados.join(', ')}. Les avisamos a los adoptantes por chat.'),
+    ));
+  }
+  if (porVencer.isNotEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      backgroundColor: msgAdvertencia,
+      duration: const Duration(seconds: 6),
+      content: Text(porVencer.length == 1
+          ? '📋 El hogar de paso de ${porVencer.first} vence mañana. Le avisamos al adoptante por chat.'
+          : '📋 El hogar de paso de ${porVencer.join(', ')} vence mañana. Les avisamos a los adoptantes por chat.'),
+    ));
+  }
+}
+
+/// Recordatorio automático de seguimiento post-adopción — mismo patrón que
+/// [verificarVencimientos] (mensaje por chat + flag para no repetirlo),
+/// antes duplicado igual que ella. Dos checkpoints (7 y 30 días desde
+/// `fechaAdopcion`), cada uno con su propio flag. Si la app se abre recién
+/// después de los 30 días (el 7 se saltó de largo), se manda directo el de
+/// 30 y se marcan los DOS flags — el checkpoint corto ya no tiene sentido
+/// mandarlo tarde.
+Future<void> verificarSeguimientoPostAdopcion({
+  required String uid,
+  required CreatorRole role,
+  required String creadoPor,
+}) async {
+  if (uid.isEmpty) return;
+  final ahora = DateTime.now();
+  final snap = await RescatesRepository().misRescatesPorEstado(
+    uid: uid,
+    role: role,
+    estadoAdopcion: 'Adoptado',
+  );
+  for (final doc in snap.docs) {
+    final d = doc.data();
+    final fechaAdopcion = (d['fechaAdopcion'] as Timestamp?)?.toDate();
+    if (fechaAdopcion == null) continue;
+    final dias        = ahora.difference(fechaAdopcion).inDays;
+    final nombre       = d['nombre']              as String? ?? 'El animal';
+    final adoptanteId  = d['adoptanteIdEnProceso'] as String?;
+    // Solo se marca "avisado" si el mensaje realmente se guardó — mismo
+    // arreglo que verificarVencimientos, mismo motivo (ver comentario ahí).
+    if (dias >= 30 && d['seguimiento30Avisado'] != true) {
+      final avisoOk = await enviarMensajeChat(
+        adoptanteId ?? '',
+        nombre,
+        'Ya pasó un mes desde que $nombre encontró hogar con vos 🎉 ¿Cómo se está adaptando? Nos encantaría saber cómo le va.',
+        fotoUrl: d['fotoUrl'] as String?,
+        rescateId: doc.id,
+        creadoPor: creadoPor,
+      );
+      if (avisoOk) {
+        await doc.reference.update({'seguimiento30Avisado': true, 'seguimiento7Avisado': true});
+      }
+    } else if (dias >= 7 && d['seguimiento7Avisado'] != true) {
+      final avisoOk = await enviarMensajeChat(
+        adoptanteId ?? '',
+        nombre,
+        '¿Cómo le va a $nombre en su nuevo hogar? 🏡💚 Cualquier cosa que necesite, contános.',
+        fotoUrl: d['fotoUrl'] as String?,
+        rescateId: doc.id,
+        creadoPor: creadoPor,
+      );
+      if (avisoOk) {
+        await doc.reference.update({'seguimiento7Avisado': true});
+      }
+    }
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -274,18 +567,20 @@ class _SolicitudesRescatistaScreenState extends State<SolicitudesRescatistaScree
       if (!mounted) return;
       if (!resultado.aprobada) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            backgroundColor: msgError,
             content: Text(resultado.animalEliminado
-                ? 'Este animal ya no existe (fue eliminado) — la solicitud se rechazó automáticamente.'
-                : 'Este animal ya tenía un proceso aprobado con otro adoptante — '
-                    'esta solicitud se rechazó automáticamente.')));
+                ? 'Este animal ya no existe (fue eliminado). La solicitud se rechazó automáticamente.'
+                : 'Este animal ya tenía un proceso aprobado con otro adoptante. '
+                    'Esta solicitud se rechazó automáticamente.')));
       } else if (!resultado.avisoOk) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            backgroundColor: msgAdvertencia,
             content: Text('Solicitud aprobada, pero no pudimos avisarle al adoptante por chat. Escribile manualmente.')));
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('No se pudo aprobar la solicitud: $e')));
+            SnackBar(backgroundColor: msgError, content: Text('No se pudo aprobar la solicitud: $e')));
       }
     } finally {
       if (mounted) setState(() => _procesando.remove(docId));
@@ -298,12 +593,13 @@ class _SolicitudesRescatistaScreenState extends State<SolicitudesRescatistaScree
       if (!mounted) return;
       if (!avisoOk) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            backgroundColor: msgAdvertencia,
             content: Text('Solicitud rechazada, pero no pudimos avisarle al adoptante por chat.')));
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('No se pudo rechazar la solicitud: $e')));
+            SnackBar(backgroundColor: msgError, content: Text('No se pudo rechazar la solicitud: $e')));
       }
     }
   }
@@ -326,10 +622,12 @@ class _SolicitudesRescatistaScreenState extends State<SolicitudesRescatistaScree
             child: Row(children: [
               IconButton(
                 icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+                tooltip: 'Volver',
                 onPressed: () => Navigator.pop(context),
               ),
               const Expanded(child: Text('Solicitudes',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A)))),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: appInk,
+                      fontFamily: 'Baloo2'))),
             ]),
           ),
           const SizedBox(height: 4),
@@ -357,7 +655,7 @@ class _SolicitudesRescatistaScreenState extends State<SolicitudesRescatistaScree
                       Icon(Icons.inbox_outlined, size: 64, color: Colors.grey.shade300),
                       const SizedBox(height: 16),
                       Text('Aún no tienes solicitudes',
-                          style: TextStyle(color: Colors.grey.shade500, fontSize: 15, fontWeight: FontWeight.w600)),
+                          style: TextStyle(color: Colors.grey.shade700, fontSize: 15, fontWeight: FontWeight.w600)),
                     ]),
                   );
                 }
@@ -391,9 +689,9 @@ class _SolicitudesRescatistaScreenState extends State<SolicitudesRescatistaScree
                         ? fechaFin.difference(fechaInicio).inDays
                         : null;
                     final score       = calcularCompatibilidad(d);
-                    final scoreColor  = score >= 80 ? const Color(0xFF1F8A62) : score >= 60 ? const Color(0xFFE65100) : const Color(0xFFB71C1C);
+                    final scoreColor  = score >= 80 ? appTeal : score >= 60 ? const Color(0xFFE65100) : const Color(0xFFB71C1C);
                     final estadoColor = estado == 'aprobada'
-                        ? const Color(0xFF1F8A62)
+                        ? appTeal
                         : estado == 'rechazada'
                         ? const Color(0xFFB71C1C)
                         : const Color(0xFFE65100);
@@ -420,10 +718,14 @@ class _SolicitudesRescatistaScreenState extends State<SolicitudesRescatistaScree
                           // Foto del animal
                           ClipRRect(
                             borderRadius: BorderRadius.circular(12),
+                            // FotoAnimal en vez de recorte — mismo arreglo
+                            // que mis_rescates_screen.dart: el recorte fijo
+                            // (topCenter) cortaba animales que no quedan
+                            // cerca del borde superior de la foto.
                             child: fotoUrl != null
-                              ? FotoUrl(
+                              ? FotoAnimal(
                                   url: fotoUrl,
-                                  width: 64, height: 64, fit: BoxFit.cover,
+                                  width: 64, height: 64,
                                   fallback: Container(width: 64, height: 64,
                                       color: const Color(0xFFD8F0E4),
                                       child: const Center(child: Icon(Icons.pets, color: appTeal, size: 30))),
@@ -438,7 +740,7 @@ class _SolicitudesRescatistaScreenState extends State<SolicitudesRescatistaScree
                               Expanded(
                                 child: Text(animal,
                                     style: const TextStyle(fontWeight: FontWeight.bold,
-                                        fontSize: 17, color: Color(0xFF1A1A1A))),
+                                        fontSize: 17, color: appInk)),
                               ),
                               Text(tiempo, style: TextStyle(fontSize: 11, color: Colors.grey.shade400)),
                             ]),
@@ -479,7 +781,7 @@ class _SolicitudesRescatistaScreenState extends State<SolicitudesRescatistaScree
                           const SizedBox(width: 8),
                           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                             Text(nombre, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                            Text(detalle, style: TextStyle(fontSize: 11, color: Colors.grey.shade500), maxLines: 1, overflow: TextOverflow.ellipsis),
+                            Text(detalle, style: TextStyle(fontSize: 11, color: Colors.grey.shade700), maxLines: 1, overflow: TextOverflow.ellipsis),
                           ])),
                         ]),
 
@@ -631,6 +933,27 @@ class _SolicitudesRescatistaScreenState extends State<SolicitudesRescatistaScree
                               ]),
                             ),
                           ),
+                          // Solo lectura acá: quien acepta el compromiso es
+                          // el adoptante (ver mis_solicitudes_screen.dart),
+                          // el rescatista/albergue solo ve la constancia.
+                          if ((d['tipoSolicitud'] as String? ?? 'adopcion') == 'adopcion') ...[
+                            const SizedBox(height: 8),
+                            Row(children: [
+                              Icon(
+                                d['acuerdoAceptado'] == true ? Icons.check_circle : Icons.hourglass_empty,
+                                size: 13,
+                                color: d['acuerdoAceptado'] == true ? appTeal : Colors.grey.shade400,
+                              ),
+                              const SizedBox(width: 5),
+                              Text(
+                                d['acuerdoAceptado'] == true
+                                    ? 'Compromiso de adopción aceptado'
+                                    : 'Compromiso de adopción: aún no aceptado',
+                                style: TextStyle(fontSize: 11.5,
+                                    color: d['acuerdoAceptado'] == true ? appTeal : Colors.grey.shade700),
+                              ),
+                            ]),
+                          ],
                         ],
                         if (estado == 'pendiente') ...[
                           const SizedBox(height: 12),
@@ -666,6 +989,11 @@ class _SolicitudesRescatistaScreenState extends State<SolicitudesRescatistaScree
                                         'Luego de revisar tu solicitud, en esta ocasión no podemos continuar con el proceso. '
                                         '¡Esperamos que pronto encuentres a tu compañero perfecto! 🐾',
                                   );
+                                  // .then() en vez de un dispose() suelto: este
+                                  // showDialog no se espera (el onTap no es
+                                  // async), así que hay que liberar el
+                                  // controller recién cuando el diálogo se
+                                  // cierra de verdad (Cancelar o Confirmar).
                                   showDialog(context: context, builder: (dlg) => AlertDialog(
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                                     title: const Text('Mensaje de rechazo'),
@@ -691,7 +1019,7 @@ class _SolicitudesRescatistaScreenState extends State<SolicitudesRescatistaScree
                                         child: const Text('Confirmar', style: TextStyle(color: Colors.red)),
                                       ),
                                     ],
-                                  ));
+                                  )).then((_) => motivoCtl.dispose());
                                 },
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(vertical: 10),
