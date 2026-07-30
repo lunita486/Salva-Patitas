@@ -60,6 +60,79 @@ void main() {
       );
     });
 
+    test('moverFoto() mueve el ARCHIVO de verdad (no solo la URL): los bytes '
+        'quedan en el slot destino, el origen se borra, y la URL devuelta '
+        'apunta al destino — la promoción "quité la foto 1, la 2 pasa a ser '
+        'la 1" copiaba solo la URL entre campos y el mismo guardado borraba '
+        'foto2.jpg como slot vacío, dejando la ficha apuntando a un archivo '
+        'muerto (bug real: "rarito 2" con emoji en el feed)', () async {
+      final storage = fsm.MockFirebaseStorage();
+      final repo = RescateFotosRepository(storage: storage);
+      final bytes = Uint8List.fromList([7, 8, 9]);
+      await repo.subir(rescateId: 'rescate-m', slot: 2, bytes: bytes);
+
+      final url = await repo.moverFoto(rescateId: 'rescate-m', deSlot: 2, aSlot: 1);
+
+      expect(url, contains('rescates/rescate-m/foto1.jpg'));
+      expect(await storage.ref('rescates/rescate-m/foto1.jpg').getData(), bytes);
+      expect(await storage.ref('rescates/rescate-m/foto2.jpg').getData(), isNull,
+          reason: 'el archivo de origen tiene que borrarse — si queda, una '
+              'segunda foto agregada después lo pisa y cambia la foto 1 en silencio');
+    });
+
+    test('moverFoto() devuelve null sin tocar nada si el origen no existe '
+        '(ficha ya dañada por el bug: fotoUrl apuntando a un archivo borrado)', () async {
+      final storage = fsm.MockFirebaseStorage();
+      final repo = RescateFotosRepository(storage: storage);
+
+      final url = await repo.moverFoto(rescateId: 'rescate-n', deSlot: 2, aSlot: 1);
+
+      expect(url, isNull);
+    });
+
+    test('moverFoto() también devuelve null cuando el SDK real tira '
+        'object-not-found en la descarga (el mock de arriba devuelve null; '
+        'Firebase de verdad lanza excepción — las dos ramas existen)', () async {
+      final storage = MockFirebaseStorage();
+      final ref = MockReference();
+      when(() => storage.ref(any())).thenReturn(ref);
+      when(() => ref.getData(any())).thenThrow(
+          FirebaseException(plugin: 'firebase_storage', code: 'object-not-found'));
+
+      final repo = RescateFotosRepository(storage: storage);
+      expect(await repo.moverFoto(rescateId: 'r1', deSlot: 2, aSlot: 1), isNull);
+      verifyNever(() => ref.delete());
+    });
+
+    group('urlApuntaASlot() — única regla de "¿este campo apunta a este slot?"', () {
+      // URL real de descarga tal como la produce getDownloadURL: el path
+      // viene CODIFICADO (%2F en vez de /) — la detección de la promoción
+      // foto 2 → foto 1 en editar depende de reconocer esta forma exacta.
+      const urlReal =
+          'https://firebasestorage.googleapis.com/v0/b/patitas-dd0bb.firebasestorage.app'
+          '/o/rescates%2FmDECMMPyH3kyBzjOaq3C%2Ffoto2.jpg?alt=media&token=6b8d449b-49ee';
+
+      test('reconoce el slot en una URL real con el path codificado (%2F)', () {
+        expect(RescateFotosRepository.urlApuntaASlot(urlReal, 2), true);
+        expect(RescateFotosRepository.urlApuntaASlot(urlReal, 1), false,
+            reason: 'foto2.jpg no debe confundirse con el slot 1');
+      });
+
+      test('también reconoce la forma ya decodificada (con / literales)', () {
+        final decodificada = Uri.decodeFull(urlReal);
+        expect(RescateFotosRepository.urlApuntaASlot(decodificada, 2), true);
+        expect(RescateFotosRepository.urlApuntaASlot(decodificada, 1), false);
+      });
+
+      test('null y URLs malformadas devuelven false sin lanzar — una '
+          'detección que crashea rompe el guardado entero, peor que no '
+          'detectar', () {
+        expect(RescateFotosRepository.urlApuntaASlot(null, 2), false);
+        expect(RescateFotosRepository.urlApuntaASlot('%zz-malformada', 2), false);
+        expect(RescateFotosRepository.urlApuntaASlot('', 2), false);
+      });
+    });
+
     test('eliminarTodas() borra los dos slots posibles, ignorando los que no existían', () async {
       final storage = fsm.MockFirebaseStorage();
       final repo = RescateFotosRepository(storage: storage);
