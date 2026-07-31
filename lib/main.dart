@@ -247,13 +247,37 @@ class _CargaConSalidaState extends State<_CargaConSalida> {
   @override
   void initState() {
     super.initState();
-    if (!_tardando) {
-      // 10 segundos: un arranque normal resuelve en menos de 2-3, así que
-      // casi nadie ve este aviso — pero quien caía en la trampa lo va a
-      // ver siempre, con salida.
-      _timer = Timer(const Duration(seconds: 10), () {
-        if (mounted) setState(() => _tardando = true);
-      });
+    if (!_tardando) _iniciarTimer();
+  }
+
+  void _iniciarTimer() {
+    // 10 segundos: un arranque normal resuelve en menos de 2-3, así que
+    // casi nadie ve este aviso — pero quien caía en la trampa lo va a
+    // ver siempre, con salida.
+    _timer = Timer(const Duration(seconds: 10), () {
+      if (mounted) setState(() => _tardando = true);
+    });
+  }
+
+  // Sin esto, "inmediato" no era inmediato de verdad: en AuthWrapper este
+  // widget nace PRIMERO en su forma "todavía esperando" (mensajeInmediato:
+  // false, la única opción posible antes de que llegue cualquier evento
+  // del stream) y recién después, si el stream confirma un error, vuelve a
+  // construirse con mensajeInmediato: true. Flutter reutiliza el MISMO
+  // State entre esos dos builds (misma posición en el árbol, sin key que
+  // los distinga) — initState() no se vuelve a correr, así que
+  // `late bool _tardando = widget.mensajeInmediato` había quedado fijado
+  // en `false` desde el primer build y nunca se enteraba del cambio. Un
+  // error ya confirmado esperaba los 10 segundos completos igual que una
+  // carga normal — el mismo síntoma ("se queda cargando y no puedo hacer
+  // nada") que este widget se construyó para eliminar (hallazgo de
+  // auditoría de código).
+  @override
+  void didUpdateWidget(covariant _CargaConSalida oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.mensajeInmediato && !oldWidget.mensajeInmediato && !_tardando) {
+      _timer?.cancel();
+      setState(() => _tardando = true);
     }
   }
 
