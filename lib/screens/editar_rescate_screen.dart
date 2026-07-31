@@ -81,8 +81,18 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> with Tardando
     _tamano    = d['tamano']    ?? 'Mediano';
     _edad      = d['edad']      ?? 'Cachorro';
     _genero    = d['genero']    ?? 'No sé';
-    _okNinos   = (d['okConNinos']    as bool? ?? false) ? 'Sí' : 'No';
-    _okMascotas= (d['okConMascotas'] as bool? ?? false) ? 'Sí' : 'No';
+    // ?? true, no ?? false: en compatibilidad.dart y en el resto de la app,
+    // un animal sin este campo (publicado antes de que existiera) se
+    // asume apto con niños/mascotas por defecto. Acá abajo era el único
+    // lugar que asumía lo contrario — un animal viejo se abría en Editar
+    // mostrando "No" sin que nadie lo hubiera dicho nunca, y si el
+    // rescatista/albergue guardaba sin darse cuenta (ej. solo cambió la
+    // descripción), quedaba "No" escrito de verdad para siempre, bajando
+    // su puntaje de compatibilidad sin motivo real (hallazgo de auditoría
+    // de código). requiereExperiencia sí se queda en ?? false — ese
+    // default ya es el mismo en toda la app.
+    _okNinos   = (d['okConNinos']    as bool? ?? true) ? 'Sí' : 'No';
+    _okMascotas= (d['okConMascotas'] as bool? ?? true) ? 'Sí' : 'No';
     _requiereExp=(d['requiereExperiencia'] as bool? ?? false) ? 'Sí' : 'No';
     // String, no bool — y con fallback a 'Aún no lo sé' para animales
     // publicados antes de que existiera este campo, no a 'No' (que
