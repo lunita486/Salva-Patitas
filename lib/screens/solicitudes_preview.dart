@@ -248,6 +248,16 @@ Widget _solicitudDetalle(String ini, Color col, String nombre, String detalle,
                     try {
                       final resultado = await aprobarSolicitud(docId, data);
                       if (!ctx.mounted) return;
+                      // null = ya se estaba procesando esta misma solicitud
+                      // desde la lista completa (u otra vista previa) al
+                      // mismo tiempo — candado compartido, ver
+                      // aprobarSolicitud en solicitudes_rescatista_screen.dart.
+                      if (resultado == null) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
+                            backgroundColor: msgAdvertencia,
+                            content: Text('Ya se está procesando esta solicitud.')));
+                        return;
+                      }
                       if (!resultado.aprobada) {
                         ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
                             backgroundColor: msgError,
@@ -307,7 +317,14 @@ Widget _solicitudDetalle(String ini, Color col, String nombre, String detalle,
                             if (data == null) return;
                             try {
                               final avisoOk = await rechazarSolicitud(docId, data, motivoCtl.text.trim());
-                              if (ctx.mounted && !avisoOk) {
+                              if (!ctx.mounted) return;
+                              if (avisoOk == null) {
+                                ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
+                                    backgroundColor: msgAdvertencia,
+                                    content: Text('Ya se está procesando esta solicitud.')));
+                                return;
+                              }
+                              if (!avisoOk) {
                                 ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
                                     backgroundColor: msgAdvertencia,
                                     content: Text('Solicitud rechazada, pero no pudimos avisarle al adoptante por chat.')));

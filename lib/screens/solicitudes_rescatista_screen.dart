@@ -125,6 +125,21 @@ Future<bool> enviarMensajeChat(String adoptanteId, String animalNombre, String t
   }
 }
 
+/// Candado compartido por TODO el proceso, no por pantalla — a propósito
+/// a nivel de archivo, no un campo de un State. [aprobarSolicitud] y
+/// [rechazarSolicitud] las llaman tanto solicitudes_rescatista_screen.dart
+/// (la lista completa) como solicitudes_preview.dart (la vista previa de
+/// los paneles de rescatista y albergue), y esas dos pantallas pueden
+/// estar montadas a la vez sin saber una de la otra. Antes cada pantalla
+/// tenía (o no tenía) su propio candado local, así que aprobar/rechazar
+/// la MISMA solicitud desde la vista previa Y la lista completa —o tocar
+/// Aprobar y después Rechazar casi juntos, ninguno de los dos protegido
+/// contra el otro— no tenía ningún seguro real (hallazgo de auditoría de
+/// código): se disparaba el mensaje de chat dos veces, se inflaba
+/// `vecesAyudo` de hogares de paso dos veces, o el animal y la solicitud
+/// quedaban en estados contradictorios.
+final Set<String> _solicitudesEnProceso = {};
+
 /// [aprobada]: false si perdió la carrera contra otra solicitud del mismo
 /// animal, o si el animal ya no existe (ver
 /// [SolicitudesRepository.aprobarSiDisponible]) — en cualquiera de los dos
@@ -135,7 +150,26 @@ Future<bool> enviarMensajeChat(String adoptanteId, String animalNombre, String t
 /// de "ya no disponible" si perdió la carrera) se pudo enviar. La
 /// aprobación/rechazo en sí ya quedó guardada aunque el aviso falle; el
 /// llamador decide cómo informarle al rescatista que el chat no salió.
-Future<({bool aprobada, bool animalEliminado, bool avisoOk})> aprobarSolicitud(String docId, Map<String, dynamic> d) async {
+///
+/// Devuelve `null` si [docId] ya se está aprobando/rechazando en este
+/// mismo momento (desde esta pantalla, la otra, o el mismo botón tocado
+/// dos veces) — el llamador lo trata como "no hacer nada", no como un
+/// error.
+Future<({bool aprobada, bool animalEliminado, bool avisoOk})?> aprobarSolicitud(String docId, Map<String, dynamic> d) async {
+  // Set.add() devuelve false si el elemento YA estaba — no hace falta que
+  // sea atómico "a mano": Dart es de un solo hilo, no hay ningún await
+  // entre este chequeo y el agregado, así que no existe una ventana donde
+  // dos llamadas lean "libre" a la vez.
+  if (!_solicitudesEnProceso.add(docId)) return null;
+  try {
+    return await _aprobarSolicitudImpl(docId, d);
+  } finally {
+    _solicitudesEnProceso.remove(docId);
+  }
+}
+
+Future<({bool aprobada, bool animalEliminado, bool avisoOk})> _aprobarSolicitudImpl(
+    String docId, Map<String, dynamic> d) async {
   final rescateId     = d['rescateId']     as String? ?? '';
   final adoptanteId   = d['adoptanteId']   as String? ?? '';
   final animalNombre  = d['animalNombre']  as String? ?? '';
@@ -277,8 +311,20 @@ Future<({bool aprobada, bool animalEliminado, bool avisoOk})> aprobarSolicitud(S
   return (aprobada: true, animalEliminado: false, avisoOk: true);
 }
 
-/// Devuelve `true` si el aviso por chat al adoptante se pudo enviar.
-Future<bool> rechazarSolicitud(String docId, Map<String, dynamic> d, String motivo) async {
+/// Devuelve `true` si el aviso por chat al adoptante se pudo enviar, o
+/// `null` si [docId] ya se está aprobando/rechazando en este mismo
+/// momento — mismo candado compartido que [aprobarSolicitud], ver ese
+/// comentario.
+Future<bool?> rechazarSolicitud(String docId, Map<String, dynamic> d, String motivo) async {
+  if (!_solicitudesEnProceso.add(docId)) return null;
+  try {
+    return await _rechazarSolicitudImpl(docId, d, motivo);
+  } finally {
+    _solicitudesEnProceso.remove(docId);
+  }
+}
+
+Future<bool> _rechazarSolicitudImpl(String docId, Map<String, dynamic> d, String motivo) async {
   final animalNombre = d['animalNombre'] as String? ?? '';
   final texto = motivo.trim().isNotEmpty ? motivo.trim()
       : 'Hola, gracias por tu interés en adoptar a $animalNombre. '
@@ -565,6 +611,11 @@ class _SolicitudesRescatistaScreenState extends State<SolicitudesRescatistaScree
     try {
       final resultado = await aprobarSolicitud(docId, d);
       if (!mounted) return;
+      // null = ya se estaba procesando esta misma solicitud (desde acá
+      // mismo con este candado local, o desde la vista previa del
+      // dashboard con el candado compartido) — no es un error, no hay
+      // nada más que avisar.
+      if (resultado == null) return;
       if (!resultado.aprobada) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             backgroundColor: msgError,
@@ -588,9 +639,16 @@ class _SolicitudesRescatistaScreenState extends State<SolicitudesRescatistaScree
   }
 
   Future<void> _rechazar(String docId, Map<String, dynamic> d, String motivo) async {
+    // Antes _rechazar no tenía ningún candado local (a diferencia de
+    // _aprobar) — reusa el mismo _procesando de acá, así los dos botones
+    // se bloquean entre sí para la misma tarjeta, no solo cada uno consigo
+    // mismo.
+    if (_procesando.contains(docId)) return;
+    setState(() => _procesando.add(docId));
     try {
       final avisoOk = await rechazarSolicitud(docId, d, motivo);
       if (!mounted) return;
+      if (avisoOk == null) return; // ya se estaba procesando, ver aprobarSolicitud
       if (!avisoOk) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
             backgroundColor: msgAdvertencia,
@@ -601,6 +659,8 @@ class _SolicitudesRescatistaScreenState extends State<SolicitudesRescatistaScree
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(backgroundColor: msgError, content: Text('No se pudo rechazar la solicitud: $e')));
       }
+    } finally {
+      if (mounted) setState(() => _procesando.remove(docId));
     }
   }
 
@@ -983,7 +1043,13 @@ class _SolicitudesRescatistaScreenState extends State<SolicitudesRescatistaScree
                             const SizedBox(width: 10),
                             Expanded(
                               child: GestureDetector(
-                                onTap: () {
+                                // Antes se podía abrir este diálogo aunque ya
+                                // se estuviera aprobando/rechazando esta misma
+                                // tarjeta (con Aprobar, o con un Rechazar
+                                // anterior) — mismo _procesando que ya usaba
+                                // Aprobar, para que los dos botones se
+                                // bloqueen entre sí.
+                                onTap: _procesando.contains(docs[i].id) ? null : () {
                                   final motivoCtl = TextEditingController(
                                     text: 'Hola, gracias por tu interés en adoptar a $animal. '
                                         'Luego de revisar tu solicitud, en esta ocasión no podemos continuar con el proceso. '
@@ -1024,11 +1090,15 @@ class _SolicitudesRescatistaScreenState extends State<SolicitudesRescatistaScree
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(vertical: 10),
                                   decoration: BoxDecoration(
-                                    border: Border.all(color: Colors.red.shade300),
+                                    border: Border.all(color: _procesando.contains(docs[i].id)
+                                        ? Colors.red.shade100 : Colors.red.shade300),
                                     borderRadius: BorderRadius.circular(10),
                                   ),
                                   child: Text('Rechazar', textAlign: TextAlign.center,
-                                      style: TextStyle(color: Colors.red.shade400, fontWeight: FontWeight.bold, fontSize: 13)),
+                                      style: TextStyle(
+                                          color: _procesando.contains(docs[i].id)
+                                              ? Colors.red.shade200 : Colors.red.shade400,
+                                          fontWeight: FontWeight.bold, fontSize: 13)),
                                 ),
                               ),
                             ),
