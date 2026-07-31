@@ -380,9 +380,10 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> with Tardando
       // quedar con distinta calidad/orientación según si se agregó al
       // publicar o al editar después (hallazgo de auditoría de código).
       final bytes = await normalizarFoto(nuevaFoto.path);
+      // El timeout vive DENTRO de subir() (cancela la subida real al
+      // vencer) — no se vuelve a envolver acá, ver el doc del método.
       return RescateFotosRepository()
-          .subir(rescateId: widget.docId, slot: slot, bytes: bytes)
-          .timeout(const Duration(seconds: 45));
+          .subir(rescateId: widget.docId, slot: slot, bytes: bytes);
     }
     if (urlExistente != null) return urlExistente;
     // Red de seguridad, independiente de la detección de promoción de
@@ -439,9 +440,15 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> with Tardando
         // resolución del slot 2 puede subir una foto nueva a ese mismo
         // path (quitar la 1 y agregar otra segunda foto en la misma
         // edición) — en paralelo se pisarían.
+        //
+        // Sin `.timeout()` acá afuera a propósito: moverFoto() ya está
+        // acotado por dentro (20s la descarga + el timeout propio de
+        // subir(), que cancela la subida real al vencer). Envolverlo acá
+        // TAMBIÉN podía "darse por vencido" unos segundos antes de que la
+        // cancelación interna llegara a correr — dos relojes corriendo a
+        // la vez para lo mismo, y el de afuera no cancela nada real.
         final fotoMovida = await RescateFotosRepository()
-            .moverFoto(rescateId: widget.docId, deSlot: 2, aSlot: 1)
-            .timeout(const Duration(seconds: 60));
+            .moverFoto(rescateId: widget.docId, deSlot: 2, aSlot: 1);
         // moverFoto() devuelve null tanto si movió con éxito "nada" (no
         // hay archivo de origen) como si el archivo ya no estaba en
         // Storage por un desfasaje previo — en ese segundo caso, este

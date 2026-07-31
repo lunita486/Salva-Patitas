@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:firebase_storage_mocks/firebase_storage_mocks.dart' as fsm;
@@ -13,7 +14,57 @@ class MockFirebaseStorage extends Mock implements FirebaseStorage {}
 
 class MockReference extends Mock implements Reference {}
 
+/// Un UploadTask de mentira que nunca completa por sí solo (simula una
+/// subida colgada) — solo se resuelve si alguien llama a [completar], y
+/// registra si [cancel] se llamó de verdad. `implements Future<TaskSnapshot>`
+/// porque UploadTask lo es; el resto de los miembros no se usan en subir().
+class _TaskQueNuncaTermina implements UploadTask {
+  final _completer = Completer<TaskSnapshot>();
+  bool canceladaDeVerdad = false;
+
+  void completar(TaskSnapshot snap) => _completer.complete(snap);
+
+  @override
+  Future<bool> cancel() async {
+    canceladaDeVerdad = true;
+    if (!_completer.isCompleted) {
+      _completer.completeError(
+          FirebaseException(plugin: 'firebase_storage', code: 'canceled'));
+    }
+    return true;
+  }
+
+  @override
+  Stream<TaskSnapshot> get snapshotEvents => const Stream.empty();
+
+  @override
+  Future<S> then<S>(FutureOr<S> Function(TaskSnapshot) onValue, {Function? onError}) =>
+      _completer.future.then(onValue, onError: onError);
+
+  @override
+  Stream<TaskSnapshot> asStream() => _completer.future.asStream();
+
+  @override
+  Future<TaskSnapshot> catchError(Function onError, {bool Function(Object)? test}) =>
+      _completer.future.catchError(onError, test: test);
+
+  @override
+  Future<TaskSnapshot> whenComplete(FutureOr<void> Function() action) =>
+      _completer.future.whenComplete(action);
+
+  @override
+  Future<TaskSnapshot> timeout(Duration timeLimit, {FutureOr<TaskSnapshot> Function()? onTimeout}) =>
+      _completer.future.timeout(timeLimit, onTimeout: onTimeout);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 void main() {
+  setUpAll(() {
+    registerFallbackValue(Uint8List(0));
+  });
+
   group('RescateFotosRepository', () {
     test('subir() sube los bytes y devuelve una URL de descarga con el path correcto '
         '(el path es el contrato que storage.rules usa para verificar dueño — '
@@ -25,6 +76,36 @@ void main() {
       final url = await repo.subir(rescateId: 'rescate-1', slot: 1, bytes: bytes);
 
       expect(url, contains('rescates/rescate-1/foto1.jpg'));
+    });
+
+    test('subir() CANCELA la tarea real al vencer el timeout, no solo deja '
+        'de esperarla — Future.timeout() por sí solo no frena la subida '
+        'nativa: quedaba corriendo de fondo y terminaba subiendo el '
+        'archivo igual después de que todo lo demás (el rollback) ya había '
+        'corrido, dejándolo huérfano en Storage para siempre, sin que nada '
+        'lo referenciara ni lo pudiera borrar desde la app', () async {
+      final storage = MockFirebaseStorage();
+      final ref = MockReference();
+      final task = _TaskQueNuncaTermina();
+      when(() => storage.ref(any())).thenReturn(ref);
+      // `thenReturn` no se puede usar acá: mocktail lo prohíbe cuando el
+      // valor devuelto es (o implementa) un Future, justo el caso de
+      // UploadTask — hay que envolverlo en thenAnswer.
+      when(() => ref.putData(any(), any())).thenAnswer((_) => task);
+      when(() => ref.getDownloadURL()).thenAnswer((_) async => 'https://...');
+
+      final repo = RescateFotosRepository(storage: storage);
+      await expectLater(
+        repo.subir(
+          rescateId: 'r1', slot: 1, bytes: Uint8List.fromList([1]),
+          timeout: const Duration(milliseconds: 50),
+        ),
+        throwsA(isA<TimeoutException>()),
+      );
+
+      expect(task.canceladaDeVerdad, true,
+          reason: 'sin esto, la "subida" real seguía corriendo de fondo '
+              'después de que el llamador ya se dio por vencido');
     });
 
     test('eliminar() borra un archivo que existe', () async {
@@ -102,6 +183,24 @@ void main() {
       final repo = RescateFotosRepository(storage: storage);
       expect(await repo.moverFoto(rescateId: 'r1', deSlot: 2, aSlot: 1), isNull);
       verifyNever(() => ref.delete());
+    });
+
+    test('moverFoto() no se queda esperando para siempre si la descarga '
+        'del origen se cuelga', () async {
+      final storage = MockFirebaseStorage();
+      final ref = MockReference();
+      when(() => storage.ref(any())).thenReturn(ref);
+      when(() => ref.getData(any())).thenAnswer(
+          (_) => Completer<Uint8List?>().future); // nunca se resuelve
+
+      final repo = RescateFotosRepository(storage: storage);
+      await expectLater(
+        repo.moverFoto(
+          rescateId: 'r1', deSlot: 2, aSlot: 1,
+          timeoutDescarga: const Duration(milliseconds: 50),
+        ),
+        throwsA(isA<TimeoutException>()),
+      );
     });
 
     group('urlApuntaASlot() — única regla de "¿este campo apunta a este slot?"', () {

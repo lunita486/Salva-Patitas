@@ -524,14 +524,18 @@ class RescatesRepository {
         onProgreso?.call(fotos.length > 1 ? (progreso1 + progreso2) / 2 : progreso1);
       }
 
+      // El timeout de cada subida vive DENTRO de fotosRepo.subir() (y
+      // cancela la tarea nativa de verdad al vencer) — envolverlo acá
+      // TAMBIÉN con su propio `.timeout()` no suma nada y puede abandonar
+      // la espera antes de que la cancelación interna llegue a correr,
+      // reabriendo el mismo hueco que esto arregla (ver el doc de subir()).
       final idRescate = rescateId;
       Future<String?> subirFoto2(Uint8List bytes) async {
         try {
           return await fotosRepo.subir(
             rescateId: idRescate, slot: 2, bytes: bytes,
             onProgreso: (p) { progreso2 = p; actualizarProgreso(); },
-          ).timeout(const Duration(seconds: 45), onTimeout: () =>
-              throw Exception('tiempo agotado'));
+          );
         } catch (_) {
           foto2Fallo = true;
           return null;
@@ -542,8 +546,7 @@ class RescatesRepository {
         fotosRepo.subir(
           rescateId: idRescate, slot: 1, bytes: fotos[0],
           onProgreso: (p) { progreso1 = p; actualizarProgreso(); },
-        ).timeout(const Duration(seconds: 45), onTimeout: () =>
-            throw Exception('No hay conexión a internet.')),
+        ),
         if (fotos.length > 1) subirFoto2(fotos[1]),
       ]);
       final fotoUrl = resultados[0]!;

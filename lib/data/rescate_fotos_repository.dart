@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:firebase_storage/firebase_storage.dart';
 
@@ -44,11 +45,29 @@ class RescateFotosRepository {
   /// URL de descarga. [onProgreso] (0.0 a 1.0) es opcional y best-effort —
   /// nunca hace fallar la subida si no se puede calcular (algunos entornos,
   /// como los mocks de test, no exponen bytesTransferred/totalBytes).
+  ///
+  /// El timeout se maneja ACÁ ADENTRO, y no envolviendo el resultado con
+  /// `.timeout()` desde afuera (como se hacía antes en cada llamador) —
+  /// diferencia que importa de verdad: `Future.timeout()` no cancela la
+  /// operación original, solo deja de esperarla. Con la subida real
+  /// siguiendo en segundo plano, un rollback que borra el archivo apenas
+  /// se dispara el timeout podía terminar borrando "nada" (el archivo
+  /// todavía no existía) y el archivo real completaba la subida recién
+  /// después, sin que nada volviera a apuntarlo ni a borrarlo nunca — un
+  /// huérfano en Storage, silencioso, para siempre. Achica el problema a
+  /// un costo mensual chiquito, pero es plata perdida sin ningún beneficio
+  /// y sin forma de encontrarlo desde la app.
+  ///
+  /// [UploadTask] sí se puede cancelar de verdad (a diferencia del
+  /// `Future` genérico que devuelve `.timeout()`) — por eso el timeout
+  /// necesita vivir donde el `UploadTask` todavía es un `UploadTask`, no
+  /// más afuera donde ya se perdió esa referencia.
   Future<String> subir({
     required String rescateId,
     required int slot,
     required Uint8List bytes,
     void Function(double progreso)? onProgreso,
+    Duration timeout = const Duration(seconds: 45),
   }) async {
     final ref = _ref(rescateId: rescateId, slot: slot);
     final task = ref.putData(bytes, SettableMetadata(contentType: 'image/jpeg'));
@@ -63,7 +82,14 @@ class RescateFotosRepository {
         } catch (_) {}
       }, onError: (_) {});
     }
-    await task;
+    await task.timeout(timeout, onTimeout: () {
+      // best-effort: si ya terminó (carrera con el propio timeout) o el
+      // plugin no puede cancelarla en este estado, cancel() devuelve
+      // false en vez de lanzar — no hay nada más que hacer acá, el throw
+      // de abajo igual avisa al llamador.
+      unawaited(task.cancel().catchError((_) => false));
+      throw TimeoutException('Se agotó el tiempo subiendo la foto.');
+    });
     return ref.getDownloadURL();
   }
 
@@ -89,10 +115,17 @@ class RescateFotosRepository {
     required String rescateId,
     required int deSlot,
     required int aSlot,
+    Duration timeoutDescarga = const Duration(seconds: 20),
   }) async {
     final Uint8List? bytes;
     try {
-      bytes = await _ref(rescateId: rescateId, slot: deSlot).getData(_maxBytesFoto);
+      // getData() no devuelve un Task cancelable como putData() — no hay
+      // nada que orfanar en Storage por abandonar una LECTURA (a
+      // diferencia de subir(), acá el timeout es solo para no dejar a la
+      // persona esperando de por vida, no una cuestión de limpieza).
+      bytes = await _ref(rescateId: rescateId, slot: deSlot)
+          .getData(_maxBytesFoto)
+          .timeout(timeoutDescarga);
     } on FirebaseException catch (e) {
       if (e.code == 'object-not-found') return null;
       rethrow;
