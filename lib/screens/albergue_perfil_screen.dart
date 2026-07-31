@@ -7,6 +7,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import '../theme.dart';
 import '../data/usuarios_repository.dart';
+import '../data/firestore_resiliencia.dart';
 
 class AlberguePerfilScreen extends StatefulWidget {
   const AlberguePerfilScreen({super.key});
@@ -112,35 +113,53 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
     if (!_completo) return;
     setState(() => _guardando = true);
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    await FirebaseFirestore.instance.collection('usuarios').doc(uid).update({
-      'albergueNombre':    _nombreCtl.text.trim(),
-      'albergueTipo':      _tipo ?? '',
-      'ciudad':            _ciudadCtl.text.trim(),
-      'capacidadTotal':    int.tryParse(_capacidadCtl.text.trim()) ?? 0,
-      // Opcionales a propósito: un albergue chico recién arrancando puede
-      // no tener todavía un número separado del personal o una dirección
-      // fija — no debería trabarlo para poder crear su perfil.
-      //
-      // Prefijo "albergue" a propósito (no "telefono"/"email" genérico):
-      // una misma cuenta puede tener rol de albergue Y de aliado a la vez, y
-      // los dos guardaban antes en los mismos campos genéricos — llenar el
-      // contacto del albergue pisaba (y se mostraba) en el perfil de aliado
-      // también, y encima "email" genérico chocaba con el email de LOGIN de
-      // la cuenta que ya escribía usuarios_repository.dart. Bug real
-      // reportado por Eliza probando con una cuenta de doble rol.
-      'albergueTelefono':  _telefonoCtl.text.trim(),
-      'albergueDireccion': _direccionCtl.text.trim(),
-      'albergueEmail':     _emailCtl.text.trim(),
-      'albergueSitioWeb':  _webCtl.text.trim(),
-      'umbralEstancadoDias': _umbralEstancado,
-      if (_fotoBase64 != null) 'fotoBase64': _fotoBase64,
-    });
+    // guardarConAviso, no un await directo: sin esto, sin conexión o con
+    // el token de sesión vencido, el botón de guardar se quedaba pegado
+    // para siempre sin ningún aviso — mismo bug ya arreglado una vez en
+    // editar_rescate_screen.dart, que nunca se replicó acá (hallazgo de
+    // auditoría de código).
+    final resultado = await guardarConAviso(() =>
+        FirebaseFirestore.instance.collection('usuarios').doc(uid).update({
+          'albergueNombre':    _nombreCtl.text.trim(),
+          'albergueTipo':      _tipo ?? '',
+          'ciudad':            _ciudadCtl.text.trim(),
+          'capacidadTotal':    int.tryParse(_capacidadCtl.text.trim()) ?? 0,
+          // Opcionales a propósito: un albergue chico recién arrancando puede
+          // no tener todavía un número separado del personal o una dirección
+          // fija — no debería trabarlo para poder crear su perfil.
+          //
+          // Prefijo "albergue" a propósito (no "telefono"/"email" genérico):
+          // una misma cuenta puede tener rol de albergue Y de aliado a la vez, y
+          // los dos guardaban antes en los mismos campos genéricos — llenar el
+          // contacto del albergue pisaba (y se mostraba) en el perfil de aliado
+          // también, y encima "email" genérico chocaba con el email de LOGIN de
+          // la cuenta que ya escribía usuarios_repository.dart. Bug real
+          // reportado por Eliza probando con una cuenta de doble rol.
+          'albergueTelefono':  _telefonoCtl.text.trim(),
+          'albergueDireccion': _direccionCtl.text.trim(),
+          'albergueEmail':     _emailCtl.text.trim(),
+          'albergueSitioWeb':  _webCtl.text.trim(),
+          'umbralEstancadoDias': _umbralEstancado,
+          if (_fotoBase64 != null) 'fotoBase64': _fotoBase64,
+        }));
     if (!mounted) return;
     setState(() => _guardando = false);
-    if (Navigator.canPop(context)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Perfil actualizado'), backgroundColor: msgExito));
-      Navigator.pop(context);
+    switch (resultado) {
+      case ResultadoGuardado.confirmado:
+        if (Navigator.canPop(context)) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Perfil actualizado'), backgroundColor: msgExito));
+          Navigator.pop(context);
+        }
+      case ResultadoGuardado.siguePendiente:
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Esto está tardando. Tu perfil se va a actualizar solo apenas vuelva la señal.'),
+            backgroundColor: msgAdvertencia));
+        if (Navigator.canPop(context)) Navigator.pop(context);
+      case ResultadoGuardado.fallo:
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('No se pudo guardar. Revisá tu conexión e intentá de nuevo.'),
+            backgroundColor: msgError));
     }
   }
 

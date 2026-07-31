@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme.dart';
+import '../data/firestore_resiliencia.dart';
 
 class SubirServicioScreen extends StatefulWidget {
   final String? docId;
@@ -65,18 +66,38 @@ class _SubirServicioScreenState extends State<SubirServicioScreen> {
       'descripcion': _descripcionCtl.text.trim(),
       'categoria':   _categoriaSeleccionada,
     };
-    if (_esEdicion) {
-      await FirebaseFirestore.instance
-          .collection('servicios').doc(widget.docId).update(payload);
-    } else {
-      await FirebaseFirestore.instance.collection('servicios').add({
-        ...payload,
-        'aliadoId': uid,
-        'activo':   true,
-        'creadoEn': FieldValue.serverTimestamp(),
-      });
+    // guardarConAviso, no un await directo: sin esto, sin conexión o con
+    // el token de sesión vencido, el botón de guardar se quedaba pegado
+    // para siempre sin ningún aviso — mismo bug ya arreglado una vez en
+    // editar_rescate_screen.dart, que nunca se replicó acá (hallazgo de
+    // auditoría de código). De yapa, esta pantalla ni siquiera avisaba
+    // "listo" al guardar bien.
+    final resultado = await guardarConAviso(() => _esEdicion
+        ? FirebaseFirestore.instance.collection('servicios').doc(widget.docId).update(payload)
+        : FirebaseFirestore.instance.collection('servicios').add({
+            ...payload,
+            'aliadoId': uid,
+            'activo':   true,
+            'creadoEn': FieldValue.serverTimestamp(),
+          }));
+    if (!mounted) return;
+    setState(() => _guardando = false);
+    switch (resultado) {
+      case ResultadoGuardado.confirmado:
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(_esEdicion ? 'Servicio actualizado' : 'Servicio publicado'),
+            backgroundColor: msgExito));
+        Navigator.pop(context);
+      case ResultadoGuardado.siguePendiente:
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Esto está tardando. Se va a guardar solo apenas vuelva la señal.'),
+            backgroundColor: msgAdvertencia));
+        Navigator.pop(context);
+      case ResultadoGuardado.fallo:
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('No se pudo guardar. Revisá tu conexión e intentá de nuevo.'),
+            backgroundColor: msgError));
     }
-    if (mounted) Navigator.pop(context);
   }
 
   @override

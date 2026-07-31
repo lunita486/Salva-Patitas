@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../theme.dart';
 import '../data/auth_helper.dart';
 import '../data/creator_role.dart';
+import '../data/firestore_resiliencia.dart';
 import '../data/rescates_repository.dart';
 import '../data/solicitudes_repository.dart';
 import '../data/usuarios_repository.dart';
@@ -40,17 +41,28 @@ class PerfilRescatistaScreen extends StatelessWidget {
       builder: (ctx) => _UmbralEstancadoSheet(actual: umbralEstancadoDe(doc.data())),
     );
     if (seleccion == null) return;
-    try {
-      await FirebaseFirestore.instance.collection('usuarios').doc(uid)
-          .update({'umbralEstancadoDias': seleccion});
-    } catch (_) {
-      // Sin esto, un guardado fallido (sin conexión, token vencido) no
-      // avisaba nada — la hoja se cerraba como si hubiera funcionado y el
-      // umbral seguía siendo el viejo, sin que nadie se enterara.
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('No se pudo guardar. Revisá tu conexión e intentá de nuevo.'),
-          backgroundColor: msgError));
+    // guardarConAviso, no un try/catch a mano sin timeout (lo que había
+    // acá antes): sin límite de tiempo, estando sin señal de verdad (no
+    // un error que se pueda atrapar, un `await` que simplemente no
+    // vuelve) esto se quedaba esperando indefinidamente igual, con la
+    // hoja abierta — el mismo problema de fondo, solo que a medio
+    // arreglar.
+    final resultado = await guardarConAviso(() =>
+        FirebaseFirestore.instance.collection('usuarios').doc(uid)
+            .update({'umbralEstancadoDias': seleccion}));
+    if (!context.mounted) return;
+    switch (resultado) {
+      case ResultadoGuardado.confirmado:
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Umbral actualizado'), backgroundColor: msgExito));
+      case ResultadoGuardado.siguePendiente:
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Esto está tardando. Se va a guardar solo apenas vuelva la señal.'),
+            backgroundColor: msgAdvertencia));
+      case ResultadoGuardado.fallo:
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('No se pudo guardar. Revisá tu conexión e intentá de nuevo.'),
+            backgroundColor: msgError));
     }
   }
 

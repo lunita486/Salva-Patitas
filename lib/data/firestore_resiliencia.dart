@@ -1,10 +1,12 @@
+import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 
-/// Dos patrones de tolerancia a fallas transitorias de Firestore, antes
-/// copiados por separado en varios repositorios (hallazgo de auditoría de
-/// código) — se centralizan acá para que la política de reintento tenga un
-/// solo lugar donde cambiar. Son DOS funciones distintas a propósito, no
-/// una sola: cubren dos síntomas diferentes con dos respuestas diferentes.
+/// Tres patrones de tolerancia a fallas transitorias de Firestore, antes
+/// copiados por separado en varios repositorios y pantallas (hallazgo de
+/// auditoría de código) — se centralizan acá para que la política de cada
+/// uno tenga un solo lugar donde cambiar. Son funciones DISTINTAS a
+/// propósito, no una sola: cubren síntomas diferentes con respuestas
+/// diferentes.
 
 /// **Lectura que tropieza con el canal recién reconectando.** Reintenta
 /// [accion] UNA vez, tras una espera corta, si la primera llamada falla.
@@ -47,5 +49,55 @@ Future<void> conReintentoSiTokenVencido(
     if (e.code != 'permission-denied') rethrow;
     await auth().currentUser?.getIdToken(true);
     await escritura();
+  }
+}
+
+/// Qué pasó al intentar guardar — [siguePendiente] es DISTINTO de
+/// [fallo]: no es un error, es "todavía no hay confirmación".
+enum ResultadoGuardado {
+  /// El servidor confirmó a tiempo.
+  confirmado,
+
+  /// No hubo confirmación dentro de [guardarConAviso]'s timeout, pero
+  /// [escritura] YA está encolada — Firestore la va a aplicar sola apenas
+  /// vuelva la señal. No es una falla, así que no se puede avisar "no se
+  /// pudo guardar" (sería mentira: sí se va a guardar).
+  siguePendiente,
+
+  /// [escritura] lanzó de verdad (permission-denied persistente, una
+  /// operación que a diferencia de un `.update()` de Firestore NO se
+  /// reintenta sola sin señal, etc.).
+  fallo,
+}
+
+/// **Botón de "Guardar" que se queda pegado para siempre, sin avisar
+/// nada.** Mismo bug, encontrado 3 veces en pantallas distintas
+/// (albergue_perfil_screen.dart, aliado_perfil_screen.dart,
+/// subir_servicio_screen.dart) después de haberse arreglado una vez en
+/// editar_rescate_screen.dart y nunca replicado acá — exactamente el tipo
+/// de cosa que este archivo existe para evitar: un patrón correcto
+/// escrito una sola vez, no copiado a mano cada vez que hace falta.
+///
+/// La razón por la que esto necesitaba ser una función y no "agregarle un
+/// try/catch a cada pantalla" sin más: un `.update()`/`.add()` de
+/// Firestore sin señal NO se pierde — el SDK lo encola solo y lo aplica
+/// apenas vuelva la conexión. Ponerle un timeout que CANCELE el guardado y
+/// avisar "no se pudo guardar" sería mentirle a la persona: el cambio SÍ
+/// se va a guardar. [guardarConAviso] usa el timeout solo para decidir QUÉ
+/// avisar (confirmado ya vs. todavía en camino), nunca para cortar la
+/// escritura — y en los dos casos, el llamador queda libre de soltar el
+/// botón/cerrar la pantalla en vez de dejarla trabada esperando una
+/// confirmación que capaz tarda minutos en volver.
+Future<ResultadoGuardado> guardarConAviso(
+  Future<void> Function() escritura, {
+  Duration timeout = const Duration(seconds: 20),
+}) async {
+  try {
+    await escritura().timeout(timeout);
+    return ResultadoGuardado.confirmado;
+  } on TimeoutException {
+    return ResultadoGuardado.siguePendiente;
+  } catch (_) {
+    return ResultadoGuardado.fallo;
   }
 }

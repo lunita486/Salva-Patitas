@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as img;
 import '../theme.dart';
 import '../data/usuarios_repository.dart';
+import '../data/firestore_resiliencia.dart';
 
 class AliadoPerfilScreen extends StatefulWidget {
   const AliadoPerfilScreen({super.key});
@@ -84,27 +85,45 @@ class _AliadoPerfilScreenState extends State<AliadoPerfilScreen> {
     if (!_completo) return;
     setState(() => _guardando = true);
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    await FirebaseFirestore.instance.collection('usuarios').doc(uid).update({
-      'aliadoNombre': _nombreCtl.text.trim(),
-      'aliadoTipo':   _tipo ?? '',
-      'ciudad':       _ciudadCtl.text.trim(),
-      // Opcionales a propósito, mismo criterio que albergue_perfil_screen.dart.
-      // Prefijo "aliado" a propósito: ver el comentario largo en
-      // albergue_perfil_screen.dart — una cuenta con doble rol (albergue +
-      // aliado) compartía estos mismos campos genéricos entre los dos
-      // perfiles, y "email" además pisaba el email de LOGIN de la cuenta.
-      'aliadoTelefono':  _telefonoCtl.text.trim(),
-      'aliadoDireccion': _direccionCtl.text.trim(),
-      'aliadoEmail':     _emailCtl.text.trim(),
-      'aliadoSitioWeb':  _webCtl.text.trim(),
-      if (_fotoBase64 != null) 'aliadoFotoBase64': _fotoBase64,
-    });
+    // guardarConAviso, no un await directo: sin esto, sin conexión o con
+    // el token de sesión vencido, el botón de guardar se quedaba pegado
+    // para siempre sin ningún aviso — mismo bug ya arreglado una vez en
+    // editar_rescate_screen.dart, que nunca se replicó acá (hallazgo de
+    // auditoría de código).
+    final resultado = await guardarConAviso(() =>
+        FirebaseFirestore.instance.collection('usuarios').doc(uid).update({
+          'aliadoNombre': _nombreCtl.text.trim(),
+          'aliadoTipo':   _tipo ?? '',
+          'ciudad':       _ciudadCtl.text.trim(),
+          // Opcionales a propósito, mismo criterio que albergue_perfil_screen.dart.
+          // Prefijo "aliado" a propósito: ver el comentario largo en
+          // albergue_perfil_screen.dart — una cuenta con doble rol (albergue +
+          // aliado) compartía estos mismos campos genéricos entre los dos
+          // perfiles, y "email" además pisaba el email de LOGIN de la cuenta.
+          'aliadoTelefono':  _telefonoCtl.text.trim(),
+          'aliadoDireccion': _direccionCtl.text.trim(),
+          'aliadoEmail':     _emailCtl.text.trim(),
+          'aliadoSitioWeb':  _webCtl.text.trim(),
+          if (_fotoBase64 != null) 'aliadoFotoBase64': _fotoBase64,
+        }));
     if (!mounted) return;
     setState(() => _guardando = false);
-    if (Navigator.canPop(context)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Perfil actualizado'), backgroundColor: msgExito));
-      Navigator.pop(context);
+    switch (resultado) {
+      case ResultadoGuardado.confirmado:
+        if (Navigator.canPop(context)) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Perfil actualizado'), backgroundColor: msgExito));
+          Navigator.pop(context);
+        }
+      case ResultadoGuardado.siguePendiente:
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Esto está tardando. Tu perfil se va a actualizar solo apenas vuelva la señal.'),
+            backgroundColor: msgAdvertencia));
+        if (Navigator.canPop(context)) Navigator.pop(context);
+      case ResultadoGuardado.fallo:
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('No se pudo guardar. Revisá tu conexión e intentá de nuevo.'),
+            backgroundColor: msgError));
     }
   }
 
