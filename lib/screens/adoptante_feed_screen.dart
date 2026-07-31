@@ -42,6 +42,18 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
   // foto de nuevo en cada rebuild (el card se reconstruye seguido: cambia
   // la distancia, el score, etc., sin que cambie el animal mostrado).
   final Set<String> _fotosPrecacheadas = {};
+  // Se pide UNA sola vez en initState, no en cada build de _aliadosSection()
+  // — antes era un StreamBuilder con .snapshots(), que primero pinta lo que
+  // haya en la caché local (a veces vacía, a veces con solo alguno de los
+  // aliados de una sesión anterior) y recién después el snapshot del
+  // servidor con la lista completa: el efecto real era ver aparecer un
+  // negocio, y "al ratito" el resto (reportado por Eliza). Con un Future
+  // guardado una sola vez, se pinta vacío mientras carga y de una sola vez
+  // completo — nunca de a uno.
+  late final Future<QuerySnapshot> _aliadosFuture = FirebaseFirestore.instance
+      .collection('usuarios')
+      .where('aliadoNombre', isGreaterThan: '')
+      .get();
 
   /// Descarga por adelantado la 2da foto (y siguientes) de la tarjeta
   /// visible — Image.network no empieza a pedir una foto hasta que su
@@ -594,11 +606,8 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
   }
 
   Widget _aliadosSection() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('usuarios')
-          .where('aliadoNombre', isGreaterThan: '')
-          .snapshots(),
+    return FutureBuilder<QuerySnapshot>(
+      future: _aliadosFuture,
       builder: (context, snap) {
         final aliados = snap.data?.docs ?? [];
         if (aliados.isEmpty) return const SizedBox.shrink();
