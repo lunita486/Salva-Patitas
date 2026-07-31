@@ -10,6 +10,18 @@ class HogaresDePasoRepository {
 
   CollectionReference<Map<String, dynamic>> get _col => _db.collection('hogaresDePaso');
 
+  /// Minúsculas y sin espacios alrededor — para comparar o guardar, nunca
+  /// para mostrar. Sin esto, 'David.Casas@Gmail.com' (como lo tipeó el
+  /// albergue a mano en [agregarManual]) y 'david.casas@gmail.com' (el
+  /// email real de Google Sign-In que llega a [registrarAyuda], ya en
+  /// minúsculas) nunca calzaban en la consulta por email — el sistema
+  /// pensado justo para fusionar esos dos casos en una sola fila terminaba
+  /// creando una fila duplicada para la misma persona (hallazgo de
+  /// auditoría de código). Un solo lugar acá adentro para los 3 métodos
+  /// que tocan email, para que no se puedan volver a desincronizar entre
+  /// sí.
+  String _normalizarEmail(String email) => email.trim().toLowerCase();
+
   Stream<QuerySnapshot<Map<String, dynamic>>> deAlbergue(String albergueId) =>
       _col.where('albergueId', isEqualTo: albergueId).snapshots();
 
@@ -56,10 +68,12 @@ class HogaresDePasoRepository {
       return;
     }
 
-    if (email != null && email.isNotEmpty) {
+    final emailNorm = (email == null || email.isEmpty) ? null : _normalizarEmail(email);
+
+    if (emailNorm != null) {
       final porEmail = await _col
           .where('albergueId', isEqualTo: albergueId)
-          .where('email', isEqualTo: email)
+          .where('email', isEqualTo: emailNorm)
           .where('adoptanteId', isEqualTo: '')
           .limit(1)
           .get();
@@ -77,7 +91,7 @@ class HogaresDePasoRepository {
     await _col.doc('${albergueId}_$adoptanteId').set({
       'albergueId': albergueId,
       'adoptanteId': adoptanteId,
-      if (email != null && email.isNotEmpty) 'email': email,
+      if (emailNorm != null) 'email': emailNorm,
       if (nombre.isNotEmpty) 'nombre': nombre,
       'agregadoManualmente': false,
       'vecesAyudo': FieldValue.increment(1),
@@ -103,7 +117,7 @@ class HogaresDePasoRepository {
         'nombre': nombre,
         'telefono': telefono,
         'notas': notas,
-        'email': email,
+        'email': _normalizarEmail(email),
         'vecesAyudo': 0,
         'ultimaVez': null,
         'creadoEn': FieldValue.serverTimestamp(),
@@ -117,7 +131,7 @@ class HogaresDePasoRepository {
   /// que pueda fusionarse más adelante si esa persona ayuda de verdad.
   Future<void> actualizarContacto(String docId,
           {required String telefono, required String notas, String email = ''}) =>
-      _col.doc(docId).update({'telefono': telefono, 'notas': notas, 'email': email});
+      _col.doc(docId).update({'telefono': telefono, 'notas': notas, 'email': _normalizarEmail(email)});
 
   Future<void> eliminar(String docId) => _col.doc(docId).delete();
 }

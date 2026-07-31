@@ -57,6 +57,47 @@ void main() {
       expect(d['agregadoManualmente'], true, reason: 'sigue siendo la misma fila original, solo que ahora vinculada');
     });
 
+    // El bug real: David.Casas@Gmail.com (como lo tipeó el albergue a mano)
+    // y david.casas@gmail.com (el email real de Google Sign-In, ya en
+    // minúsculas) no calzaban en una comparación exacta — el sistema
+    // pensado justo para este caso terminaba creando una fila duplicada.
+    test('registrarAyuda() fusiona con una fila a mano aunque el email tenga '
+        'mayúsculas distintas — David.Casas@Gmail.com y david.casas@gmail.com '
+        'son la misma persona', () async {
+      await repo.agregarManual(
+          albergueId: 'alb-1', nombre: 'David Casas', email: 'David.Casas@Gmail.com');
+
+      await repo.registrarAyuda(
+          albergueId: 'alb-1', adoptanteId: 'uid-david', nombre: 'David Casas',
+          email: 'david.casas@gmail.com');
+
+      final todos = await firestore.collection('hogaresDePaso').get();
+      expect(todos.docs.length, 1,
+          reason: 'no debería haber creado una segunda fila por la diferencia de mayúsculas');
+      expect(todos.docs.first['adoptanteId'], 'uid-david');
+      expect(todos.docs.first['vecesAyudo'], 1);
+    });
+
+    test('agregarManual() guarda el email en minúsculas, sin espacios alrededor', () async {
+      await repo.agregarManual(
+          albergueId: 'alb-1', nombre: 'David Casas', email: '  David.Casas@Gmail.com  ');
+
+      final todos = await firestore.collection('hogaresDePaso').get();
+      expect(todos.docs.first['email'], 'david.casas@gmail.com');
+    });
+
+    test('actualizarContacto() también normaliza el email a minúsculas', () async {
+      final ref = await firestore.collection('hogaresDePaso').add({
+        'albergueId': 'alb-1', 'nombre': 'Karen Cancino', 'email': '',
+      });
+
+      await repo.actualizarContacto(ref.id,
+          telefono: '', notas: '', email: 'Karen.Cancino@Gmail.com');
+
+      final doc = await ref.get();
+      expect(doc['email'], 'karen.cancino@gmail.com');
+    });
+
     test('registrarAyuda() después de fusionar por email, la segunda ayuda de esa cuenta suma '
         'sobre la misma fila (ya no vuelve a buscar por email)', () async {
       await repo.agregarManual(albergueId: 'alb-1', nombre: 'David Casas', email: 'david@ejemplo.com');
