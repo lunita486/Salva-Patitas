@@ -13,7 +13,6 @@ class NotificacionesScreen extends StatefulWidget {
 class _NotificacionesScreenState extends State<NotificacionesScreen> {
   final _preferenciasRepo = PreferenciasRepository();
   bool _mensajes = true;
-  bool _matches  = true;
   bool _solicitudes = true;
   bool _loading  = true;
 
@@ -27,7 +26,6 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
         final d = doc.data()!;
         setState(() {
           _mensajes    = d['notif_mensajes']    ?? true;
-          _matches     = d['notif_matches']     ?? true;
           _solicitudes = d['notif_solicitudes'] ?? true;
           _loading     = false;
         });
@@ -37,6 +35,10 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
     });
   }
 
+  // functions/index.js lee este mismo campo antes de mandar cada push
+  // (notificar(), parámetro tipoPreferencia) — antes se guardaba acá y
+  // nadie del otro lado lo leía nunca, así que apagar un interruptor no
+  // hacía nada de verdad (hallazgo de auditoría de código).
   void _save(String key, bool val) {
     _preferenciasRepo.actualizar(_uid, {key: val});
   }
@@ -53,13 +55,6 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
               subtitle: 'Cuando un rescatista te responde en el chat',
               value: _mensajes,
               onChanged: (v) { setState(() => _mensajes = v); _save('notif_mensajes', v); },
-            ),
-            SettingsSwitchTile(
-              icon: Icons.favorite_outline,
-              label: 'Animales que encajan contigo',
-              subtitle: 'Cuando llega un animal según tus preferencias',
-              value: _matches,
-              onChanged: (v) { setState(() => _matches = v); _save('notif_matches', v); },
             ),
             SettingsSwitchTile(
               icon: Icons.assignment_outlined,
