@@ -90,12 +90,20 @@ class _AuthWrapperState extends State<AuthWrapper> {
   // suscripción NUEVA a Firestore — es lo que hace el botón "Reintentar"
   // de _CargaConSalida cuando la primera se queda muda.
   int _intento = 0;
-  // Guarda que 'ultimaVezActiva' ya se escribió en ESTA sesión de la app.
-  // Sin este guard, escribirlo en cada rebuild de este StreamBuilder (que
-  // reacciona en vivo al propio doc de usuarios) dispararía un bucle
-  // infinito: escribir → llega un snapshot nuevo → se vuelve a escribir.
-  // Una vez por sesión alcanza para saber "qué días abrió la app".
-  bool _ultimaVezActivaMarcada = false;
+  // Guarda para QUÉ cuenta ya se escribió 'ultimaVezActiva' en esta sesión
+  // — String? con el uid, no un bool. Sin este guard, escribirlo en cada
+  // rebuild de este StreamBuilder (que reacciona en vivo al propio doc de
+  // usuarios) dispararía un bucle infinito: escribir → llega un snapshot
+  // nuevo → se vuelve a escribir. Pero un bool simple ("¿ya escribí ALGUNA
+  // vez en este proceso?") tiene el problema que motivó este arreglo: la
+  // app soporta cambiar de cuenta sin cerrarla (ver "Cerrar sesión y
+  // volver a entrar" en _CargaConSalida), y _AuthWrapperState vive para
+  // TODO el proceso de la app, no por sesión — con un bool, la cuenta B
+  // nunca quedaba registrada si la cuenta A ya lo había hecho antes en el
+  // mismo proceso (justo lo que estuvimos consultando hoy: quién entró).
+  // Guardar el uid en vez de un bool, y compararlo contra la cuenta
+  // ACTUAL, deja escribir de nuevo apenas cambia de quién se trata.
+  String? _ultimaVezActivaMarcadaParaUid;
 
   Future<void> _reintentar() async {
     // Además de recrear la suscripción, se apaga y prende la red de
@@ -120,7 +128,14 @@ class _AuthWrapperState extends State<AuthWrapper> {
         if (snap.connectionState == ConnectionState.waiting) {
           return const _CargaConSalida();
         }
-        if (snap.data == null) return const LoginScreen();
+        if (snap.data == null) {
+          // Lista para la próxima cuenta que inicie sesión en este mismo
+          // proceso — incluso si es la MISMA cuenta de antes, cerrar
+          // sesión y volver a entrar cuenta como una entrada nueva de
+          // verdad, no algo ya registrado.
+          _ultimaVezActivaMarcadaParaUid = null;
+          return const LoginScreen();
+        }
         return StreamBuilder<DocumentSnapshot>(
           key: ValueKey('perfil-$_intento'),
           stream: FirebaseFirestore.instance
@@ -184,8 +199,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
             // guardada). Una escritura por sesión alcanza para reconstruir
             // un historial real de actividad día por día (pedido real de
             // Eliza, mientras revisaba quién venía probando la app).
-            if (!_ultimaVezActivaMarcada) {
-              _ultimaVezActivaMarcada = true;
+            if (_ultimaVezActivaMarcadaParaUid != snap.data!.uid) {
+              _ultimaVezActivaMarcadaParaUid = snap.data!.uid;
               FirebaseFirestore.instance.collection('usuarios').doc(snap.data!.uid)
                   .update({'ultimaVezActiva': FieldValue.serverTimestamp()}).catchError((_) {});
             }
