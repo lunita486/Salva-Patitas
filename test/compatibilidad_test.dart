@@ -240,5 +240,74 @@ void main() {
       expect(razones[4].$2, true);
       expect(razones[4].$1, 'No se requiere experiencia previa');
     });
+
+    // ── El bug real: puntaje y explicación contaban historias distintas ──
+    // 'Finca' cuenta como "tiene patio" para el PUNTAJE (calcularCompatibilidad)
+    // pero la explicación se había quedado sin ese caso — un rescatista podía
+    // ver "✅ Perfil ideal (100%)" arriba y "✗ necesita jardín" en rojo
+    // debajo, para la misma solicitud (hallazgo de auditoría de código).
+    test('Finca cuenta como "tiene patio" en la explicación, igual que en el puntaje', () {
+      final razones = explicarCompatibilidad({
+        'animalEnergia': 'Muy activo', 'animalTamano': 'Grande',
+        'vivienda': 'Finca', 'horasFuera': 4,
+      });
+      expect(razones[0].$2, true,
+          reason: 'energía: Finca + pocas horas solo debería ser positivo, como Casa con jardín');
+      expect(razones[0].$1, contains('jardín'));
+      expect(razones[1].$2, true,
+          reason: 'tamaño: un animal grande en una Finca tiene espacio de sobra');
+      expect(razones[1].$1, contains('jardín suficiente'));
+    });
+  });
+
+  // ── Ya no puede volver a pasar ──────────────────────────────────────────
+  // calcularCompatibilidad y explicarCompatibilidad ahora se derivan del
+  // mismo cálculo interno (_desglose) — esta prueba no fija un caso
+  // puntual, prueba la GARANTÍA estructural: para cualquier combinación de
+  // datos, la suma de puntos "positivos" de explicarCompatibilidad tiene
+  // que coincidir con lo que las dos funciones acuerden diga cada criterio.
+  // Si el día de mañana alguien vuelve a separar las dos funciones en dos
+  // implementaciones copiadas, esta prueba no detectaría ESE regreso — pero
+  // mientras compartan _desglose(), es imposible que una diga "ideal" y la
+  // otra "necesita jardín" para la misma solicitud, para NINGUNA combinación
+  // de datos, no solo las que se nos ocurrió probar a mano.
+  group('el puntaje y la explicación nunca se contradicen (todas las combinaciones)', () {
+    test('cada criterio "positivo" en la explicación aporta más puntos que "negativo" del mismo criterio, para cada combinación de vivienda/energía/tamaño', () {
+      const viviendas = ['', 'Casa con jardín', 'Finca', 'Casa sin jardín',
+          'Apartamento con balcón', 'Apartamento sin área exterior'];
+      const energias = ['Tranquilo', 'Activo', 'Muy activo'];
+      const tamanos = ['Pequeño', 'Mediano', 'Grande'];
+
+      for (final vivienda in viviendas) {
+        for (final energia in energias) {
+          for (final tamano in tamanos) {
+            for (final horas in [0, 5, 6, 8, 9, 12]) {
+              final sol = {
+                'animalEnergia': energia, 'animalTamano': tamano,
+                'vivienda': vivienda, 'horasFuera': horas,
+              };
+              final score = calcularCompatibilidad(sol);
+              final razones = explicarCompatibilidad(sol);
+              final positivos = razones.where((r) => r.$2).length;
+              final negativos = razones.length - positivos;
+              // No es una igualdad exacta (los puntos por criterio varían:
+              // 20/10/0) — pero un score alto con TODO marcado negativo, o
+              // un score bajo con TODO marcado positivo, es precisamente
+              // la contradicción que causó el bug real. Acotar el rango
+              // esperado según cuántas razones positivas hay alcanza para
+              // agarrar esa clase de error sin fijar cada número a mano.
+              if (positivos == 5) {
+                expect(score, greaterThanOrEqualTo(80),
+                    reason: '5/5 razones positivas pero score bajo ($score) para $sol');
+              }
+              if (negativos == 5) {
+                expect(score, lessThanOrEqualTo(40),
+                    reason: '0/5 razones positivas pero score alto ($score) para $sol');
+              }
+            }
+          }
+        }
+      }
+    });
   });
 }

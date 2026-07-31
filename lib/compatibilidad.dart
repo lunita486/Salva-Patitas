@@ -1,59 +1,34 @@
-/// Puntaje y explicación de compatibilidad entre un adoptante y un animal,
-/// usados por el feed de adopción, el panel del rescatista y la pantalla de
-/// solicitudes. Antes esta lógica estaba copiada en esos 3 lugares.
-int calcularCompatibilidad(Map<String, dynamic> solicitud) {
-  int score = 0;
+// Puntaje y explicación de compatibilidad entre un adoptante y un animal,
+// usados por el feed de adopción, el panel del rescatista y la pantalla de
+// solicitudes. Antes esta lógica estaba copiada en esos 3 lugares.
 
-  final energia    = solicitud['animalEnergia']  as String? ?? 'Tranquilo';
-  final horas      = int.tryParse(solicitud['horasFuera']?.toString() ?? '0') ?? 0;
-  final vivienda   = solicitud['vivienda']       as String? ?? '';
-  // 'Finca' cuenta como "tiene patio" — es más espacio todavía que una
-  // casa con jardín, nunca menos.
-  final tienePatio = vivienda == 'Casa con jardín' || vivienda == 'Finca';
+/// Un criterio evaluado: el texto que se muestra, si cuenta como algo
+/// bueno (✅ verde) o no (✗ rojo), y cuántos puntos suma al total.
+///
+/// [calcularCompatibilidad] y [explicarCompatibilidad] ANTES eran dos
+/// funciones separadas que recalculaban cada una, por su cuenta, las
+/// mismas reglas (energía, tamaño, niños, mascotas, experiencia) — dos
+/// copias del mismo razonamiento, escritas dos veces. Ahí fue exactamente
+/// donde se desincronizaron: 'Finca' se agregó como "tiene patio" al
+/// puntaje pero no a la explicación, y un rescatista podía ver "✅ Perfil
+/// ideal (100%)" arriba y "✗ necesita jardín" en rojo debajo, para la
+/// misma solicitud (hallazgo de auditoría de código).
+///
+/// Ahora hay UN solo lugar ([_desglose]) que decide, por cada criterio, el
+/// mensaje/color/puntaje juntos, en la misma rama — el puntaje total y la
+/// lista de razones son dos vistas distintas del mismo resultado, nunca
+/// dos cálculos distintos. Ya no es posible que se cuenten historias
+/// distintas: si algún día se agrega otra opción de vivienda o cambia un
+/// umbral, hay un solo lugar para tocar.
+typedef _Criterio = (String mensaje, bool positivo, int puntos);
 
-  if (energia == 'Tranquilo') {
-    score += 20;
-  } else if (energia == 'Activo') {
-    score += horas <= 8 ? 20 : 10;
-  } else {
-    if (tienePatio && horas <= 6) score += 20;
-    else if (tienePatio || horas <= 6) score += 10;
-  }
-
-  final tamano = solicitud['animalTamano'] as String? ?? 'Mediano';
-  if (tamano == 'Pequeño') {
-    score += 20;
-  } else if (tamano == 'Mediano') {
-    score += vivienda != 'Apartamento sin área exterior' ? 20 : 10;
-  } else {
-    // 'Casa sin jardín' entra en el mismo escalón que 'Apartamento con
-    // balcón' — sin patio pero con más margen que un apartamento cerrado.
-    score += tienePatio ? 20
-        : (vivienda == 'Apartamento con balcón' || vivienda == 'Casa sin jardín') ? 10 : 0;
-  }
-
-  final okNinos    = solicitud['animalOkConNinos']   as bool? ?? true;
-  final tieneNinos = solicitud['tieneNinos']         as bool? ?? false;
-  score += (!tieneNinos || okNinos) ? 20 : 0;
-
-  final okMascotas    = solicitud['animalOkConMascotas'] as bool? ?? true;
-  final tieneMascotas = solicitud['tieneMascotas']       as bool? ?? false;
-  score += (!tieneMascotas || okMascotas) ? 20 : 0;
-
-  final requiereExp = solicitud['animalRequiereExp']   as bool? ?? false;
-  final tieneExp    = solicitud['experienciaPrevia']   as bool? ?? false;
-  score += (!requiereExp || tieneExp) ? 20 : 0;
-
-  return score;
-}
-
-List<(String, bool)> explicarCompatibilidad(Map<String, dynamic> sol) {
-  final reasons = <(String, bool)>[];
-
+List<_Criterio> _desglose(Map<String, dynamic> sol) {
   final energia    = sol['animalEnergia']  as String? ?? 'Tranquilo';
   final horas      = int.tryParse(sol['horasFuera']?.toString() ?? '0') ?? 0;
   final vivienda   = sol['vivienda']       as String? ?? '';
-  final tienePatio = vivienda == 'Casa con jardín';
+  // 'Finca' cuenta como "tiene patio" — es más espacio todavía que una
+  // casa con jardín, nunca menos.
+  final tienePatio = vivienda == 'Casa con jardín' || vivienda == 'Finca';
   final tamano     = sol['animalTamano']       as String? ?? 'Mediano';
   final okNinos    = sol['animalOkConNinos']   as bool?   ?? true;
   final tieneNinos = sol['tieneNinos']         as bool?   ?? false;
@@ -62,48 +37,63 @@ List<(String, bool)> explicarCompatibilidad(Map<String, dynamic> sol) {
   final requiereExp   = sol['animalRequiereExp']   as bool? ?? false;
   final tieneExp      = sol['experienciaPrevia']   as bool? ?? false;
 
-  // Energía
+  final _Criterio energiaC;
   if (energia == 'Tranquilo') {
-    reasons.add(('Animal tranquilo, se adapta bien al hogar', true));
+    energiaC = ('Animal tranquilo, se adapta bien al hogar', true, 20);
   } else if (energia == 'Activo') {
-    reasons.add(horas <= 8
-        ? ('Animal activo, horas fuera son aceptables', true)
-        : ('Animal activo pero pasa demasiadas horas solo ($horas h/día)', false));
+    energiaC = horas <= 8
+        ? ('Animal activo, horas fuera son aceptables', true, 20)
+        : ('Animal activo pero pasa demasiadas horas solo ($horas h/día)', false, 10);
+  } else if (tienePatio && horas <= 6) {
+    energiaC = ('Animal muy activo, tiene jardín y poco tiempo solo', true, 20);
+  } else if (tienePatio) {
+    energiaC = ('Animal muy activo, tiene jardín pero $horas h solo', false, 10);
+  } else if (horas <= 6) {
+    energiaC = ('Animal muy activo, necesita jardín', false, 10);
   } else {
-    if (tienePatio && horas <= 6)  reasons.add(('Animal muy activo, tiene jardín y poco tiempo solo', true));
-    else if (tienePatio)           reasons.add(('Animal muy activo, tiene jardín pero $horas h solo', false));
-    else if (horas <= 6)           reasons.add(('Animal muy activo, necesita jardín', false));
-    else                           reasons.add(('Animal muy activo, necesita jardín y menos horas solo', false));
+    energiaC = ('Animal muy activo, necesita jardín y menos horas solo', false, 0);
   }
 
-  // Tamaño
+  final _Criterio tamanoC;
   if (tamano == 'Pequeño') {
-    reasons.add(('Animal pequeño, se adapta a cualquier espacio', true));
+    tamanoC = ('Animal pequeño, se adapta a cualquier espacio', true, 20);
   } else if (tamano == 'Mediano') {
-    reasons.add(vivienda != 'Apartamento sin área exterior'
-        ? ('Animal mediano, el espacio es adecuado', true)
-        : ('Animal mediano en apartamento sin área exterior', false));
+    tamanoC = vivienda != 'Apartamento sin área exterior'
+        ? ('Animal mediano, el espacio es adecuado', true, 20)
+        : ('Animal mediano en apartamento sin área exterior', false, 10);
+  } else if (tienePatio) {
+    tamanoC = ('Animal grande, tiene jardín suficiente', true, 20);
+  } else if (vivienda == 'Apartamento con balcón' || vivienda == 'Casa sin jardín') {
+    // 'Casa sin jardín' entra en el mismo escalón que 'Apartamento con
+    // balcón' — sin patio propio pero con más margen que uno cerrado.
+    tamanoC = ('Animal grande, el espacio es limitado', false, 10);
   } else {
-    if (tienePatio)                              reasons.add(('Animal grande, tiene jardín suficiente', true));
-    else if (vivienda == 'Apartamento con balcón' || vivienda == 'Casa sin jardín')
-                                                  reasons.add(('Animal grande, el espacio es limitado', false));
-    else                                          reasons.add(('Animal grande, necesita más espacio', false));
+    tamanoC = ('Animal grande, necesita más espacio', false, 0);
   }
 
-  // Niños
-  if (!tieneNinos)      reasons.add(('Sin niños en casa', true));
-  else if (okNinos)     reasons.add(('Hay niños y el animal los acepta bien', true));
-  else                  reasons.add(('Hay niños pero el animal no es apto con ellos', false));
+  final _Criterio ninosC = !tieneNinos
+      ? ('Sin niños en casa', true, 20)
+      : okNinos
+          ? ('Hay niños y el animal los acepta bien', true, 20)
+          : ('Hay niños pero el animal no es apto con ellos', false, 0);
 
-  // Mascotas
-  if (!tieneMascotas)   reasons.add(('Sin otras mascotas en casa', true));
-  else if (okMascotas)  reasons.add(('Hay mascotas y el animal convive bien', true));
-  else                  reasons.add(('Hay mascotas pero el animal no convive con ellas', false));
+  final _Criterio mascotasC = !tieneMascotas
+      ? ('Sin otras mascotas en casa', true, 20)
+      : okMascotas
+          ? ('Hay mascotas y el animal convive bien', true, 20)
+          : ('Hay mascotas pero el animal no convive con ellas', false, 0);
 
-  // Experiencia
-  if (!requiereExp)     reasons.add(('No se requiere experiencia previa', true));
-  else if (tieneExp)    reasons.add(('El animal requiere experiencia, adoptante la tiene', true));
-  else                  reasons.add(('El animal requiere experiencia previa', false));
+  final _Criterio expC = !requiereExp
+      ? ('No se requiere experiencia previa', true, 20)
+      : tieneExp
+          ? ('El animal requiere experiencia, adoptante la tiene', true, 20)
+          : ('El animal requiere experiencia previa', false, 0);
 
-  return reasons;
+  return [energiaC, tamanoC, ninosC, mascotasC, expC];
 }
+
+int calcularCompatibilidad(Map<String, dynamic> solicitud) =>
+    _desglose(solicitud).fold(0, (suma, c) => suma + c.$3);
+
+List<(String, bool)> explicarCompatibilidad(Map<String, dynamic> sol) =>
+    _desglose(sol).map((c) => (c.$1, c.$2)).toList();
