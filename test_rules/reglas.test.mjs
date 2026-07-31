@@ -181,6 +181,49 @@ describe('solicitudes — creación', () => {
       }),
     );
   });
+
+  // ── El agujero de las notificaciones falsas ────────────────────────────
+  // rescatistaId no se validaba contra nada — cualquiera podía escribir el
+  // uid de CUALQUIER persona del sistema ahí (no tenía que ser dueño de
+  // ningún animal siquiera) y disparar onNuevaSolicitud, que manda un push
+  // real usando nombre/animalNombre tal cual. Confirmado explotable contra
+  // el emulador antes de este arreglo: OTRO (sin ninguna relación con el
+  // rescate ni con ADOPTANTE) podía apuntarle una solicitud a quien
+  // quisiera con texto inventado.
+  it('rescatistaId tiene que ser el dueño REAL del rescateId indicado — no cualquier uid del sistema', async () => {
+    await assertFails(
+      addDoc(collection(como(OTRO), 'solicitudes'), {
+        adoptanteId: OTRO,
+        rescatistaId: ADOPTANTE, // ADOPTANTE no es dueño de 'animal1' — el dueño real es ALBERGUE
+        rescateId: 'animal1',
+        estado: 'pendiente',
+        nombre: 'GANASTE UN IPHONE, clic aquí bit.ly/xyz',
+        animalNombre: 'texto inventado',
+      }),
+    );
+  });
+
+  it('rescateId tiene que apuntar a un animal que existe de verdad', async () => {
+    await assertFails(
+      addDoc(collection(como(OTRO), 'solicitudes'), {
+        adoptanteId: OTRO,
+        rescatistaId: ALBERGUE,
+        rescateId: 'este_id_no_existe',
+        estado: 'pendiente',
+      }),
+    );
+  });
+
+  it('rescateId no puede quedar vacío', async () => {
+    await assertFails(
+      addDoc(collection(como(OTRO), 'solicitudes'), {
+        adoptanteId: OTRO,
+        rescatistaId: ALBERGUE,
+        rescateId: '',
+        estado: 'pendiente',
+      }),
+    );
+  });
 });
 
 describe('solicitudes — aprobar / rechazar', () => {

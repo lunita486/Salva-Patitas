@@ -82,11 +82,28 @@ service cloud.firestore {
       // ninguna forma de deshacerlo desde la app. `acuerdoAceptado` va en
       // la misma regla por lo mismo: solo se activa por la rama del
       // adoptante de abajo, con la solicitud ya aprobada de verdad.
+      // rescateId tiene que apuntar a un animal que existe DE VERDAD, y
+      // rescatistaId tiene que coincidir con el dueño real de ESE animal
+      // — mismo anclaje que ya usa chats.create (ver ese comentario). Sin
+      // esto, rescatistaId no se validaba contra nada: cualquiera podía
+      // escribir el uid de cualquier persona del sistema ahí (rescates es
+      // de lectura pública, los ids están a la vista) y disparar
+      // onNuevaSolicitud, que manda un push de verdad usando nombre/
+      // animalNombre tal cual — campos que no se validan más que "son
+      // texto". Confirmado explotable contra el emulador: una cuenta sin
+      // ninguna relación con el destinatario podía mandarle una
+      // notificación push con texto inventado (probado con un mensaje
+      // tipo phishing). Con este anclaje, ya no se puede elegir a
+      // cualquiera del sistema como blanco — solo a quien de verdad
+      // tiene ESE animal publicado.
       allow create: if signedIn() &&
         request.resource.data.adoptanteId == uid() &&
         request.resource.data.estado == 'pendiente' &&
         !('acuerdoAceptado' in request.resource.data) &&
-        !('acuerdoAceptadoEn' in request.resource.data);
+        !('acuerdoAceptadoEn' in request.resource.data) &&
+        request.resource.data.get('rescateId', '') != '' &&
+        get(/databases/$(database)/documents/rescates/$(request.resource.data.rescateId)).data.rescatistaId
+          == request.resource.data.rescatistaId;
       // Solo el rescatista/albergue dueño del animal puede cambiar el
       // estado (aprobar/rechazar) — el adoptante lee su propia solicitud
       // pero nunca la escribe después de creada. Antes cualquiera de las
