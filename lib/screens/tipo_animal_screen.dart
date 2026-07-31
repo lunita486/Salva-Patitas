@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../theme.dart' show especieChip, especieOpciones, especieChipGap, appInk;
+import '../theme.dart' show especieChip, especieOpciones, especieChipGap, appInk, msgError;
+import '../data/firestore_resiliencia.dart';
 import 'configuracion_screens.dart';
 
 class TipoAnimalScreen extends StatefulWidget {
@@ -34,15 +35,36 @@ class _TipoAnimalScreenState extends State<TipoAnimalScreen> {
     });
   }
 
-  void _guardar() {
-    _userDoc.set({
-      'prefEspecie': _especie,
-      'prefTamano':  _tamano,
-      'prefEdad':    _edad,
-    }, SetOptions(merge: true));
+  /// Antes esto era un `.set()` de Firestore sin `await` ni try/catch —
+  /// si fallaba (ej. token de sesión vencido), la pantalla ya mostraba el
+  /// filtro nuevo como elegido pero nada se guardaba de verdad: al volver
+  /// a entrar, `initState()` releía el valor viejo del servidor y la
+  /// preferencia "se olvidaba" sin ningún aviso de por medio (hallazgo de
+  /// auditoría de código). Ahora espera la confirmación con
+  /// [guardarConAviso] y, si de verdad falla (no si solo está lenta:
+  /// [ResultadoGuardado.siguePendiente] significa que Firestore ya la
+  /// encoló y la va a aplicar sola), revierte el chip a lo que tenía antes
+  /// y avisa — para que la elección que se ve en pantalla sea siempre la
+  /// que de verdad está guardada.
+  Future<void> _actualizarPreferencia({
+    required String campo,
+    required String valorNuevo,
+    required String valorAnterior,
+    required void Function(String) aplicarLocal,
+  }) async {
+    if (valorNuevo == valorAnterior) return;
+    setState(() => aplicarLocal(valorNuevo));
+    final resultado = await guardarConAviso(
+        () => _userDoc.set({campo: valorNuevo}, SetOptions(merge: true)));
+    if (resultado == ResultadoGuardado.fallo && mounted) {
+      setState(() => aplicarLocal(valorAnterior));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('No se pudo guardar tu preferencia. Probá de nuevo.'),
+          backgroundColor: msgError));
+    }
   }
 
-  Widget _grupo(String label, List<String> opciones, String sel, ValueChanged<String> onChange) =>
+  Widget _grupo(String label, List<String> opciones, String sel, ValueChanged<String> onSeleccionar) =>
     Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
@@ -55,7 +77,7 @@ class _TipoAnimalScreenState extends State<TipoAnimalScreen> {
         child: Row(children: opciones.map((o) {
           final active = o == sel;
           return GestureDetector(
-            onTap: () { onChange(o); _guardar(); },
+            onTap: () => onSeleccionar(o),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 150),
               margin: const EdgeInsets.only(right: 8),
@@ -95,7 +117,11 @@ class _TipoAnimalScreenState extends State<TipoAnimalScreen> {
             especieChip(
               label: especieOpciones[i].$2,
               active: _especie == especieOpciones[i].$1,
-              onTap: () { setState(() => _especie = especieOpciones[i].$1); _guardar(); },
+              onTap: () => _actualizarPreferencia(
+                  campo: 'prefEspecie',
+                  valorNuevo: especieOpciones[i].$1,
+                  valorAnterior: _especie,
+                  aplicarLocal: (v) => _especie = v),
             ),
           ],
         ]),
@@ -109,9 +135,11 @@ class _TipoAnimalScreenState extends State<TipoAnimalScreen> {
       const SizedBox(height: 4),
       _grupoEspecie(),
       const SizedBox(height: 20),
-      _grupo('TAMAÑO', ['Pequeño', 'Mediano', 'Grande', 'Cualquiera'], _tamano, (v) => setState(() => _tamano = v)),
+      _grupo('TAMAÑO', ['Pequeño', 'Mediano', 'Grande', 'Cualquiera'], _tamano, (v) => _actualizarPreferencia(
+          campo: 'prefTamano', valorNuevo: v, valorAnterior: _tamano, aplicarLocal: (x) => _tamano = x)),
       const SizedBox(height: 20),
-      _grupo('EDAD', ['Cachorro', 'Adulto', 'Senior', 'Cualquiera'], _edad, (v) => setState(() => _edad = v)),
+      _grupo('EDAD', ['Cachorro', 'Adulto', 'Senior', 'Cualquiera'], _edad, (v) => _actualizarPreferencia(
+          campo: 'prefEdad', valorNuevo: v, valorAnterior: _edad, aplicarLocal: (x) => _edad = x)),
       const SizedBox(height: 24),
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20),

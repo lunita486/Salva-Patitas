@@ -8,6 +8,7 @@ import '../theme.dart';
 import '../compatibilidad.dart';
 import '../data/rescates_repository.dart';
 import '../data/preferencias_repository.dart';
+import '../data/firestore_resiliencia.dart';
 import 'animal_detalle_screen.dart';
 import 'albergue_publico_screen.dart';
 import 'aliado_publico_screen.dart';
@@ -95,6 +96,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
   /// preferencia guardada, con dos lugares para tocarla.
   Future<void> _cambiarPrefEspecie(String valor) async {
     if (_prefEspecie == valor) return;
+    final anterior = _prefEspecie;
     // _idx también se reinicia: es una posición dentro de la lista YA
     // filtrada, no la identidad de un animal puntual — si no se resetea,
     // cambiar de filtro con el índice a mitad de la lista vieja podía caer
@@ -109,8 +111,22 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
     setState(() { _prefEspecie = valor; _idx = 0; }); // sensación instantánea; _prefSub confirma después
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    await FirebaseFirestore.instance.collection('usuarios').doc(uid)
-        .set({'prefEspecie': valor}, SetOptions(merge: true));
+    // guardarConAviso, no un await directo suelto: antes, si esta escritura
+    // fallaba de verdad (ej. token vencido), el chip se quedaba mostrando
+    // el filtro nuevo pero nada se guardaba — al volver a abrir la app,
+    // _suscribirPerfil() releía el valor viejo del servidor y la
+    // preferencia "se olvidaba" sin ningún aviso (hallazgo de auditoría de
+    // código). Si de verdad falla (no si solo está lenta: siguePendiente
+    // significa que Firestore ya la encoló) se revierte el chip y se avisa.
+    final resultado = await guardarConAviso(() =>
+        FirebaseFirestore.instance.collection('usuarios').doc(uid)
+            .set({'prefEspecie': valor}, SetOptions(merge: true)));
+    if (resultado == ResultadoGuardado.fallo && mounted) {
+      setState(() => _prefEspecie = anterior);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('No se pudo guardar tu filtro. Probá de nuevo.'),
+          backgroundColor: msgError));
+    }
   }
 
   /// Texto tipo "Perro · Pequeño · Cachorro" con los filtros que están
@@ -134,13 +150,30 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
   /// especie — antes, si el bloqueo era tamaño/edad, el botón no podía
   /// hacer nada y mandaba a la persona al perfil a mano.
   Future<void> _limpiarFiltrosExtra() async {
+    final anteriorEspecie = _prefEspecie;
+    final anteriorTamano  = _prefTamano;
+    final anteriorEdad    = _prefEdad;
     _fotoPageNotifier.value = 0;
     setState(() { _prefEspecie = 'Ambos'; _prefTamano = 'Cualquiera'; _prefEdad = 'Cualquiera'; _idx = 0; });
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    await FirebaseFirestore.instance.collection('usuarios').doc(uid).set({
-      'prefEspecie': 'Ambos', 'prefTamano': 'Cualquiera', 'prefEdad': 'Cualquiera',
-    }, SetOptions(merge: true));
+    // Mismo motivo que _cambiarPrefEspecie(): si esto falla de verdad hay
+    // que revertir los 3 filtros y avisar, no dejarlos "limpios" en
+    // pantalla mientras el servidor sigue con los viejos.
+    final resultado = await guardarConAviso(() =>
+        FirebaseFirestore.instance.collection('usuarios').doc(uid).set({
+          'prefEspecie': 'Ambos', 'prefTamano': 'Cualquiera', 'prefEdad': 'Cualquiera',
+        }, SetOptions(merge: true)));
+    if (resultado == ResultadoGuardado.fallo && mounted) {
+      setState(() {
+        _prefEspecie = anteriorEspecie;
+        _prefTamano  = anteriorTamano;
+        _prefEdad    = anteriorEdad;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('No se pudo guardar tu filtro. Probá de nuevo.'),
+          backgroundColor: msgError));
+    }
   }
 
   // El widget del chip y el orden de las opciones viven en theme.dart

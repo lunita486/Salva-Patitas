@@ -20,22 +20,48 @@ class HogaresDePasoScreen extends StatefulWidget {
 class _HogaresDePasoScreenState extends State<HogaresDePasoScreen> {
   final _repo = HogaresDePasoRepository();
   final _uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+  // Sin este candado, dos toques en el botón "Agregar" (uno mientras la hoja
+  // todavía está abriéndose, u otro porque la persona no vio ninguna
+  // confirmación de que el primero funcionó — agregarManual() no avisaba
+  // nada, ni éxito ni error) disparaban dos llamadas independientes a
+  // agregarManual() con los mismos datos: dos filas separadas para la misma
+  // persona. A diferencia de las filas automáticas (registrarAyuda(), que sí
+  // fusiona por adoptanteId/email), una fila manual no tiene ninguna cuenta
+  // real detrás con la que fusionarse después — el duplicado quedaba para
+  // siempre. Bug real reportado, con foco explícito en que no se repita.
+  bool _agregando = false;
 
   Future<void> _agregarManual() async {
-    final resultado = await showModalBottomSheet<Map<String, String>>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => const _AgregarHogarSheet(),
-    );
-    if (resultado == null || _uid.isEmpty) return;
-    await _repo.agregarManual(
-      albergueId: _uid,
-      nombre: resultado['nombre'] ?? '',
-      telefono: resultado['telefono'] ?? '',
-      notas: resultado['notas'] ?? '',
-      email: resultado['email'] ?? '',
-    );
+    if (_agregando) return;
+    setState(() => _agregando = true);
+    try {
+      final resultado = await showModalBottomSheet<Map<String, String>>(
+        context: context,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (ctx) => const _AgregarHogarSheet(),
+      );
+      if (resultado == null || _uid.isEmpty) return;
+      await _repo.agregarManual(
+        albergueId: _uid,
+        nombre: resultado['nombre'] ?? '',
+        telefono: resultado['telefono'] ?? '',
+        notas: resultado['notas'] ?? '',
+        email: resultado['email'] ?? '',
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('${resultado['nombre']} se agregó a tu red.'), backgroundColor: msgExito));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('No se pudo agregar. Revisá tu conexión e intentá de nuevo.'),
+            backgroundColor: msgError));
+      }
+    } finally {
+      if (mounted) setState(() => _agregando = false);
+    }
   }
 
   Future<void> _editarContacto(
@@ -78,8 +104,8 @@ class _HogaresDePasoScreenState extends State<HogaresDePasoScreen> {
     return Scaffold(
       backgroundColor: appBg,
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _agregarManual,
-        backgroundColor: appTeal,
+        onPressed: _agregando ? null : _agregarManual,
+        backgroundColor: _agregando ? Colors.grey.shade400 : appTeal,
         icon: const Icon(Icons.add, color: Colors.white),
         label: const Text('Agregar', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
       ),
