@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show TextInputFormatter;
+import 'package:flutter/services.dart' show TextInputFormatter, FilteringTextInputFormatter;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'data/chats_repository.dart';
 import 'data/rescates_repository.dart';
@@ -57,18 +57,212 @@ String formatearFecha(DateTime d, {bool conAnio = true}) =>
 // cargó un teléfono).
 //
 /// Arma el link de WhatsApp a partir de lo que la persona haya escrito en
-/// "Teléfono/WhatsApp" (formato libre, con o sin +57, espacios, guiones).
-/// Si después de limpiar quedan los 10 dígitos típicos de un celular
-/// colombiano (empieza con 3), se antepone el indicativo 57 — si ya tiene
-/// otra cantidad de dígitos, se asume que la persona ya puso su propio
-/// indicativo y se usa tal cual.
+/// "Teléfono/WhatsApp". Los números guardados con [CampoTelefono] ya vienen
+/// con su indicativo real adelante ("+52 55 1234 5678", por ejemplo) y se
+/// usan tal cual.
+///
+/// Para números viejos, guardados en el formato libre de antes de que
+/// existiera el selector de país, se asume Colombia si quedan 10 dígitos
+/// al limpiar todo lo que no sea número — eso cubre tanto un celular
+/// (empieza en 3) como un fijo con el prefijo "60" que el plan de
+/// numeración de Colombia le agregó a todos los fijos del país (ej. un fijo
+/// de Medellín: "604 444 4444"). Antes solo se cubría el caso celular, así
+/// que un fijo escrito tal como lo sugiere el propio campo (sin +57
+/// delante) armaba un link roto — bug real reportado por Eliza.
 String? whatsappUrl(String telefono) {
   final digitos = telefono.replaceAll(RegExp(r'[^0-9]'), '');
   if (digitos.isEmpty) return null;
-  final conIndicativo = digitos.length == 10 && digitos.startsWith('3')
-      ? '57$digitos'
-      : digitos;
+  final conIndicativo = digitos.length == 10 ? '57$digitos' : digitos;
   return 'https://wa.me/$conIndicativo';
+}
+
+// ─── Selector de país + teléfono ────────────────────────────────────────────
+// La app conecta animales rescatados con adoptantes en toda Hispanoamérica,
+// no solo en Colombia (pedido real de Eliza) — así que adivinar el país por
+// la forma del número (como hacía whatsappUrl() antes) nunca iba a ser
+// confiable para siempre. Esta caja reemplaza la adivinanza por una
+// elección explícita de la persona: el indicativo elegido queda
+// EMBEBIDO en el mismo texto de siempre ("+57 300 123 4567"), así que
+// whatsappUrl() no tiene que volver a adivinar nada para lo que se guarde
+// desde acá en adelante — el campo de Firestore no cambia de nombre ni de
+// forma, solo de contenido.
+
+class Pais {
+  final String nombre;
+  final String bandera;
+  final String indicativo;
+  const Pais(this.nombre, this.bandera, this.indicativo);
+}
+
+const paisesHispanohablantes = <Pais>[
+  Pais('Colombia', '🇨🇴', '57'),
+  Pais('México', '🇲🇽', '52'),
+  Pais('Argentina', '🇦🇷', '54'),
+  Pais('Chile', '🇨🇱', '56'),
+  Pais('Perú', '🇵🇪', '51'),
+  Pais('Ecuador', '🇪🇨', '593'),
+  Pais('Venezuela', '🇻🇪', '58'),
+  Pais('Bolivia', '🇧🇴', '591'),
+  Pais('Paraguay', '🇵🇾', '595'),
+  Pais('Uruguay', '🇺🇾', '598'),
+  Pais('España', '🇪🇸', '34'),
+  Pais('Costa Rica', '🇨🇷', '506'),
+  Pais('Panamá', '🇵🇦', '507'),
+  Pais('Guatemala', '🇬🇹', '502'),
+  Pais('Honduras', '🇭🇳', '504'),
+  Pais('El Salvador', '🇸🇻', '503'),
+  Pais('Nicaragua', '🇳🇮', '505'),
+  Pais('República Dominicana', '🇩🇴', '1'),
+  Pais('Puerto Rico', '🇵🇷', '1'),
+  Pais('Cuba', '🇨🇺', '53'),
+  Pais('Guinea Ecuatorial', '🇬🇶', '240'),
+];
+
+/// Separa lo que ya haya en [texto] entre el país que corresponde y el
+/// número local que se muestra en la caja de texto — para que abrir un
+/// perfil que ya tenía teléfono guardado no lo borre ni lo desordene.
+/// Si no reconoce ningún indicativo adelante (número viejo, formato
+/// libre, o campo recién vacío) asume Colombia y deja el texto tal cual,
+/// igual que se comportaba el campo antes de que existiera este selector.
+({Pais pais, String local}) partirTelefono(String texto) {
+  final t = texto.trim();
+  if (t.startsWith('+')) {
+    final digitos = t.replaceAll(RegExp(r'[^0-9]'), '');
+    for (final p in paisesHispanohablantes) {
+      if (digitos.startsWith(p.indicativo)) {
+        return (pais: p, local: digitos.substring(p.indicativo.length).trim());
+      }
+    }
+  }
+  return (pais: paisesHispanohablantes.first, local: t);
+}
+
+class CampoTelefono extends StatefulWidget {
+  final TextEditingController controller;
+  final InputDecoration? decoracionLocal;
+  final bool autofocus;
+  const CampoTelefono({
+    super.key,
+    required this.controller,
+    this.decoracionLocal,
+    this.autofocus = false,
+  });
+  @override
+  State<CampoTelefono> createState() => _CampoTelefonoState();
+}
+
+class _CampoTelefonoState extends State<CampoTelefono> {
+  late Pais _pais;
+  final _localCtl = TextEditingController();
+  String _ultimoValorPropio = '';
+
+  @override
+  void initState() {
+    super.initState();
+    // El controlador de afuera casi siempre llega vacío en este primer
+    // instante — las pantallas de perfil lo llenan con un setState()
+    // async DESPUÉS de leer Firestore. _externoCambio() es lo que atrapa
+    // ese llenado tardío; sin él, un teléfono ya guardado se ve vacío al
+    // abrir la pantalla hasta que la persona lo escribe de nuevo a mano
+    // (mismo tipo de bug ya encontrado esta sesión con `late` que solo se
+    // evalúa una vez por vida del State).
+    _cargarDesdeControladorExterno();
+    widget.controller.addListener(_externoCambio);
+    _localCtl.addListener(_sincronizar);
+  }
+
+  void _cargarDesdeControladorExterno() {
+    final partido = partirTelefono(widget.controller.text);
+    _pais = partido.pais;
+    _localCtl.text = partido.local;
+    _ultimoValorPropio = widget.controller.text;
+  }
+
+  void _externoCambio() {
+    // Si el cambio de afuera es justo el que nosotros mismos acabamos de
+    // escribir en _sincronizar(), no hay nada que releer — evita un loop
+    // infinito entre este listener y el de _localCtl.
+    if (widget.controller.text == _ultimoValorPropio) return;
+    setState(_cargarDesdeControladorExterno);
+  }
+
+  void _sincronizar() {
+    final local = _localCtl.text.trim();
+    _ultimoValorPropio = local.isEmpty ? '' : '+${_pais.indicativo} $local';
+    widget.controller.text = _ultimoValorPropio;
+  }
+
+  void _cambiarPais(Pais? p) {
+    if (p == null) return;
+    setState(() => _pais = p);
+    _sincronizar();
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_externoCambio);
+    _localCtl.removeListener(_sincronizar);
+    _localCtl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _SelectorPais(pais: _pais, onChanged: _cambiarPais),
+      const SizedBox(width: 8),
+      Expanded(
+        child: widget.decoracionLocal != null
+            ? TextField(
+                controller: _localCtl,
+                autofocus: widget.autofocus,
+                keyboardType: TextInputType.phone,
+                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9 ()-]'))],
+                decoration: widget.decoracionLocal,
+              )
+            : perfilCampo(_localCtl, 'ej. 300 123 4567',
+                tipo: TextInputType.phone,
+                autofocus: widget.autofocus,
+                formato: [FilteringTextInputFormatter.allow(RegExp(r'[0-9 ()-]'))]),
+      ),
+    ]);
+  }
+}
+
+class _SelectorPais extends StatelessWidget {
+  final Pais pais;
+  final void Function(Pais?) onChanged;
+  const _SelectorPais({required this.pais, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 52,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<Pais>(
+          value: pais,
+          isDense: true,
+          icon: const Icon(Icons.arrow_drop_down, size: 18),
+          borderRadius: BorderRadius.circular(12),
+          items: paisesHispanohablantes.map((p) => DropdownMenuItem(
+                value: p,
+                child: Text('${p.bandera} ${p.nombre}  +${p.indicativo}',
+                    style: const TextStyle(fontSize: 13)),
+              )).toList(),
+          selectedItemBuilder: (_) => paisesHispanohablantes
+              .map((p) => Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('${p.bandera} +${p.indicativo}',
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  ))
+              .toList(),
+          onChanged: onChanged,
+        ),
+      ),
+    );
+  }
 }
 
 /// Normaliza lo que la persona haya escrito en "Página web" (con o sin

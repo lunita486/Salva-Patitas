@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
@@ -261,9 +260,7 @@ class _AliadoPerfilScreenState extends State<AliadoPerfilScreen> {
               // no tener todavía un número de atención separado.
               perfilLabel('TELÉFONO / WHATSAPP (OPCIONAL)'),
               const SizedBox(height: 8),
-              perfilCampo(_telefonoCtl, 'ej. 300 123 4567',
-                  tipo: TextInputType.phone,
-                  formato: [FilteringTextInputFormatter.allow(RegExp(r'[0-9 +()-]'))]),
+              CampoTelefono(controller: _telefonoCtl),
               const SizedBox(height: 24),
 
               perfilLabel('DIRECCIÓN (OPCIONAL)'),

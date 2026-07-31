@@ -314,9 +314,7 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
               // solo un número para copiar a mano.
               perfilLabel('TELÉFONO / WHATSAPP (OPCIONAL)'),
               const SizedBox(height: 8),
-              perfilCampo(_telefonoCtl, 'ej. 300 123 4567',
-                  tipo: TextInputType.phone,
-                  formato: [FilteringTextInputFormatter.allow(RegExp(r'[0-9 +()-]'))]),
+              CampoTelefono(controller: _telefonoCtl),
               const SizedBox(height: 24),
 
               // Dirección (opcional)

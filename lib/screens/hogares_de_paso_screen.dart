@@ -303,11 +303,7 @@ class _AgregarHogarSheetState extends State<_AgregarHogarSheet> {
             decoration: _dec('Nombre *'),
           ),
           const SizedBox(height: 12),
-          TextField(
-            controller: _telefonoCtl,
-            keyboardType: TextInputType.phone,
-            decoration: _dec('Teléfono / WhatsApp (opcional)'),
-          ),
+          CampoTelefono(controller: _telefonoCtl, decoracionLocal: _dec('Teléfono / WhatsApp (opcional)')),
           const SizedBox(height: 12),
           TextField(
             controller: _notasCtl,
@@ -402,12 +398,10 @@ class _EditarContactoSheetState extends State<_EditarContactoSheet> {
           const SizedBox(height: 16),
           const Text('Editar contacto', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 20),
-          TextField(
-            controller: _telefonoCtl,
-            autofocus: true,
-            keyboardType: TextInputType.phone,
-            decoration: _dec('Teléfono / WhatsApp (opcional)'),
-          ),
+          CampoTelefono(
+              controller: _telefonoCtl,
+              autofocus: true,
+              decoracionLocal: _dec('Teléfono / WhatsApp (opcional)')),
           const SizedBox(height: 12),
           TextField(
             controller: _notasCtl,
