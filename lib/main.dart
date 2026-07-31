@@ -25,7 +25,18 @@ final FirebaseAnalyticsObserver analyticsObserver =
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  await NotificacionesService.inicializar();
+  // NotificacionesService.inicializar() ya se protege sola por dentro (cada
+  // paso atrapa su propio error — ver ese archivo), pero runApp() de acá
+  // abajo es lo único que de verdad importa: sin ESTE try/catch también,
+  // cualquier cosa nueva que se agregue ahí en el futuro y se olvide de
+  // atrapar su error deja a la persona en una pantalla en blanco para
+  // siempre, sin haberse construido ni el login. Nada relacionado con
+  // notificaciones debería poder impedir que la app arranque.
+  try {
+    await NotificacionesService.inicializar();
+  } catch (e) {
+    debugPrint('No se pudo inicializar notificaciones: $e');
+  }
   runApp(const PatitasApp());
 }
 
