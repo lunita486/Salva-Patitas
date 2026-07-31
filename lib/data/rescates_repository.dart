@@ -418,9 +418,15 @@ class RescatesRepository {
   /// la distingue con su propio try/catch, igual que el resto de los
   /// chequeos de esta clase (no se traga el error acá para no esconder
   /// una falla real de red detrás de un "sí se puede eliminar" falso).
+  /// [rescatistaId] es el uid de quien está borrando (siempre el dueño: es
+  /// el único a quien las pantallas le ofrecen el botón, y lo único que las
+  /// reglas dejan borrar). No es opcional porque las consultas de
+  /// solicitudes lo necesitan para que el servidor las acepte — ver
+  /// SolicitudesRepository._hayAlguna.
   Future<(String, String)?> bloqueoParaEliminar({
     required String rescateId,
     required String nombre,
+    required String rescatistaId,
   }) async {
     // Mismo _db que este repositorio (no FirebaseFirestore.instance a
     // secas) — así un test que inyecta un Firestore fake en
@@ -428,9 +434,9 @@ class RescatesRepository {
     // este chequeo se escape a la instancia real por su cuenta.
     final solicitudesRepo = SolicitudesRepository(db: _db);
     final resultados = await Future.wait([
-      solicitudesRepo.tienePendientesPara(rescateId),
+      solicitudesRepo.tienePendientesPara(rescateId, rescatistaId: rescatistaId),
       obtener(rescateId).then((d) => d.data()),
-      solicitudesRepo.tuvoSolicitudAprobada(rescateId),
+      solicitudesRepo.tuvoSolicitudAprobada(rescateId, rescatistaId: rescatistaId),
     ]);
     final tienePendientes = resultados[0] as bool;
     final datosActuales   = resultados[1] as Map<String, dynamic>?;

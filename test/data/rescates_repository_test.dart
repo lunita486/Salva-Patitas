@@ -627,7 +627,7 @@ void main() {
           'nombre': 'Toby', 'estadoAdopcion': 'Rescatado',
         });
 
-        final bloqueo = await repo.bloqueoParaEliminar(rescateId: ref.id, nombre: 'Toby');
+        final bloqueo = await repo.bloqueoParaEliminar(rescateId: ref.id, nombre: 'Toby', rescatistaId: 'alb-1');
 
         expect(bloqueo, isNull);
       });
@@ -637,10 +637,10 @@ void main() {
           'nombre': 'Toby', 'estadoAdopcion': 'Rescatado',
         });
         await firestore.collection('solicitudes').add({
-          'rescateId': ref.id, 'estado': 'pendiente',
+          'rescateId': ref.id, 'rescatistaId': 'alb-1', 'estado': 'pendiente',
         });
 
-        final bloqueo = await repo.bloqueoParaEliminar(rescateId: ref.id, nombre: 'Toby');
+        final bloqueo = await repo.bloqueoParaEliminar(rescateId: ref.id, nombre: 'Toby', rescatistaId: 'alb-1');
 
         expect(bloqueo?.$1, 'No se puede eliminar todavía');
         expect(bloqueo?.$2, contains('solicitud esperando respuesta'));
@@ -651,7 +651,7 @@ void main() {
           'nombre': 'Toby', 'estadoAdopcion': 'Hogar de paso',
         });
 
-        final bloqueo = await repo.bloqueoParaEliminar(rescateId: ref.id, nombre: 'Toby');
+        final bloqueo = await repo.bloqueoParaEliminar(rescateId: ref.id, nombre: 'Toby', rescatistaId: 'alb-1');
 
         expect(bloqueo, RescatesRepository.mensajeBloqueoEliminar('Hogar de paso', 'Toby'));
       });
@@ -662,10 +662,10 @@ void main() {
           'nombre': 'Toby', 'estadoAdopcion': 'Rescatado',
         });
         await firestore.collection('solicitudes').add({
-          'rescateId': ref.id, 'estado': 'aprobada',
+          'rescateId': ref.id, 'rescatistaId': 'alb-1', 'estado': 'aprobada',
         });
 
-        final bloqueo = await repo.bloqueoParaEliminar(rescateId: ref.id, nombre: 'Toby');
+        final bloqueo = await repo.bloqueoParaEliminar(rescateId: ref.id, nombre: 'Toby', rescatistaId: 'alb-1');
 
         expect(bloqueo?.$1, 'No se puede eliminar');
         expect(bloqueo?.$2, contains('registro permanente'));
@@ -677,13 +677,13 @@ void main() {
           'nombre': 'Toby', 'estadoAdopcion': 'Rescatado',
         });
         await firestore.collection('solicitudes').add({
-          'rescateId': ref.id, 'estado': 'aprobada',
+          'rescateId': ref.id, 'rescatistaId': 'alb-1', 'estado': 'aprobada',
         });
         await firestore.collection('solicitudes').add({
-          'rescateId': ref.id, 'estado': 'pendiente',
+          'rescateId': ref.id, 'rescatistaId': 'alb-1', 'estado': 'pendiente',
         });
 
-        final bloqueo = await repo.bloqueoParaEliminar(rescateId: ref.id, nombre: 'Toby');
+        final bloqueo = await repo.bloqueoParaEliminar(rescateId: ref.id, nombre: 'Toby', rescatistaId: 'alb-1');
 
         expect(bloqueo?.$2, contains('solicitud esperando respuesta'));
       });

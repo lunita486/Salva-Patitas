@@ -107,7 +107,11 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
     // podía aprobarse después contra un rescate que ya no existía.
     (String, String)? bloqueo;
     try {
-      bloqueo = await RescatesRepository().bloqueoParaEliminar(rescateId: docId, nombre: nombre);
+      bloqueo = await RescatesRepository().bloqueoParaEliminar(
+        rescateId: docId,
+        nombre: nombre,
+        rescatistaId: FirebaseAuth.instance.currentUser?.uid ?? '',
+      );
     } catch (_) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(

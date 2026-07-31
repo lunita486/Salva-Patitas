@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
@@ -250,8 +251,11 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> with Tardando
     // invalid-argument) — el bug real que reportó Eliza.
     (String, String)? bloqueo;
     try {
-      bloqueo = await RescatesRepository()
-          .bloqueoParaEliminar(rescateId: widget.docId, nombre: nombre);
+      bloqueo = await RescatesRepository().bloqueoParaEliminar(
+        rescateId: widget.docId,
+        nombre: nombre,
+        rescatistaId: FirebaseAuth.instance.currentUser?.uid ?? '',
+      );
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(

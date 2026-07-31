@@ -55,18 +55,52 @@ class SolicitudesRepository {
   ///     desde la canequita como desde editar → eliminar.
   /// Solo si hasta la caché falla (rarísimo) se propaga el error y las
   /// pantallas muestran el mensaje de conexión.
-  Future<bool> tienePendientesPara(String rescateId) async {
+  Future<bool> tienePendientesPara(String rescateId, {required String rescatistaId}) =>
+      _hayAlguna(rescateId: rescateId, rescatistaId: rescatistaId, estado: 'pendiente');
+
+  /// Motor compartido de [tienePendientesPara] y [tuvoSolicitudAprobada]:
+  /// "¿existe al menos una solicitud en [estado] para este animal?".
+  ///
+  /// El filtro por [rescatistaId] no es de más — es lo que hace que la
+  /// consulta funcione. Las reglas solo dejan leer una solicitud a sus dos
+  /// partes (`adoptanteId` o `rescatistaId`), y Firestore no filtra: si una
+  /// consulta PODRÍA devolver algo que no tenés permiso de leer, la rechaza
+  /// entera. Sin este `where`, el servidor contestaba permission-denied
+  /// SIEMPRE y el `catch` de abajo lo tapaba cayendo a la caché del
+  /// teléfono: el bloqueo de borrado nunca llegó a consultar al servidor, y
+  /// en un teléfono sin nada cacheado (nunca abrió Solicitudes) contestaba
+  /// "no hay nada" y dejaba borrar igual. Compilaba, pasaba los tests
+  /// (fake_cloud_firestore no aplica reglas) y fallaba solo en producción,
+  /// en silencio. Verificado contra el emulador en test_rules/.
+  Future<bool> _hayAlguna({
+    required String rescateId,
+    required String rescatistaId,
+    required String estado,
+  }) async {
     final q = _col
+        .where('rescatistaId', isEqualTo: rescatistaId)
         .where('rescateId', isEqualTo: rescateId)
-        .where('estado', isEqualTo: 'pendiente')
+        .where('estado', isEqualTo: estado)
         .limit(1);
     try {
       final res = await conReintento(() => q.get());
       return res.docs.isNotEmpty;
+    } on FirebaseException catch (e) {
+      // permission-denied NO es un problema de red: significa que la
+      // consulta no está acotada a lo que las reglas dejan leer. Caer a la
+      // caché acá convertiría un error de programación en un "no hay nada"
+      // silencioso — justo lo que escondió este bug hasta ahora. Se propaga
+      // para que la pantalla bloquee el borrado en vez de dejarlo pasar.
+      if (e.code == 'permission-denied') rethrow;
+      return _desdeCache(q);
     } catch (_) {
-      final res = await q.get(const GetOptions(source: Source.cache));
-      return res.docs.isNotEmpty;
+      return _desdeCache(q);
     }
+  }
+
+  Future<bool> _desdeCache(Query<Map<String, dynamic>> q) async {
+    final res = await q.get(const GetOptions(source: Source.cache));
+    return res.docs.isNotEmpty;
   }
 
   /// True si [rescateId] tuvo ALGUNA VEZ una solicitud aprobada (adopción
@@ -82,19 +116,8 @@ class SolicitudesRepository {
   /// Mismo criterio de tolerancia a fallas que [tienePendientesPara]: si
   /// el servidor no responde, reintenta una vez, y si sigue sin responder
   /// cae a la copia local en caché.
-  Future<bool> tuvoSolicitudAprobada(String rescateId) async {
-    final q = _col
-        .where('rescateId', isEqualTo: rescateId)
-        .where('estado', isEqualTo: 'aprobada')
-        .limit(1);
-    try {
-      final res = await conReintento(() => q.get());
-      return res.docs.isNotEmpty;
-    } catch (_) {
-      final res = await q.get(const GetOptions(source: Source.cache));
-      return res.docs.isNotEmpty;
-    }
-  }
+  Future<bool> tuvoSolicitudAprobada(String rescateId, {required String rescatistaId}) =>
+      _hayAlguna(rescateId: rescateId, rescatistaId: rescatistaId, estado: 'aprobada');
 
   /// Estado de la solicitud pendiente/aprobada que ya tenga [uid] sobre este
   /// animal, o `null` si no aplicó todavía. Con [rescateId] se compara por

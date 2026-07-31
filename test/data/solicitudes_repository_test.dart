@@ -271,20 +271,20 @@ void main() {
     group('tienePendientesPara', () {
       test('true si hay una solicitud pendiente para ese rescateId', () async {
         await firestore.collection('solicitudes').add({
-          'rescateId': 'eddy-1', 'estado': 'pendiente',
+          'rescateId': 'eddy-1', 'rescatistaId': 'alb-1', 'estado': 'pendiente',
         });
-        expect(await repo.tienePendientesPara('eddy-1'), true);
+        expect(await repo.tienePendientesPara('eddy-1', rescatistaId: 'alb-1'), true);
       });
 
       test('false si la única solicitud ya fue aprobada/rechazada', () async {
         await firestore.collection('solicitudes').add({
-          'rescateId': 'eddy-1', 'estado': 'aprobada',
+          'rescateId': 'eddy-1', 'rescatistaId': 'alb-1', 'estado': 'aprobada',
         });
-        expect(await repo.tienePendientesPara('eddy-1'), false);
+        expect(await repo.tienePendientesPara('eddy-1', rescatistaId: 'alb-1'), false);
       });
 
       test('false si no hay ninguna solicitud para ese rescateId', () async {
-        expect(await repo.tienePendientesPara('sin-solicitudes'), false);
+        expect(await repo.tienePendientesPara('sin-solicitudes', rescatistaId: 'alb-1'), false);
       });
 
       test('si la consulta falla una vez (ej. señal recién recuperada de '
@@ -313,7 +313,7 @@ void main() {
         });
 
         final repoConMock = SolicitudesRepository(db: db);
-        expect(await repoConMock.tienePendientesPara('rescate-1'), false);
+        expect(await repoConMock.tienePendientesPara('rescate-1', rescatistaId: 'alb-1'), false);
         expect(intentos, 2);
       });
 
@@ -343,7 +343,7 @@ void main() {
         when(() => snapshotCache.docs).thenReturn([]);
 
         final repoConMock = SolicitudesRepository(db: db);
-        expect(await repoConMock.tienePendientesPara('rescate-1'), false);
+        expect(await repoConMock.tienePendientesPara('rescate-1', rescatistaId: 'alb-1'), false);
       });
 
       test('la caída a caché también BLOQUEA el borrado si la copia local '
@@ -366,7 +366,7 @@ void main() {
         when(() => snapshotCache.docs).thenReturn([docPendiente]);
 
         final repoConMock = SolicitudesRepository(db: db);
-        expect(await repoConMock.tienePendientesPara('rescate-1'), true);
+        expect(await repoConMock.tienePendientesPara('rescate-1', rescatistaId: 'alb-1'), true);
       });
 
       test('si el servidor falla dos veces Y hasta la caché local falla '
@@ -389,30 +389,72 @@ void main() {
 
         final repoConMock = SolicitudesRepository(db: db);
         await expectLater(
-          repoConMock.tienePendientesPara('rescate-1'),
+          repoConMock.tienePendientesPara('rescate-1', rescatistaId: 'alb-1'),
           throwsA(isA<FirebaseException>()),
         );
+      });
+
+      test('un permission-denied NO cae a la caché — significa que la '
+          'consulta no está acotada a lo que las reglas dejan leer (un error '
+          'de programación), no que falte señal. Taparlo con la caché fue '
+          'justo lo que escondió que este chequeo nunca llegaba a consultar '
+          'al servidor', () async {
+        final db = MockFirebaseFirestore();
+        final col = MockCollectionReference();
+        final query = MockQuery();
+        when(() => db.collection('solicitudes')).thenReturn(col);
+        when(() => col.where(any(), isEqualTo: any(named: 'isEqualTo')))
+            .thenReturn(query);
+        when(() => query.where(any(), isEqualTo: any(named: 'isEqualTo')))
+            .thenReturn(query);
+        when(() => query.limit(any())).thenReturn(query);
+        when(() => query.get()).thenThrow(FirebaseException(
+            plugin: 'cloud_firestore', code: 'permission-denied'));
+
+        final repoConMock = SolicitudesRepository(db: db);
+        await expectLater(
+          repoConMock.tienePendientesPara('rescate-1', rescatistaId: 'alb-1'),
+          throwsA(isA<FirebaseException>()
+              .having((e) => e.code, 'code', 'permission-denied')),
+        );
+        // Y ni siquiera se le preguntó a la caché. (No alcanza con
+        // `get(any())`: una llamada sin argumentos queda registrada como
+        // `get(null)` y `any()` también la matchea — hay que apuntar
+        // explícitamente al pedido con Source.cache.)
+        verifyNever(() => query.get(any(
+            that: isA<GetOptions>()
+                .having((o) => o.source, 'source', Source.cache))));
+      });
+
+      test('no cuenta la solicitud de OTRO rescatista aunque apunte al mismo '
+          'rescateId — el filtro por dueño no es cosmético, es lo que hace '
+          'que el servidor acepte la consulta en vez de rechazarla', () async {
+        await firestore.collection('solicitudes').add({
+          'rescateId': 'eddy-1', 'rescatistaId': 'otro-albergue',
+          'estado': 'pendiente',
+        });
+        expect(await repo.tienePendientesPara('eddy-1', rescatistaId: 'alb-1'), false);
       });
     });
 
     group('tuvoSolicitudAprobada', () {
       test('true si hay una solicitud aprobada para ese rescateId', () async {
         await firestore.collection('solicitudes').add({
-          'rescateId': 'eddy-1', 'estado': 'aprobada',
+          'rescateId': 'eddy-1', 'rescatistaId': 'alb-1', 'estado': 'aprobada',
         });
-        expect(await repo.tuvoSolicitudAprobada('eddy-1'), true);
+        expect(await repo.tuvoSolicitudAprobada('eddy-1', rescatistaId: 'alb-1'), true);
       });
 
       test('false si la única solicitud está pendiente o fue rechazada — '
           'a diferencia de tienePendientesPara, acá solo importa "aprobada"', () async {
         await firestore.collection('solicitudes').add({
-          'rescateId': 'eddy-1', 'estado': 'pendiente',
+          'rescateId': 'eddy-1', 'rescatistaId': 'alb-1', 'estado': 'pendiente',
         });
-        expect(await repo.tuvoSolicitudAprobada('eddy-1'), false);
+        expect(await repo.tuvoSolicitudAprobada('eddy-1', rescatistaId: 'alb-1'), false);
       });
 
       test('false si no hay ninguna solicitud para ese rescateId', () async {
-        expect(await repo.tuvoSolicitudAprobada('sin-solicitudes'), false);
+        expect(await repo.tuvoSolicitudAprobada('sin-solicitudes', rescatistaId: 'alb-1'), false);
       });
 
       test('sigue el mismo criterio de tolerancia a fallas que '
@@ -438,7 +480,7 @@ void main() {
         });
 
         final repoConMock = SolicitudesRepository(db: db);
-        expect(await repoConMock.tuvoSolicitudAprobada('rescate-1'), false);
+        expect(await repoConMock.tuvoSolicitudAprobada('rescate-1', rescatistaId: 'alb-1'), false);
         expect(intentos, 2);
       });
     });

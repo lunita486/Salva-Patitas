@@ -27,11 +27,15 @@ import {
 import {
   doc,
   getDoc,
+  getDocs,
   setDoc,
   updateDoc,
   deleteDoc,
   collection,
   addDoc,
+  query,
+  where,
+  limit,
 } from 'firebase/firestore';
 
 const aca = dirname(fileURLToPath(import.meta.url));
@@ -253,6 +257,88 @@ describe('solicitudes — lectura', () => {
   it('un tercero NO puede leer una solicitud ajena', async () => {
     await sembrarSolicitudPendiente();
     await assertFails(getDoc(doc(como(OTRO), 'solicitudes', 'sol1')));
+  });
+});
+
+// Una consulta puede estar perfecta en Dart, compilar, pasar los tests de
+// `test/data/` (fake_cloud_firestore NO aplica reglas) y aun así ser
+// rechazada entera por el servidor. Firestore no filtra los resultados: si
+// una consulta PODRÍA devolver algo que no tenés permiso de leer, la
+// rechaza completa. Y como los repositorios envuelven estas lecturas en un
+// try/catch que cae a la caché local, el rechazo no se ve por ningún lado —
+// la app simplemente contesta "no hay nada" para siempre.
+//
+// Pasó de verdad, y esto es lo que lo destapó: tienePendientesPara() y
+// tuvoSolicitudAprobada() (el bloqueo de borrado) consultaban por rescateId
+// + estado, sin filtrar por dueño → permission-denied en cada llamada →
+// caché → "no hay solicitudes" → dejaba borrar un animal que sí tenía una
+// adopción aprobada.
+//
+// Por eso estas pruebas comparan la consulta REAL contra la ingenua: si
+// alguien le saca el filtro por dueño a un repositorio, acá se cae.
+describe('formas de consulta que hacen los repositorios', () => {
+  beforeEach(async () => {
+    await sembrar(async (db) => {
+      await setDoc(doc(db, 'solicitudes', 'sol_a'), {
+        adoptanteId: ADOPTANTE, rescatistaId: ALBERGUE, rescateId: 'animal1',
+        estado: 'aprobada',
+      });
+    });
+  });
+
+  const solicitudes = (uid) => collection(como(uid), 'solicitudes');
+
+  it('SolicitudesRepository._hayAlguna: filtrada por dueño, el servidor la acepta', async () => {
+    for (const estado of ['pendiente', 'aprobada']) {
+      await assertSucceeds(
+        getDocs(query(
+          solicitudes(ALBERGUE),
+          where('rescatistaId', '==', ALBERGUE),
+          where('rescateId', '==', 'animal1'),
+          where('estado', '==', estado),
+          limit(1),
+        )),
+      );
+    }
+  });
+
+  it('sin el filtro por dueño, esa misma consulta es rechazada (el bug)', async () => {
+    await assertFails(
+      getDocs(query(
+        solicitudes(ALBERGUE),
+        where('rescateId', '==', 'animal1'),
+        where('estado', '==', 'aprobada'),
+        limit(1),
+      )),
+    );
+  });
+
+  it('tampoco sirve filtrar por el dueño equivocado', async () => {
+    await assertFails(
+      getDocs(query(
+        solicitudes(ALBERGUE),
+        where('rescatistaId', '==', OTRO),
+        where('rescateId', '==', 'animal1'),
+        where('estado', '==', 'aprobada'),
+        limit(1),
+      )),
+    );
+  });
+
+  it('SolicitudesRepository.misSolicitudes: el adoptante consulta las suyas', async () => {
+    await assertSucceeds(
+      getDocs(query(solicitudes(ADOPTANTE), where('adoptanteId', '==', ADOPTANTE))),
+    );
+  });
+
+  it('SolicitudesRepository.paraOwner: el rescatista consulta las que le llegan', async () => {
+    await assertSucceeds(
+      getDocs(query(
+        solicitudes(ALBERGUE),
+        where('rescatistaId', '==', ALBERGUE),
+        where('creadoPor', '==', 'albergue'),
+      )),
+    );
   });
 });
 
