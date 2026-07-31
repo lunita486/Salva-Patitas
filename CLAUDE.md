@@ -20,6 +20,19 @@ Las Reglas de Seguridad de Firestore (`firestore.rules`) son la barrera
 real — el filtrado del lado del cliente es solo para no traer datos de más,
 nunca asumas que un filtro en Dart alcanza para seguridad.
 
+Si tocás `firestore.rules`, agregá su caso NEGATIVO en `test_rules/`
+(qué no se debe poder hacer) además del positivo. `firebase deploy` corre
+esa suite sola y no publica si falla (`predeploy` en `firebase.json`).
+
+Razón: que las reglas compilen no dice nada sobre si hacen lo que dicen.
+Así llegó a producción el agujero de `solicitudes/create` — la rama de
+`update` prohibía con cuidado que un adoptante se auto-aprobara una
+solicitud, pero `create` no miraba `estado`, así que bastaba con saltarse
+el update y crear el documento ya aprobado. Con eso, cualquiera podía
+dejar el animal de cualquier albergue imposible de borrar, para siempre.
+La asimetría entre dos ramas de la misma regla no se ve leyendo el
+archivo; se ve al probarla.
+
 ## Antes de dar por terminado un cambio
 
 - `flutter analyze` sin errores nuevos (los "info" preexistentes de

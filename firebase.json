@@ -8,9 +8,15 @@
   ],
   "firestore": {
     "rules": "firestore.rules",
-    "indexes": "firestore.indexes.json"
+    "indexes": "firestore.indexes.json",
+    "predeploy": ["npm --prefix test_rules test"]
   },
   "storage": {
     "rules": "storage.rules"
+  },
+  "emulators": {
+    "firestore": { "port": 8080 },
+    "ui": { "enabled": false },
+    "singleProjectMode": true
   }
 }

@@ -68,7 +68,25 @@ service cloud.firestore {
     match /solicitudes/{solicitudId} {
       allow read: if signedIn() &&
         (resource.data.adoptanteId == uid() || resource.data.rescatistaId == uid());
-      allow create: if signedIn() && request.resource.data.adoptanteId == uid();
+      // El estado inicial SIEMPRE es 'pendiente' — nunca se puede crear una
+      // solicitud que ya nazca 'aprobada'. Sin esto, la rama de abajo que
+      // protege el update no servía de nada: bastaba con saltarse el update
+      // y escribir el documento ya aprobado de entrada. Y como
+      // SolicitudesRepository.tuvoSolicitudAprobada() consulta solo por
+      // rescateId + estado 'aprobada' (sin filtrar por dueño), una sola
+      // solicitud falsa contra el rescateId de CUALQUIER albergue —
+      // `rescates` es de lectura pública, los ids están a la vista— dejaba
+      // ese animal marcado para siempre como "tuvo una adopción aprobada",
+      // y RescatesRepository.bloqueoParaEliminar lo trata como bloqueo
+      // permanente: el dueño real no podía volver a borrarlo nunca, sin
+      // ninguna forma de deshacerlo desde la app. `acuerdoAceptado` va en
+      // la misma regla por lo mismo: solo se activa por la rama del
+      // adoptante de abajo, con la solicitud ya aprobada de verdad.
+      allow create: if signedIn() &&
+        request.resource.data.adoptanteId == uid() &&
+        request.resource.data.estado == 'pendiente' &&
+        !('acuerdoAceptado' in request.resource.data) &&
+        !('acuerdoAceptadoEn' in request.resource.data);
       // Solo el rescatista/albergue dueño del animal puede cambiar el
       // estado (aprobar/rechazar) — el adoptante lee su propia solicitud
       // pero nunca la escribe después de creada. Antes cualquiera de las
