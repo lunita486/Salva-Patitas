@@ -10,9 +10,10 @@ import 'rescate_fotos_repository.dart';
 /// deben llamar `FirebaseFirestore.instance.collection('rescates')`
 /// directamente — ver ARCHITECTURE.md.
 class RescatesRepository {
-  RescatesRepository({FirebaseFirestore? db, FirebaseAuth? auth})
+  RescatesRepository({FirebaseFirestore? db, FirebaseAuth? auth, RescateFotosRepository? fotosRepo})
       : _db = db ?? FirebaseFirestore.instance,
-        _authOverride = auth;
+        _authOverride = auth,
+        _fotosRepoOverride = fotosRepo;
   final FirebaseFirestore _db;
   // FirebaseAuth.instance recién se evalúa cuando hace falta de verdad
   // (dentro de eliminar(), y solo en la rama de permission-denied) — no en
@@ -22,6 +23,14 @@ class RescatesRepository {
   // Firebase.initializeApp() que `flutter test` no corre.
   final FirebaseAuth? _authOverride;
   FirebaseAuth get _auth => _authOverride ?? FirebaseAuth.instance;
+  // Mismo motivo que _authOverride, pero para Storage: publicarConFotos()
+  // creaba su propio RescateFotosRepository() fijo por dentro, sin forma
+  // de reemplazarlo — probar su lógica de deshacer (la parte "más grande
+  // y delicada" agregada en esta sesión, según la propia auditoría de
+  // código) necesita poder simular que una subida de foto falla, y sin
+  // este punto de inyección eso es imposible desde afuera.
+  final RescateFotosRepository? _fotosRepoOverride;
+  RescateFotosRepository get _fotosRepo => _fotosRepoOverride ?? RescateFotosRepository();
 
   CollectionReference<Map<String, dynamic>> get _col => _db.collection('rescates');
 
@@ -502,7 +511,7 @@ class RescatesRepository {
     required List<Uint8List> fotos,
     void Function(double progreso)? onProgreso,
   }) async {
-    final fotosRepo = RescateFotosRepository();
+    final fotosRepo = _fotosRepo;
     String? rescateId;
     try {
       // El id se genera ACÁ (local, sin red) y se asigna a rescateId ANTES

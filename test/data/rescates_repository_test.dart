@@ -1,11 +1,14 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:patitas_medellin/data/creator_role.dart';
+import 'package:patitas_medellin/data/rescate_fotos_repository.dart';
 import 'package:patitas_medellin/data/rescates_repository.dart';
 
 // fake_cloud_firestore no simula fallas transitorias de red — para probar
@@ -27,6 +30,80 @@ class MockDocumentReference extends Mock
 class MockFirebaseAuth extends Mock implements FirebaseAuth {}
 
 class MockUser extends Mock implements User {}
+
+// ── Mocks de Storage para publicarConFotos() ──────────────────────────────
+// Necesita diferenciar POR PATH ("...foto1.jpg" vs "...foto2.jpg") cuál
+// sube bien y cuál falla, para poder probar la diferencia real de
+// comportamiento entre la foto obligatoria (falla → rollback completo) y
+// la opcional (falla → se publica igual, foto2Fallo=true). firebase_storage_
+// mocks no da ese control fino, así que acá van mocks manuales.
+class MockFirebaseStorage extends Mock implements FirebaseStorage {}
+
+class MockStorageReference extends Mock implements Reference {}
+
+class MockTaskSnapshot extends Mock implements TaskSnapshot {}
+
+/// Un UploadTask de mentira que se resuelve exitosamente al toque (mismo
+/// patrón que _TaskQueNuncaTermina en rescate_fotos_repository_test.dart,
+/// pero completo desde el vamos en vez de nunca).
+class _TaskExitoso implements UploadTask {
+  _TaskExitoso() {
+    _completer.complete(MockTaskSnapshot());
+  }
+  final _completer = Completer<TaskSnapshot>();
+
+  @override
+  Future<bool> cancel() async => false;
+  @override
+  Stream<TaskSnapshot> get snapshotEvents => const Stream.empty();
+  @override
+  Future<S> then<S>(FutureOr<S> Function(TaskSnapshot) onValue, {Function? onError}) =>
+      _completer.future.then(onValue, onError: onError);
+  @override
+  Stream<TaskSnapshot> asStream() => _completer.future.asStream();
+  @override
+  Future<TaskSnapshot> catchError(Function onError, {bool Function(Object)? test}) =>
+      _completer.future.catchError(onError, test: test);
+  @override
+  Future<TaskSnapshot> whenComplete(FutureOr<void> Function() action) =>
+      _completer.future.whenComplete(action);
+  @override
+  Future<TaskSnapshot> timeout(Duration timeLimit, {FutureOr<TaskSnapshot> Function()? onTimeout}) =>
+      _completer.future.timeout(timeLimit, onTimeout: onTimeout);
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// Storage de mentira donde subir a `foto1.jpg` y a `foto2.jpg` pueden
+/// fallar por separado — para poder probar la diferencia de tratamiento
+/// entre la foto obligatoria y la opcional. Devuelve también las 2
+/// referencias de mentira, para poder verificar con mocktail (`verify`)
+/// que el rollback de verdad intentó borrarlas.
+({MockFirebaseStorage storage, MockStorageReference ref1, MockStorageReference ref2})
+    _storageControlada({required bool foto1Falla, required bool foto2Falla}) {
+  final storage = MockFirebaseStorage();
+
+  MockStorageReference construirRef(String path, {required bool falla}) {
+    final ref = MockStorageReference();
+    if (falla) {
+      when(() => ref.putData(any(), any())).thenThrow(
+          FirebaseException(plugin: 'firebase_storage', code: 'unauthorized'));
+    } else {
+      when(() => ref.putData(any(), any())).thenAnswer((_) => _TaskExitoso());
+      when(() => ref.getDownloadURL()).thenAnswer((_) async => 'https://fake.storage/$path');
+    }
+    when(() => ref.delete()).thenAnswer((_) async {});
+    return ref;
+  }
+
+  final ref1 = construirRef('foto1.jpg', falla: foto1Falla);
+  final ref2 = construirRef('foto2.jpg', falla: foto2Falla);
+  when(() => storage.ref(any())).thenAnswer((invocation) {
+    final path = invocation.positionalArguments[0] as String;
+    return path.contains('foto1.jpg') ? ref1 : ref2;
+  });
+  return (storage: storage, ref1: ref1, ref2: ref2);
+}
 
 void main() {
   setUpAll(() => registerFallbackValue(const GetOptions()));
@@ -686,6 +763,197 @@ void main() {
         final bloqueo = await repo.bloqueoParaEliminar(rescateId: ref.id, nombre: 'Toby', rescatistaId: 'alb-1');
 
         expect(bloqueo?.$2, contains('solicitud esperando respuesta'));
+      });
+    });
+
+    group('nombresExistentes()', () {
+      test('devuelve "nombre_especie" en minúscula de todo lo publicado por ese uid+role', () async {
+        await repo.crear(uid: 'user-10', role: CreatorRole.rescatista,
+            datos: {'nombre': 'Blanquito', 'especie': 'Perro'});
+        await repo.crear(uid: 'user-10', role: CreatorRole.rescatista,
+            datos: {'nombre': '  Orejas  ', 'especie': 'Gato'});
+
+        final nombres = await repo.nombresExistentes(uid: 'user-10', role: CreatorRole.rescatista);
+
+        expect(nombres, {'blanquito_Perro', 'orejas_Gato'},
+            reason: 'nombre en minúscula y sin espacios, especie tal cual');
+      });
+
+      test('no mezcla animales de OTRO uid, ni del mismo uid con otro CreatorRole — '
+          'mismo criterio que existeNombre()', () async {
+        await repo.crear(uid: 'user-11', role: CreatorRole.rescatista,
+            datos: {'nombre': 'Rocky', 'especie': 'Perro'});
+        await repo.crear(uid: 'user-11', role: CreatorRole.albergue,
+            datos: {'nombre': 'Otro', 'especie': 'Perro'});
+        await repo.crear(uid: 'otro-uid', role: CreatorRole.rescatista,
+            datos: {'nombre': 'Ajeno', 'especie': 'Perro'});
+
+        final nombres = await repo.nombresExistentes(uid: 'user-11', role: CreatorRole.rescatista);
+
+        expect(nombres, {'rocky_Perro'});
+      });
+
+      test('vacío si esa cuenta+rol nunca publicó nada', () async {
+        final nombres = await repo.nombresExistentes(uid: 'sin-publicar', role: CreatorRole.rescatista);
+
+        expect(nombres, isEmpty);
+      });
+
+      test('tolera fallas transitorias igual que existeNombre() — reintenta desde caché en '
+          'vez de romper todo el chequeo de duplicados de un lote', () async {
+        final db = MockFirebaseFirestore();
+        final col = MockCollectionReference();
+        final query = MockQuery();
+        final snapshotCache = MockQuerySnapshot();
+        when(() => db.collection('rescates')).thenReturn(col);
+        when(() => col.where(any(), isEqualTo: any(named: 'isEqualTo'))).thenReturn(query);
+        when(() => query.where(any(), isEqualTo: any(named: 'isEqualTo'))).thenReturn(query);
+        when(() => query.get()).thenThrow(
+            FirebaseException(plugin: 'cloud_firestore', code: 'unavailable'));
+        when(() => query.get(any())).thenThrow(
+            FirebaseException(plugin: 'cloud_firestore', code: 'unavailable'));
+        when(() => snapshotCache.docs).thenReturn([]);
+
+        final repoConMock = RescatesRepository(db: db);
+        final nombres = await repoConMock.nombresExistentes(uid: 'x', role: CreatorRole.rescatista);
+
+        expect(nombres, isEmpty, reason: 'ni el servidor ni la caché respondieron — vacío, no una excepción');
+      });
+    });
+
+    group('porIds()', () {
+      test('devuelve solo los rescates cuyo id está en la lista pedida', () async {
+        final ref1 = await firestore.collection('rescates').add({'nombre': 'Uno'});
+        await firestore.collection('rescates').add({'nombre': 'Dos'});
+        final ref3 = await firestore.collection('rescates').add({'nombre': 'Tres'});
+
+        final snap = await repo.porIds([ref1.id, ref3.id]).first;
+
+        expect(snap.docs.map((d) => d['nombre']).toSet(), {'Uno', 'Tres'});
+      });
+
+      test('lista vacía no rompe nada — devuelve un stream sin resultados, sin '
+          'consultarle nada a Firestore (whereIn no acepta una lista vacía)', () async {
+        final eventos = await repo.porIds([]).toList();
+
+        expect(eventos, isEmpty);
+      });
+
+      test('un id que no existe en absoluto simplemente no aparece en el resultado '
+          '(no rompe, no tira error)', () async {
+        final ref1 = await firestore.collection('rescates').add({'nombre': 'Real'});
+
+        final snap = await repo.porIds([ref1.id, 'este-id-no-existe']).first;
+
+        expect(snap.docs.length, 1);
+        expect(snap.docs.first['nombre'], 'Real');
+      });
+    });
+
+    group('publicarConFotos() — crea el rescate y sube su(s) foto(s), con '
+        'rollback completo si algo obligatorio falla', () {
+      setUpAll(() {
+        registerFallbackValue(Uint8List(0));
+        registerFallbackValue(SettableMetadata());
+      });
+
+      test('camino feliz con 1 sola foto: crea el rescate con fotoUrl, sin '
+          'fotoUrl2, foto2Fallo=false', () async {
+        final mocks = _storageControlada(foto1Falla: false, foto2Falla: false);
+        final repoConFotos = RescatesRepository(
+            db: firestore, fotosRepo: RescateFotosRepository(storage: mocks.storage));
+
+        final resultado = await repoConFotos.publicarConFotos(
+          uid: 'user-20', role: CreatorRole.rescatista,
+          datos: {'nombre': 'Toby'},
+          fotos: [Uint8List.fromList([1, 2, 3])],
+        );
+
+        expect(resultado.foto2Fallo, false);
+        final doc = await firestore.collection('rescates').doc(resultado.rescateId).get();
+        expect(doc.exists, true);
+        expect(doc['nombre'], 'Toby');
+        expect(doc['fotoUrl'], 'https://fake.storage/foto1.jpg');
+        expect(doc.data()!.containsKey('fotoUrl2'), false);
+      });
+
+      test('camino feliz con 2 fotos: crea el rescate con fotoUrl Y fotoUrl2', () async {
+        final mocks = _storageControlada(foto1Falla: false, foto2Falla: false);
+        final repoConFotos = RescatesRepository(
+            db: firestore, fotosRepo: RescateFotosRepository(storage: mocks.storage));
+
+        final resultado = await repoConFotos.publicarConFotos(
+          uid: 'user-21', role: CreatorRole.rescatista,
+          datos: {'nombre': 'Amy'},
+          fotos: [Uint8List.fromList([1]), Uint8List.fromList([2])],
+        );
+
+        expect(resultado.foto2Fallo, false);
+        final doc = await firestore.collection('rescates').doc(resultado.rescateId).get();
+        expect(doc['fotoUrl'], 'https://fake.storage/foto1.jpg');
+        expect(doc['fotoUrl2'], 'https://fake.storage/foto2.jpg');
+      });
+
+      test('si falla la foto OBLIGATORIA (slot 1): rollback completo — el '
+          'rescate NO queda creado, se relanza la excepción, y se intenta '
+          'borrar lo que sí llegó a subirse (slot 2, que subió bien en '
+          'paralelo antes de que la falla de slot 1 se propagara)', () async {
+        final mocks = _storageControlada(foto1Falla: true, foto2Falla: false);
+        final repoConFotos = RescatesRepository(
+            db: firestore, fotosRepo: RescateFotosRepository(storage: mocks.storage));
+
+        await expectLater(
+          repoConFotos.publicarConFotos(
+            uid: 'user-22', role: CreatorRole.rescatista,
+            datos: {'nombre': 'Firulais'},
+            fotos: [Uint8List.fromList([1]), Uint8List.fromList([2])],
+          ),
+          throwsA(anything),
+        );
+
+        final todos = await firestore.collection('rescates').get();
+        expect(todos.docs.where((d) => d['nombre'] == 'Firulais'), isEmpty,
+            reason: 'el rescate fantasma sin foto es justo el bug real que este rollback evita');
+        verify(() => mocks.ref2.delete()).called(1);
+      });
+
+      test('si falla la foto OPCIONAL (slot 2): NO hay rollback — el rescate '
+          'se publica igual con la foto 1, y foto2Fallo queda en true', () async {
+        final mocks = _storageControlada(foto1Falla: false, foto2Falla: true);
+        final repoConFotos = RescatesRepository(
+            db: firestore, fotosRepo: RescateFotosRepository(storage: mocks.storage));
+
+        final resultado = await repoConFotos.publicarConFotos(
+          uid: 'user-23', role: CreatorRole.rescatista,
+          datos: {'nombre': 'Molly'},
+          fotos: [Uint8List.fromList([1]), Uint8List.fromList([2])],
+        );
+
+        expect(resultado.foto2Fallo, true);
+        final doc = await firestore.collection('rescates').doc(resultado.rescateId).get();
+        expect(doc.exists, true,
+            reason: 'a diferencia de la foto obligatoria, esta falla NO debe deshacer la publicación');
+        expect(doc['fotoUrl'], 'https://fake.storage/foto1.jpg');
+        expect(doc.data()!.containsKey('fotoUrl2'), false);
+      });
+
+      test('con una sola foto (obligatoria) que falla: rollback completo '
+          'igual, sin ninguna foto 2 de la cual preocuparse', () async {
+        final mocks = _storageControlada(foto1Falla: true, foto2Falla: false);
+        final repoConFotos = RescatesRepository(
+            db: firestore, fotosRepo: RescateFotosRepository(storage: mocks.storage));
+
+        await expectLater(
+          repoConFotos.publicarConFotos(
+            uid: 'user-24', role: CreatorRole.rescatista,
+            datos: {'nombre': 'Solito'},
+            fotos: [Uint8List.fromList([1])],
+          ),
+          throwsA(anything),
+        );
+
+        final todos = await firestore.collection('rescates').get();
+        expect(todos.docs.where((d) => d['nombre'] == 'Solito'), isEmpty);
       });
     });
   });
