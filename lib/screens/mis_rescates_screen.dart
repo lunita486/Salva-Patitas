@@ -265,7 +265,14 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     children: [
-                      _chip('Todos', null, _filtroEstado, (v) => setState(() => _filtroEstado = v)),
+                      // "Todos" limpia los DOS filtros, no solo el de estado
+                      // (esta fila) — antes solo tocaba _filtroEstado, así
+                      // que si tenías "Gato" activo en la fila de especie
+                      // (abajo) y tocabas "Todos" acá arriba, seguías viendo
+                      // solo gatos: "Todos" no se sentía como "todos" de
+                      // verdad (reportado por Eliza).
+                      _chip('Todos', null, _filtroEstado,
+                          (v) => setState(() { _filtroEstado = v; _filtroEspecie = null; })),
                       ..._estadosFiltroRescatista
                           .map((e) => _chip(e, e, _filtroEstado, (v) => setState(() => _filtroEstado = v))),
                     ],
