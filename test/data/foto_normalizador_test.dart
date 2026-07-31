@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
@@ -57,6 +58,52 @@ void main() {
         expect(resultado.length, lessThan(pesoOriginal));
       } finally {
         await archivo.delete();
+      }
+    });
+
+    test('un timeout corto hace que se rinda pronto en vez de colgarse para '
+        'siempre — antes este era el único paso de publicar sin ningún '
+        'límite de tiempo: una foto corrupta o enorme en un celular con '
+        'poca RAM podía dejar el botón de publicar esperando sin ninguna '
+        'salida', () async {
+      final archivo = await _crearImagenTemp('lenta.jpg', width: 4000, height: 4000);
+      try {
+        final arranque = DateTime.now();
+        await expectLater(
+          normalizarFoto(archivo.path, timeout: const Duration(milliseconds: 1)),
+          throwsA(isA<TimeoutException>()),
+        );
+        // No alcanza con que lance la excepción — tiene que lanzarla PRONTO.
+        // Un simple "dejar de esperar" también termina lanzando una
+        // excepción tarde o temprano; lo que hace falta es que no haga
+        // falta esperar a que la imagen de 4000x4000 termine de procesarse
+        // sola de fondo para que el test (y en la app real, el usuario)
+        // sigan su camino.
+        expect(DateTime.now().difference(arranque), lessThan(const Duration(seconds: 5)));
+      } finally {
+        await archivo.delete();
+      }
+    }, timeout: const Timeout(Duration(seconds: 30)));
+
+    test('normaliza varias fotos en paralelo sin que se pisen entre sí '
+        '(cada llamada usa su propio isolate y su propio puerto)', () async {
+      final archivo1 = await _crearImagenTemp('par1.jpg', width: 2000, height: 1000);
+      final archivo2 = await _crearImagenTemp('par2.jpg', width: 1500, height: 2000);
+      try {
+        final resultados = await Future.wait([
+          normalizarFoto(archivo1.path),
+          normalizarFoto(archivo2.path),
+        ]);
+
+        expect(img.decodeImage(resultados[0])!.width, 1000);
+        expect(img.decodeImage(resultados[1])!.width, 1000);
+        expect(img.decodeImage(resultados[1])!.height, greaterThan(1000),
+            reason: 'la segunda imagen es más alta que ancha (1500x2000) — '
+                'si los resultados se mezclaran entre isolates, este chequeo '
+                'lo detectaría');
+      } finally {
+        await archivo1.delete();
+        await archivo2.delete();
       }
     });
   });
