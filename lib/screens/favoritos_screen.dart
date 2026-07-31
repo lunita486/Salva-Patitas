@@ -61,9 +61,24 @@ class FavoritosScreen extends StatelessWidget {
                 return StreamBuilder<QuerySnapshot>(
                   stream: RescatesRepository().porIds(rescateIds),
                   builder: (context, rescatesSnap) {
+                    // hasData es distinto de "llegó un evento" — es
+                    // específicamente "recibimos una respuesta real del
+                    // servidor" (con datos, no null). El PRIMER build de
+                    // cualquier StreamBuilder recién suscripto es siempre
+                    // así (ningún stream entrega de forma sincrónica), y si
+                    // esta consulta puntual nunca llega a responder (token
+                    // vencido tras la app en segundo plano toda la noche,
+                    // sin conexión), se queda así para siempre. Antes eso
+                    // hacía que TODOS los favoritos con rescateId parecieran
+                    // huérfanos (huboRespuesta acá abajo controla eso) —
+                    // "no llegó respuesta todavía" y "llegó, y esto no está"
+                    // se trataban como lo mismo, y la pantalla se veía vacía
+                    // aunque hubiera favoritos reales, sin ningún aviso.
+                    final huboRespuesta = rescatesSnap.hasData;
                     final estadoPorRescateId = <String, String>{
-                      for (final r in rescatesSnap.data?.docs ?? [])
-                        r.id: (r.data() as Map<String, dynamic>)['estadoAdopcion'] as String? ?? '',
+                      if (huboRespuesta)
+                        for (final r in rescatesSnap.data!.docs)
+                          r.id: (r.data() as Map<String, dynamic>)['estadoAdopcion'] as String? ?? '',
                     };
                     // `favoritos.fotoUrl` es una foto de una sola vez tomada
                     // al guardar el favorito — si el rescate se guardó en
@@ -89,10 +104,22 @@ class FavoritosScreen extends StatelessWidget {
                     };
                     return _FavoritosGrid(
                       docs: docs,
-                      rescateIdsConsultados: rescateIds.toSet(),
+                      // Vacío mientras no haya respuesta real — el filtro de
+                      // huérfanos de _FavoritosGrid ya sabe tratar "no
+                      // consultado" como "no ocultar" (es el mismo camino
+                      // que usan los favoritos que superan el tope de 30 de
+                      // whereIn); unificar acá el caso "todavía esperando
+                      // la primera respuesta" (y "la consulta falló y nunca
+                      // hubo ninguna") con ese mismo camino ya probado es
+                      // el arreglo — no hace falta un camino nuevo.
+                      rescateIdsConsultados: huboRespuesta ? rescateIds.toSet() : const {},
                       estadoPorRescateId: estadoPorRescateId,
                       fotoPorRescateId: fotoPorRescateId,
                       rescatePorId: rescatePorId,
+                      // Para avisar (no silencio) si la consulta falló y
+                      // nunca hubo ninguna respuesta previa que mostrar en
+                      // su lugar — ver el aviso en _FavoritosGrid.
+                      sinConfirmarPorError: rescatesSnap.hasError && !huboRespuesta,
                     );
                   },
                 );
@@ -111,12 +138,14 @@ class _FavoritosGrid extends StatelessWidget {
   final Map<String, String> estadoPorRescateId;
   final Map<String, String?> fotoPorRescateId;
   final Map<String, Map<String, dynamic>> rescatePorId;
+  final bool sinConfirmarPorError;
   const _FavoritosGrid({
     required this.docs,
     required this.rescateIdsConsultados,
     required this.estadoPorRescateId,
     required this.fotoPorRescateId,
     required this.rescatePorId,
+    this.sinConfirmarPorError = false,
   });
 
   @override
@@ -149,6 +178,31 @@ class _FavoritosGrid extends StatelessWidget {
                     ),
                   ),
                 ),
+                // Aviso, no silencio: no reemplaza la lista (los favoritos
+                // guardados igual se muestran, con sus datos propios) — solo
+                // avisa que el estado más reciente (en proceso/adoptado/
+                // etc.) no se pudo confirmar, para que no parezca que la
+                // pantalla "sabe" algo que en realidad no pudo verificar.
+                if (sinConfirmarPorError && docs.isNotEmpty)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: msgAdvertencia.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(children: [
+                          Icon(Icons.wifi_off_rounded, size: 18, color: msgAdvertencia),
+                          const SizedBox(width: 8),
+                          Expanded(child: Text(
+                              'No pudimos confirmar el estado más reciente de tus favoritos. Revisá tu conexión.',
+                              style: TextStyle(fontSize: 12, color: Colors.grey.shade800))),
+                        ]),
+                      ),
+                    ),
+                  ),
                 if (docs.isEmpty)
                   SliverFillRemaining(
                     child: Center(
