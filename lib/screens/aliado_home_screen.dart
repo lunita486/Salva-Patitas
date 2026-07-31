@@ -470,6 +470,12 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
         if (snap.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator(color: appTeal));
         }
+        // Sin esto, un error real se veía igual que "todavía no publicaste
+        // ningún servicio" — mismo patrón ya arreglado en
+        // favoritos_screen.dart y otras pantallas (errorFeedState,
+        // theme.dart), acá en el catálogo del aliado (hallazgo de
+        // auditoría de código).
+        if (snap.hasError) return errorFeedState();
         final docs = (snap.data?.docs ?? [])
           ..sort((a, b) {
             final tA = (a.data() as Map)['creadoEn'] as Timestamp?;

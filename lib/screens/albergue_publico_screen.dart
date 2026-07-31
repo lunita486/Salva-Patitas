@@ -34,6 +34,12 @@ class AlberguePublicoScreen extends StatelessWidget {
               .where('rescatistaId', isEqualTo: rescatistaId)
               .snapshots(),
           builder: (context, rSnap) {
+            // Sin esto, un error real del stream se veía igual que "este
+            // albergue no tiene animales publicados" — mismo patrón ya
+            // arreglado en favoritos_screen.dart y otras pantallas
+            // (errorFeedState, theme.dart), acá en el perfil público
+            // (hallazgo de auditoría de código).
+            if (rSnap.hasError) return errorFeedState();
             final all        = (rSnap.data?.docs ?? []).where((d) =>
                 (d.data() as Map)['creadoPor'] == 'albergue').toList();
             final disponibles= all.where((d) {

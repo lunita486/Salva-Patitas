@@ -30,6 +30,12 @@ class SolicitudesPreview extends StatelessWidget {
         if (snap.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator(color: appTeal));
         }
+        // Sin esto, un error real se veía igual que "No hay solicitudes
+        // por ahora" — mismo patrón ya arreglado en favoritos_screen.dart
+        // y otras pantallas (errorFeedState, theme.dart), acá en la vista
+        // previa que comparten los paneles de rescatista y albergue
+        // (hallazgo de auditoría de código).
+        if (snap.hasError) return errorFeedState();
         final docs = [...(snap.data?.docs ?? [])]
           ..sort((a, b) {
             final ta = a.data()['creadoEn'] as Timestamp?;

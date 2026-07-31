@@ -39,6 +39,14 @@ class AliadosScreen extends StatelessWidget {
                   .where('aliadoNombre', isGreaterThan: '')
                   .snapshots(),
               builder: (context, snap) {
+                // Sin esto, un error real del stream (sin conexión, permiso
+                // denegado) se veía IGUAL que "todavía no hay aliados" —
+                // mismo patrón ya arreglado en favoritos_screen.dart y
+                // otras 5 pantallas más (errorFeedState, theme.dart), que
+                // esta pantalla se quedó sin cuando se extrajo de
+                // adoptante_feed_screen.dart (hallazgo de auditoría de
+                // código).
+                if (snap.hasError) return errorFeedState();
                 final aliados = snap.data?.docs ?? [];
                 if (aliados.isEmpty) {
                   return Center(

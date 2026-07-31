@@ -153,6 +153,12 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
               if (rSnap.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator(color: appTeal));
               }
+              // Sin esto, un error real (sin conexión, permiso denegado) se
+              // veía igual que "0 animales en cuidado/adopción" — mismo
+              // patrón ya arreglado en favoritos_screen.dart y otras
+              // pantallas (errorFeedState, theme.dart), acá en el panel
+              // principal del albergue (hallazgo de auditoría de código).
+              if (rSnap.hasError) return errorFeedState();
               final rescates = rSnap.data?.docs ?? [];
               // "En cuidado" = físicamente presente en tu espacio, no
               // "animales de los que sos responsable en total". Por eso:

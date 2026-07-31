@@ -140,6 +140,11 @@ class MisSolicitudesScreen extends StatelessWidget {
                 if (snap.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator(color: appTeal));
                 }
+                // Sin esto, un error real se veía igual que "todavía no
+                // enviaste solicitudes" — mismo patrón ya arreglado en
+                // favoritos_screen.dart y otras pantallas (errorFeedState,
+                // theme.dart), acá (hallazgo de auditoría de código).
+                if (snap.hasError) return errorFeedState();
                 final docs = [...(snap.data?.docs ?? [])]..sort((a, b) {
                   final ta = (a.data() as Map)['creadoEn'] as Timestamp?;
                   final tb = (b.data() as Map)['creadoEn'] as Timestamp?;

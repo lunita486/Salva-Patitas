@@ -107,6 +107,12 @@ class AliadoPublicoScreen extends StatelessWidget {
                 .where('aliadoId', isEqualTo: aliadoId)
                 .snapshots(),
             builder: (context, svcSnap) {
+              // Sin esto, un error real se veía igual que "Sin servicios
+              // publicados" — mismo patrón ya arreglado en
+              // favoritos_screen.dart y otras pantallas (errorFeedState,
+              // theme.dart), acá en el perfil público del aliado
+              // (hallazgo de auditoría de código).
+              if (svcSnap.hasError) return errorFeedState();
               final servicios = (svcSnap.data?.docs ?? [])
                   .where((d) => (d.data() as Map)['activo'] == true)
                   .toList();
