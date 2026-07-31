@@ -51,10 +51,45 @@ async function notificar(uid, title, body, tipoPreferencia) {
   }
 }
 
+// Cloud Functions/Eventarc entrega "al menos una vez": el mismo evento
+// puede volver a disparar el trigger (reintento tras una falla transitoria,
+// redespliegue a mitad de un evento, etc.), con el MISMO event.id. Sin nada
+// que lo detecte, un reenvío repetía el push entero — la misma persona
+// podía recibir "¡Tu solicitud fue aprobada!" dos veces por la misma
+// aprobación real (el guard before.estado===after.estado de
+// onCambioEstadoSolicitud NO protege contra esto: un reenvío trae el MISMO
+// before/after, pasa ese guard igual las dos veces).
+//
+// event.id es el identificador único que Eventarc asigna a cada entrega, y
+// se mantiene igual entre reintentos del mismo evento — es la base del
+// patrón oficial de Google para funciones idempotentes. Se usa acá como
+// llave de un cerrojo atómico en Firestore: la PRIMERA entrega logra CREAR
+// el documento (create() falla si ya existe, a diferencia de set()) y
+// sigue; cualquier entrega repetida del mismo evento choca contra un
+// documento que ya existe y se corta sola, sin mandar el push de nuevo.
+// Atómico a propósito (create(), no "leer si existe y después escribir"):
+// dos entregas casi simultáneas del mismo reintento no tienen una ventana
+// donde las dos lean "no existe todavía" y las dos sigan de largo.
+async function primeraVezQueSeVeEsteEvento(eventId) {
+  const ref = getFirestore().collection('_eventosProcesados').doc(eventId);
+  try {
+    await ref.create({ procesadoEn: FieldValue.serverTimestamp() });
+    return true;
+  } catch (e) {
+    // code 6 = ALREADY_EXISTS (gRPC) — ya se procesó este evento, o se está
+    // procesando ahora mismo en otra instancia. Cualquier OTRO error es
+    // real (permiso, red) y no se tapa: mejor arriesgarse a un duplicado
+    // raro que perder notificaciones por un error de infraestructura.
+    if (e.code === 6 || e.code === 'already-exists') return false;
+    throw e;
+  }
+}
+
 // Nuevo mensaje → notifica al destinatario
 exports.onNuevoMensaje = onDocumentCreated(
   'chats/{chatId}/mensajes/{msgId}',
   async (event) => {
+    if (!(await primeraVezQueSeVeEsteEvento(event.id))) return;
     const data = event.data.data();
     const chatId = event.params.chatId;
 
@@ -76,6 +111,7 @@ exports.onNuevoMensaje = onDocumentCreated(
 exports.onNuevaSolicitud = onDocumentCreated(
   'solicitudes/{solId}',
   async (event) => {
+    if (!(await primeraVezQueSeVeEsteEvento(event.id))) return;
     const sol = event.data.data();
     const rescatistaId = sol.rescatistaId;
     if (!rescatistaId) return;
@@ -94,6 +130,7 @@ exports.onNuevaSolicitud = onDocumentCreated(
 exports.onCambioEstadoSolicitud = onDocumentUpdated(
   'solicitudes/{solId}',
   async (event) => {
+    if (!(await primeraVezQueSeVeEsteEvento(event.id))) return;
     const before = event.data.before.data();
     const after  = event.data.after.data();
 
