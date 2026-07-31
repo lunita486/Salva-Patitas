@@ -123,9 +123,17 @@ exports.onRescateEliminado = onDocumentDeleted(
       const db = getFirestore();
       const favoritos = await db.collection('favoritos')
           .where('rescateId', '==', rescateId).get();
-      if (!favoritos.empty) {
+      // Un WriteBatch tiene un tope duro de 500 operaciones — un animal
+      // con más de 500 favoritos (improbable hoy, pero no imposible)
+      // hacía que batch.commit() tirara, el catch de abajo lo tapaba con
+      // un solo console.error, y NINGÚN favorito se borraba, ni siquiera
+      // los primeros 500. Partido en tandas de a 500, cada tanda que
+      // logra terminar queda borrada de verdad aunque una tanda más
+      // adelante falle.
+      const docs = favoritos.docs;
+      for (let i = 0; i < docs.length; i += 500) {
         const batch = db.batch();
-        favoritos.forEach((doc) => batch.delete(doc.ref));
+        docs.slice(i, i + 500).forEach((doc) => batch.delete(doc.ref));
         await batch.commit();
       }
     } catch (e) {

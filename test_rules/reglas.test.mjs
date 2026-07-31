@@ -466,6 +466,19 @@ describe('hogaresDePaso — roster privado del albergue', () => {
       }),
     );
   });
+
+  // ADOPTANTE tiene roles: ['adoptante'] (sembrado al principio del
+  // archivo) — sin hasRole('albergue') acá, esto pasaba: quedaba acotado
+  // a su propio uid (nunca exponía datos de otra cuenta), pero cualquier
+  // cuenta sin rol de albergue podía igual crear su propio roster.
+  it('una cuenta sin rol de albergue no puede crear su propio roster', async () => {
+    await assertFails(
+      addDoc(collection(como(ADOPTANTE), 'hogaresDePaso'), {
+        albergueId: ADOPTANTE,
+        nombre: 'No debería poder',
+      }),
+    );
+  });
 });
 
 describe('chats', () => {

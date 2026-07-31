@@ -40,8 +40,18 @@ class PerfilRescatistaScreen extends StatelessWidget {
       builder: (ctx) => _UmbralEstancadoSheet(actual: umbralEstancadoDe(doc.data())),
     );
     if (seleccion == null) return;
-    await FirebaseFirestore.instance.collection('usuarios').doc(uid)
-        .update({'umbralEstancadoDias': seleccion});
+    try {
+      await FirebaseFirestore.instance.collection('usuarios').doc(uid)
+          .update({'umbralEstancadoDias': seleccion});
+    } catch (_) {
+      // Sin esto, un guardado fallido (sin conexión, token vencido) no
+      // avisaba nada — la hoja se cerraba como si hubiera funcionado y el
+      // umbral seguía siendo el viejo, sin que nadie se enterara.
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('No se pudo guardar. Revisá tu conexión e intentá de nuevo.'),
+          backgroundColor: msgError));
+    }
   }
 
   @override

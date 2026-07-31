@@ -229,7 +229,14 @@ service cloud.firestore {
     // no rescatistas (decisión de producto: mejoras_albergue.html).
     match /hogaresDePaso/{docId} {
       allow read, update, delete: if signedIn() && resource.data.albergueId == uid();
-      allow create: if signedIn() && request.resource.data.albergueId == uid();
+      // hasRole('albergue') es lo que hace cumplir "solo para albergues,
+      // no rescatistas" en la práctica — antes solo se pedía que
+      // albergueId fuera uno mismo, así que una cuenta rescatista (sin
+      // ese rol) también podía crear acá, aunque el dato quedara
+      // igual acotado a su propio uid (nunca se filtraba entre cuentas).
+      allow create: if signedIn() &&
+        request.resource.data.albergueId == uid() &&
+        hasRole('albergue');
     }
 
     // ── solicitudes_rescatista ────────────────────────────────────────

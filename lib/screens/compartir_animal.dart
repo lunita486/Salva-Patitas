@@ -91,8 +91,16 @@ class _ShareCard extends StatelessWidget {
         Positioned(
           left: 48, right: 48, bottom: 56,
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(nombre, style: const TextStyle(
-                color: Colors.white, fontSize: 72, fontWeight: FontWeight.w800, height: 1.0, fontFamily: 'Baloo2')),
+            // maxLines + ellipsis: sin esto, un nombre largo (no hay tope
+            // de longitud al cargar un animal) crecía hacia arriba desde
+            // este punto fijo y terminaba recortado por fuera de la
+            // imagen de 1080x1080, o chocando con las 2 insignias de
+            // arriba — nunca "no cabe", pero sí ilegible.
+            Text(nombre,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    color: Colors.white, fontSize: 72, fontWeight: FontWeight.w800, height: 1.0, fontFamily: 'Baloo2')),
             const SizedBox(height: 10),
             Text(
               [if (especie.isNotEmpty) especie, if (edad.isNotEmpty) edad].join(' · '),

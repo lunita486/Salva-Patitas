@@ -25,7 +25,14 @@ service firebase.storage {
     // rescatista si no se valida dueño de verdad).
     match /rescates/{rescateId}/{fileName} {
       allow read: if true;
+      // fileName acotado a los 2 nombres que la app realmente usa
+      // (RescateFotosRepository._ref) — sin esto, el dueño verificado
+      // podía subir CUALQUIER nombre/contenido bajo su propia carpeta
+      // (pública de lectura), no solo foto1.jpg/foto2.jpg. Bajo impacto
+      // (sigue acotado a su propia carpeta, no cruza entre usuarios), pero
+      // gratis de cerrar.
       allow write: if request.auth != null &&
+        fileName in ['foto1.jpg', 'foto2.jpg'] &&
         firestore.get(/databases/(default)/documents/rescates/$(rescateId)).data.rescatistaId == request.auth.uid;
     }
   }
