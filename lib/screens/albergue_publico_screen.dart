@@ -330,7 +330,6 @@ class AlberguePublicoScreen extends StatelessWidget {
       'requiereExperiencia': d['requiereExperiencia'],
       'vacunado':            d['vacunado'],
       'desparasitado':       d['desparasitado'],
-      'verificado':          d['verificado'] ?? false,
       'urgencia':            urgencia,
       'creadoPor':           d['creadoPor'] ?? 'albergue',
     };

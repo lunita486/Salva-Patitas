@@ -103,7 +103,6 @@ class MisSolicitudesScreen extends StatelessWidget {
       'requiereExperiencia': d['requiereExperiencia'],
       'vacunado':            d['vacunado'],
       'desparasitado':       d['desparasitado'],
-      'verificado':          d['verificado'] ?? false,
       'urgencia':            d['urgencia'] ?? '',
       'creadoPor':           d['creadoPor'] ?? 'rescatista',
     };

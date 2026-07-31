@@ -267,7 +267,6 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
       'rescateId':    animal['rescateId']    ?? '',
       'genero':       animal['genero'] ?? '',
       'fotoUrl':      animal['fotoUrl'],
-      'verificado':   animal['verificado'] ?? false,
       'creadoPor':    animal['creadoPor'] ?? 'rescatista',
       'creadoEn':     FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
@@ -712,7 +711,6 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
     final tags        = (a['tags'] as List).cast<String>();
     final rescatista  = a['rescatista'] as String;
     final ubicacion   = a['ubicacion']  as String;
-    final verificado      = a['verificado']     as bool?   ?? false;
     final estadoAdopcion  = a['estadoAdopcion'] as String? ?? '';
     final urgencia        = a['urgencia']       as String? ?? '';
     final creadoPor       = a['creadoPor']      as String? ?? '';
@@ -873,7 +871,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                   ),
                 ),
               // El pin de ubicación y las insignias de la derecha (Hogar de
-              // paso/compatible/verificado) antes eran dos Positioned
+              // paso/compatible) antes eran dos Positioned
               // independientes con un hueco fijo de 90px calculado para
               // nombres de ciudad cortos — con un nombre más largo (ej.
               // "Schiffdorf") el pin se comía ese hueco y quedaba tapado
@@ -950,17 +948,6 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                           child: Text('$score% compatible',
                               style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white)),
                         ),
-                      if (verificado)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                          decoration: BoxDecoration(color: appTeal, borderRadius: BorderRadius.circular(20)),
-                          child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                            Icon(Icons.verified, size: 11, color: Colors.white),
-                            SizedBox(width: 3),
-                            Text('Verificado',
-                                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.white)),
-                          ]),
-                        ),
                     ]),
                   ),
                 ]),
@@ -1001,8 +988,8 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
               // antes el gesto existía pero era invisible, nada indicaba
               // que la foto respondía al toque. Va abajo a la derecha porque
               // la franja superior está siempre ocupada (píldora de
-              // ubicación, puntitos del carrusel y las badges de
-              // compatible/verificado, que pueden ocupar varias filas):
+              // ubicación, puntitos del carrusel y la badge de
+              // compatible, que puede ocupar varias filas):
               // anclado arriba, la badge de "% compatible" se dibujaba
               // encima y lo tapaba. Abajo a la izquierda va el nombre;
               // esta esquina es la única siempre libre. Último en el Stack
