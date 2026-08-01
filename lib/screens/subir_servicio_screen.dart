@@ -52,9 +52,12 @@ class _SubirServicioScreenState extends State<SubirServicioScreen> {
     }
   }
 
+  // "0" pasaba antes esta validación (solo se pedía que el campo no
+  // estuviera vacío) y se guardaba tal cual, publicando un servicio con
+  // precio $0 sin ningún aviso. Hallazgo de auditoría de código.
   bool get _completo =>
       _nombreCtl.text.trim().isNotEmpty &&
-      _precioCtl.text.trim().isNotEmpty;
+      (int.tryParse(_precioCtl.text.trim()) ?? 0) > 0;
 
   Future<void> _guardar() async {
     if (!_completo) return;
@@ -62,7 +65,10 @@ class _SubirServicioScreenState extends State<SubirServicioScreen> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     final payload = {
       'nombre':      _nombreCtl.text.trim(),
-      'precio':      int.tryParse(_precioCtl.text.trim().replaceAll('.', '')) ?? 0,
+      // Sin .replaceAll('.', '') acá a propósito — era código muerto: el
+      // campo tiene inputFormatters: [FilteringTextInputFormatter.digitsOnly]
+      // (ver más abajo), así que un "." nunca se puede llegar a escribir.
+      'precio':      int.tryParse(_precioCtl.text.trim()) ?? 0,
       'descripcion': _descripcionCtl.text.trim(),
       'categoria':   _categoriaSeleccionada,
     };

@@ -103,10 +103,16 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
 
   static const _tipos = ['Centro municipal', 'Fundación', 'ONG', 'Privado'];
 
+  // "0" pasaba antes esta validación (solo se pedía que el campo no
+  // estuviera vacío) y se guardaba tal cual — pero el panel de capacidad
+  // del dashboard (albergue_home_screen.dart) solo se muestra si
+  // capacidadTotal es mayor a 0, así que esa función entera desaparecía
+  // en silencio, sin ningún error que lo explicara. Hallazgo de auditoría
+  // de código.
   bool get _completo =>
       _nombreCtl.text.trim().isNotEmpty &&
       _ciudadCtl.text.trim().isNotEmpty &&
-      _capacidadCtl.text.trim().isNotEmpty &&
+      (int.tryParse(_capacidadCtl.text.trim()) ?? 0) > 0 &&
       _tipo != null;
 
   Future<void> _guardar() async {

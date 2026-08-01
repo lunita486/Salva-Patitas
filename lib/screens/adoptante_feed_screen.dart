@@ -330,6 +330,13 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
           .where('adoptanteId', isEqualTo: uid)
           .snapshots(),
       builder: (context, favSnap) {
+        // Antes esto no se revisaba: si la consulta de favoritos fallaba
+        // (token vencido, permiso denegado), favRescateIds quedaba vacío
+        // en silencio y los animales ya marcados como favoritos volvían a
+        // aparecer en el feed principal, como si nunca se hubieran
+        // guardado — sin ningún aviso de que algo salió mal. Hallazgo de
+        // auditoría de código.
+        if (favSnap.hasError) return errorFeedState();
         // Animales ya guardados en Favoritos: no hace falta mostrarlos de
         // nuevo en el feed principal, ya quedan a mano en esa pestaña.
         final favRescateIds = (favSnap.data?.docs ?? [])
@@ -541,12 +548,12 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
               _actionBtn(Icons.close, Colors.grey.shade200, Colors.grey.shade700, 52, () {
                 _fotoPageNotifier.value = 0;
                 setState(() => _idx++);
-              }),
+              }, 'Pasar'),
               const SizedBox(width: 18),
               _actionBtn(Icons.pets, Colors.white, appInk, 46, () {
                 Navigator.push(context, MaterialPageRoute(
                     builder: (_) => AnimalDetalleScreen(animal: animal)));
-              }),
+              }, 'Ver más detalles de ${animal['nombre']}'),
               const SizedBox(width: 18),
               _actionBtn(Icons.favorite, appOrange, Colors.white, 62, () async {
                 // Se oculta de una (sin avanzar _idx a mano): la lista se
@@ -564,7 +571,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                       backgroundColor: msgError,
                       content: Text('No se pudo guardar el favorito. Intentá de nuevo.')));
                 }
-              }),
+              }, 'Marcar como favorito'),
             ]),
           ),
         ]);
@@ -736,17 +743,20 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
     );
   }
 
-  Widget _flechaFoto(IconData icon, VoidCallback onTap) => Padding(
+  Widget _flechaFoto(IconData icon, VoidCallback onTap, String label) => Padding(
         padding: const EdgeInsets.all(8),
-        child: GestureDetector(
-          onTap: onTap,
-          child: Container(
-            width: 36, height: 36,
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.38),
-              shape: BoxShape.circle,
+        child: Tooltip(
+          message: label,
+          child: GestureDetector(
+            onTap: onTap,
+            child: Container(
+              width: 36, height: 36,
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.38),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: Colors.white, size: 26),
             ),
-            child: Icon(icon, color: Colors.white, size: 26),
           ),
         ),
       );
@@ -1014,11 +1024,11 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                       children: [
                         pageIdx > 0
                             ? _flechaFoto(Icons.chevron_left,
-                                () => _fotoPageNotifier.value = pageIdx - 1)
+                                () => _fotoPageNotifier.value = pageIdx - 1, 'Foto anterior')
                             : const SizedBox(width: 52),
                         pageIdx < fotos.length - 1
                             ? _flechaFoto(Icons.chevron_right,
-                                () => _fotoPageNotifier.value = pageIdx + 1)
+                                () => _fotoPageNotifier.value = pageIdx + 1, 'Foto siguiente')
                             : const SizedBox(width: 52),
                       ],
                     ),
@@ -1210,14 +1220,23 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
     );
   }
 
-  Widget _actionBtn(IconData icon, Color bg, Color iconColor, double size, VoidCallback onTap) =>
-    GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: size, height: size,
-        decoration: BoxDecoration(color: bg, shape: BoxShape.circle,
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 8, offset: const Offset(0, 3))]),
-        child: Icon(icon, color: iconColor, size: size * 0.40),
+  // `label` es obligatorio a propósito (no opcional con default) — así
+  // ningún botón nuevo que use este widget compartido puede olvidarse de
+  // pasarlo. Antes las 3 acciones principales del feed (pasar, ver más,
+  // favorito) no tenían ninguna etiqueta para lectores de pantalla.
+  // Hallazgo de auditoría de código.
+  Widget _actionBtn(IconData icon, Color bg, Color iconColor, double size,
+          VoidCallback onTap, String label) =>
+    Tooltip(
+      message: label,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: size, height: size,
+          decoration: BoxDecoration(color: bg, shape: BoxShape.circle,
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 8, offset: const Offset(0, 3))]),
+          child: Icon(icon, color: iconColor, size: size * 0.40),
+        ),
       ),
     );
 }

@@ -5,6 +5,8 @@ import 'package:firebase_analytics/firebase_analytics.dart';
 import '../theme.dart';
 import '../data/chats_repository.dart';
 import '../data/rescates_repository.dart';
+import 'animal_detalle_screen.dart';
+import 'aliado_publico_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final Map<String, dynamic> animal;
@@ -231,6 +233,47 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
+  // La tarjeta "Conversando sobre X" tenía un "›" — en el resto de la app
+  // esa flechita siempre significa "esto se puede tocar" — pero acá no
+  // navegaba a ningún lado: un botón muerto. Hallazgo de auditoría de
+  // código.
+  //
+  // Para el caso de un animal, se pide el documento fresco en vez de
+  // reusar widget.animal tal cual: ese mapa puede venir incompleto según
+  // quién abrió el chat (mis_solicitudes_screen.dart/
+  // solicitudes_rescatista_screen.dart no siempre mandan raza/ubicación/
+  // descripción/tags), y AnimalDetalleScreen los castea sin `?? ...` —
+  // pasarle un mapa a medias la haría crashear en vez de solo abrir.
+  Future<void> _abrirFicha(BuildContext context) async {
+    final tipo = widget.animal['tipoSolicitud'] as String? ?? 'adopcion';
+    if (tipo == 'consulta_aliado') {
+      final aliadoId = widget.animal['rescatistaId'] as String? ?? '';
+      if (aliadoId.isEmpty) return;
+      Navigator.push(context, MaterialPageRoute(
+          builder: (_) => AliadoPublicoScreen(aliadoId: aliadoId)));
+      return;
+    }
+    final rescateId = widget.animal['rescateId'] as String? ?? '';
+    if (rescateId.isEmpty) return;
+    final doc = await RescatesRepository().obtener(rescateId);
+    if (!doc.exists || !context.mounted) return;
+    final d = doc.data() as Map<String, dynamic>;
+    Navigator.push(context, MaterialPageRoute(
+        builder: (_) => AnimalDetalleScreen(animal: {
+          ...d,
+          'nombre':      (d['nombre'] as String?) ?? 'Sin nombre',
+          'raza':        (d['raza'] as String?) ?? 'Criolla',
+          'ubicacion':   (d['ubicacion'] as String?) ?? '',
+          'descripcion': (d['descripcion'] as String?) ?? '',
+          'tags': <String>[
+            if (d['okConNinos']    == true) 'Amigable con niños',
+            if (d['okConMascotas'] == true) 'Es sociable',
+            if ((d['energia'] as String?)?.isNotEmpty == true) d['energia'] as String,
+            if (d['estado'] != null && d['estado'] != 'Sano') d['estado'] as String,
+          ],
+        })));
+  }
+
   // 'Hoy'/'Ayer'/'3 jul' según qué tan lejos esté [d] de hoy. Antes el
   // separador de fecha era un texto fijo ("Hoy") sin importar cuándo eran
   // los mensajes reales — una conversación de la semana pasada mostraba
@@ -411,7 +454,9 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
 
           // ── Context card ────────────────────────────────────────────────────
-          Container(
+          GestureDetector(
+          onTap: () => _abrirFicha(context),
+          child: Container(
             margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -494,6 +539,7 @@ class _ChatScreenState extends State<ChatScreen> {
               ])),
               const Icon(Icons.chevron_right, color: Color(0xFFCCCCCC), size: 20),
             ]),
+          ),
           ),
 
           // ── Messages (con separador por día real, no fijo en "Hoy") ─────────
@@ -586,12 +632,15 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               ),
               const SizedBox(width: 8),
-              GestureDetector(
-                onTap: () => _send(_msgCtl.text),
-                child: Container(
-                  width: 44, height: 44,
-                  decoration: const BoxDecoration(color: appOrange, shape: BoxShape.circle),
-                  child: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+              Tooltip(
+                message: 'Enviar mensaje',
+                child: GestureDetector(
+                  onTap: () => _send(_msgCtl.text),
+                  child: Container(
+                    width: 44, height: 44,
+                    decoration: const BoxDecoration(color: appOrange, shape: BoxShape.circle),
+                    child: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+                  ),
                 ),
               ),
             ]),
