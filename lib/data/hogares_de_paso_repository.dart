@@ -104,12 +104,21 @@ class HogaresDePasoRepository {
   /// El email es opcional pero es lo que permite fusionar esta fila más
   /// adelante si esa persona termina ayudando de verdad por la app (ver
   /// [registrarAyuda]).
+  ///
+  /// [timeout] vive ACÁ ADENTRO, no envuelto desde afuera — igual que en
+  /// `ChatsRepository`/`conReintentoSiTokenVencido`: sin señal, un
+  /// `.add()`/`.update()`/`.delete()` de Firestore no falla, se queda
+  /// esperando al servidor para siempre. `agregarManual` ya tenía un
+  /// try/catch en la pantalla que hoy no atrapaba nada porque nunca había
+  /// una excepción real que atrapar; `actualizarContacto`/`eliminar` ni
+  /// siquiera tenían eso. Hallazgo de auditoría de código.
   Future<void> agregarManual({
     required String albergueId,
     required String nombre,
     String telefono = '',
     String notas = '',
     String email = '',
+    Duration timeout = const Duration(seconds: 15),
   }) =>
       _col.add({
         'albergueId': albergueId,
@@ -122,7 +131,7 @@ class HogaresDePasoRepository {
         'ultimaVez': null,
         'creadoEn': FieldValue.serverTimestamp(),
         'agregadoManualmente': true,
-      });
+      }).timeout(timeout);
 
   /// Las filas que se agregan solas (al aprobar una solicitud) nacen sin
   /// teléfono ni notas — esto deja completarlos después, tanto para esas
@@ -130,8 +139,12 @@ class HogaresDePasoRepository {
   /// completar el email de una fila agregada a mano que no lo tenía, para
   /// que pueda fusionarse más adelante si esa persona ayuda de verdad.
   Future<void> actualizarContacto(String docId,
-          {required String telefono, required String notas, String email = ''}) =>
-      _col.doc(docId).update({'telefono': telefono, 'notas': notas, 'email': _normalizarEmail(email)});
+          {required String telefono, required String notas, String email = '',
+          Duration timeout = const Duration(seconds: 15)}) =>
+      _col.doc(docId)
+          .update({'telefono': telefono, 'notas': notas, 'email': _normalizarEmail(email)})
+          .timeout(timeout);
 
-  Future<void> eliminar(String docId) => _col.doc(docId).delete();
+  Future<void> eliminar(String docId, {Duration timeout = const Duration(seconds: 15)}) =>
+      _col.doc(docId).delete().timeout(timeout);
 }

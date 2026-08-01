@@ -71,6 +71,12 @@ class ChatsRepository {
   /// `chats` tiene esquema mixto — [asegurarChatNegocio] guarda la foto del
   /// negocio en `fotoBase64` (sigue en base64, fuera de alcance del cambio
   /// a Storage). El lado de lectura tiene que revisar los dos campos.
+  ///
+  /// Con timeout de 15s: sin señal, este `.set()` no falla, se queda
+  /// esperando al servidor para siempre — y los dos llamadores reales
+  /// (`chat_screen.dart`, `solicitudes_rescatista_screen.dart`) ya
+  /// atrapan el error, pero nunca llegaban a recibirlo. Hallazgo de
+  /// auditoría de código.
   Future<String> asegurarChatAnimal({
     required String adoptanteId,
     required String adoptanteNombre,
@@ -82,6 +88,7 @@ class ChatsRepository {
     String? especie,
     String? fotoUrl,
     Map<String, dynamic>? extra,
+    Duration timeout = const Duration(seconds: 15),
   }) async {
     final chatId = idAnimal(rescateId: rescateId, adoptanteId: adoptanteId);
     await _db.collection('chats').doc(chatId).set({
@@ -95,7 +102,7 @@ class ChatsRepository {
       if (especie != null) 'especie': especie,
       if (fotoUrl != null) 'fotoUrl': fotoUrl,
       if (extra != null) ...extra,
-    }, SetOptions(merge: true));
+    }, SetOptions(merge: true)).timeout(timeout);
     return chatId;
   }
 
@@ -112,6 +119,13 @@ class ChatsRepository {
   /// refrescar el nombre/foto del negocio en cada apertura, y así tampoco se
   /// resetean ultimoMensaje/noLeidos de una conversación que ya tiene
   /// historial).
+  ///
+  /// Las dos escrituras tienen timeout de 15s — sin señal, ni el `.get()`
+  /// ni el `.set()` de más abajo fallan solos, se quedan esperando al
+  /// servidor para siempre. El único llamador real (`aliado_publico_screen.dart`,
+  /// botón "Contactar") ya atrapa el error y avisa, pero sin este límite
+  /// nunca llegaba a recibirlo — el botón quedaba girando de por vida.
+  /// Hallazgo de auditoría de código.
   Future<String> asegurarChatNegocio({
     required String adoptanteId,
     required String adoptanteNombre,
@@ -119,6 +133,7 @@ class ChatsRepository {
     required String aliadoNombre,
     String contexto = 'general',
     String? fotoBase64,
+    Duration timeout = const Duration(seconds: 15),
   }) async {
     final chatId = idNegocio(aliadoId: aliadoId, adoptanteId: adoptanteId, contexto: contexto);
     final ref = _db.collection('chats').doc(chatId);
@@ -130,7 +145,7 @@ class ChatsRepository {
     // albergue por igual (los tres pasan por el mismo código).
     bool existe;
     try {
-      existe = (await ref.get()).exists;
+      existe = (await ref.get().timeout(timeout)).exists;
     } catch (_) {
       existe = false;
     }
@@ -153,7 +168,7 @@ class ChatsRepository {
         'ultimoMensajeEn':    FieldValue.serverTimestamp(),
         'noLeidosAdoptante':  0,
         'noLeidosRescatista': 0,
-      });
+      }).timeout(timeout);
     }
     return chatId;
   }

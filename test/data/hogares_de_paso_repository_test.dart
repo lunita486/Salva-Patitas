@@ -1,6 +1,21 @@
+import 'dart:async';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 import 'package:patitas_medellin/data/hogares_de_paso_repository.dart';
+
+// fake_cloud_firestore siempre resuelve al toque — para probar que una
+// escritura que NUNCA resuelve (sin señal) se corta sola con timeout hace
+// falta controlar la respuesta a mano.
+class MockFirebaseFirestore extends Mock implements FirebaseFirestore {}
+
+class MockCollectionReference extends Mock
+    implements CollectionReference<Map<String, dynamic>> {}
+
+class MockDocumentReference extends Mock
+    implements DocumentReference<Map<String, dynamic>> {}
 
 void main() {
   group('HogaresDePasoRepository', () {
@@ -162,6 +177,62 @@ void main() {
       await repo.eliminar(ref.id);
 
       expect((await ref.get()).exists, false);
+    });
+
+    // El bug real que esto arregla: sin señal, un .add()/.update()/.delete()
+    // de Firestore no falla, se queda esperando al servidor para siempre —
+    // agregarManual() ya tenía un try/catch en hogares_de_paso_screen.dart
+    // que nunca llegaba a dispararse porque nunca había una excepción que
+    // atrapar, y actualizarContacto()/eliminar() ni siquiera tenían eso. El
+    // timeout vive DENTRO del repositorio para que ningún llamador nuevo
+    // pueda volver a olvidarse de ponerlo.
+    group('timeout — sin señal, no se cuelga para siempre', () {
+      test('agregarManual() se corta con TimeoutException si el .add() nunca resuelve', () async {
+        final db = MockFirebaseFirestore();
+        final col = MockCollectionReference();
+        when(() => db.collection('hogaresDePaso')).thenReturn(col);
+        when(() => col.add(any())).thenAnswer((_) => Completer<DocumentReference<Map<String, dynamic>>>().future);
+
+        final repoConMock = HogaresDePasoRepository(db: db);
+        await expectLater(
+          repoConMock.agregarManual(
+            albergueId: 'alb-1', nombre: 'Doña Marta',
+            timeout: const Duration(milliseconds: 50),
+          ),
+          throwsA(isA<TimeoutException>()),
+        );
+      });
+
+      test('actualizarContacto() se corta con TimeoutException si el .update() nunca resuelve', () async {
+        final db = MockFirebaseFirestore();
+        final col = MockCollectionReference();
+        final ref = MockDocumentReference();
+        when(() => db.collection('hogaresDePaso')).thenReturn(col);
+        when(() => col.doc(any())).thenReturn(ref);
+        when(() => ref.update(any())).thenAnswer((_) => Completer<void>().future);
+
+        final repoConMock = HogaresDePasoRepository(db: db);
+        await expectLater(
+          repoConMock.actualizarContacto('hp1',
+              telefono: '300', notas: '', timeout: const Duration(milliseconds: 50)),
+          throwsA(isA<TimeoutException>()),
+        );
+      });
+
+      test('eliminar() se corta con TimeoutException si el .delete() nunca resuelve', () async {
+        final db = MockFirebaseFirestore();
+        final col = MockCollectionReference();
+        final ref = MockDocumentReference();
+        when(() => db.collection('hogaresDePaso')).thenReturn(col);
+        when(() => col.doc(any())).thenReturn(ref);
+        when(() => ref.delete()).thenAnswer((_) => Completer<void>().future);
+
+        final repoConMock = HogaresDePasoRepository(db: db);
+        await expectLater(
+          repoConMock.eliminar('hp1', timeout: const Duration(milliseconds: 50)),
+          throwsA(isA<TimeoutException>()),
+        );
+      });
     });
   });
 }

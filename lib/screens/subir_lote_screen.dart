@@ -250,8 +250,24 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> with TardandoMuchoMix
         if (mounted) setState(() => _procesados++);
       }
 
-      await Future.wait(
-          [for (var i = 0; i < _animales.length; i++) publicarUno(_animales[i], i)]);
+      // En tandas chicas, no todos los animales a la vez: cada uno normaliza
+      // y sube hasta 2 fotos en su propio isolate (ver el comentario de
+      // publicarUno más arriba), así que un lote grande sin límite podía
+      // disparar decenas de isolates y subidas simultáneas — de sobra para
+      // quedarse sin memoria y crashear a mitad de una publicación real
+      // (un albergue subiendo 15-20 animales de una, justo el caso de uso
+      // de esta pantalla), perdiendo todo lo ya tipeado. Hallazgo de
+      // auditoría de código. Con tandas de 3 se conserva el paralelismo
+      // real DENTRO de cada tanda (la mejora que ya existía) sin acumular
+      // más de ~6 isolates/subidas a la vez en ningún momento, sin importar
+      // cuán grande sea el lote entero.
+      const tandaPublicacion = 3;
+      for (var inicio = 0; inicio < _animales.length; inicio += tandaPublicacion) {
+        final tanda = _animales.skip(inicio).take(tandaPublicacion).toList();
+        await Future.wait([
+          for (var j = 0; j < tanda.length; j++) publicarUno(tanda[j], inicio + j),
+        ]);
+      }
 
       if (!mounted) return;
       Navigator.pop(context);

@@ -26,7 +26,29 @@ class PerfilRescatistaScreen extends StatelessWidget {
       builder: (ctx) => _RolesSheet(rolesActuales: roles),
     );
     if (seleccion == null || seleccion.isEmpty) return;
-    await UsuariosRepository().actualizarRoles(uid, seleccion);
+    // guardarConAviso, no un await directo suelto (lo que había acá antes):
+    // la hoja ya se cerró para cuando esto corre, así que sin esto, si la
+    // escritura fallaba de verdad, la persona quedaba creyendo que cambió
+    // de rol sin que nada se hubiera guardado — sin ningún aviso, ni de
+    // éxito ni de error. Mismo arreglo que ya tiene _configurarUmbralEstancado
+    // acá abajo, que antes nunca se replicó acá (hallazgo de auditoría de
+    // código).
+    final resultado = await guardarConAviso(
+        () => UsuariosRepository().actualizarRoles(uid, seleccion));
+    if (!context.mounted) return;
+    switch (resultado) {
+      case ResultadoGuardado.confirmado:
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Roles actualizados'), backgroundColor: msgExito));
+      case ResultadoGuardado.siguePendiente:
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Esto está tardando. Se va a guardar solo apenas vuelva la señal.'),
+            backgroundColor: msgAdvertencia));
+      case ResultadoGuardado.fallo:
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('No se pudo guardar. Revisá tu conexión e intentá de nuevo.'),
+            backgroundColor: msgError));
+    }
   }
 
   Future<void> _configurarUmbralEstancado(BuildContext context) async {

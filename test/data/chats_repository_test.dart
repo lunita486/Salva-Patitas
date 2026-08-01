@@ -1,6 +1,25 @@
+import 'dart:async';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 import 'package:patitas_medellin/data/chats_repository.dart';
+
+// fake_cloud_firestore siempre resuelve al toque — para probar que una
+// escritura que NUNCA resuelve (sin señal) se corta sola con timeout hace
+// falta controlar la respuesta a mano (mismo patrón que
+// rescates_repository_test.dart).
+class MockFirebaseFirestore extends Mock implements FirebaseFirestore {}
+
+class MockCollectionReference extends Mock
+    implements CollectionReference<Map<String, dynamic>> {}
+
+class MockDocumentReference extends Mock
+    implements DocumentReference<Map<String, dynamic>> {}
+
+class MockDocumentSnapshot extends Mock
+    implements DocumentSnapshot<Map<String, dynamic>> {}
 
 void main() {
   group('ChatsRepository', () {
@@ -216,6 +235,88 @@ void main() {
       expect(id1, id2);
       final doc = await firestore.collection('chats').doc(id1).get();
       expect(doc['ultimoMensaje'], 'Hola');
+    });
+
+    // El bug real que esto arregla: sin señal, un .set()/.get() de Firestore
+    // no falla, se queda esperando al servidor para siempre — el
+    // try/catch que YA tienen chat_screen.dart, aliado_publico_screen.dart
+    // y solicitudes_rescatista_screen.dart nunca llegaba a dispararse
+    // porque nunca había ninguna excepción que atrapar. El timeout vive
+    // ACÁ ADENTRO (no envuelto desde afuera en cada llamador) para que
+    // ningún caller nuevo pueda volver a olvidarse de ponerlo.
+    group('timeout — sin señal, no se cuelga para siempre', () {
+      setUpAll(() {
+        registerFallbackValue(SetOptions(merge: true));
+      });
+
+      test('asegurarChatAnimal: si el .set() nunca resuelve, se corta con '
+          'TimeoutException en vez de colgarse para siempre', () async {
+        final db = MockFirebaseFirestore();
+        final col = MockCollectionReference();
+        final ref = MockDocumentReference();
+        when(() => db.collection('chats')).thenReturn(col);
+        when(() => col.doc(any())).thenReturn(ref);
+        when(() => ref.set(any(), any()))
+            .thenAnswer((_) => Completer<void>().future);
+
+        final repoConMock = ChatsRepository(db: db);
+        await expectLater(
+          repoConMock.asegurarChatAnimal(
+            adoptanteId: 'a', adoptanteNombre: 'Ana', rescateId: 'r',
+            rescatistaId: 'rid', rescatista: 'Refugio', creadoPor: 'albergue',
+            timeout: const Duration(milliseconds: 50),
+          ),
+          throwsA(isA<TimeoutException>()),
+        );
+      });
+
+      test('asegurarChatNegocio: si el .get() nunca resuelve, se corta con '
+          'TimeoutException — no cae en silencio al camino de "no existe" '
+          'colgado para siempre', () async {
+        final db = MockFirebaseFirestore();
+        final col = MockCollectionReference();
+        final ref = MockDocumentReference();
+        when(() => db.collection('chats')).thenReturn(col);
+        when(() => col.doc(any())).thenReturn(ref);
+        when(() => ref.get()).thenAnswer((_) => Completer<DocumentSnapshot<Map<String, dynamic>>>().future);
+        when(() => ref.set(any())).thenAnswer((_) async {});
+
+        final repoConMock = ChatsRepository(db: db);
+        // El try/catch interno de asegurarChatNegocio trata CUALQUIER falla
+        // del get() (incluido el timeout) como "no existe todavía" y sigue
+        // de largo a crearlo — por eso acá lo que se prueba es que la
+        // función TERMINA (no se cuelga para siempre), no que lance.
+        await expectLater(
+          repoConMock.asegurarChatNegocio(
+            adoptanteId: 'a', adoptanteNombre: 'Ana',
+            aliadoId: 'alid', aliadoNombre: 'Veterinaria',
+            timeout: const Duration(milliseconds: 50),
+          ).timeout(const Duration(seconds: 2)),
+          completes,
+        );
+      });
+
+      test('asegurarChatNegocio: si el .set() nunca resuelve (chat nuevo), '
+          'se corta con TimeoutException en vez de colgarse para siempre', () async {
+        final db = MockFirebaseFirestore();
+        final col = MockCollectionReference();
+        final ref = MockDocumentReference();
+        when(() => db.collection('chats')).thenReturn(col);
+        when(() => col.doc(any())).thenReturn(ref);
+        when(() => ref.get()).thenThrow(
+            FirebaseException(plugin: 'cloud_firestore', code: 'permission-denied'));
+        when(() => ref.set(any())).thenAnswer((_) => Completer<void>().future);
+
+        final repoConMock = ChatsRepository(db: db);
+        await expectLater(
+          repoConMock.asegurarChatNegocio(
+            adoptanteId: 'a', adoptanteNombre: 'Ana',
+            aliadoId: 'alid', aliadoNombre: 'Veterinaria',
+            timeout: const Duration(milliseconds: 50),
+          ),
+          throwsA(isA<TimeoutException>()),
+        );
+      });
     });
   });
 }

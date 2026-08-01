@@ -39,16 +39,29 @@ Future<T> conReintento<T>(Future<T> Function() accion) async {
 /// verdad hubo un permission-denied. Evaluarlo eager en cada llamada
 /// rompería los tests del camino feliz de los repositorios, que no mockean
 /// auth porque en su flujo normal nunca se lo necesita.
+///
+/// [timeout] vive ACÁ ADENTRO (no envuelto desde afuera en cada llamador)
+/// a propósito — mismo motivo que `guardarConAviso`/`subir()`: sin esto,
+/// `escritura()` sin señal no se pierde ni falla, se queda esperando al
+/// servidor para siempre, y los try/catch de las pantallas que llaman a
+/// esta función (`seleccion_rol_screen.dart` eligiendo tu primer rol,
+/// `ChatsRepository` abriendo un chat) nunca llegan a dispararse porque
+/// nunca hay una excepción que atrapar — quedan con el spinner trabado en
+/// vez de mostrar el aviso de error que ya tienen escrito. Un llamador que
+/// necesite un límite más chico (ej. `eliminar()`, que ya envuelve esto
+/// con su propio `.timeout(12s)` desde afuera) sigue funcionando igual:
+/// el más corto de los dos gana. Hallazgo de auditoría de código.
 Future<void> conReintentoSiTokenVencido(
   FirebaseAuth Function() auth,
-  Future<void> Function() escritura,
-) async {
+  Future<void> Function() escritura, {
+  Duration timeout = const Duration(seconds: 15),
+}) async {
   try {
-    await escritura();
+    await escritura().timeout(timeout);
   } on FirebaseException catch (e) {
     if (e.code != 'permission-denied') rethrow;
     await auth().currentUser?.getIdToken(true);
-    await escritura();
+    await escritura().timeout(timeout);
   }
 }
 

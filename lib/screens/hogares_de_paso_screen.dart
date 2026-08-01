@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme.dart';
 import '../data/hogares_de_paso_repository.dart';
+import '../data/firestore_resiliencia.dart';
 
 /// Roster de personas de confianza para hogar de paso — solo para
 /// albergues (decisión de producto, mejoras_albergue.html). Las filas se
@@ -74,8 +75,29 @@ class _HogaresDePasoScreenState extends State<HogaresDePasoScreen> {
           telefonoInicial: telefonoActual, notasIniciales: notasActuales, emailInicial: emailActual),
     );
     if (resultado == null) return;
-    await _repo.actualizarContacto(docId,
-        telefono: resultado['telefono'] ?? '', notas: resultado['notas'] ?? '', email: resultado['email'] ?? '');
+    // guardarConAviso, no un await directo suelto (lo que había acá antes,
+    // sin siquiera un try/catch): sin señal, actualizarContacto() no
+    // fallaba, se quedaba esperando al servidor para siempre — y aunque
+    // fallara de verdad, no había nada que avisara nada. Hallazgo de
+    // auditoría de código.
+    final r = await guardarConAviso(() => _repo.actualizarContacto(docId,
+        telefono: resultado['telefono'] ?? '',
+        notas: resultado['notas'] ?? '',
+        email: resultado['email'] ?? ''));
+    if (!mounted) return;
+    switch (r) {
+      case ResultadoGuardado.confirmado:
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Contacto actualizado'), backgroundColor: msgExito));
+      case ResultadoGuardado.siguePendiente:
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Esto está tardando. Se va a guardar solo apenas vuelva la señal.'),
+            backgroundColor: msgAdvertencia));
+      case ResultadoGuardado.fallo:
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('No se pudo guardar. Revisá tu conexión e intentá de nuevo.'),
+            backgroundColor: msgError));
+    }
   }
 
   Future<void> _eliminar(String docId, String nombre) async {
@@ -95,7 +117,22 @@ class _HogaresDePasoScreenState extends State<HogaresDePasoScreen> {
       ),
     );
     if (confirmar != true) return;
-    await _repo.eliminar(docId);
+    final r = await guardarConAviso(() => _repo.eliminar(docId));
+    if (!mounted) return;
+    switch (r) {
+      // Mismo criterio que editar_rescate_screen.dart al borrar un animal:
+      // un borrado que quedó encolado sin señal SÍ se va a aplicar solo —
+      // para la persona esto ES un borrado exitoso, avisar "falló" sería
+      // mentirle.
+      case ResultadoGuardado.confirmado:
+      case ResultadoGuardado.siguePendiente:
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('$nombre se quitó de tu red.'), backgroundColor: msgExito));
+      case ResultadoGuardado.fallo:
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('No se pudo quitar. Revisá tu conexión e intentá de nuevo.'),
+            backgroundColor: msgError));
+    }
   }
 
 
