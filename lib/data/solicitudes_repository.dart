@@ -199,6 +199,15 @@ class SolicitudesRepository {
   /// Con [rescateId] se filtra por el id único del animal; sin él (dato
   /// legado) se cae al match por nombre+dueño, que puede confundir dos
   /// animales con el mismo nombre bajo la misma cuenta en distinto rol.
+  ///
+  /// Los rechazos van en un solo `WriteBatch` (todo o nada), no uno por
+  /// uno como antes — si la señal se cortaba a mitad del loop secuencial,
+  /// algunos competidores quedaban rechazados y otros seguían "pendiente"
+  /// sobre un animal que ya se fue con otro adoptante, sin que nadie les
+  /// avisara (el llamador usa la lista devuelta para mandarles el aviso
+  /// por chat — una solicitud que el batch nunca llegó a rechazar tampoco
+  /// entra en esa lista, así que ni se entera). Hallazgo de auditoría de
+  /// código.
   Future<List<Map<String, dynamic>>> rechazarCompetidoras({
     required String animalNombre,
     required String rescatistaId,
@@ -214,14 +223,16 @@ class SolicitudesRepository {
     }
     final otros = await q.get();
     final rechazadas = <Map<String, dynamic>>[];
+    final batch = _db.batch();
     for (final doc in otros.docs) {
       if (doc.id == excluirDocId) continue;
-      await doc.reference.update({
+      batch.update(doc.reference, {
         'estado': 'rechazada',
         'motivoRechazo': 'El proceso de adopción ya fue iniciado con otro adoptante.',
       });
       rechazadas.add({...doc.data(), 'id': doc.id});
     }
+    if (rechazadas.isNotEmpty) await batch.commit();
     return rechazadas;
   }
 

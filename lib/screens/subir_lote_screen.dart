@@ -332,7 +332,14 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> with TardandoMuchoMix
       IconButton(
         icon: const Icon(Icons.arrow_back_ios_new, size: 20),
                 tooltip: 'Volver',
-        onPressed: () {
+        // Apagado mientras se publica: sin esto, se podía volver al paso de
+        // fotos (paso 0) y borrar/reemplazar la tarjeta de un animal que se
+        // está publicando en ese mismo instante de fondo — publicarUno()
+        // vuelve a leer nombreCtl/descCtl de ese draft DESPUÉS de un await
+        // (la normalización de fotos), y si el dispose() ya corrió en ese
+        // hueco, revienta con "used after being disposed". Hallazgo de
+        // auditoría de código.
+        onPressed: _publicando ? null : () {
           if (_paso > 0) setState(() => _paso--);
           else Navigator.pop(context);
         },
@@ -496,7 +503,12 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> with TardandoMuchoMix
                       fontWeight: FontWeight.bold))),
             Positioned(top: 4, right: 4,
               child: GestureDetector(
-                onTap: () => setState(() { _animales[i].dispose(); _animales.removeAt(i); }),
+                // Ver el comentario del botón "atrás" en _appBar(): borrar
+                // un draft mientras se publica puede tirar abajo un
+                // publicarUno() en curso sobre ESE mismo índice.
+                onTap: _publicando
+                    ? null
+                    : () => setState(() { _animales[i].dispose(); _animales.removeAt(i); }),
                 child: Container(
                   decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
                   padding: const EdgeInsets.all(3),
@@ -588,7 +600,12 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> with TardandoMuchoMix
             child: Tooltip(
               message: 'Eliminar',
               child: GestureDetector(
-                onTap: () => setState(() { _animales[i].dispose(); _animales.removeAt(i); }),
+                // Mismo motivo que el botón "atrás" de _appBar(): borrar
+                // un draft mientras se publica puede tirar abajo un
+                // publicarUno() en curso sobre ESE mismo índice.
+                onTap: _publicando
+                    ? null
+                    : () => setState(() { _animales[i].dispose(); _animales.removeAt(i); }),
                 child: Container(
                   padding: const EdgeInsets.all(7),
                   decoration: BoxDecoration(

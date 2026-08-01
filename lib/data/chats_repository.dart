@@ -143,10 +143,19 @@ class ChatsRepository {
     // (no es que falte permiso de verdad). Sin este try/catch esa excepción
     // mataba el botón "Contactar" en silencio, para adoptante, rescatista Y
     // albergue por igual (los tres pasan por el mismo código).
+    //
+    // El catch acota a `permission-denied` a propósito (antes atrapaba
+    // CUALQUIER error) — un chat que SÍ existe pero cuyo get() falla por
+    // otro motivo (ej. el timeout de acá arriba, en una reconexión lenta)
+    // no puede tratarse como "no existe": el `if (!existe)` de abajo hace
+    // un `.set()` SIN merge, así que un falso "no existe" reseteaba
+    // ultimoMensaje/noLeidos de una conversación real con historial.
+    // Hallazgo de auditoría de código.
     bool existe;
     try {
       existe = (await ref.get().timeout(timeout)).exists;
-    } catch (_) {
+    } on FirebaseException catch (e) {
+      if (e.code != 'permission-denied') rethrow;
       existe = false;
     }
     if (!existe) {

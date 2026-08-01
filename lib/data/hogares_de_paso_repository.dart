@@ -138,11 +138,26 @@ class HogaresDePasoRepository {
   /// como para las agregadas a mano (pedido real de Eliza). También deja
   /// completar el email de una fila agregada a mano que no lo tenía, para
   /// que pueda fusionarse más adelante si esa persona ayuda de verdad.
+  ///
+  /// [email] es `String?` (sin valor por defecto) a propósito — antes
+  /// tenía `= ''`, así que un futuro llamador que se olvidara de pasarlo
+  /// (por ejemplo, una pantalla que solo quisiera actualizar el teléfono)
+  /// borraba en silencio el email ya guardado, justo el dato que permite
+  /// fusionar esta fila con la cuenta real de la persona más adelante (ver
+  /// [registrarAyuda]). Ahora solo se toca el campo si se pasa
+  /// explícitamente — la pantalla que edita el contacto sigue pudiendo
+  /// vaciarlo a propósito, pasando `''` (el campo llega prellenado con el
+  /// valor actual: un `''` real significa que la persona lo borró adrede).
+  /// Hallazgo de auditoría de código.
   Future<void> actualizarContacto(String docId,
-          {required String telefono, required String notas, String email = '',
+          {required String telefono, required String notas, String? email,
           Duration timeout = const Duration(seconds: 15)}) =>
       _col.doc(docId)
-          .update({'telefono': telefono, 'notas': notas, 'email': _normalizarEmail(email)})
+          .update({
+            'telefono': telefono,
+            'notas': notas,
+            if (email != null) 'email': _normalizarEmail(email),
+          })
           .timeout(timeout);
 
   Future<void> eliminar(String docId, {Duration timeout = const Duration(seconds: 15)}) =>

@@ -271,8 +271,10 @@ void main() {
       });
 
       test('asegurarChatNegocio: si el .get() nunca resuelve, se corta con '
-          'TimeoutException — no cae en silencio al camino de "no existe" '
-          'colgado para siempre', () async {
+          'TimeoutException — y esa excepción se PROPAGA en vez de tratarse '
+          'como "no existe" (un timeout no significa que el chat no exista: '
+          'tratarlo así arriesgaba sobrescribir uno real que sí tiene '
+          'historial)', () async {
         final db = MockFirebaseFirestore();
         final col = MockCollectionReference();
         final ref = MockDocumentReference();
@@ -282,18 +284,41 @@ void main() {
         when(() => ref.set(any())).thenAnswer((_) async {});
 
         final repoConMock = ChatsRepository(db: db);
-        // El try/catch interno de asegurarChatNegocio trata CUALQUIER falla
-        // del get() (incluido el timeout) como "no existe todavía" y sigue
-        // de largo a crearlo — por eso acá lo que se prueba es que la
-        // función TERMINA (no se cuelga para siempre), no que lance.
         await expectLater(
           repoConMock.asegurarChatNegocio(
             adoptanteId: 'a', adoptanteNombre: 'Ana',
             aliadoId: 'alid', aliadoNombre: 'Veterinaria',
             timeout: const Duration(milliseconds: 50),
-          ).timeout(const Duration(seconds: 2)),
-          completes,
+          ),
+          throwsA(isA<TimeoutException>()),
         );
+        // Y no llegó a ejecutar el .set() de "chat nuevo" — nunca se trató
+        // como "no existe".
+        verifyNever(() => ref.set(any()));
+      });
+
+      test('asegurarChatNegocio: un error real del .get() (no permission-denied, '
+          'no timeout) SE PROPAGA — antes cualquier error se tapaba como "no '
+          'existe" y sobrescribía sin merge un chat que sí existía, borrando su '
+          'vista previa de mensaje y sus contadores de no-leídos', () async {
+        final db = MockFirebaseFirestore();
+        final col = MockCollectionReference();
+        final ref = MockDocumentReference();
+        when(() => db.collection('chats')).thenReturn(col);
+        when(() => col.doc(any())).thenReturn(ref);
+        when(() => ref.get()).thenThrow(
+            FirebaseException(plugin: 'cloud_firestore', code: 'unavailable'));
+        when(() => ref.set(any())).thenAnswer((_) async {});
+
+        final repoConMock = ChatsRepository(db: db);
+        await expectLater(
+          repoConMock.asegurarChatNegocio(
+            adoptanteId: 'a', adoptanteNombre: 'Ana',
+            aliadoId: 'alid', aliadoNombre: 'Veterinaria',
+          ),
+          throwsA(isA<FirebaseException>()),
+        );
+        verifyNever(() => ref.set(any()));
       });
 
       test('asegurarChatNegocio: si el .set() nunca resuelve (chat nuevo), '

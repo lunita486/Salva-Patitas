@@ -587,7 +587,13 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> with TardandoMu
       IconButton(
         icon: const Icon(Icons.arrow_back_ios_new, size: 20),
                 tooltip: 'Volver',
-        onPressed: () => Navigator.pop(ctx),
+        // Apagado mientras se publica: sin esto, se podía salir de la
+        // pantalla con el publish todavía corriendo de fondo — si terminaba
+        // bien, el animal quedaba publicado sin que la persona lo viera (ni
+        // el SnackBar de éxito, que ya no tiene dónde mostrarse), así que
+        // podía creer que falló y reintentar, publicando el mismo animal
+        // dos veces. Hallazgo de auditoría de código.
+        onPressed: _publicando ? null : () => Navigator.pop(ctx),
       ),
       const Expanded(
         child: Text('Subir un rescate',

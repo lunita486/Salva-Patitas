@@ -113,6 +113,38 @@ void main() {
       expect(doc['email'], 'karen.cancino@gmail.com');
     });
 
+    // El bug real que esto arregla: antes `email` tenía un valor por
+    // defecto (`= ''`), así que CUALQUIER llamado que se olvidara de
+    // pasarlo borraba en silencio el email ya guardado — justo el dato que
+    // permite fusionar esta fila con la cuenta real de la persona más
+    // adelante (ver registrarAyuda). Ahora email es `String?` sin default:
+    // si no se pasa, el campo ni se toca.
+    test('actualizarContacto() SIN pasar email no borra el que ya estaba guardado', () async {
+      final ref = await firestore.collection('hogaresDePaso').add({
+        'albergueId': 'alb-1', 'nombre': 'Karen Cancino', 'email': 'karen@ejemplo.com',
+      });
+
+      await repo.actualizarContacto(ref.id, telefono: '3009999999', notas: 'Nueva nota');
+
+      final doc = await ref.get();
+      expect(doc['email'], 'karen@ejemplo.com', reason: 'el email no se tocó');
+      expect(doc['telefono'], '3009999999');
+      expect(doc['notas'], 'Nueva nota');
+    });
+
+    test('actualizarContacto() SÍ borra el email si se pasa explícitamente '
+        'vacío — sigue siendo una decisión consciente y posible, no un '
+        'accidente por omisión', () async {
+      final ref = await firestore.collection('hogaresDePaso').add({
+        'albergueId': 'alb-1', 'nombre': 'Karen Cancino', 'email': 'karen@ejemplo.com',
+      });
+
+      await repo.actualizarContacto(ref.id, telefono: '', notas: '', email: '');
+
+      final doc = await ref.get();
+      expect(doc['email'], '');
+    });
+
     test('registrarAyuda() después de fusionar por email, la segunda ayuda de esa cuenta suma '
         'sobre la misma fila (ya no vuelve a buscar por email)', () async {
       await repo.agregarManual(albergueId: 'alb-1', nombre: 'David Casas', email: 'david@ejemplo.com');
