@@ -7,6 +7,15 @@ import '../theme.dart';
 import '../data/chats_repository.dart';
 import 'chat_screen.dart';
 
+// A nivel de archivo, no de la instancia (esta pantalla es un
+// StatelessWidget, sin estado propio donde guardar un candado) — evita que
+// un doble toque en "Contactar" dispare dos llamadas en paralelo y empuje
+// DOS ChatScreen a la pila de navegación (la persona tendría que tocar
+// "atrás" dos veces para salir). Con clave por aliadoId, no global: cada
+// negocio tiene su propio candado. Mismo patrón que _solicitudesEnProceso
+// en solicitudes_rescatista_screen.dart. Hallazgo de auditoría de código.
+final Set<String> _contactandoAliados = {};
+
 class AliadoPublicoScreen extends StatelessWidget {
   final String aliadoId;
   final bool esRescatista;
@@ -25,62 +34,66 @@ class AliadoPublicoScreen extends StatelessWidget {
   Future<void> _contactar(BuildContext context, String nombre, String? fotoBase64) async {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     if (uid.isEmpty) return;
-
-    final contexto = !esRescatista ? 'general' : (esAlbergue ? 'albergue' : 'rescatista');
-    // Al contactar "como albergue" hay que mostrar el nombre DEL ALBERGUE
-    // (ej. "La Perla"), no el nombre personal de Google de quien lo
-    // administra — el avatar de esa fila ya muestra el logo del albergue
-    // (AvatarUsuario con esNegocio), así que el nombre tiene que ser
-    // consistente con eso. Para rescatista/adoptante sí corresponde el
-    // nombre personal — no existe un "nombre de negocio" para un
-    // rescatista individual.
-    var nombreContacto = FirebaseAuth.instance.currentUser?.displayName ?? 'Usuario';
-    if (contexto == 'albergue') {
-      try {
-        final userDoc = await FirebaseFirestore.instance.collection('usuarios').doc(uid).get();
-        final albergueNombre = userDoc.data()?['albergueNombre'] as String?;
-        if (albergueNombre != null && albergueNombre.isNotEmpty) nombreContacto = albergueNombre;
-      } catch (_) {}
-    }
-
-    String chatId;
+    if (!_contactandoAliados.add(aliadoId)) return;
     try {
-      chatId = await ChatsRepository().asegurarChatNegocio(
-        adoptanteId: uid,
-        adoptanteNombre: nombreContacto,
-        aliadoId: aliadoId,
-        aliadoNombre: nombre,
-        contexto: contexto,
-        fotoBase64: fotoBase64,
-      );
-    } catch (_) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            backgroundColor: msgError,
-            content: Text('No se pudo abrir el chat. Intentá de nuevo.')));
+      final contexto = !esRescatista ? 'general' : (esAlbergue ? 'albergue' : 'rescatista');
+      // Al contactar "como albergue" hay que mostrar el nombre DEL ALBERGUE
+      // (ej. "La Perla"), no el nombre personal de Google de quien lo
+      // administra — el avatar de esa fila ya muestra el logo del albergue
+      // (AvatarUsuario con esNegocio), así que el nombre tiene que ser
+      // consistente con eso. Para rescatista/adoptante sí corresponde el
+      // nombre personal — no existe un "nombre de negocio" para un
+      // rescatista individual.
+      var nombreContacto = FirebaseAuth.instance.currentUser?.displayName ?? 'Usuario';
+      if (contexto == 'albergue') {
+        try {
+          final userDoc = await FirebaseFirestore.instance.collection('usuarios').doc(uid).get();
+          final albergueNombre = userDoc.data()?['albergueNombre'] as String?;
+          if (albergueNombre != null && albergueNombre.isNotEmpty) nombreContacto = albergueNombre;
+        } catch (_) {}
       }
-      return;
+
+      String chatId;
+      try {
+        chatId = await ChatsRepository().asegurarChatNegocio(
+          adoptanteId: uid,
+          adoptanteNombre: nombreContacto,
+          aliadoId: aliadoId,
+          aliadoNombre: nombre,
+          contexto: contexto,
+          fotoBase64: fotoBase64,
+        );
+      } catch (_) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              backgroundColor: msgError,
+              content: Text('No se pudo abrir el chat. Intentá de nuevo.')));
+        }
+        return;
+      }
+
+      FirebaseAnalytics.instance.logEvent(
+        name: 'aliado_contactado',
+        parameters: {'aliado_id': aliadoId},
+      ).catchError((_) {});
+
+      if (!context.mounted) return;
+      Navigator.push(context, MaterialPageRoute(
+        builder: (_) => ChatScreen(
+          esRescatista: false,
+          chatId: chatId,
+          animal: {
+            'nombre':       nombre,
+            'rescatista':   nombre,
+            'rescatistaId': aliadoId,
+            'fotoBase64':   fotoBase64,
+            'tipoSolicitud': 'consulta_aliado',
+          },
+        ),
+      ));
+    } finally {
+      _contactandoAliados.remove(aliadoId);
     }
-
-    FirebaseAnalytics.instance.logEvent(
-      name: 'aliado_contactado',
-      parameters: {'aliado_id': aliadoId},
-    ).catchError((_) {});
-
-    if (!context.mounted) return;
-    Navigator.push(context, MaterialPageRoute(
-      builder: (_) => ChatScreen(
-        esRescatista: false,
-        chatId: chatId,
-        animal: {
-          'nombre':       nombre,
-          'rescatista':   nombre,
-          'rescatistaId': aliadoId,
-          'fotoBase64':   fotoBase64,
-          'tipoSolicitud': 'consulta_aliado',
-        },
-      ),
-    ));
   }
 
   @override

@@ -11,7 +11,6 @@ import '../data/auth_helper.dart';
 import '../data/creator_role.dart';
 import '../data/rescates_repository.dart';
 import '../data/solicitudes_repository.dart';
-import '../data/usuarios_repository.dart';
 import 'subir_rescate_screen.dart';
 import 'subir_lote_screen.dart';
 import 'mis_rescates_screen.dart';
@@ -93,36 +92,11 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
     }
   }
 
+  // El diálogo/escritura viven en mostrarCambiarRolDebug (theme.dart,
+  // compartida entre 5 pantallas que antes cada una tenía su propia copia
+  // — hallazgo de auditoría de código).
   Future<void> _cambiarRolDebug() async {
-    final opciones = <String, List<String>>{
-      'Solo Adoptante':         ['adoptante'],
-      'Solo Rescatista':        ['rescatista'],
-      'Adoptante + Rescatista': ['adoptante', 'rescatista'],
-      'Albergue':               ['albergue'],
-      'Aliado':                 ['aliado'],
-    };
-    final seleccion = await showDialog<List<String>>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('🛠 Cambiar rol (DEBUG)'),
-        children: opciones.entries.map((e) => SimpleDialogOption(
-          onPressed: () => Navigator.pop(ctx, e.value),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Text(e.key),
-          ),
-        )).toList(),
-      ),
-    );
-    if (seleccion == null || !mounted) return;
-    try {
-      await UsuariosRepository().actualizarRoles(_uid, seleccion);
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('No se pudo cambiar el rol. Revisá tu conexión e intentá de nuevo.'),
-          backgroundColor: msgError));
-    }
+    await mostrarCambiarRolDebug(context);
   }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> get _rescatesStream =>
@@ -899,26 +873,30 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
     }
     return Column(mainAxisSize: MainAxisSize.min, children: [
       const SizedBox(height: 6),
-      GestureDetector(
-        onTap: () => contactarPersonaEnProceso(
-          ctx,
-          docId: docId,
-          nombre: nombre,
-          especie: especie,
-          fotoUrl: fotoUrl,
-          creadoPor: d['creadoPor'] as String?,
-          adoptanteIdEnProceso: adoptanteIdEnProceso,
-        ),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(vertical: 5),
-          decoration: BoxDecoration(color: appOrange, borderRadius: BorderRadius.circular(8)),
-          child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            Icon(Icons.chat_bubble_outline, size: 11, color: Colors.white),
-            SizedBox(width: 4),
-            Text('Contactar', style: TextStyle(fontSize: 9,
-                fontWeight: FontWeight.w700, color: Colors.white)),
-          ]),
+      Semantics(
+        button: true,
+        label: 'Contactar a quien está en proceso con $nombre',
+        child: GestureDetector(
+          onTap: () => contactarPersonaEnProceso(
+            ctx,
+            docId: docId,
+            nombre: nombre,
+            especie: especie,
+            fotoUrl: fotoUrl,
+            creadoPor: d['creadoPor'] as String?,
+            adoptanteIdEnProceso: adoptanteIdEnProceso,
+          ),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 5),
+            decoration: BoxDecoration(color: appOrange, borderRadius: BorderRadius.circular(8)),
+            child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(Icons.chat_bubble_outline, size: 11, color: Colors.white),
+              SizedBox(width: 4),
+              Text('Contactar', style: TextStyle(fontSize: 9,
+                  fontWeight: FontWeight.w700, color: Colors.white)),
+            ]),
+          ),
         ),
       ),
     ]);
@@ -1041,7 +1019,14 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                     ),
                     const SizedBox(height: 6),
                     // ── Chip de estado tappable ──────────────────
-                    GestureDetector(
+                    // Semantics explícito — hallazgo de auditoría de código
+                    // (mismo arreglo que en mis_rescates_screen.dart).
+                    Semantics(
+                    button: estadoAdopcion != 'Fallecido',
+                    label: estadoAdopcion == 'Fallecido'
+                        ? 'Estado: Fallecido'
+                        : 'Cambiar estado, actualmente $estadoAdopcion',
+                    child: GestureDetector(
                       onTap: estadoAdopcion == 'Fallecido' ? null : () => showModalBottomSheet(
                         context: ctx,
                         shape: const RoundedRectangleBorder(
@@ -1071,6 +1056,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                           Icon(Icons.expand_more, size: 11, color: estadoColor),
                         ]),
                       ),
+                    ),
                     ),
                     // Antes el albergue no tenía NINGUNA forma de contactar
                     // a quien tiene el animal en "Hogar de paso" o "En
@@ -1176,7 +1162,10 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                     // solo había un ícono fijo, así que si un animal
                     // "Adoptado" era devuelto no había forma de cambiarle
                     // el estado desde el panel (había que ir a "Gestionar").
-                    GestureDetector(
+                    Semantics(
+                    button: true,
+                    label: 'Cambiar estado, actualmente $estadoAdopcion',
+                    child: GestureDetector(
                       onTap: () => showModalBottomSheet(
                         context: ctx,
                         shape: const RoundedRectangleBorder(
@@ -1206,6 +1195,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                           Icon(Icons.expand_more, size: 11, color: estadoColor),
                         ]),
                       ),
+                    ),
                     ),
                     _botonContactar(ctx, docId: docId, nombre: nombre,
                         especie: especie, fotoUrl: fotoUrl, d: d),

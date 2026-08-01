@@ -9,7 +9,6 @@ import '../services/notificaciones_service.dart';
 import '../data/creator_role.dart';
 import '../data/rescates_repository.dart';
 import '../data/solicitudes_repository.dart';
-import '../data/usuarios_repository.dart';
 import 'subir_rescate_screen.dart';
 import 'solicitudes_rescatista_screen.dart';
 import 'adoptante_chats_screen.dart';
@@ -116,41 +115,14 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // ── Debug: cambio rápido de rol (solo en builds de desarrollo) ─────────────
+  // El diálogo/escritura en sí viven en mostrarCambiarRolDebug (theme.dart,
+  // compartida entre 5 pantallas que antes cada una tenía su propia copia)
+  // — acá solo se agrega lo propio de ESTA pantalla: releer el rol después,
+  // porque a diferencia de las otras, home_screen.dart cachea
+  // _isRescatista/_roles localmente en vez de escuchar el doc en vivo.
   Future<void> _cambiarRolDebug() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    final opciones = <String, List<String>>{
-      'Solo Adoptante':         ['adoptante'],
-      'Solo Rescatista':        ['rescatista'],
-      'Adoptante + Rescatista': ['adoptante', 'rescatista'],
-      'Albergue':               ['albergue'],
-      'Aliado':                 ['aliado'],
-    };
-    final seleccion = await showDialog<List<String>>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('🛠 Cambiar rol (DEBUG)'),
-        children: opciones.entries.map((e) => SimpleDialogOption(
-          onPressed: () => Navigator.pop(ctx, e.value),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Text(e.key),
-          ),
-        )).toList(),
-      ),
-    );
-    if (seleccion == null) return;
-    try {
-      await UsuariosRepository().actualizarRoles(uid, seleccion);
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('No se pudo cambiar el rol. Revisá tu conexión e intentá de nuevo.'),
-          backgroundColor: msgError));
-      return;
-    }
-    if (!mounted) return;
-    await _cargarRol();
+    await mostrarCambiarRolDebug(context);
+    if (mounted) await _cargarRol();
   }
 
 

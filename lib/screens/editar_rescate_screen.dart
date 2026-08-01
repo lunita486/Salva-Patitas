@@ -593,11 +593,11 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> with Tardando
                 const SizedBox(height: 10),
                 _fotoSection(),
                 const SizedBox(height: 20),
-                _campo('Nombre', _nombreCtl, 'ej. Luna'),
+                _campo('Nombre', _nombreCtl, 'ej. Luna', maxLength: 60),
                 const SizedBox(height: 16),
                 _campoUbicacion(),
                 const SizedBox(height: 16),
-                _campo('Descripción', _descCtl, 'Cuéntanos sobre el animal...', maxLines: 3),
+                _campo('Descripción', _descCtl, 'Cuéntanos sobre el animal...', maxLines: 3, maxLength: 1000),
                 const SizedBox(height: 20),
                 _seccion('INFORMACIÓN'),
                 const SizedBox(height: 12),
@@ -779,13 +779,18 @@ class _EditarRescateScreenState extends State<EditarRescateScreen> with Tardando
     );
   }
 
-  Widget _campo(String label, TextEditingController ctl, String hint, {int maxLines = 1}) =>
+  // maxLength sin tope antes: un pegado gigante en nombre/descripción se
+  // guardaba entero, inflando el tamaño del documento sin ninguna razón
+  // real. Hallazgo de auditoría de código.
+  Widget _campo(String label, TextEditingController ctl, String hint,
+          {int maxLines = 1, int? maxLength}) =>
     Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: appInk)),
       const SizedBox(height: 6),
       TextField(
         controller: ctl,
         maxLines: maxLines,
+        maxLength: maxLength,
         decoration: InputDecoration(
           hintText: hint,
           hintStyle: TextStyle(color: Colors.grey.shade400),

@@ -4,7 +4,7 @@ import '../theme.dart';
 class SettingsPageScaffold extends StatelessWidget {
   final String title;
   final Widget child;
-  const SettingsPageScaffold({required this.title, required this.child});
+  const SettingsPageScaffold({super.key, required this.title, required this.child});
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -15,12 +15,17 @@ class SettingsPageScaffold extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
           child: Row(children: [
-            Tooltip(
-              message: 'Volver',
-              child: GestureDetector(
-                onTap: () => Navigator.pop(context),
-                child: const Icon(Icons.arrow_back_ios_new, size: 20, color: appInk),
-              ),
+            // IconButton en vez de GestureDetector+Icon a mano: antes el
+            // área tocable era del tamaño del ícono solo (20px), bastante
+            // por debajo del mínimo recomendado (~48dp) — IconButton ya
+            // trae ese padding tocable de forma nativa. Hallazgo de
+            // auditoría de código.
+            IconButton(
+              icon: const Icon(Icons.arrow_back_ios_new, size: 20, color: appInk),
+              tooltip: 'Volver',
+              onPressed: () => Navigator.pop(context),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
             ),
             const SizedBox(width: 12),
             Text(title, style: const TextStyle(fontSize: 18,
@@ -43,11 +48,18 @@ class SettingsSwitchTile extends StatelessWidget {
   final bool value;
   final bool last;
   final ValueChanged<bool> onChanged;
-  const SettingsSwitchTile({required this.icon, required this.label, required this.subtitle,
+  const SettingsSwitchTile({super.key, required this.icon, required this.label, required this.subtitle,
       required this.value, required this.onChanged, this.last = false});
 
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) => Semantics(
+    // Sin esto, un lector de pantalla anunciaba el ícono, el label, el
+    // subtítulo y el interruptor como 4 piezas sueltas en vez de un solo
+    // control con su estado (activado/desactivado). Hallazgo de auditoría
+    // de código.
+    label: '$label. $subtitle',
+    toggled: value,
+    child: Container(
     margin: const EdgeInsets.symmetric(horizontal: 20),
     decoration: BoxDecoration(
       color: Colors.white.withValues(alpha: 0.8),
@@ -68,7 +80,9 @@ class SettingsSwitchTile extends StatelessWidget {
         const SizedBox(height: 2),
         Text(subtitle, style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
       ])),
-      Switch(value: value, onChanged: onChanged, activeColor: appTeal),
+      // activeThumbColor, no el activeColor deprecado desde Flutter 3.31.
+      Switch(value: value, onChanged: onChanged, activeThumbColor: appTeal),
     ]),
+    ),
   );
 }

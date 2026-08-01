@@ -339,7 +339,12 @@ Widget _solicitudDetalle(String ini, Color col, String nombre, String detalle,
                           child: const Text('Confirmar', style: TextStyle(color: Colors.red)),
                         ),
                       ],
-                    ));
+                    // .then(dispose): mismo patrón que la pantalla completa
+                    // (solicitudes_rescatista_screen.dart) — sin esto,
+                    // motivoCtl quedaba sin liberar cada vez que se rechaza
+                    // una solicitud desde esta vista previa. Hallazgo de
+                    // auditoría de código.
+                    )).then((_) => motivoCtl.dispose());
                   },
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 14),

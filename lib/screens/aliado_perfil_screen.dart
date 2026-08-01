@@ -7,7 +7,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as img;
 import '../theme.dart';
-import '../data/usuarios_repository.dart';
 import '../data/firestore_resiliencia.dart';
 
 class AliadoPerfilScreen extends StatefulWidget {
@@ -164,36 +163,10 @@ class _AliadoPerfilScreenState extends State<AliadoPerfilScreen> {
     super.dispose();
   }
 
-  Future<void> _cambiarRolDebug() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    final opciones = <String, List<String>>{
-      'Solo Adoptante':         ['adoptante'],
-      'Solo Rescatista':        ['rescatista'],
-      'Adoptante + Rescatista': ['adoptante', 'rescatista'],
-      'Albergue':               ['albergue'],
-      'Aliado':                 ['aliado'],
-    };
-    final sel = await showDialog<List<String>>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('🛠 Cambiar rol (DEBUG)'),
-        children: opciones.entries.map((e) => SimpleDialogOption(
-          onPressed: () => Navigator.pop(ctx, e.value),
-          child: Padding(padding: const EdgeInsets.symmetric(vertical: 4), child: Text(e.key)),
-        )).toList(),
-      ),
-    );
-    if (sel == null) return;
-    try {
-      await UsuariosRepository().actualizarRoles(uid, sel);
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('No se pudo cambiar el rol. Revisá tu conexión e intentá de nuevo.'),
-          backgroundColor: msgError));
-    }
-  }
+  // El diálogo/escritura viven en mostrarCambiarRolDebug (theme.dart,
+  // compartida entre 5 pantallas que antes cada una tenía su propia copia
+  // — hallazgo de auditoría de código).
+  Future<void> _cambiarRolDebug() => mostrarCambiarRolDebug(context);
 
   @override
   Widget build(BuildContext context) {

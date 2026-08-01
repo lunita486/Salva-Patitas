@@ -6,7 +6,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import '../theme.dart';
-import '../data/usuarios_repository.dart';
 import '../data/firestore_resiliencia.dart';
 
 class AlberguePerfilScreen extends StatefulWidget {
@@ -54,39 +53,10 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
     });
   }
 
-  Future<void> _cambiarRolDebug(BuildContext ctx) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    final opciones = <String, List<String>>{
-      'Solo Adoptante':         ['adoptante'],
-      'Solo Rescatista':        ['rescatista'],
-      'Adoptante + Rescatista': ['adoptante', 'rescatista'],
-      'Albergue':               ['albergue'],
-      'Aliado':                 ['aliado'],
-    };
-    final sel = await showDialog<List<String>>(
-      context: ctx,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('🛠 Cambiar rol (DEBUG)'),
-        children: opciones.entries.map((e) => SimpleDialogOption(
-          onPressed: () => Navigator.pop(ctx, e.value),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Text(e.key),
-          ),
-        )).toList(),
-      ),
-    );
-    if (sel == null || !mounted) return;
-    try {
-      await UsuariosRepository().actualizarRoles(uid, sel);
-    } catch (_) {
-      if (!ctx.mounted) return;
-      ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
-          content: Text('No se pudo cambiar el rol. Revisá tu conexión e intentá de nuevo.'),
-          backgroundColor: msgError));
-    }
-  }
+  // El diálogo/escritura viven en mostrarCambiarRolDebug (theme.dart,
+  // compartida entre 5 pantallas que antes cada una tenía su propia copia
+  // — hallazgo de auditoría de código).
+  Future<void> _cambiarRolDebug(BuildContext ctx) => mostrarCambiarRolDebug(ctx);
 
   Future<void> _pickFoto() async {
     final picked = await ImagePicker().pickImage(

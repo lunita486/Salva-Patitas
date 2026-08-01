@@ -283,7 +283,7 @@ class _AnimalDetalleScreenState extends State<AnimalDetalleScreen> {
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
     decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.9), borderRadius: BorderRadius.circular(20)),
     child: Row(mainAxisSize: MainAxisSize.min, children: [
-      if (icon != null) ...[const Icon(Icons.location_on, size: 12, color: appTeal), const SizedBox(width: 4)],
+      if (icon != null) ...[Icon(icon, size: 12, color: appTeal), const SizedBox(width: 4)],
       Text(text, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
     ]),
   );

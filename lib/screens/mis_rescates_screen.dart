@@ -588,7 +588,17 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                             // importar cuán largo sea el texto del estado
                             // (sugerencia real de Eliza).
                             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                              GestureDetector(
+                              // Semantics explícito: sin esto, un lector de
+                              // pantalla anunciaba el texto del estado y la
+                              // flechita como dos piezas sueltas en vez de
+                              // "botón: cambiar estado, [estado actual]".
+                              // Hallazgo de auditoría de código.
+                              Semantics(
+                                button: estadoAdopcion != 'Fallecido',
+                                label: estadoAdopcion == 'Fallecido'
+                                    ? 'Estado: Fallecido'
+                                    : 'Cambiar estado, actualmente $estadoAdopcion',
+                                child: GestureDetector(
                                 onTap: estadoAdopcion == 'Fallecido' ? null : () => showModalBottomSheet(
                                   context: context,
                                   shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
@@ -616,6 +626,7 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                                   ]),
                                 ),
                               ),
+                              ),
                               // "Contactar" solo si hay alguien realmente en
                               // proceso con este animal — antes esta pantalla
                               // no tenía NINGUNA forma de escribirle a esa
@@ -626,7 +637,10 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                               // adopción" y dejaba "Hogar de paso" afuera).
                               if ((estadoAdopcion == 'Hogar de paso' || estadoAdopcion == 'En proceso de adopción') &&
                                   (d['adoptanteIdEnProceso'] as String? ?? '').isNotEmpty)
-                                GestureDetector(
+                                Semantics(
+                                button: true,
+                                label: 'Contactar a quien está en proceso con $nombre',
+                                child: GestureDetector(
                                   onTap: () => contactarPersonaEnProceso(
                                     context,
                                     docId: docId,
@@ -649,6 +663,7 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                                           fontWeight: FontWeight.w700, color: Colors.white)),
                                     ]),
                                   ),
+                                ),
                                 ),
                             ]),
                             const SizedBox(height: 8),

@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../data/auth_helper.dart';
 import '../theme.dart';
@@ -32,6 +34,28 @@ class _LoginScreenState extends State<LoginScreen> {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
               backgroundColor: msgError,
               content: Text('Esperá unos segundos e intentá de nuevo.')));
+      }
+    } on GoogleSignInException catch (_) {
+      // Un GoogleSignInException que llega hasta acá (canceled/interrupted
+      // ya los maneja auth_helper.dart como ResultadoLogin.cancelado) casi
+      // siempre es un problema de configuración/entorno del dispositivo
+      // (Google Play Services desactualizado, cuenta de Google con algún
+      // problema), no de conexión — decirle "revisá tu conexión" a alguien
+      // sin ese problema lo manda a buscar en el lugar equivocado.
+      // Hallazgo de auditoría de código.
+      if (mounted) {
+        setState(() => _cargando = false);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            backgroundColor: msgError,
+            content: Text('No se pudo iniciar sesión con Google en este dispositivo. '
+                'Probá con otra cuenta o revisá que Google Play Services esté actualizado.')));
+      }
+    } on TimeoutException {
+      if (mounted) {
+        setState(() => _cargando = false);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            backgroundColor: msgError,
+            content: Text('Esto está tardando demasiado. Revisá tu conexión e intentá de nuevo.')));
       }
     } catch (_) {
       if (mounted) {

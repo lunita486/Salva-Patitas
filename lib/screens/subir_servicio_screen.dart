@@ -257,6 +257,7 @@ class _SubirServicioScreenState extends State<SubirServicioScreen> {
               TextFormField(
                 controller: _descripcionCtl,
                 maxLines: 3,
+                maxLength: 1000,
                 decoration: InputDecoration(
                   hintText: 'Contá qué incluye el servicio...',
                   hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
@@ -328,6 +329,9 @@ class _SubirServicioScreenState extends State<SubirServicioScreen> {
       TextFormField(
         controller: ctl,
         onChanged: (_) => setState(() {}),
+        // Sin tope antes: un pegado gigante en el nombre se guardaba
+        // entero. Hallazgo de auditoría de código.
+        maxLength: 60,
         decoration: InputDecoration(
           hintText: hint,
           hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),

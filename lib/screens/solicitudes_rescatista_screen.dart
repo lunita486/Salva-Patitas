@@ -472,6 +472,13 @@ Future<void> verificarVencimientos(
     if (fechaFin == null) continue;
     final nombre      = d['nombre']            as String? ?? 'El animal';
     final adoptanteId = d['adoptanteIdEnProceso'] as String?;
+    // Sin adoptanteId (dato legado/corrupto: un hogar de paso sin nadie
+    // en proceso) no hay a quién avisarle — antes esto igual llamaba a
+    // enviarMensajeChat('', ...), que arma un chat "fantasma" sin dueño
+    // real y, si esa escritura llega a tener éxito, marcaba el flag de
+    // avisado como si alguien de verdad se hubiera enterado. Hallazgo de
+    // auditoría de código.
+    if (adoptanteId == null || adoptanteId.isEmpty) continue;
     if (fechaFin.isAfter(ahora)) {
       final finSinHora = DateTime(fechaFin.year, fechaFin.month, fechaFin.day);
       final diasRestantes = finSinHora.difference(hoySinHora).inDays;
@@ -485,7 +492,7 @@ Future<void> verificarVencimientos(
         // Sarita: el aviso figuraba como enviado pero el chat nunca tuvo
         // el mensaje.
         final avisoOk = await enviarMensajeChat(
-          adoptanteId ?? '',
+          adoptanteId,
           nombre,
           msg,
           fotoUrl: d['fotoUrl'] as String?,
@@ -503,7 +510,7 @@ Future<void> verificarVencimientos(
     final msg = '📋 El período de hogar de paso de $nombre ha vencido. '
         'Por favor coordina la devolución o el proceso de adopción definitivo. 🐾';
     final avisoOk = await enviarMensajeChat(
-      adoptanteId ?? '',
+      adoptanteId,
       nombre,
       msg,
       fotoUrl: d['fotoUrl'] as String?,
@@ -564,9 +571,14 @@ Future<void> verificarSeguimientoPostAdopcion({
     final adoptanteId  = d['adoptanteIdEnProceso'] as String?;
     // Solo se marca "avisado" si el mensaje realmente se guardó — mismo
     // arreglo que verificarVencimientos, mismo motivo (ver comentario ahí).
+    // Sin adoptanteId tampoco hay a quién avisarle — mismo motivo que
+    // verificarVencimientos (evita el chat "fantasma" sin dueño real que
+    // podía marcarse como avisado sin haber avisado a nadie). Hallazgo de
+    // auditoría de código.
+    if (adoptanteId == null || adoptanteId.isEmpty) continue;
     if (dias >= 30 && d['seguimiento30Avisado'] != true) {
       final avisoOk = await enviarMensajeChat(
-        adoptanteId ?? '',
+        adoptanteId,
         nombre,
         'Ya pasó un mes desde que $nombre encontró hogar con vos 🎉 ¿Cómo se está adaptando? Nos encantaría saber cómo le va.',
         fotoUrl: d['fotoUrl'] as String?,
@@ -578,7 +590,7 @@ Future<void> verificarSeguimientoPostAdopcion({
       }
     } else if (dias >= 7 && d['seguimiento7Avisado'] != true) {
       final avisoOk = await enviarMensajeChat(
-        adoptanteId ?? '',
+        adoptanteId,
         nombre,
         '¿Cómo le va a $nombre en su nuevo hogar? 🏡💚 Cualquier cosa que necesite, contános.',
         fotoUrl: d['fotoUrl'] as String?,

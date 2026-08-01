@@ -7,7 +7,6 @@ import '../theme.dart';
 import '../services/notificaciones_service.dart';
 import '../data/auth_helper.dart';
 import '../data/chats_repository.dart';
-import '../data/usuarios_repository.dart';
 import 'adoptante_chats_screen.dart';
 import 'subir_servicio_screen.dart';
 import 'aliado_perfil_screen.dart';
@@ -73,34 +72,10 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
     });
   }
 
-  Future<void> _cambiarRolDebug() async {
-    final opciones = <String, List<String>>{
-      'Solo Adoptante':         ['adoptante'],
-      'Solo Rescatista':        ['rescatista'],
-      'Adoptante + Rescatista': ['adoptante', 'rescatista'],
-      'Albergue':               ['albergue'],
-      'Aliado':                 ['aliado'],
-    };
-    final sel = await showDialog<List<String>>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('🛠 Cambiar rol (DEBUG)'),
-        children: opciones.entries.map((e) => SimpleDialogOption(
-          onPressed: () => Navigator.pop(ctx, e.value),
-          child: Padding(padding: const EdgeInsets.symmetric(vertical: 4), child: Text(e.key)),
-        )).toList(),
-      ),
-    );
-    if (sel == null || !mounted) return;
-    try {
-      await UsuariosRepository().actualizarRoles(_uid, sel);
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('No se pudo cambiar el rol. Revisá tu conexión e intentá de nuevo.'),
-          backgroundColor: msgError));
-    }
-  }
+  // El diálogo/escritura viven en mostrarCambiarRolDebug (theme.dart,
+  // compartida entre 5 pantallas que antes cada una tenía su propia copia
+  // — hallazgo de auditoría de código).
+  Future<void> _cambiarRolDebug() => mostrarCambiarRolDebug(context);
 
   Future<void> _cerrarSesion() async {
     final ok = await showDialog<bool>(

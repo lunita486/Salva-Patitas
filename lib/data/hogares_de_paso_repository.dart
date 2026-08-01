@@ -81,6 +81,7 @@ class HogaresDePasoRepository {
         await porEmail.docs.first.reference.update({
           'adoptanteId': adoptanteId,
           if (nombre.isNotEmpty) 'nombre': nombre,
+          'agregadoManualmente': false,
           'vecesAyudo': FieldValue.increment(1),
           'ultimaVez': FieldValue.serverTimestamp(),
         });

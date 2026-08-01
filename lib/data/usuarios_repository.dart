@@ -18,7 +18,9 @@ class UsuariosRepository {
   static const rolesValidos = {'adoptante', 'rescatista', 'albergue', 'aliado'};
 
   Future<void> actualizarRoles(String uid, List<String> roles) {
-    assert(roles.every(rolesValidos.contains), 'rol inválido en $roles');
+    if (!roles.every(rolesValidos.contains)) {
+      throw ArgumentError('rol inválido en $roles');
+    }
     // Un permission-denied acá casi siempre es un token vencido, no falta
     // de permiso real (ver conReintentoSiTokenVencido en
     // firestore_resiliencia.dart) — mismo patrón que
@@ -44,7 +46,9 @@ class UsuariosRepository {
     required List<String> roles,
     String ciudad = '',
   }) {
-    assert(roles.every(rolesValidos.contains), 'rol inválido en $roles');
+    if (!roles.every(rolesValidos.contains)) {
+      throw ArgumentError('rol inválido en $roles');
+    }
     return conReintentoSiTokenVencido(() => _auth, () => _db.collection('usuarios').doc(uid).set({
       'nombre':   nombre,
       'email':    email,

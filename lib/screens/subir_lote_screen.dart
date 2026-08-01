@@ -673,6 +673,7 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> with TardandoMuchoMix
             const SizedBox(height: 6),
             TextField(
               controller: a.nombreCtl,
+              maxLength: 60,
               decoration: InputDecoration(
                 hintText: 'Nombre (opcional)',
                 hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
@@ -744,6 +745,7 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> with TardandoMuchoMix
           TextField(
             controller: a.descCtl,
             maxLines: 3,
+            maxLength: 1000,
             decoration: InputDecoration(
               hintText: 'Estado del animal, dónde fue encontrado, necesidades especiales...',
               hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 12),

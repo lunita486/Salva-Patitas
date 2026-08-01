@@ -449,7 +449,7 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> with TardandoMu
                   const SizedBox(height: 10),
                   _fotoGrid(),
                   const SizedBox(height: 20),
-                  _field('Nombre del animal (opcional)', _nombreCtl, hint: 'ej. Luna, sin nombre...'),
+                  _field('Nombre del animal (opcional)', _nombreCtl, hint: 'ej. Luna, sin nombre...', maxLength: 60),
                   const SizedBox(height: 16),
                   _section('Raza'),
                   const SizedBox(height: 8),
@@ -569,7 +569,7 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> with TardandoMu
                   const SizedBox(height: 8),
                   _field('', _descCtl,
                       hint: 'Estado del animal, dónde fue encontrado, necesidades especiales...',
-                      maxLines: 5),
+                      maxLines: 5, maxLength: 1000),
                   const SizedBox(height: 28),
                   _publishBtn(),
                   const SizedBox(height: 40),
@@ -687,7 +687,11 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> with TardandoMu
         );
       }).toList());
 
-  Widget _field(String label, TextEditingController ctl, {String hint = '', int maxLines = 1}) =>
+  // maxLength sin tope antes: un pegado gigante en nombre/descripción se
+  // guardaba entero, inflando el tamaño del documento sin ninguna razón
+  // real. Hallazgo de auditoría de código.
+  Widget _field(String label, TextEditingController ctl,
+          {String hint = '', int maxLines = 1, int? maxLength}) =>
       Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         _section(label),
         const SizedBox(height: 8),
@@ -695,7 +699,7 @@ class _SubirRescateScreenState extends State<SubirRescateScreen> with TardandoMu
           decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.88), borderRadius: BorderRadius.circular(14),
             boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6)]),
           child: TextField(
-            controller: ctl, maxLines: maxLines,
+            controller: ctl, maxLines: maxLines, maxLength: maxLength,
             decoration: InputDecoration(
               hintText: hint, hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
               border: InputBorder.none,

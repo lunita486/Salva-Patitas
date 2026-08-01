@@ -11,6 +11,11 @@ import '../theme.dart';
 // autocontenido y lo usan otras pantallas (mis_rescates_screen.dart), así
 // que vivir en su propio archivo es más claro que dentro de la del feed.
 
+// Mismo límite que RescateFotosRepository._maxBytesFoto — sin esto getData()
+// usa el default del plugin (10MB) en vez de un tamaño elegido a propósito
+// para lo que puede llegar a pesar una foto de animal.
+const _maxBytesFoto = 15 * 1024 * 1024;
+
 // Tarjeta cuadrada (1080x1080) tipo post de Instagram, generada a partir de la
 // foto del animal para que compartir se vea como una publicación de marca en
 // vez de la foto pelada.
@@ -189,7 +194,7 @@ Future<void> compartirAnimal({
   Uint8List? fotoBytes;
   if (fotoUrl != null) {
     try {
-      fotoBytes = await FirebaseStorage.instance.refFromURL(fotoUrl).getData();
+      fotoBytes = await FirebaseStorage.instance.refFromURL(fotoUrl).getData(_maxBytesFoto);
     } catch (_) {}
   }
   if (fotoBytes != null) {

@@ -37,10 +37,10 @@ void main() {
       expect(doc['roles'], ['rescatista', 'albergue']);
     });
 
-    test('actualizarRoles rechaza un rol inválido en modo debug (assert)', () {
+    test('actualizarRoles rechaza un rol inválido (también en release, no solo en debug)', () {
       expect(
         () => repo.actualizarRoles('u1', ['rescatista', 'no-es-un-rol']),
-        throwsA(isA<AssertionError>()),
+        throwsA(isA<ArgumentError>()),
       );
     });
 
@@ -83,10 +83,10 @@ void main() {
           reason: 'los campos que sí escribe se actualizan normalmente');
     });
 
-    test('crearPerfil rechaza un rol inválido en modo debug (assert)', () {
+    test('crearPerfil rechaza un rol inválido (también en release, no solo en debug)', () {
       expect(
         () => repo.crearPerfil(uid: 'u4', nombre: 'X', roles: ['hacker']),
-        throwsA(isA<AssertionError>()),
+        throwsA(isA<ArgumentError>()),
       );
     });
 

@@ -69,7 +69,9 @@ void main() {
       final d = todos.docs.first.data();
       expect(d['adoptanteId'], 'uid-david', reason: 'la fila agregada a mano queda vinculada a la cuenta real');
       expect(d['vecesAyudo'], 1);
-      expect(d['agregadoManualmente'], true, reason: 'sigue siendo la misma fila original, solo que ahora vinculada');
+      expect(d['agregadoManualmente'], false,
+          reason: 'ya quedó vinculada a una cuenta real — no debe seguir marcada como manual para siempre '
+              '(hallazgo de auditoría de código)');
     });
 
     // El bug real: David.Casas@Gmail.com (como lo tipeó el albergue a mano)

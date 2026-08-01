@@ -441,15 +441,18 @@ class RescatesRepository {
     // secas) — así un test que inyecta un Firestore fake en
     // RescatesRepository ve ese mismo fake acá adentro, en vez de que
     // este chequeo se escape a la instancia real por su cuenta.
+    // Futures con tipo propio (en vez de Future.wait + cast posicional):
+    // las tres arrancan en paralelo igual, pero un futuro cast por índice
+    // ('resultados[1] as ...') no avisa en tiempo de compilación si alguien
+    // reordena o agrega un elemento a la lista — esto sí.
     final solicitudesRepo = SolicitudesRepository(db: _db);
-    final resultados = await Future.wait([
-      solicitudesRepo.tienePendientesPara(rescateId, rescatistaId: rescatistaId),
-      obtener(rescateId).then((d) => d.data()),
-      solicitudesRepo.tuvoSolicitudAprobada(rescateId, rescatistaId: rescatistaId),
-    ]);
-    final tienePendientes = resultados[0] as bool;
-    final datosActuales   = resultados[1] as Map<String, dynamic>?;
-    final tuvoAprobada    = resultados[2] as bool;
+    final futuroPendientes = solicitudesRepo.tienePendientesPara(rescateId, rescatistaId: rescatistaId);
+    final futuroDatos = obtener(rescateId).then((d) => d.data());
+    final futuroAprobada = solicitudesRepo.tuvoSolicitudAprobada(rescateId, rescatistaId: rescatistaId);
+
+    final tienePendientes = await futuroPendientes;
+    final datosActuales   = await futuroDatos;
+    final tuvoAprobada    = await futuroAprobada;
 
     if (tienePendientes) {
       return ('No se puede eliminar todavía',
