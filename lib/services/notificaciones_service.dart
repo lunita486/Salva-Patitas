@@ -100,13 +100,26 @@ class NotificacionesService {
 
   // Muestra un banner dentro del app cuando llega una notificación en primer plano.
   // Cancela la suscripción anterior para evitar listeners duplicados.
+  //
+  // NO se captura el ScaffoldMessenger acá arriba, de una sola vez: este
+  // listener puede seguir vivo mucho después de que se registró (la
+  // suscripción solo se cancela/renueva la próxima vez que alguien llame a
+  // este método, típicamente al entrar a la home de otro rol) — si en el
+  // medio la persona cierra sesión, la pantalla que lo registró se destruye
+  // y una referencia guardada de antemano queda apuntando a un
+  // ScaffoldMessengerState ya desmontado. Un push que llegue justo en esa
+  // ventana (cerrar sesión → antes de que la pantalla de login o la próxima
+  // home vuelvan a suscribirse) tiraba una excepción sin atrapar al intentar
+  // mostrar el snackbar ahí. Por eso `context` se revisa y se resuelve DE
+  // NUEVO cada vez que llega un mensaje, nunca por adelantado — hallazgo de
+  // auditoría de código previa a subir a Play Store.
   static void escucharEnPrimerPlano(BuildContext context) {
-    final messenger = ScaffoldMessenger.of(context); // captura antes de async gap
     _foregroundSub?.cancel();
     _foregroundSub = FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      if (!context.mounted) return;
       final notif = message.notification;
       if (notif == null) return;
-      messenger.showSnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Column(
             mainAxisSize: MainAxisSize.min,

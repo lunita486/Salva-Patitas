@@ -52,6 +52,14 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.CAMERA"/>
+    <!-- Sin esto, pedir el permiso CAMERA alcanza para que Google Play
+         asuma que la cámara es obligatoria y excluya de la búsqueda/
+         instalación a cualquier dispositivo sin cámara (tablets, por
+         ejemplo) — aunque la app funciona perfecto solo con la galería
+         (ver _pickFoto()/_tomarFoto() en las pantallas de publicar, que
+         ofrecen las dos fuentes por separado). Hallazgo de auditoría de
+         código previa a subir a Play Store. -->
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
     <!-- Salva Patitas no tiene anuncios ni usa el ID de publicidad para

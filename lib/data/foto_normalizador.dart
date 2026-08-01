@@ -4,8 +4,13 @@ import 'dart:isolate';
 import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 
-/// Redimensiona (máx 1000px de ancho) y recomprime (JPEG q80) los bytes de
-/// una foto antes de subirla — mantiene el peso bajo para el feed/detalle.
+/// Redimensiona ([maxWidth], 1000px por defecto) y recomprime (JPEG,
+/// [quality] 80 por defecto) los bytes de una foto antes de subirla —
+/// mantiene el peso bajo para el feed/detalle. Mismo helper para avatares
+/// chicos (aliado_perfil_screen.dart le pasa maxWidth:512, porque ese
+/// resultado se guarda como base64 DENTRO del documento de Firestore, que
+/// tiene un tope de 1MB — no le sirve el 1000px pensado para fotos que se
+/// suben aparte a Storage).
 ///
 /// Corre en un isolate aparte a propósito: decodificar/redimensionar/
 /// codificar una imagen es trabajo de CPU sincrónico y pesado. Hecho en el
@@ -17,14 +22,14 @@ import 'package:image/image.dart' as img;
 /// parte era ilusorio, solo la red (Firestore/Storage) corría de verdad al
 /// mismo tiempo. Con un isolate propio por llamada, el procesamiento de
 /// fotos de distintos animales sí se superpone.
-Uint8List _procesarBytes(Uint8List bytes) {
+Uint8List _procesarBytes(Uint8List bytes, int maxWidth, int quality) {
   final decoded = img.decodeImage(bytes);
   if (decoded == null) return bytes;
   final rotated = img.bakeOrientation(decoded);
-  final resized = rotated.width > 1000
-      ? img.copyResize(rotated, width: 1000)
+  final resized = rotated.width > maxWidth
+      ? img.copyResize(rotated, width: maxWidth)
       : rotated;
-  return img.encodeJpg(resized, quality: 80);
+  return img.encodeJpg(resized, quality: quality);
 }
 
 /// Mensaje que llega por [_Trabajo.respuesta] cuando [_procesarBytes] lanzó
@@ -38,14 +43,16 @@ class _ErrorEnIsolate {
 }
 
 class _Trabajo {
-  _Trabajo(this.bytes, this.respuesta);
+  _Trabajo(this.bytes, this.maxWidth, this.quality, this.respuesta);
   final Uint8List bytes;
+  final int maxWidth;
+  final int quality;
   final SendPort respuesta;
 }
 
 void _puntoDeEntrada(_Trabajo trabajo) {
   try {
-    trabajo.respuesta.send(_procesarBytes(trabajo.bytes));
+    trabajo.respuesta.send(_procesarBytes(trabajo.bytes, trabajo.maxWidth, trabajo.quality));
   } catch (e) {
     trabajo.respuesta.send(_ErrorEnIsolate(e.toString()));
   }
@@ -72,13 +79,16 @@ void _puntoDeEntrada(_Trabajo trabajo) {
 Future<Uint8List> normalizarFoto(
   String path, {
   Duration timeout = const Duration(seconds: 20),
+  int maxWidth = 1000,
+  int quality = 80,
 }) async {
   final bytes = await File(path).readAsBytes();
 
   final puerto = ReceivePort();
   Isolate? isolate;
   try {
-    isolate = await Isolate.spawn(_puntoDeEntrada, _Trabajo(bytes, puerto.sendPort));
+    isolate = await Isolate.spawn(
+        _puntoDeEntrada, _Trabajo(bytes, maxWidth, quality, puerto.sendPort));
 
     final resultado = await puerto.first.timeout(timeout, onTimeout: () {
       isolate?.kill(priority: Isolate.immediate);

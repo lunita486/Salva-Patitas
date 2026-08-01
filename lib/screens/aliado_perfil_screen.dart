@@ -1,13 +1,13 @@
 import 'dart:convert';
-import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:image/image.dart' as img;
 import '../theme.dart';
 import '../data/firestore_resiliencia.dart';
+import '../data/foto_normalizador.dart';
 
 class AliadoPerfilScreen extends StatefulWidget {
   const AliadoPerfilScreen({super.key});
@@ -98,12 +98,23 @@ class _AliadoPerfilScreenState extends State<AliadoPerfilScreen> {
       imageQuality: 80,
     );
     if (picked == null) return;
-    final bytes   = await File(picked.path).readAsBytes();
-    final decoded = img.decodeImage(bytes);
+    // normalizarFoto() corre en su propio isolate — decodificar/reorientar/
+    // recomprimir es trabajo de CPU sincrónico, y hacerlo acá directo en el
+    // isolate principal (como estaba antes) bloqueaba la UI mientras
+    // corría, sin límite de tiempo ni forma de cortarlo ante una imagen
+    // corrupta. maxWidth:512 porque el resultado se guarda en base64 DENTRO
+    // del documento de Firestore (no aparte en Storage, como las fotos de
+    // rescates), que tiene un tope de 1MB total — el 1000px por defecto de
+    // normalizarFoto() es para las fotos que sí van a Storage. Hallazgo de
+    // auditoría de código previa a subir a Play Store.
+    Uint8List bytes;
+    try {
+      bytes = await normalizarFoto(picked.path, maxWidth: 512);
+    } catch (_) {
+      return;
+    }
     if (!mounted) return;
-    if (decoded == null) { setState(() => _fotoBase64 = base64Encode(bytes)); return; }
-    final rotated = img.bakeOrientation(decoded);
-    setState(() => _fotoBase64 = base64Encode(img.encodeJpg(rotated, quality: 80)));
+    setState(() => _fotoBase64 = base64Encode(bytes));
   }
 
   Future<void> _guardar() async {

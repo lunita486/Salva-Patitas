@@ -33,6 +33,22 @@ void main() {
       }
     });
 
+    test('maxWidth propio (ej. avatares en base64 dentro del doc de Firestore, '
+        'que no pueden usar el tope de 1000px pensado para fotos que van a '
+        'Storage) redimensiona a ESE ancho, no al default', () async {
+      final archivo = await _crearImagenTemp('avatar.jpg', width: 2000, height: 1000);
+      try {
+        final resultado = await normalizarFoto(archivo.path, maxWidth: 512);
+        final decodificada = img.decodeImage(resultado);
+
+        expect(decodificada, isNotNull);
+        expect(decodificada!.width, 512);
+        expect(decodificada.height, 256);
+      } finally {
+        await archivo.delete();
+      }
+    });
+
     test('una imagen de menos de 1000px de ancho NO se agranda', () async {
       final archivo = await _crearImagenTemp('chica.jpg', width: 500, height: 400);
       try {
