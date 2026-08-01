@@ -69,10 +69,20 @@ String formatearFecha(DateTime d, {bool conAnio = true}) =>
 /// de Medellín: "604 444 4444"). Antes solo se cubría el caso celular, así
 /// que un fijo escrito tal como lo sugiere el propio campo (sin +57
 /// delante) armaba un link roto — bug real reportado por Eliza.
+///
+/// Esa adivinanza SOLO se aplica si el texto no viene ya con un "+"
+/// adelante — un número armado por [CampoTelefono] siempre lo tiene, así
+/// que nunca necesita que se le adivine nada. Sin este chequeo, un
+/// celular cubano (indicativo 53 + 8 dígitos) o un fijo panameño
+/// (indicativo 507 + 7 dígitos) TAMBIÉN dan 10 dígitos en total, y aunque
+/// la persona hubiera elegido bien su país en el selector, terminaban con
+/// un 57 de más pegado adelante — regresión de esta misma sesión, hallazgo
+/// de auditoría de código.
 String? whatsappUrl(String telefono) {
+  final yaTieneIndicativo = telefono.trim().startsWith('+');
   final digitos = telefono.replaceAll(RegExp(r'[^0-9]'), '');
   if (digitos.isEmpty) return null;
-  final conIndicativo = digitos.length == 10 ? '57$digitos' : digitos;
+  final conIndicativo = (!yaTieneIndicativo && digitos.length == 10) ? '57$digitos' : digitos;
   return 'https://wa.me/$conIndicativo';
 }
 

@@ -31,6 +31,21 @@ void main() {
     test('tolera espacios, guiones y paréntesis sueltos', () {
       expect(whatsappUrl('(300) 123-4567'), 'https://wa.me/573001234567');
     });
+
+    // Regresión de esta misma sesión: un celular cubano (indicativo 53 +
+    // 8 dígitos) o un fijo panameño (indicativo 507 + 7 dígitos) TAMBIÉN
+    // dan 10 dígitos en total — la adivinanza de "10 dígitos sin + =
+    // colombiano" los agarraba igual que a un número viejo sin país,
+    // aunque la persona hubiera elegido bien su país en CampoTelefono.
+    test('un celular cubano con indicativo (53 + 8 dígitos = 10 en total) '
+        'NO se confunde con un número colombiano sin indicativo', () {
+      expect(whatsappUrl('+53 12345678'), 'https://wa.me/5312345678');
+    });
+
+    test('un fijo panameño con indicativo (507 + 7 dígitos = 10 en total) '
+        'NO se confunde con un número colombiano sin indicativo', () {
+      expect(whatsappUrl('+507 1234567'), 'https://wa.me/5071234567');
+    });
   });
 
   group('partirTelefono()', () {

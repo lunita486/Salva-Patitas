@@ -15,6 +15,7 @@ class _TipoAnimalScreenState extends State<TipoAnimalScreen> {
   String _especie = 'Ambos';
   String _tamano  = 'Cualquiera';
   String _edad    = 'Cualquiera';
+  bool   _errorCarga = false;
 
   DocumentReference get _userDoc => FirebaseFirestore.instance
       .collection('usuarios')
@@ -32,6 +33,14 @@ class _TipoAnimalScreenState extends State<TipoAnimalScreen> {
           _edad    = d['prefEdad']    ?? 'Cualquiera';
         });
       }
+    }).catchError((_) {
+      // Antes esto no tenía ningún manejo de error: si la carga inicial
+      // fallaba (ej. sin señal al abrir esta pantalla), la excepción
+      // quedaba sin atrapar y la pantalla mostraba los valores por
+      // defecto (Ambos/Cualquiera) como si fueran tus preferencias reales
+      // guardadas, sin ningún aviso de que en realidad no se pudieron
+      // leer. Hallazgo de auditoría de código.
+      if (mounted) setState(() => _errorCarga = true);
     });
   }
 
@@ -133,6 +142,16 @@ class _TipoAnimalScreenState extends State<TipoAnimalScreen> {
     title: 'Tipo de animal preferido',
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       const SizedBox(height: 4),
+      if (_errorCarga)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+          child: Text(
+            'No pudimos cargar tus preferencias guardadas — esto que ves '
+            'abajo son los valores por defecto, no necesariamente lo que '
+            'ya tenías elegido. Revisá tu conexión y volvé a entrar.',
+            style: TextStyle(fontSize: 12, color: Colors.orange.shade800),
+          ),
+        ),
       _grupoEspecie(),
       const SizedBox(height: 20),
       _grupo('TAMAÑO', ['Pequeño', 'Mediano', 'Grande', 'Cualquiera'], _tamano, (v) => _actualizarPreferencia(

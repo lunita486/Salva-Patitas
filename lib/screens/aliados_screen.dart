@@ -47,6 +47,15 @@ class AliadosScreen extends StatelessWidget {
                 // adoptante_feed_screen.dart (hallazgo de auditoría de
                 // código).
                 if (snap.hasError) return errorFeedState();
+                // Antes esto tampoco se revisaba: en frío (sin caché local
+                // — instalación nueva, o esta pantalla nunca abierta antes)
+                // por un instante snap.data viene vacío, y sin este chequeo
+                // se mostraba "Aún no hay negocios aliados" siendo mentira,
+                // justo mientras la lista real todavía estaba cargando.
+                // Hallazgo de auditoría de código.
+                if (snap.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator(color: appTeal));
+                }
                 final aliados = snap.data?.docs ?? [];
                 if (aliados.isEmpty) {
                   return Center(

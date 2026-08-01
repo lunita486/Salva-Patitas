@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../theme.dart';
 import '../data/auth_helper.dart';
 import '../data/usuarios_repository.dart';
+import '../data/firestore_resiliencia.dart';
 import 'mis_solicitudes_screen.dart';
 import 'tipo_animal_screen.dart';
 
@@ -72,7 +73,29 @@ class PerfilAdoptanteScreen extends StatelessWidget {
       builder: (ctx) => _RolesSheet(rolesActuales: roles),
     );
     if (seleccion == null || seleccion.isEmpty) return;
-    await UsuariosRepository().actualizarRoles(uid, seleccion);
+    // guardarConAviso, no un await directo suelto (lo que había acá
+    // antes, sin try/catch ni aviso de ningún tipo): la hoja ya se cerró
+    // para cuando esto corre, así que si la escritura fallaba de verdad
+    // (ej. offline, o un permission-denied que ni siquiera reintenta más
+    // que una vez), la persona quedaba creyendo que cambió de rol —
+    // desbloqueando o escondiendo partes enteras de la app — sin que
+    // nada se hubiera guardado. Hallazgo de auditoría de código.
+    final resultado = await guardarConAviso(
+        () => UsuariosRepository().actualizarRoles(uid, seleccion));
+    if (!context.mounted) return;
+    switch (resultado) {
+      case ResultadoGuardado.confirmado:
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Roles actualizados'), backgroundColor: msgExito));
+      case ResultadoGuardado.siguePendiente:
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Esto está tardando. Se va a guardar solo apenas vuelva la señal.'),
+            backgroundColor: msgAdvertencia));
+      case ResultadoGuardado.fallo:
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('No se pudo guardar. Revisá tu conexión e intentá de nuevo.'),
+            backgroundColor: msgError));
+    }
   }
 
   @override
@@ -106,11 +129,19 @@ class PerfilAdoptanteScreen extends StatelessWidget {
                 final foto   = user?.photoURL;
                 final inicial = nombre.isNotEmpty ? nombre[0].toUpperCase() : 'T';
                 return Row(children: [
-                  foto != null
-                      ? CircleAvatar(backgroundImage: NetworkImage(foto), radius: 32)
-                      : CircleAvatar(backgroundColor: appOrange, radius: 32,
-                          child: Text(inicial, style: const TextStyle(color: Colors.white,
-                              fontSize: 24, fontWeight: FontWeight.bold))),
+                  // AvatarPersona (theme.dart), no un CircleAvatar armado a
+                  // mano — antes, si la foto de perfil de Google fallaba al
+                  // cargar (sin señal, link vencido), se veía un círculo
+                  // gris vacío en vez de caer a la inicial, justo en el
+                  // propio perfil de la persona. Hallazgo de auditoría de
+                  // código.
+                  AvatarPersona(
+                    fotoUrl: foto,
+                    inicial: inicial,
+                    radius: 32,
+                    backgroundColor: appOrange,
+                    textColor: Colors.white,
+                  ),
                   const SizedBox(width: 16),
                   Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(nombre, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold,
