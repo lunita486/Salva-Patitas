@@ -27,13 +27,22 @@ class _AnimalDetalleScreenState extends State<AnimalDetalleScreen> {
     final animal       = widget.animal;
     final fotoUrl      = animal['fotoUrl']  as String?;
     final fotoUrl2     = animal['fotoUrl2'] as String?;
-    final nombre      = animal['nombre']      as String;
+    // `?? ...` en vez de un cast directo (lo que había antes) — nombre,
+    // raza, ubicación, descripción y tags son los únicos 5 campos de este
+    // mapa que se casteaban sin red de seguridad, a diferencia de todos
+    // los demás en esta misma función. Hoy no pasa nada porque las 3
+    // pantallas que abren esta ficha siempre mandan el mapa completo,
+    // pero cualquier forma NUEVA de llegar acá (un link, una notificación,
+    // un mapa armado a mano en otra pantalla) que se olvide uno de estos
+    // 5 campos hace crashear la ficha entera en vez de mostrarla con un
+    // valor vacío. Hallazgo de auditoría de código.
+    final nombre      = (animal['nombre']      as String?) ?? 'Sin nombre';
     final edad        = (animal['edad']   as String?) ?? '';
     final genero      = (animal['genero'] as String?) ?? '';
-    final raza        = animal['raza']        as String;
-    final ubicacion   = animal['ubicacion']   as String;
-    final descripcion = animal['descripcion'] as String;
-    final tags        = (animal['tags'] as List).cast<String>();
+    final raza        = (animal['raza']        as String?) ?? 'Criolla';
+    final ubicacion   = (animal['ubicacion']   as String?) ?? '';
+    final descripcion = (animal['descripcion'] as String?) ?? '';
+    final tags        = ((animal['tags'] as List?) ?? const []).cast<String>();
     final emoji       = animal['especie'] == 'Gato' ? '🐱' : '🐶';
     final vacunado      = (animal['vacunado']      as String?) ?? 'Aún no lo sé';
     final desparasitado = (animal['desparasitado'] as String?) ?? 'Aún no lo sé';

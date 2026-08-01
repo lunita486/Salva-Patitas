@@ -245,13 +245,21 @@ service cloud.firestore {
         // onNuevoMensaje (functions/index.js) decide a quién mandarle la
         // notificación mirando este mismo campo, así que también le podía
         // robar el aviso a la persona real. Hallazgo de auditoría de código.
+        // texto tiene un tope de largo — antes ni la app ni la regla
+        // ponían ningún límite, así que alguien podía mandar texto
+        // gigante saltándose el límite del campo (que solo frena a quien
+        // usa la app de verdad, no a quien escribe directo contra
+        // Firestore). Mismo tope que el campo de la app (2000). Hallazgo
+        // de auditoría de código.
         allow create: if signedIn() &&
           (get(/databases/$(database)/documents/chats/$(chatId)).data.adoptanteId == uid() ||
            get(/databases/$(database)/documents/chats/$(chatId)).data.rescatistaId == uid()) &&
           request.resource.data.emisor == (
             get(/databases/$(database)/documents/chats/$(chatId)).data.rescatistaId == uid()
               ? 'rescatista' : 'adoptante'
-          );
+          ) &&
+          request.resource.data.texto is string &&
+          request.resource.data.texto.size() <= 2000;
       }
     }
 

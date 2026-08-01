@@ -622,11 +622,20 @@ class _ChatScreenState extends State<ChatScreen> {
                     controller: _msgCtl,
                     textInputAction: TextInputAction.send,
                     onSubmitted: _send,
+                    // Ni la app ni la regla de Firestore ponían un tope al
+                    // largo de un mensaje — un pegado gigante inflaba el
+                    // costo de guardado y rompía el diseño de la burbuja.
+                    // maxLength sin counterText visible: no hace falta
+                    // mostrar el contador en un chat normal, solo frenarlo
+                    // antes de un extremo irreal. Hallazgo de auditoría de
+                    // código.
+                    maxLength: 2000,
                     decoration: InputDecoration(
                       hintText: 'Escribe un mensaje...',
                       hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
                       border: InputBorder.none,
                       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      counterText: '',
                     ),
                   ),
                 ),

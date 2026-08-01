@@ -22,6 +22,28 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
   int _nav = 0;
   final _uid = FirebaseAuth.instance.currentUser?.uid ?? '';
 
+  // Antes cada uno de estos 3 streams se armaba de nuevo (nueva instancia
+  // de Stream) cada vez que build() corría — lo que pasa con CUALQUIER
+  // setState de esta pantalla, incluido simplemente tocar el menú de
+  // abajo (_nav). Como el body usa IndexedStack (mantiene las 3 pestañas
+  // vivas a la vez, no las arma de nuevo al cambiar), esto tiraba abajo y
+  // volvía a levantar los listeners de las 3 pestañas juntas en cada
+  // toque, con el parpadeo visible de "cargando" que eso genera — para
+  // datos que ya estaban cargados y no habían cambiado. De yapa, dos de
+  // estas 3 consultas estaban DUPLICADAS (misma consulta armada en dos
+  // lugares distintos, cada una con su propio listener): ahora es un solo
+  // listener compartido. `late final`: se arman una sola vez, la primera
+  // vez que hacen falta. Hallazgo de auditoría de código.
+  late final Stream<DocumentSnapshot> _perfilStream =
+      FirebaseFirestore.instance.collection('usuarios').doc(_uid).snapshots();
+  late final Stream<QuerySnapshot> _serviciosStream = FirebaseFirestore.instance
+      .collection('servicios').where('aliadoId', isEqualTo: _uid).snapshots();
+  late final Stream<QuerySnapshot> _consultasStream = FirebaseFirestore.instance
+      .collection('chats')
+      .where('rescatistaId', isEqualTo: _uid)
+      .where('tipoSolicitud', isEqualTo: 'consulta_aliado')
+      .snapshots();
+
   static const _catEmoji = {
     'Baño y peluquería': '🛁',
     'Veterinaria':       '🩺',
@@ -144,7 +166,7 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance.collection('usuarios').doc(_uid).snapshots(),
+      stream: _perfilStream,
       builder: (context, userSnap) {
         final data      = userSnap.data?.data() as Map<String, dynamic>? ?? {};
         final nombre    = data['aliadoNombre'] as String? ?? 'Mi negocio';
@@ -188,18 +210,13 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
 
   Widget _panelTab(String nombre, String tipo, String? foto, String iniciales) {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('servicios').where('aliadoId', isEqualTo: _uid).snapshots(),
+      stream: _serviciosStream,
       builder: (context, svcSnap) {
         final servicios = svcSnap.data?.docs ?? [];
         final activos   = servicios.where((d) => (d.data() as Map)['activo'] == true).length;
 
         return StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('chats')
-              .where('rescatistaId', isEqualTo: _uid)
-              .where('tipoSolicitud', isEqualTo: 'consulta_aliado')
-              .snapshots(),
+          stream: _consultasStream,
           builder: (context, chatSnap) {
             final chats       = (chatSnap.data?.docs ?? []).where((d) {
               final data = d.data() as Map<String, dynamic>;
@@ -464,8 +481,7 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
 
   Widget _catalogoTab(String nombre, String? foto, String iniciales) {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('servicios').where('aliadoId', isEqualTo: _uid).snapshots(),
+      stream: _serviciosStream,
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator(color: appTeal));
@@ -756,10 +772,7 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
           _navItem(Icons.dashboard_outlined, Icons.dashboard, 'Panel', 0),
           _navItem(Icons.spa_outlined, Icons.spa, 'Servicios', 1),
           StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance.collection('chats')
-                .where('rescatistaId', isEqualTo: _uid)
-                .where('tipoSolicitud', isEqualTo: 'consulta_aliado')
-                .snapshots(),
+            stream: _consultasStream,
             builder: (_, snap) {
               final unread = (snap.data?.docs ?? []).where((doc) {
                 final d = doc.data() as Map<String, dynamic>;

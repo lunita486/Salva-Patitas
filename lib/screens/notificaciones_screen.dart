@@ -18,11 +18,21 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
 
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
+  // Dos arreglos acá: (1) el `mounted` solo protegía la rama de "sí
+  // existe" — si el doc no existía todavía, el `else` hacía setState()
+  // sin revisar `mounted`, lo que revienta si la persona ya cerró la
+  // pantalla (abrir y salir rápido). (2) no había ningún `.catchError` —
+  // si la consulta fallaba (sin señal al abrir esta pantalla), la
+  // excepción quedaba sin atrapar y `_loading` se quedaba en `true` para
+  // siempre: la pantalla entera es solo un spinner mientras `_loading`
+  // sea `true`, sin ningún botón de reintentar. Hallazgo de auditoría de
+  // código.
   @override
   void initState() {
     super.initState();
     _preferenciasRepo.stream(_uid).first.then((doc) {
-      if (doc.exists && mounted) {
+      if (!mounted) return;
+      if (doc.exists) {
         final d = doc.data()!;
         setState(() {
           _mensajes    = d['notif_mensajes']    ?? true;
@@ -32,6 +42,8 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
       } else {
         setState(() => _loading = false);
       }
+    }).catchError((_) {
+      if (mounted) setState(() => _loading = false);
     });
   }
 

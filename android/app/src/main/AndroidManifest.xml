@@ -1,9 +1,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
+    <!-- allowBackup="false": todos los datos reales viven en Firestore
+         (ver CLAUDE.md), nada local vale la pena restaurar — sin esto,
+         la copia de seguridad automática de Android podía devolverle a
+         alguien una sesión de Google Sign-In vieja/rota al reinstalar o
+         cambiar de celular, el mismo tipo de problema de login que ya
+         dio dolores de cabeza antes. Hallazgo de auditoría de código. -->
     <application
         android:label="Salva Patitas"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false">
         <activity
             android:name=".MainActivity"
             android:exported="true"

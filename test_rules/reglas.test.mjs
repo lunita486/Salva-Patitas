@@ -684,4 +684,25 @@ describe('chats', () => {
       }),
     );
   });
+
+  // Ni la app ni la regla ponían antes ningún tope al largo de un
+  // mensaje — alguien podía mandar texto gigante saltándose el límite
+  // del campo de la app (que solo frena a quien usa la app de verdad).
+  it('un mensaje de más de 2000 caracteres se rechaza', async () => {
+    await assertFails(
+      addDoc(collection(como(ADOPTANTE), 'chats', 'chat1', 'mensajes'), {
+        texto: 'x'.repeat(2001),
+        emisor: 'adoptante',
+      }),
+    );
+  });
+
+  it('un mensaje de exactamente 2000 caracteres SÍ se acepta', async () => {
+    await assertSucceeds(
+      addDoc(collection(como(ADOPTANTE), 'chats', 'chat1', 'mensajes'), {
+        texto: 'x'.repeat(2000),
+        emisor: 'adoptante',
+      }),
+    );
+  });
 });

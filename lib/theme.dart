@@ -787,7 +787,25 @@ class AvatarUsuario extends StatefulWidget {
 }
 
 class _AvatarUsuarioState extends State<AvatarUsuario> {
-  late final Future<(String?, String?)> _foto = _cargar();
+  late Future<(String?, String?)> _foto = _cargar();
+
+  // Sin esto, un widget reusado para OTRA persona (mismo lugar en una
+  // lista sin `key` propia, ej. hogares_de_paso_screen.dart, que se
+  // reordena sola cuando cambia `vecesAyudo`) seguía mostrando la foto de
+  // quien tenía ese lugar antes — el nombre se actualiza (viene directo
+  // del `build()` de quien usa este widget), pero la foto quedaba
+  // pegada a la primera carga de la vida de este State. Arreglo de raíz
+  // acá adentro (no "agregarle una key a cada lista que lo use") para que
+  // blinde a CUALQUIER lista que use este widget, no solo a la que lo
+  // destapó. Hallazgo de auditoría de código.
+  @override
+  void didUpdateWidget(covariant AvatarUsuario oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.userId != widget.userId ||
+        oldWidget.campoLogoNegocio != widget.campoLogoNegocio) {
+      setState(() => _foto = _cargar());
+    }
+  }
 
   Future<(String?, String?)> _cargar() async {
     final id = widget.userId;

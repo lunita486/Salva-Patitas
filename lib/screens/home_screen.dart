@@ -38,6 +38,28 @@ class _HomeScreenState extends State<HomeScreen> {
   final _rescatesRepo = RescatesRepository();
   final _solicitudesRepo = SolicitudesRepository();
 
+  // Antes estos 4 streams se armaban de nuevo (nueva instancia de Stream)
+  // cada vez que build() corría — lo que pasa con CUALQUIER setState de
+  // esta pantalla, no solo al cambiar de pestaña. StreamBuilder
+  // resuscribe su listener cada vez que el Stream que recibe cambia de
+  // identidad (aunque sea exactamente la misma consulta), así que
+  // cualquier setState (ej. tocar el menú de abajo) tiraba abajo y volvía
+  // a levantar TODOS estos listeners de golpe — el parpadeo visible de
+  // "cargando" que eso genera, para datos que ya estaban cargados y no
+  // habían cambiado en absoluto. `late final`: se arman una sola vez, la
+  // primera vez que hacen falta — evaluación perezosa, así que el lado
+  // (rescatista/adoptante) que no corresponde al rol actual ni se llega
+  // a crear. Hallazgo de auditoría de código.
+  late final String _uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _solicitudesPendientesStream =
+      _solicitudesRepo.paraOwner(uid: _uid, role: CreatorRole.rescatista, estado: 'pendiente');
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _misRescatesStream =
+      _rescatesRepo.misRescates(uid: _uid, role: CreatorRole.rescatista);
+  late final Stream<QuerySnapshot> _chatsRescatistaStream = FirebaseFirestore.instance
+      .collection('chats').where('rescatistaId', isEqualTo: _uid).snapshots();
+  late final Stream<QuerySnapshot> _chatsAdoptanteStream = FirebaseFirestore.instance
+      .collection('chats').where('adoptanteId', isEqualTo: _uid).snapshots();
+
   static const _rolLabel = {
     'rescatista': 'Rescatista',
     'adoptante':  'Adoptante',
@@ -484,17 +506,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _statsRowDynamic() {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: _solicitudesRepo.paraOwner(
-        uid: FirebaseAuth.instance.currentUser?.uid ?? '',
-        role: CreatorRole.rescatista,
-        estado: 'pendiente',
-      ),
+      stream: _solicitudesPendientesStream,
       builder: (context, snap) {
         final count = snap.data?.docs.length ?? 0;
-        final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
         return StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance.collection('chats')
-              .where('rescatistaId', isEqualTo: uid).snapshots(),
+          stream: _chatsRescatistaStream,
           builder: (context, chatSnap) {
             final noLeidos = (chatSnap.data?.docs ?? []).where((doc) {
               final d = doc.data() as Map<String, dynamic>;
@@ -512,7 +528,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: _stat('$noLeidos', 'Mensajes\nsin leer', const Color(0xFFD8EEFA), const Color(0xFF2070B0)))),
               const SizedBox(width: 10),
               Expanded(child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                stream: _rescatesRepo.misRescates(uid: uid, role: CreatorRole.rescatista),
+                stream: _misRescatesStream,
                 builder: (context, rescSnap) {
                   final total = (rescSnap.data?.docs ?? []).length;
                   return _stat('$total', 'Animales\nrescatados', Colors.white, appInk);
@@ -576,9 +592,7 @@ class _HomeScreenState extends State<HomeScreen> {
             _navTap(Icons.notifications_outlined, 'Solicitudes', 2,
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SolicitudesRescatistaScreen()))),
             StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance.collection('chats')
-                  .where('rescatistaId', isEqualTo: FirebaseAuth.instance.currentUser?.uid ?? '')
-                  .snapshots(),
+              stream: _chatsRescatistaStream,
               builder: (_, snap) {
                 final unread = (snap.data?.docs ?? []).where((doc) {
                   final d = doc.data() as Map<String, dynamic>;
@@ -605,9 +619,7 @@ class _HomeScreenState extends State<HomeScreen> {
             // Mismo orden que en Rescatista/Albergue/Aliado: Chats siempre va
             // después de Solicitudes, antes de Negocios/Perfil.
             StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance.collection('chats')
-                  .where('adoptanteId', isEqualTo: FirebaseAuth.instance.currentUser?.uid ?? '')
-                  .snapshots(),
+              stream: _chatsAdoptanteStream,
               builder: (_, snap) {
                 final unread = (snap.data?.docs ?? []).where((doc) {
                   final d = doc.data() as Map<String, dynamic>;
@@ -686,15 +698,21 @@ class _HomeScreenState extends State<HomeScreen> {
 
 // ─── Avatar helper (global dentro del archivo) ───────────────────────────────
 
-Widget _avatar(String letter, Color color, {double radius = 22, double fontSize = 20}) {
+// AvatarPersona (theme.dart), no un CircleAvatar armado a mano — antes,
+// si la foto de perfil de Google fallaba al cargar (sin señal, link
+// vencido), se veía un círculo de color vacío en vez de caer a la
+// inicial, justo en el avatar del encabezado del dashboard principal.
+// Hallazgo de auditoría de código.
+Widget _avatar(String letter, Color color, {double radius = 22}) {
   final user = FirebaseAuth.instance.currentUser;
-  final foto = user?.photoURL;
-  if (foto != null) {
-    return CircleAvatar(backgroundImage: NetworkImage(foto), radius: radius);
-  }
   final inicial = user?.displayName?.isNotEmpty == true
       ? user!.displayName![0].toUpperCase() : letter;
-  return CircleAvatar(backgroundColor: color, radius: radius,
-      child: Text(inicial, style: TextStyle(color: Colors.white, fontSize: fontSize, fontWeight: FontWeight.bold)));
+  return AvatarPersona(
+    fotoUrl: user?.photoURL,
+    inicial: inicial,
+    radius: radius,
+    backgroundColor: color,
+    textColor: Colors.white,
+  );
 }
 
