@@ -261,7 +261,15 @@ service cloud.firestore {
     match /servicios/{servicioId} {
       allow read: if true;
       allow create: if signedIn() && request.resource.data.aliadoId == uid() && hasRole('aliado');
-      allow update, delete: if signedIn() && resource.data.aliadoId == uid();
+      // update NO deja reescribir aliadoId — mismo agujero que se cerró en
+      // rescates.update: sin este candado, el propio dueño podía
+      // "regalarle" su servicio al uid de cualquier otra persona
+      // (servicios es de lectura pública, así que quedaba publicado a
+      // nombre de otro negocio sin su consentimiento). Hallazgo de
+      // auditoría de código.
+      allow update: if signedIn() && resource.data.aliadoId == uid() &&
+        request.resource.data.aliadoId == resource.data.aliadoId;
+      allow delete: if signedIn() && resource.data.aliadoId == uid();
     }
 
     // ── hogaresDePaso ─────────────────────────────────────────────────
@@ -269,7 +277,13 @@ service cloud.firestore {
     // lo ve/edita el albergue dueño (`albergueId`). Solo para albergues,
     // no rescatistas (decisión de producto: mejoras_albergue.html).
     match /hogaresDePaso/{docId} {
-      allow read, update, delete: if signedIn() && resource.data.albergueId == uid();
+      allow read, delete: if signedIn() && resource.data.albergueId == uid();
+      // update NO deja reescribir albergueId — mismo motivo que en
+      // servicios.update: sin este candado se podía inyectar un contacto
+      // falso directo en el roster PRIVADO de otro albergue, reescribiendo
+      // a quién pertenece una fila propia. Hallazgo de auditoría de código.
+      allow update: if signedIn() && resource.data.albergueId == uid() &&
+        request.resource.data.albergueId == resource.data.albergueId;
       // hasRole('albergue') es lo que hace cumplir "solo para albergues,
       // no rescatistas" en la práctica — antes solo se pedía que
       // albergueId fuera uno mismo, así que una cuenta rescatista (sin

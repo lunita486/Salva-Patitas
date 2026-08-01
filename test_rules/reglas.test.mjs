@@ -42,6 +42,7 @@ const aca = dirname(fileURLToPath(import.meta.url));
 
 const ADOPTANTE = 'uid_adoptante';
 const ALBERGUE = 'uid_albergue';
+const ALIADO = 'uid_aliado';
 const OTRO = 'uid_intruso';
 
 let testEnv;
@@ -79,6 +80,7 @@ beforeEach(async () => {
   await sembrar(async (db) => {
     await setDoc(doc(db, 'usuarios', ADOPTANTE), { roles: ['adoptante'] });
     await setDoc(doc(db, 'usuarios', ALBERGUE), { roles: ['albergue'] });
+    await setDoc(doc(db, 'usuarios', ALIADO), { roles: ['aliado'] });
     await setDoc(doc(db, 'usuarios', OTRO), { roles: ['adoptante'] });
     await setDoc(doc(db, 'rescates', 'animal1'), {
       rescatistaId: ALBERGUE,
@@ -443,6 +445,53 @@ describe('rescates', () => {
   });
 });
 
+describe('servicios — catálogo de negocios aliados', () => {
+  beforeEach(async () => {
+    await sembrar(async (db) => {
+      await setDoc(doc(db, 'servicios', 'svc1'), {
+        aliadoId: ALIADO,
+        nombre: 'Baño y corte',
+        precio: 50000,
+        activo: true,
+      });
+    });
+  });
+
+  it('el catálogo es de lectura pública, incluso sin sesión', async () => {
+    await assertSucceeds(getDoc(doc(sinSesion(), 'servicios', 'svc1')));
+  });
+
+  it('no se puede publicar un servicio a nombre de otro aliado, ni sin tener el rol', async () => {
+    await assertFails(
+      addDoc(collection(como(OTRO), 'servicios'), { aliadoId: ALIADO, nombre: 'Robado' }),
+    );
+    await assertFails(
+      addDoc(collection(como(ADOPTANTE), 'servicios'), { aliadoId: ADOPTANTE, nombre: 'Falso' }),
+    );
+  });
+
+  it('el aliado dueño puede editar sus propios campos (ej. activar/desactivar, cambiar precio)', async () => {
+    await assertSucceeds(
+      updateDoc(doc(como(ALIADO), 'servicios', 'svc1'), { activo: false, precio: 60000 }),
+    );
+  });
+
+  // ── Mismo agujero que rescates.update ──────────────────────────────────
+  // update() solo pedía ser el dueño ACTUAL, sin restringir a qué podía
+  // cambiarlo — el propio aliado podía "regalarle" su servicio (público)
+  // al uid de cualquier otro negocio sin su consentimiento.
+  it('el dueño de un servicio NO puede reasignarlo a otra cuenta al editarlo', async () => {
+    await assertFails(
+      updateDoc(doc(como(ALIADO), 'servicios', 'svc1'), { aliadoId: OTRO }),
+    );
+  });
+
+  it('nadie más puede editar ni borrar el servicio de otro', async () => {
+    await assertFails(updateDoc(doc(como(OTRO), 'servicios', 'svc1'), { activo: false }));
+    await assertFails(deleteDoc(doc(como(OTRO), 'servicios', 'svc1')));
+  });
+});
+
 describe('usuarios', () => {
   it('nadie puede escribir en el perfil de otra persona', async () => {
     await assertFails(
@@ -532,6 +581,15 @@ describe('hogaresDePaso — roster privado del albergue', () => {
         albergueId: ALBERGUE,
         nombre: 'Colado',
       }),
+    );
+  });
+
+  // Mismo agujero que rescates.update/servicios.update: sin este candado,
+  // el propio albergue podía "traspasarle" una fila de contacto (privada)
+  // al uid de cualquier otro albergue con un simple update().
+  it('el albergue dueño NO puede reasignar una fila del roster a otro albergue', async () => {
+    await assertFails(
+      updateDoc(doc(como(ALBERGUE), 'hogaresDePaso', 'hp1'), { albergueId: OTRO }),
     );
   });
 
