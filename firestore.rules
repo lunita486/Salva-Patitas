@@ -59,7 +59,18 @@ service cloud.firestore {
         request.resource.data.rescatistaId == uid() &&
         request.resource.data.creadoPor in ['rescatista', 'albergue'] &&
         hasRole(request.resource.data.creadoPor);
-      allow update, delete: if signedIn() && resource.data.rescatistaId == uid();
+      // update NO deja reescribir rescatistaId ni creadoPor — antes solo se
+      // pedía ser el dueño ACTUAL, sin restringir a qué podía cambiarlo.
+      // Eso dejaba "regalarle" un animal propio al uid de cualquier otra
+      // persona con un simple update(), lo que reabría por otra puerta el
+      // mismo ataque de notificación falsa que el anclaje de
+      // solicitudes.create de arriba supuestamente había cerrado — ese
+      // anclaje compara contra ESTE documento, y quedaba falsificable
+      // después de creado. Hallazgo de auditoría de código.
+      allow update: if signedIn() && resource.data.rescatistaId == uid() &&
+        request.resource.data.rescatistaId == resource.data.rescatistaId &&
+        request.resource.data.creadoPor == resource.data.creadoPor;
+      allow delete: if signedIn() && resource.data.rescatistaId == uid();
     }
 
     // ── solicitudes ───────────────────────────────────────────────────
@@ -225,9 +236,22 @@ service cloud.firestore {
         allow read: if signedIn() &&
           (get(/databases/$(database)/documents/chats/$(chatId)).data.adoptanteId == uid() ||
            get(/databases/$(database)/documents/chats/$(chatId)).data.rescatistaId == uid());
+        // emisor tiene que coincidir con el lado REAL de quien escribe —
+        // antes cualquiera de los dos participantes podía mandar su propio
+        // mensaje marcado con el emisor DEL OTRO. chat_screen.dart calcula
+        // de qué lado se pinta la burbuja comparando el rol propio contra
+        // este campo, así que ese mensaje falsificado se veía, en la
+        // pantalla de la VÍCTIMA, como si ELLA lo hubiera escrito — y
+        // onNuevoMensaje (functions/index.js) decide a quién mandarle la
+        // notificación mirando este mismo campo, así que también le podía
+        // robar el aviso a la persona real. Hallazgo de auditoría de código.
         allow create: if signedIn() &&
           (get(/databases/$(database)/documents/chats/$(chatId)).data.adoptanteId == uid() ||
-           get(/databases/$(database)/documents/chats/$(chatId)).data.rescatistaId == uid());
+           get(/databases/$(database)/documents/chats/$(chatId)).data.rescatistaId == uid()) &&
+          request.resource.data.emisor == (
+            get(/databases/$(database)/documents/chats/$(chatId)).data.rescatistaId == uid()
+              ? 'rescatista' : 'adoptante'
+          );
       }
     }
 

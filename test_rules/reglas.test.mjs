@@ -416,6 +416,31 @@ describe('rescates', () => {
     );
     await assertFails(deleteDoc(doc(como(OTRO), 'rescates', 'animal1')));
   });
+
+  // ── El agujero que reabría el ataque de notificaciones falsas ─────────
+  // update() solo pedía ser el dueño ACTUAL, sin restringir a qué podía
+  // cambiarlo — el propio dueño podía "regalarle" su animal al uid de
+  // cualquier otra persona, y con eso volver a disparar el mismo push
+  // falso que el anclaje de solicitudes.create supuestamente ya bloqueaba
+  // (ese anclaje confía en QUE ESTE CAMPO no se pueda falsificar después
+  // de creado el rescate).
+  it('el dueño de un animal NO puede reasignarlo a otra cuenta al editarlo', async () => {
+    await assertFails(
+      updateDoc(doc(como(ALBERGUE), 'rescates', 'animal1'), { rescatistaId: OTRO }),
+    );
+  });
+
+  it('tampoco puede cambiarle el rol con el que se publicó (creadoPor) al editarlo', async () => {
+    await assertFails(
+      updateDoc(doc(como(ALBERGUE), 'rescates', 'animal1'), { creadoPor: 'rescatista' }),
+    );
+  });
+
+  it('el dueño real SÍ puede seguir editando el resto de los campos normalmente', async () => {
+    await assertSucceeds(
+      updateDoc(doc(como(ALBERGUE), 'rescates', 'animal1'), { estadoAdopcion: 'Adoptado' }),
+    );
+  });
 });
 
 describe('usuarios', () => {
@@ -562,6 +587,43 @@ describe('chats', () => {
   it('no se pueden reescribir los dueños de un chat ya creado', async () => {
     await assertFails(
       updateDoc(doc(como(ADOPTANTE), 'chats', 'chat1'), { rescatistaId: OTRO }),
+    );
+  });
+
+  // ── El agujero de los mensajes falsificados ────────────────────────────
+  // emisor lo escribe el propio teléfono al mandar el mensaje, y antes la
+  // regla no revisaba que coincidiera con quién es de verdad quien escribe
+  // — cualquiera de los dos lados podía mandar SU mensaje marcado con el
+  // emisor DEL OTRO, y ese mensaje se veía en la pantalla de la víctima
+  // como si ELLA lo hubiera escrito (chat_screen.dart calcula la burbuja
+  // comparando el rol propio contra este campo).
+  it('no se puede mandar un mensaje marcado con el emisor del OTRO participante', async () => {
+    await assertFails(
+      addDoc(collection(como(ADOPTANTE), 'chats', 'chat1', 'mensajes'), {
+        texto: 'yo nunca dije esto',
+        emisor: 'rescatista',
+      }),
+    );
+    await assertFails(
+      addDoc(collection(como(ALBERGUE), 'chats', 'chat1', 'mensajes'), {
+        texto: 'yo tampoco dije esto',
+        emisor: 'adoptante',
+      }),
+    );
+  });
+
+  it('cada participante SÍ puede mandar un mensaje marcado con su propio lado (flujo real)', async () => {
+    await assertSucceeds(
+      addDoc(collection(como(ADOPTANTE), 'chats', 'chat1', 'mensajes'), {
+        texto: 'hola, esto sí lo dije yo',
+        emisor: 'adoptante',
+      }),
+    );
+    await assertSucceeds(
+      addDoc(collection(como(ALBERGUE), 'chats', 'chat1', 'mensajes'), {
+        texto: 'y esto lo dije yo',
+        emisor: 'rescatista',
+      }),
     );
   });
 });
