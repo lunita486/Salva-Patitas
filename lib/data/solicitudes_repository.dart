@@ -123,6 +123,13 @@ class SolicitudesRepository {
   /// animal, o `null` si no aplicó todavía. Con [rescateId] se compara por
   /// el id único del animal (dos animales con el mismo nombre no se
   /// confunden); sin él (dato legado) se cae al viejo match por nombre.
+  ///
+  /// Mismo criterio de tolerancia a fallas que [_hayAlguna]: reintenta una
+  /// vez, y si el servidor sigue sin responder cae a la copia local en
+  /// caché — antes esto era un `await` suelto sin ningún respaldo, y la
+  /// pantalla que lo llama (el paso final para pedir adoptar) no tenía
+  /// forma de distinguir "todavía cargando" de "se colgó para siempre".
+  /// Hallazgo de auditoría de código.
   Future<String?> estadoExistente({
     required String uid,
     required String animalNombre,
@@ -134,7 +141,16 @@ class SolicitudesRepository {
     q = (rescateId != null && rescateId.isNotEmpty)
         ? q.where('rescateId', isEqualTo: rescateId)
         : q.where('animalNombre', isEqualTo: animalNombre);
-    final res = await q.limit(1).get();
+    q = q.limit(1);
+    QuerySnapshot<Map<String, dynamic>> res;
+    try {
+      res = await conReintento(() => q.get());
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') rethrow;
+      res = await q.get(const GetOptions(source: Source.cache));
+    } catch (_) {
+      res = await q.get(const GetOptions(source: Source.cache));
+    }
     if (res.docs.isEmpty) return null;
     return res.docs.first.data()['estado'] as String? ?? '';
   }

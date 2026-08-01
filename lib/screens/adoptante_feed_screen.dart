@@ -351,6 +351,17 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
       stream: RescatesRepository().feedPublico(),
       builder: (context, snap) {
         if (snap.hasError) return errorFeedState();
+        // Antes del primer snapshot real (instalación nueva, sin caché
+        // local) favSnap y snap vienen sin datos por un instante — sin
+        // este chequeo, `animals` quedaba vacío momentáneamente más abajo
+        // y el feed le mostraba "Eso es todo por hoy, vuelve mañana" a
+        // alguien que recién se instaló la app, justo cuando SÍ hay
+        // animales, todavía cargando. Es la primera pantalla que ve un
+        // adoptante nuevo. Hallazgo de auditoría de código.
+        if (favSnap.connectionState == ConnectionState.waiting ||
+            snap.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator(color: appTeal));
+        }
         // Separado en 2 pasos (disponibles → firestoreDocs) para poder
         // distinguir "no queda NADA en el catálogo" de "no queda nada CON
         // ESTOS FILTROS" — antes era un solo .where() y _emptyState() no

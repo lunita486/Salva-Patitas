@@ -26,6 +26,8 @@ class _AliadoPerfilScreenState extends State<AliadoPerfilScreen> {
   String? _tipo;
   String? _fotoBase64;
   bool    _guardando = false;
+  bool    _cargando  = true;
+  bool    _errorCarga = false;
 
   static const _tipos = [
     'Veterinaria',
@@ -46,22 +48,47 @@ class _AliadoPerfilScreenState extends State<AliadoPerfilScreen> {
     _cargarDatosExistentes();
   }
 
+  // Antes esto no tenía ningún try/catch: si la carga inicial fallaba (o
+  // tardaba y la persona no esperaba), los campos opcionales (teléfono,
+  // dirección, email, web) quedaban vacíos en pantalla — y _guardar() los
+  // escribía igual, sin ninguna protección, borrando de contrabando lo que
+  // ya estaba guardado. Ahora la pantalla no muestra el formulario (ni el
+  // botón de guardar) hasta confirmar que la carga terminó bien; si falla,
+  // muestra un estado de reintento en vez de proceder con datos a medias.
+  // Hallazgo de auditoría de código.
   Future<void> _cargarDatosExistentes() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    final doc = await FirebaseFirestore.instance.collection('usuarios').doc(uid).get();
-    if (!doc.exists || !mounted) return;
-    final data = doc.data() as Map<String, dynamic>;
-    setState(() {
-      _nombreCtl.text    = data['aliadoNombre']     as String? ?? '';
-      _ciudadCtl.text    = data['ciudad']           as String? ?? '';
-      _telefonoCtl.text  = data['aliadoTelefono']  as String? ?? '';
-      _direccionCtl.text = data['aliadoDireccion'] as String? ?? '';
-      _emailCtl.text     = data['aliadoEmail']     as String? ?? '';
-      _webCtl.text       = data['aliadoSitioWeb']  as String? ?? '';
-      _tipo              = data['aliadoTipo']       as String?;
-      _fotoBase64        = data['aliadoFotoBase64'] as String?;
-    });
+    if (uid == null) {
+      if (mounted) setState(() => _cargando = false);
+      return;
+    }
+    try {
+      final doc = await FirebaseFirestore.instance.collection('usuarios').doc(uid).get();
+      if (!mounted) return;
+      if (!doc.exists) {
+        setState(() => _cargando = false);
+        return;
+      }
+      final data = doc.data() as Map<String, dynamic>;
+      setState(() {
+        _nombreCtl.text    = data['aliadoNombre']     as String? ?? '';
+        _ciudadCtl.text    = data['ciudad']           as String? ?? '';
+        _telefonoCtl.text  = data['aliadoTelefono']  as String? ?? '';
+        _direccionCtl.text = data['aliadoDireccion'] as String? ?? '';
+        _emailCtl.text     = data['aliadoEmail']     as String? ?? '';
+        _webCtl.text       = data['aliadoSitioWeb']  as String? ?? '';
+        _tipo              = data['aliadoTipo']       as String?;
+        _fotoBase64        = data['aliadoFotoBase64'] as String?;
+        _cargando          = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() { _cargando = false; _errorCarga = true; });
+    }
+  }
+
+  Future<void> _reintentarCarga() async {
+    setState(() { _cargando = true; _errorCarga = false; });
+    await _cargarDatosExistentes();
   }
 
   Future<void> _pickFoto() async {
@@ -170,6 +197,54 @@ class _AliadoPerfilScreenState extends State<AliadoPerfilScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_cargando) {
+      return const Scaffold(
+        backgroundColor: appBg,
+        body: Center(child: CircularProgressIndicator(color: appTeal)),
+      );
+    }
+    if (_errorCarga) {
+      return Scaffold(
+        backgroundColor: appBg,
+        body: SafeArea(
+          child: Column(children: [
+            Builder(builder: (ctx) => Navigator.canPop(ctx)
+                ? Align(
+                    alignment: Alignment.centerLeft,
+                    child: IconButton(
+                      icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+                      tooltip: 'Volver',
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  )
+                : const SizedBox.shrink()),
+            Expanded(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    errorFeedState(
+                        mensaje: 'No pudimos cargar tu perfil. Revisá tu conexión e intentá de nuevo.'),
+                    const SizedBox(height: 12),
+                    ElevatedButton(
+                      onPressed: _reintentarCarga,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: appTeal,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        elevation: 0,
+                      ),
+                      child: const Text('Reintentar', style: TextStyle(fontWeight: FontWeight.w600)),
+                    ),
+                  ]),
+                ),
+              ),
+            ),
+          ]),
+        ),
+      );
+    }
     return Scaffold(
       backgroundColor: appBg,
       floatingActionButton: kDebugMode

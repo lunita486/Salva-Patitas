@@ -30,6 +30,7 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
   DateTime? _fechaFin;
   bool   _enviando        = false;
   bool   _verificando     = true;
+  bool   _errorVerificacion = false;
   bool   _yaAplico        = false;
   String _estadoExistente = '';
 
@@ -48,17 +49,30 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
       setState(() => _verificando = false);
       return;
     }
-    final estado = await _solicitudesRepo.estadoExistente(
-      uid: uid,
-      animalNombre: widget.animal['nombre'] as String,
-      rescateId: widget.animal['rescateId'] as String?,
-    );
-    if (mounted) {
+    setState(() { _verificando = true; _errorVerificacion = false; });
+    try {
+      final estado = await _solicitudesRepo.estadoExistente(
+        uid: uid,
+        animalNombre: widget.animal['nombre'] as String,
+        rescateId: widget.animal['rescateId'] as String?,
+      );
+      if (!mounted) return;
       setState(() {
         _yaAplico        = estado != null;
         _estadoExistente = estado ?? '';
         _verificando     = false;
       });
+    } catch (_) {
+      // Antes esto no tenía ningún try/catch: si estadoExistente() fallaba
+      // (o, sin este arreglo, se quedaba esperando sin señal — ver el
+      // mismo respaldo por caché que ya tiene _hayAlguna en el
+      // repositorio), _verificando quedaba en true para siempre y esta
+      // pantalla — el paso final para pedir adoptar, la acción más
+      // importante de un adoptante en toda la app — se quedaba en un
+      // spinner sin botón de volver ni de reintentar. Hallazgo de
+      // auditoría de código.
+      if (!mounted) return;
+      setState(() { _verificando = false; _errorVerificacion = true; });
     }
   }
 
@@ -161,6 +175,47 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
       return const Scaffold(
         backgroundColor: appBg,
         body: Center(child: CircularProgressIndicator(color: appTeal)),
+      );
+    }
+    if (_errorVerificacion) {
+      return Scaffold(
+        backgroundColor: appBg,
+        body: SafeArea(
+          child: Column(children: [
+            Align(
+              alignment: Alignment.centerLeft,
+              child: IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+                tooltip: 'Volver',
+                onPressed: () => Navigator.pop(context),
+              ),
+            ),
+            Expanded(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    errorFeedState(
+                        mensaje: 'No pudimos verificar si ya pediste adoptar a '
+                            '${widget.animal['nombre']}. Revisá tu conexión e intentá de nuevo.'),
+                    const SizedBox(height: 12),
+                    ElevatedButton(
+                      onPressed: _verificarDuplicado,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: appTeal,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        elevation: 0,
+                      ),
+                      child: const Text('Reintentar', style: TextStyle(fontWeight: FontWeight.w600)),
+                    ),
+                  ]),
+                ),
+              ),
+            ),
+          ]),
+        ),
       );
     }
     if (_yaAplico) {
