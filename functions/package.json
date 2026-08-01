@@ -3,7 +3,8 @@
   "description": "Cloud Functions for Salva Patitas",
   "scripts": {
     "deploy": "firebase deploy --only functions",
-    "logs": "firebase functions:log"
+    "logs": "firebase functions:log",
+    "test": "node --test"
   },
   "engines": { "node": "20" },
   "main": "index.js",

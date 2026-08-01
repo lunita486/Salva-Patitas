@@ -1,4 +1,21 @@
 {
-  "indexes": [],
+  "indexes": [
+    {
+      "collectionGroup": "rescates",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "adoptanteIdEnProceso", "order": "ASCENDING" },
+        { "fieldPath": "estadoAdopcion", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "rescates",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "rescatistaId", "order": "ASCENDING" },
+        { "fieldPath": "estadoAdopcion", "order": "ASCENDING" }
+      ]
+    }
+  ],
   "fieldOverrides": []
 }

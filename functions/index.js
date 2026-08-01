@@ -6,6 +6,11 @@ const { getStorage } = require('firebase-admin/storage');
 
 initializeApp();
 
+// Cumplimiento de la política de eliminación de cuenta de Google Play —
+// ver el plan en C:\Users\Eliza\.claude\plans\joyful-waddling-squid.md
+// para el razonamiento completo de qué se borra/anonimiza/bloquea.
+exports.eliminarCuenta = require('./eliminar_cuenta').eliminarCuenta;
+
 // Tokens que FCM reporta como muertos (app desinstalada, token vencido/rotado).
 // Sin esto, un usuario que desinstaló la app acumula intentos de envío fallidos
 // para siempre y el token nunca se limpia.

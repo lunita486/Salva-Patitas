@@ -10,6 +10,7 @@ import '../data/chats_repository.dart';
 import 'adoptante_chats_screen.dart';
 import 'subir_servicio_screen.dart';
 import 'aliado_perfil_screen.dart';
+import 'eliminar_cuenta_dialog.dart';
 
 class AliadoHomeScreen extends StatefulWidget {
   const AliadoHomeScreen({super.key});
@@ -705,6 +706,21 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                 label: const Text('Cerrar sesión'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: Colors.red.shade400,
+                  side: BorderSide(color: Colors.red.shade200),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => mostrarEliminarCuentaDialog(context),
+                icon: const Icon(Icons.delete_outline, size: 18),
+                label: const Text('Eliminar mi cuenta'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.red.shade700,
                   side: BorderSide(color: Colors.red.shade200),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),

@@ -9,6 +9,7 @@ import '../data/firestore_resiliencia.dart';
 import '../data/rescates_repository.dart';
 import '../data/solicitudes_repository.dart';
 import '../data/usuarios_repository.dart';
+import 'eliminar_cuenta_dialog.dart';
 
 class PerfilRescatistaScreen extends StatelessWidget {
   const PerfilRescatistaScreen({super.key});
@@ -236,6 +237,25 @@ class PerfilRescatistaScreen extends StatelessWidget {
                     Icon(Icons.logout, color: Colors.red.shade400, size: 18),
                     const SizedBox(width: 8),
                     Text('Cerrar sesión', style: TextStyle(color: Colors.red.shade400, fontWeight: FontWeight.w600)),
+                  ]),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Eliminar mi cuenta
+              GestureDetector(
+                onTap: () => mostrarEliminarCuentaDialog(context),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: Colors.red.shade200),
+                  ),
+                  child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    Icon(Icons.delete_outline, color: Colors.red.shade700, size: 18),
+                    const SizedBox(width: 8),
+                    Text('Eliminar mi cuenta', style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.w600)),
                   ]),
                 ),
               ),

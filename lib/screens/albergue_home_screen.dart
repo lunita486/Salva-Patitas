@@ -20,6 +20,7 @@ import 'albergue_perfil_screen.dart';
 import 'aliados_screen.dart';
 import 'solicitudes_preview.dart';
 import 'hogares_de_paso_screen.dart';
+import 'eliminar_cuenta_dialog.dart';
 
 class AlbergueHomeScreen extends StatefulWidget {
   const AlbergueHomeScreen({super.key});
@@ -657,6 +658,21 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                 label: const Text('Cerrar sesión'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: Colors.red.shade400,
+                  side: BorderSide(color: Colors.red.shade200),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => mostrarEliminarCuentaDialog(ctx),
+                icon: const Icon(Icons.delete_outline, size: 18),
+                label: const Text('Eliminar mi cuenta'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.red.shade700,
                   side: BorderSide(color: Colors.red.shade200),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),

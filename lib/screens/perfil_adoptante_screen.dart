@@ -10,6 +10,7 @@ import '../data/usuarios_repository.dart';
 import '../data/firestore_resiliencia.dart';
 import 'mis_solicitudes_screen.dart';
 import 'tipo_animal_screen.dart';
+import 'eliminar_cuenta_dialog.dart';
 
 class PerfilAdoptanteScreen extends StatelessWidget {
   const PerfilAdoptanteScreen({super.key});
@@ -244,6 +245,12 @@ class PerfilAdoptanteScreen extends StatelessWidget {
                         ),
                       ],
                     ))),
+              ]),
+              const SizedBox(height: 12),
+              _settingsCard([
+                _settingsRow('Eliminar mi cuenta', Icons.delete_outline,
+                    color: Colors.red.shade700, last: true,
+                    onTap: () => mostrarEliminarCuentaDialog(context)),
               ]),
             ]),
           ),
