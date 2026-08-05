@@ -50,6 +50,11 @@ class _AnimalDetalleScreenState extends State<AnimalDetalleScreen> {
     final fotos          = [?fotoUrl, ?fotoUrl2];
     final estadoAdopcion = animal['estadoAdopcion'] as String? ?? '';
     final enHogar        = estadoAdopcion == 'Hogar de paso';
+    // En horizontal el alto de pantalla completo puede ser menor a 380 —
+    // header + foto + botones fijos ya no entran y el Expanded del scroll
+    // se queda sin espacio.
+    final screenSize = MediaQuery.of(context).size;
+    final fotoHeight = screenSize.height < screenSize.width ? 180.0 : 380.0;
 
     return Scaffold(
       backgroundColor: appBg,
@@ -85,7 +90,7 @@ class _AnimalDetalleScreenState extends State<AnimalDetalleScreen> {
                 borderRadius: BorderRadius.circular(20),
                 child: fotos.isEmpty
                   ? Container(
-                      height: 380, width: double.infinity,
+                      height: fotoHeight, width: double.infinity,
                       decoration: const BoxDecoration(
                         gradient: LinearGradient(
                           colors: [Color(0xFF3D7A52), Color(0xFF1F4A30)],
@@ -95,7 +100,7 @@ class _AnimalDetalleScreenState extends State<AnimalDetalleScreen> {
                       child: Center(child: Text(emoji, style: const TextStyle(fontSize: 90))),
                     )
                   : SizedBox(
-                      height: 380,
+                      height: fotoHeight,
                       child: PageView.builder(
                         controller: _pageCtrl,
                         itemCount: fotos.length,

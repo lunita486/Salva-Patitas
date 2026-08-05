@@ -579,25 +579,42 @@ class _ChatScreenState extends State<ChatScreen> {
                     _scrollCtl.jumpTo(_scrollCtl.position.maxScrollExtent);
                   }
                 });
-                final items = <Widget>[];
+                // Etiqueta de separador por índice (o null si va pegado al
+                // mensaje anterior) — solo compara fechas, no construye
+                // ningún widget todavía. Antes esto armaba la lista
+                // COMPLETA de burbujas de una (ListView con `children`), así
+                // que cada mensaje nuevo reconstruía TODA la conversación
+                // desde el principio. Con ListView.builder + este arreglo
+                // liviano, cada burbuja se construye solo cuando entra en
+                // pantalla — importa en chats largos de negociación de
+                // adopción con muchos mensajes de ida y vuelta.
+                final etiquetas = List<String?>.filled(docs.length, null);
                 DateTime? ultimoDia;
-                for (final doc in docs) {
-                  final d = doc.data() as Map<String, dynamic>;
+                for (var i = 0; i < docs.length; i++) {
+                  final d = docs[i].data() as Map<String, dynamic>;
                   // Mientras el serverTimestamp no confirma (recién enviado,
                   // offline), creadoEn llega null del lado del cliente: se
                   // asume "ahora" para no romper el agrupado.
                   final creadoEn = (d['creadoEn'] as Timestamp?)?.toDate() ?? DateTime.now();
                   final dia = DateTime(creadoEn.year, creadoEn.month, creadoEn.day);
                   if (ultimoDia == null || dia != ultimoDia) {
-                    items.add(_separadorFecha(_etiquetaFecha(creadoEn)));
+                    etiquetas[i] = _etiquetaFecha(creadoEn);
                     ultimoDia = dia;
                   }
-                  items.add(_burbujaMensaje(d));
                 }
-                return ListView(
+                return ListView.builder(
                   controller: _scrollCtl,
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  children: items,
+                  itemCount: docs.length,
+                  itemBuilder: (context, i) {
+                    final d = docs[i].data() as Map<String, dynamic>;
+                    final etiqueta = etiquetas[i];
+                    if (etiqueta == null) return _burbujaMensaje(d);
+                    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                      _separadorFecha(etiqueta),
+                      _burbujaMensaje(d),
+                    ]);
+                  },
                 );
               },
             );

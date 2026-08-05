@@ -12,8 +12,19 @@ import 'mis_solicitudes_screen.dart';
 import 'tipo_animal_screen.dart';
 import 'eliminar_cuenta_dialog.dart';
 
-class PerfilAdoptanteScreen extends StatelessWidget {
+class PerfilAdoptanteScreen extends StatefulWidget {
   const PerfilAdoptanteScreen({super.key});
+  @override
+  State<PerfilAdoptanteScreen> createState() => _PerfilAdoptanteScreenState();
+}
+
+class _PerfilAdoptanteScreenState extends State<PerfilAdoptanteScreen> {
+  // Guardada una sola vez en vez de llamarse desde el FutureBuilder de más
+  // abajo: antes esto era StatelessWidget y el future se creaba de nuevo en
+  // CADA build() (ej. al cambiar de rol desde home_screen.dart) — cada
+  // rebuild volvía a pedir permiso de ubicación, GPS y geocoding de nuevo,
+  // con el pin de ciudad parpadeando al desaparecer y reaparecer.
+  late final Future<String> _ciudadFuture = _detectarCiudad();
 
   Future<String> _detectarCiudad() async {
     try {
@@ -69,6 +80,7 @@ class PerfilAdoptanteScreen extends StatelessWidget {
 
     final seleccion = await showModalBottomSheet<List<String>>(
       context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => _RolesSheet(rolesActuales: roles),
@@ -150,7 +162,7 @@ class PerfilAdoptanteScreen extends StatelessWidget {
                   const SizedBox(height: 4),
                   Row(children: [
                     FutureBuilder<String>(
-                      future: _detectarCiudad(),
+                      future: _ciudadFuture,
                       builder: (_, snap) {
                         // También con ciudad vacía ('' cuando el GPS falla o
                         // está bloqueado): sin este guard quedaba el pin y el
@@ -290,37 +302,44 @@ class _RolesSheetState extends State<_RolesSheet> {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Container(width: 36, height: 4,
-            decoration: BoxDecoration(color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(2))),
-        const SizedBox(height: 16),
-        const Text('Mis roles', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 6),
-        Text('Podés tener los dos roles al mismo tiempo',
-            style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
-        const SizedBox(height: 20),
-        _rolTile('adoptante', '🐾 Adoptante', 'Busco animales para adoptar'),
-        const SizedBox(height: 10),
-        _rolTile('rescatista', '🦺 Rescatista', 'Rescato y publico animales'),
-        const SizedBox(height: 24),
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton(
-            onPressed: _roles.isNotEmpty
-                ? () => Navigator.pop(context, _roles)
-                : null,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: appTeal,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-              elevation: 0,
+      // SingleChildScrollView a propósito: mismo motivo que
+      // perfil_rescatista_screen.dart — en horizontal este Column no
+      // entraba entero y el botón Guardar quedaba cortado, sin forma de
+      // desplazarse para alcanzarlo. Hallazgo de prueba en teléfono real,
+      // 2026-08-02.
+      child: SingleChildScrollView(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(width: 36, height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 16),
+          const Text('Mis roles', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 6),
+          Text('Podés tener los dos roles al mismo tiempo',
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
+          const SizedBox(height: 20),
+          _rolTile('adoptante', '🐾 Adoptante', 'Busco animales para adoptar'),
+          const SizedBox(height: 10),
+          _rolTile('rescatista', '🦺 Rescatista', 'Rescato y publico animales'),
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _roles.isNotEmpty
+                  ? () => Navigator.pop(context, _roles)
+                  : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: appTeal,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                elevation: 0,
+              ),
+              child: const Text('Guardar', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
             ),
-            child: const Text('Guardar', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
           ),
-        ),
-      ]),
+        ]),
+      ),
     );
   }
 

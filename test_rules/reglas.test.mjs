@@ -63,7 +63,10 @@ before(async () => {
     firestore: {
       rules: readFileSync(join(aca, '..', 'firestore.rules'), 'utf8'),
       host: '127.0.0.1',
-      port: 8080,
+      // Tiene que ser el MISMO puerto que emulators.firestore.port en
+      // firebase.json (ver el comentario ahí) — este archivo no lee ese
+      // valor solo, así que si uno cambia el otro tiene que seguirlo.
+      port: 8097,
     },
   });
 });
@@ -702,6 +705,39 @@ describe('chats', () => {
       addDoc(collection(como(ADOPTANTE), 'chats', 'chat1', 'mensajes'), {
         texto: 'x'.repeat(2000),
         emisor: 'adoptante',
+      }),
+    );
+  });
+
+  // Caso real, probado en teléfono real 2026-08-03: una cuenta que además
+  // tiene su propio negocio aliado registrado se consulta A SÍ MISMA
+  // (tocó "Contactar" en el perfil público de su propio negocio) —
+  // adoptanteId y rescatistaId de ESE chat terminan siendo el mismo uid.
+  // Antes la regla chequeaba rescatistaId primero, así que ese uid
+  // "ganaba" como rescatista y exigía emisor:'rescatista' — pero
+  // chat_screen.dart siempre manda 'adoptante' para quien inició la
+  // consulta (adoptanteId es, por diseño del esquema, "quien preguntó",
+  // sin importar su rol real). Resultado: "No se pudo enviar el mensaje"
+  // siempre, para cualquier cuenta que se consultara a sí misma.
+  it('una cuenta que se consulta a sí misma (mismo uid en los dos lados) manda como adoptante', async () => {
+    await sembrar(async (db) => {
+      await setDoc(doc(db, 'chats', 'chatSelf'), {
+        adoptanteId: ALIADO,
+        rescatistaId: ALIADO,
+        tipoSolicitud: 'consulta_aliado',
+        creadoPor: 'rescatista',
+      });
+    });
+    await assertSucceeds(
+      addDoc(collection(como(ALIADO), 'chats', 'chatSelf', 'mensajes'), {
+        texto: 'hola, me pregunto algo a mí mismo',
+        emisor: 'adoptante',
+      }),
+    );
+    await assertFails(
+      addDoc(collection(como(ALIADO), 'chats', 'chatSelf', 'mensajes'), {
+        texto: 'esto no debería colarse',
+        emisor: 'rescatista',
       }),
     );
   });

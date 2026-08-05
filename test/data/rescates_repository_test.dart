@@ -539,13 +539,38 @@ void main() {
       );
     });
 
-    test('feedPublico no excluye rescates sin creadoEn (bug: orderBy los desaparecía del feed)', () async {
-      await firestore.collection('rescates').add({'nombre': 'ConFecha', 'creadoEn': Timestamp.now()});
-      await firestore.collection('rescates').add({'nombre': 'SinFecha'});
+    // Reemplaza el test viejo "feedPublico no excluye rescates sin
+    // creadoEn" — CAMBIO DE DISEÑO a propósito (ver el comentario largo en
+    // feedPublico(), rescates_repository.dart): para poder paginar el feed
+    // (Fase de auditoría de costo/performance, 2026-08-02) hace falta
+    // ordenar por creadoEn, y Firestore EN PRODUCCIÓN excluye de un
+    // `orderBy` cualquier documento que no tenga ese campo — confirmado
+    // con Eliza que hoy todos los rescates reales lo tienen.
+    //
+    // Sin test automático para esa exclusión en sí: `fake_cloud_firestore`
+    // (el doble de test que usa todo este archivo) no reproduce ese
+    // comportamiento — con la librería de test, un `orderBy('creadoEn')`
+    // SÍ devuelve documentos sin ese campo (al final), a diferencia de
+    // Firestore real. Escribir un test acá daría una falsa sensación de
+    // seguridad (pasaría siempre, sin importar si el comportamiento real
+    // cambia) — la garantía real es la documentación de Firestore + el
+    // comentario en feedPublico(), no un test que esta librería no puede
+    // validar de verdad.
 
-      final docs = await repo.feedPublico().first;
-      expect(docs.docs.length, 2);
-      expect(docs.docs.map((d) => d['nombre']), containsAll(['ConFecha', 'SinFecha']));
+    test('feedPublico ordena por creadoEn (más viejo primero) y respeta el límite pedido', () async {
+      final base = DateTime(2026, 1, 1);
+      for (var i = 0; i < 5; i++) {
+        await firestore.collection('rescates').add({
+          'nombre': 'Animal$i',
+          'creadoEn': Timestamp.fromDate(base.add(Duration(minutes: i))),
+        });
+      }
+      final docs = await repo.feedPublico(limite: 3).first;
+      expect(docs.docs.map((d) => d['nombre']), ['Animal0', 'Animal1', 'Animal2']);
+    });
+
+    test('feedPageSize es 50 (tamaño de tanda por defecto del feed paginado)', () {
+      expect(RescatesRepository.feedPageSize, 50);
     });
 
     group('cambiarEstadoAdopcion', () {

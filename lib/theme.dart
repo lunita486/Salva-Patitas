@@ -3,7 +3,8 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show TextInputFormatter, FilteringTextInputFormatter;
+import 'package:flutter/services.dart'
+    show TextInputFormatter, FilteringTextInputFormatter;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'data/chats_repository.dart';
@@ -42,8 +43,18 @@ mixin TardandoMuchoMixin<T extends StatefulWidget> on State<T> {
 // se centraliza acá para que un cambio de formato (o de idioma, algún día)
 // se aplique en un solo lugar.
 const _mesesAbreviados = [
-  'ene', 'feb', 'mar', 'abr', 'may', 'jun',
-  'jul', 'ago', 'sep', 'oct', 'nov', 'dic',
+  'ene',
+  'feb',
+  'mar',
+  'abr',
+  'may',
+  'jun',
+  'jul',
+  'ago',
+  'sep',
+  'oct',
+  'nov',
+  'dic',
 ];
 
 /// "15 jul" o "15 jul 2026" según [conAnio]. Pantallas con lógica propia de
@@ -84,7 +95,9 @@ String? whatsappUrl(String telefono) {
   final yaTieneIndicativo = telefono.trim().startsWith('+');
   final digitos = telefono.replaceAll(RegExp(r'[^0-9]'), '');
   if (digitos.isEmpty) return null;
-  final conIndicativo = (!yaTieneIndicativo && digitos.length == 10) ? '57$digitos' : digitos;
+  final conIndicativo = (!yaTieneIndicativo && digitos.length == 10)
+      ? '57$digitos'
+      : digitos;
   return 'https://wa.me/$conIndicativo';
 }
 
@@ -220,24 +233,34 @@ class _CampoTelefonoState extends State<CampoTelefono> {
 
   @override
   Widget build(BuildContext context) {
-    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _SelectorPais(pais: _pais, onChanged: _cambiarPais),
-      const SizedBox(width: 8),
-      Expanded(
-        child: widget.decoracionLocal != null
-            ? TextField(
-                controller: _localCtl,
-                autofocus: widget.autofocus,
-                keyboardType: TextInputType.phone,
-                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9 ()-]'))],
-                decoration: widget.decoracionLocal,
-              )
-            : perfilCampo(_localCtl, 'ej. 300 123 4567',
-                tipo: TextInputType.phone,
-                autofocus: widget.autofocus,
-                formato: [FilteringTextInputFormatter.allow(RegExp(r'[0-9 ()-]'))]),
-      ),
-    ]);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SelectorPais(pais: _pais, onChanged: _cambiarPais),
+        const SizedBox(width: 8),
+        Expanded(
+          child: widget.decoracionLocal != null
+              ? TextField(
+                  controller: _localCtl,
+                  autofocus: widget.autofocus,
+                  keyboardType: TextInputType.phone,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[0-9 ()-]')),
+                  ],
+                  decoration: widget.decoracionLocal,
+                )
+              : perfilCampo(
+                  _localCtl,
+                  'ej. 300 123 4567',
+                  tipo: TextInputType.phone,
+                  autofocus: widget.autofocus,
+                  formato: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[0-9 ()-]')),
+                  ],
+                ),
+        ),
+      ],
+    );
   }
 }
 
@@ -251,24 +274,40 @@ class _SelectorPais extends StatelessWidget {
     return Container(
       height: 52,
       padding: const EdgeInsets.symmetric(horizontal: 10),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+      ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<Pais>(
           value: pais,
           isDense: true,
           icon: const Icon(Icons.arrow_drop_down, size: 18),
           borderRadius: BorderRadius.circular(12),
-          items: paisesHispanohablantes.map((p) => DropdownMenuItem(
-                value: p,
-                child: Text('${p.bandera} ${p.nombre}  +${p.indicativo}',
-                    style: const TextStyle(fontSize: 13)),
-              )).toList(),
+          items: paisesHispanohablantes
+              .map(
+                (p) => DropdownMenuItem(
+                  value: p,
+                  child: Text(
+                    '${p.bandera} ${p.nombre}  +${p.indicativo}',
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+              )
+              .toList(),
           selectedItemBuilder: (_) => paisesHispanohablantes
-              .map((p) => Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text('${p.bandera} +${p.indicativo}',
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                  ))
+              .map(
+                (p) => Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '${p.bandera} +${p.indicativo}',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              )
               .toList(),
           onChanged: onChanged,
         ),
@@ -289,16 +328,16 @@ String sitioWebUrl(String sitioWeb) {
 
 // ─── Constantes de color ──────────────────────────────────────────────────────
 
-const appBg     = Color(0xFFDFFBEC);
-const appDark   = Color(0xFF162416);
-const appTeal   = Color(0xFF1F8A62);
+const appBg = Color(0xFFDFFBEC);
+const appDark = Color(0xFF162416);
+const appTeal = Color(0xFF1F8A62);
 const appOrange = Color(0xFFD84E18);
 // El negro casi puro que en la práctica se usa para casi todo el texto de
 // la app (0xFF1A1A1A) — antes escrito a mano en decenas de lugares, sin
 // ningún token que lo agrupara (a diferencia de appDark, que existía pero
 // casi no se usaba). Mismo valor exacto, solo con nombre — no cambia
 // ningún color en pantalla, unifica cómo se referencia.
-const appInk    = Color(0xFF1A1A1A);
+const appInk = Color(0xFF1A1A1A);
 
 // ─── Colores semánticos para SnackBars ───────────────────────────────────────
 // Antes, de 72 SnackBars en toda la app, solo 6 tenían un color puesto a
@@ -311,9 +350,9 @@ const appInk    = Color(0xFF1A1A1A);
 // pasó pero quedó a medias, msgExito para confirmaciones. Reusan colores
 // que la app ya tenía (el rojo de Eliminar/urgente, el naranja de marca, y
 // el verde de siempre) — no son colores nuevos.
-const msgError       = Color(0xFFD32F2F);
+const msgError = Color(0xFFD32F2F);
 const msgAdvertencia = appOrange;
-const msgExito       = appTeal;
+const msgExito = appTeal;
 
 // ─── Ícono/color por tipo de negocio aliado ──────────────────────────────────
 // Un solo mapeo, reutilizado en la grilla de "Negocios aliados"
@@ -323,27 +362,27 @@ const msgExito       = appTeal;
 // Colores pastel (no los saturados de un mockup de referencia) para que
 // combinen con el resto de la paleta de la app en vez de competir con ella.
 IconData aliadoTipoIcono(String tipo) => switch (tipo) {
-  'Veterinaria'        => Icons.medical_services_outlined,
+  'Veterinaria' => Icons.medical_services_outlined,
   'Tienda de mascotas' => Icons.shopping_bag_outlined,
-  'Spa canino'         => Icons.self_improvement,
-  'Peluquería canina'  => Icons.content_cut,
-  _                    => Icons.pets,
+  'Spa canino' => Icons.self_improvement,
+  'Peluquería canina' => Icons.content_cut,
+  _ => Icons.pets,
 };
 
 Color aliadoTipoColorPastel(String tipo) => switch (tipo) {
-  'Veterinaria'        => const Color(0xFFD8ECE6),
+  'Veterinaria' => const Color(0xFFD8ECE6),
   'Tienda de mascotas' => const Color(0xFFFBE3D3),
-  'Spa canino'         => const Color(0xFFE6DFF4),
-  'Peluquería canina'  => const Color(0xFFFAE0E7),
-  _                    => const Color(0xFFE7EFEA),
+  'Spa canino' => const Color(0xFFE6DFF4),
+  'Peluquería canina' => const Color(0xFFFAE0E7),
+  _ => const Color(0xFFE7EFEA),
 };
 
 Color aliadoTipoColorTexto(String tipo) => switch (tipo) {
-  'Veterinaria'        => appTeal,
+  'Veterinaria' => appTeal,
   'Tienda de mascotas' => const Color(0xFFB0501C),
-  'Spa canino'         => const Color(0xFF6C4FA0),
-  'Peluquería canina'  => const Color(0xFFC2447A),
-  _                    => const Color(0xFF5F6F68),
+  'Spa canino' => const Color(0xFF6C4FA0),
+  'Peluquería canina' => const Color(0xFFC2447A),
+  _ => const Color(0xFF5F6F68),
 };
 
 // ─── Umbral de "animal estancado" ────────────────────────────────────────────
@@ -355,10 +394,10 @@ Color aliadoTipoColorTexto(String tipo) => switch (tipo) {
 // doble del elegido, misma proporción 30/60 que tenía el valor fijo.
 const umbralEstancadoDefault = 30;
 const umbralEstancadoOpciones = [
-  (15,  '15 días'),
-  (30,  '30 días'),
-  (60,  '2 meses'),
-  (90,  '3 meses'),
+  (15, '15 días'),
+  (30, '30 días'),
+  (60, '2 meses'),
+  (90, '3 meses'),
   (180, '6 meses'),
   (365, '1 año y más'),
 ];
@@ -380,8 +419,8 @@ int umbralEstancadoDe(Map<String, dynamic>? datosUsuario) =>
 const especieOpciones = [
   ('Ambos', 'Todos'),
   ('Perro', '🐕 Perros'),
-  ('Gato',  '🐈 Gatos'),
-  ('Otro',  '🐾 Otros'),
+  ('Gato', '🐈 Gatos'),
+  ('Otro', '🐾 Otros'),
 ];
 
 // Espacio entre chips — un solo número compartido por el feed y el perfil,
@@ -391,7 +430,11 @@ const especieOpciones = [
 // deslizar — sugerencia real de Eliza).
 const especieChipGap = 6.0;
 
-Widget especieChip({required String label, required bool active, required VoidCallback onTap}) {
+Widget especieChip({
+  required String label,
+  required bool active,
+  required VoidCallback onTap,
+}) {
   return GestureDetector(
     onTap: onTap,
     child: Container(
@@ -401,8 +444,14 @@ Widget especieChip({required String label, required bool active, required VoidCa
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: active ? appTeal : Colors.grey.shade300),
       ),
-      child: Text(label, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700,
-          color: active ? Colors.white : appInk)),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11.5,
+          fontWeight: FontWeight.w700,
+          color: active ? Colors.white : appInk,
+        ),
+      ),
     ),
   );
 }
@@ -413,9 +462,15 @@ Widget especieChip({required String label, required bool active, required VoidCa
 // estilo para las dos (Eliza las comparó una al lado de la otra y pidió
 // que se vean igual) — texto oscuro en vez del gris apagado que tenía
 // albergue, que es lo que a ella más le gustó de las dos.
-Widget perfilLabel(String texto) => Text(texto,
-    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
-        letterSpacing: 1.1, color: appDark));
+Widget perfilLabel(String texto) => Text(
+  texto,
+  style: const TextStyle(
+    fontSize: 11,
+    fontWeight: FontWeight.w700,
+    letterSpacing: 1.1,
+    color: appDark,
+  ),
+);
 
 Widget perfilCampo(
   TextEditingController ctl,
@@ -424,33 +479,32 @@ Widget perfilCampo(
   List<TextInputFormatter> formato = const [],
   bool autofocus = false,
   void Function(String)? onChanged,
-}) =>
-    TextField(
-      controller: ctl,
-      keyboardType: tipo,
-      inputFormatters: formato,
-      autofocus: autofocus,
-      onChanged: onChanged,
-      decoration: InputDecoration(
-        hintText: hint,
-        hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
-        filled: true,
-        fillColor: Colors.white,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: appTeal, width: 2),
-        ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      ),
-    );
+}) => TextField(
+  controller: ctl,
+  keyboardType: tipo,
+  inputFormatters: formato,
+  autofocus: autofocus,
+  onChanged: onChanged,
+  decoration: InputDecoration(
+    hintText: hint,
+    hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+    filled: true,
+    fillColor: Colors.white,
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: BorderSide.none,
+    ),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: BorderSide.none,
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(color: appTeal, width: 2),
+    ),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+  ),
+);
 
 // ─── Paw print painter ───────────────────────────────────────────────────────
 
@@ -460,20 +514,54 @@ class _PawPrintPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final p = Paint()..color = color..style = PaintingStyle.fill;
-    double x(double v) => v * size.width  / 100;
+    final p = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    double x(double v) => v * size.width / 100;
     double y(double v) => v * size.height / 100;
 
     // Main pad — large rounded oval at the bottom
     canvas.drawOval(
-      Rect.fromCenter(center: Offset(x(50), y(72)), width: x(54), height: y(46)),
+      Rect.fromCenter(
+        center: Offset(x(50), y(72)),
+        width: x(54),
+        height: y(46),
+      ),
       p,
     );
     // Four toe pads arranged in an arc above the main pad
-    canvas.drawOval(Rect.fromCenter(center: Offset(x(16), y(42)), width: x(22), height: y(26)), p);
-    canvas.drawOval(Rect.fromCenter(center: Offset(x(37), y(26)), width: x(25), height: y(29)), p);
-    canvas.drawOval(Rect.fromCenter(center: Offset(x(63), y(26)), width: x(25), height: y(29)), p);
-    canvas.drawOval(Rect.fromCenter(center: Offset(x(84), y(42)), width: x(22), height: y(26)), p);
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: Offset(x(16), y(42)),
+        width: x(22),
+        height: y(26),
+      ),
+      p,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: Offset(x(37), y(26)),
+        width: x(25),
+        height: y(29),
+      ),
+      p,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: Offset(x(63), y(26)),
+        width: x(25),
+        height: y(29),
+      ),
+      p,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: Offset(x(84), y(42)),
+        width: x(22),
+        height: y(26),
+      ),
+      p,
+    );
   }
 
   @override
@@ -483,33 +571,43 @@ class _PawPrintPainter extends CustomPainter {
 // ─── Fondo con patitas ────────────────────────────────────────────────────────
 
 Widget _hoja(double w, double op, {bool fx = false, bool fy = false}) =>
-  Transform(
-    alignment: Alignment.center,
-    transform: Matrix4.diagonal3Values(fx ? -1.0 : 1.0, fy ? -1.0 : 1.0, 1.0),
-    child: CustomPaint(
-      size: Size(w, w),
-      painter: _PawPrintPainter(appTeal.withValues(alpha: op * 0.38)),
-    ),
-  );
+    Transform(
+      alignment: Alignment.center,
+      transform: Matrix4.diagonal3Values(fx ? -1.0 : 1.0, fy ? -1.0 : 1.0, 1.0),
+      child: CustomPaint(
+        size: Size(w, w),
+        painter: _PawPrintPainter(appTeal.withValues(alpha: op * 0.38)),
+      ),
+    );
 
 class LeafOverlay extends StatelessWidget {
   const LeafOverlay({super.key});
   @override
-  Widget build(BuildContext context) => Stack(children: [
-    Positioned(top: -28, left: -28,  child: _hoja(170, 0.82)),
-    Positioned(top: -28, right: -28, child: _hoja(170, 0.82, fx: true)),
-    Positioned(bottom: -28, left: -28,  child: _hoja(140, 0.60, fy: true)),
-    Positioned(bottom: -28, right: -28, child: _hoja(140, 0.60, fx: true, fy: true)),
-  ]);
+  Widget build(BuildContext context) => Stack(
+    children: [
+      Positioned(top: -28, left: -28, child: _hoja(170, 0.82)),
+      Positioned(top: -28, right: -28, child: _hoja(170, 0.82, fx: true)),
+      Positioned(bottom: -28, left: -28, child: _hoja(140, 0.60, fy: true)),
+      Positioned(
+        bottom: -28,
+        right: -28,
+        child: _hoja(140, 0.60, fx: true, fy: true),
+      ),
+    ],
+  );
 }
 
 Widget leafBackground({required Widget child}) => Stack(
   children: [
     Positioned.fill(child: Container(color: appBg)),
-    Positioned(top: -28, left: -28,  child: _hoja(170, 0.82)),
+    Positioned(top: -28, left: -28, child: _hoja(170, 0.82)),
     Positioned(top: -28, right: -28, child: _hoja(170, 0.82, fx: true)),
-    Positioned(bottom: -28, left: -28,  child: _hoja(140, 0.60, fy: true)),
-    Positioned(bottom: -28, right: -28, child: _hoja(140, 0.60, fx: true, fy: true)),
+    Positioned(bottom: -28, left: -28, child: _hoja(140, 0.60, fy: true)),
+    Positioned(
+      bottom: -28,
+      right: -28,
+      child: _hoja(140, 0.60, fx: true, fy: true),
+    ),
     child,
   ],
 );
@@ -519,16 +617,28 @@ Widget leafBackground({required Widget child}) => Stack(
 /// Para cuando un StreamBuilder falla (sin conexión, permiso denegado, etc.)
 /// — sin esto, `snap.data?.docs ?? []` hace que la pantalla se vea igual que
 /// "no hay nada todavía", confundiendo un error real con una lista vacía.
-Widget errorFeedState({String mensaje = 'No se pudo cargar. Revisá tu conexión e intentá de nuevo.'}) {
+Widget errorFeedState({
+  String mensaje = 'No se pudo cargar. Revisá tu conexión e intentá de nuevo.',
+}) {
   return Center(
     child: Padding(
       padding: const EdgeInsets.all(24),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Icon(Icons.wifi_off_rounded, size: 48, color: Colors.grey.shade400),
-        const SizedBox(height: 12),
-        Text(mensaje, textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 14, color: Colors.grey.shade700, height: 1.4)),
-      ]),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.wifi_off_rounded, size: 48, color: Colors.grey.shade400),
+          const SizedBox(height: 12),
+          Text(
+            mensaje,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.grey.shade700,
+              height: 1.4,
+            ),
+          ),
+        ],
+      ),
     ),
   );
 }
@@ -619,7 +729,8 @@ class FotoUrl extends StatelessWidget {
           height: height,
           child: const Center(
             child: SizedBox(
-              width: 20, height: 20,
+              width: 20,
+              height: 20,
               child: CircularProgressIndicator(strokeWidth: 2, color: appTeal),
             ),
           ),
@@ -669,21 +780,32 @@ class FotoAnimal extends StatelessWidget {
       // (para que el blur no muestre bordes transparentes) — sin el clip,
       // pintaría encima de lo que rodee al widget.
       child: ClipRect(
-        child: Stack(fit: StackFit.expand, children: [
-          // Fondo: misma foto, estirada a cubrir y desenfocada. Una sola
-          // descarga real: Image.network con la misma URL comparte el
-          // caché de imágenes de Flutter entre las dos capas.
-          ImageFiltered(
-            imageFilter: ImageFilter.blur(sigmaX: 14, sigmaY: 14, tileMode: TileMode.clamp),
-            child: FotoUrl(url: url, fit: BoxFit.cover, fallback: fallback),
-          ),
-          // Velo suave para que el fondo no compita con la foto nítida.
-          Container(color: Colors.black.withValues(alpha: 0.12)),
-          // La foto de verdad, entera. Sin fallback propio: si la carga
-          // falla, ya lo muestra la capa de fondo — dos fallbacks apilados
-          // se verían duplicados.
-          FotoUrl(url: url, fit: BoxFit.contain, fallback: const SizedBox.shrink()),
-        ]),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Fondo: misma foto, estirada a cubrir y desenfocada. Una sola
+            // descarga real: Image.network con la misma URL comparte el
+            // caché de imágenes de Flutter entre las dos capas.
+            ImageFiltered(
+              imageFilter: ImageFilter.blur(
+                sigmaX: 14,
+                sigmaY: 14,
+                tileMode: TileMode.clamp,
+              ),
+              child: FotoUrl(url: url, fit: BoxFit.cover, fallback: fallback),
+            ),
+            // Velo suave para que el fondo no compita con la foto nítida.
+            Container(color: Colors.black.withValues(alpha: 0.12)),
+            // La foto de verdad, entera. Sin fallback propio: si la carga
+            // falla, ya lo muestra la capa de fondo — dos fallbacks apilados
+            // se verían duplicados.
+            FotoUrl(
+              url: url,
+              fit: BoxFit.contain,
+              fallback: const SizedBox.shrink(),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -719,28 +841,72 @@ class AvatarPersona extends StatefulWidget {
 class _AvatarPersonaState extends State<AvatarPersona> {
   bool _falloCarga = false;
 
+  Widget _inicial() => Center(
+    child: Text(
+      widget.inicial,
+      style: TextStyle(
+        color: widget.textColor,
+        fontSize: widget.radius * 0.65,
+        fontWeight: FontWeight.bold,
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     final fotoBytes = bytesFotoSegura(widget.fotoBase64);
     final ImageProvider? foto = fotoBytes != null
         ? MemoryImage(fotoBytes)
         : widget.fotoUrl != null
-            ? NetworkImage(widget.fotoUrl!)
-            : null;
+        ? NetworkImage(widget.fotoUrl!)
+        : null;
     final mostrarFoto = foto != null && !_falloCarga;
-    return CircleAvatar(
-      backgroundColor: widget.backgroundColor,
-      radius: widget.radius,
-      backgroundImage: mostrarFoto ? foto : null,
-      onBackgroundImageError: mostrarFoto
-          ? (_, _) {
-              if (mounted) setState(() => _falloCarga = true);
-            }
-          : null,
-      child: !mostrarFoto
-          ? Text(widget.inicial,
-              style: TextStyle(color: widget.textColor, fontSize: widget.radius * 0.65, fontWeight: FontWeight.bold))
-          : null,
+    final size = widget.radius * 2;
+    return ClipOval(
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: ColoredBox(
+          color: widget.backgroundColor,
+          child: mostrarFoto
+              ? Image(
+                  image: foto,
+                  width: size,
+                  height: size,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) {
+                    // postFrameCallback, no un setState directo acá: este
+                    // callback puede dispararse en la misma pasada de build
+                    // si la imagen falla apenas se intenta resolver (bytes
+                    // corruptos), y un setState ahí mismo tira "setState
+                    // called during build".
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) setState(() => _falloCarga = true);
+                    });
+                    return _inicial();
+                  },
+                  // Fundido de entrada: sin esto, la foto aparecía de golpe
+                  // recién en el frame en que terminaba de decodificarse —
+                  // con varios avatares en la misma pantalla (ej. la grilla
+                  // de negocios aliados), cada uno termina de decodificar en
+                  // un instante levemente distinto, y se veía como si
+                  // cargaran "de a uno" aunque los datos de los dos ya
+                  // habían llegado juntos desde el principio. Hallazgo real
+                  // de Eliza en teléfono real, 2026-08-03.
+                  frameBuilder:
+                      (context, child, frame, wasSynchronouslyLoaded) {
+                        if (wasSynchronouslyLoaded) return child;
+                        return AnimatedOpacity(
+                          opacity: frame == null ? 0 : 1,
+                          duration: const Duration(milliseconds: 200),
+                          curve: Curves.easeOut,
+                          child: child,
+                        );
+                      },
+                )
+              : _inicial(),
+        ),
+      ),
     );
   }
 }
@@ -813,7 +979,10 @@ class _AvatarUsuarioState extends State<AvatarUsuario> {
     final id = widget.userId;
     if (id == null || id.isEmpty) return (null, null);
     try {
-      final doc = await FirebaseFirestore.instance.collection('usuarios').doc(id).get();
+      final doc = await FirebaseFirestore.instance
+          .collection('usuarios')
+          .doc(id)
+          .get();
       final data = doc.data();
       final campo = widget.campoLogoNegocio;
       final fotoBase64 = campo != null ? (data?[campo] as String?) : null;
@@ -838,15 +1007,15 @@ class _AvatarUsuarioState extends State<AvatarUsuario> {
 }
 
 Color cicloColor(String s) => switch (s) {
-  'En cuidado'             => appTeal,
-  'Rescatado'              => appTeal,
-  'Hogar de paso'          => const Color(0xFF7C6FCD),
+  'En cuidado' => appTeal,
+  'Rescatado' => appTeal,
+  'Hogar de paso' => const Color(0xFF7C6FCD),
   'En proceso de adopción' => const Color(0xFFE65100),
-  'Adoptado'               => const Color(0xFF2196F3),
-  'Regresado'              => const Color(0xFFD32F2F),
-  'Fallecido'              => const Color(0xFF78909C),
-  'Estancados'             => appOrange,
-  _                        => Colors.grey,
+  'Adoptado' => const Color(0xFF2196F3),
+  'Regresado' => const Color(0xFFD32F2F),
+  'Fallecido' => const Color(0xFF78909C),
+  'Estancados' => appOrange,
+  _ => Colors.grey,
 };
 
 // ─── Cambiar Estado Adopción Sheet ────────────────────────────────────────────
@@ -869,17 +1038,26 @@ class CambiarEstadoSheet extends StatelessWidget {
   /// avisa si falla, en vez del `.update()` suelto y sin manejar de antes
   /// (si fallaba, el sheet ya se había cerrado como si hubiera funcionado,
   /// sin ningún aviso).
-  Future<bool> _actualizarEstado(BuildContext context, String nuevoEstado, {
+  Future<bool> _actualizarEstado(
+    BuildContext context,
+    String nuevoEstado, {
     Map<String, dynamic> extra = const {},
   }) async {
     try {
-      await RescatesRepository().cambiarEstadoAdopcion(docId, nuevoEstado, extra: extra);
+      await RescatesRepository().cambiarEstadoAdopcion(
+        docId,
+        nuevoEstado,
+        extra: extra,
+      );
       return true;
     } catch (_) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
             backgroundColor: msgError,
-            content: Text('No se pudo actualizar el estado. Intentá de nuevo.')));
+            content: Text('No se pudo actualizar el estado. Intentá de nuevo.'),
+          ),
+        );
       }
       return false;
     }
@@ -890,140 +1068,217 @@ class CambiarEstadoSheet extends StatelessWidget {
     if (adoptanteId == null || adoptanteId.isEmpty || nombre.isEmpty) return;
     // docId es el id único del rescate (el mismo animal), así que el chat se
     // ubica directo por id en vez de buscarlo por nombre (que puede repetirse).
-    final chatDoc = await FirebaseFirestore.instance.collection('chats')
-        .doc(ChatsRepository().idAnimal(rescateId: docId, adoptanteId: adoptanteId)).get();
+    final chatDoc = await FirebaseFirestore.instance
+        .collection('chats')
+        .doc(
+          ChatsRepository().idAnimal(
+            rescateId: docId,
+            adoptanteId: adoptanteId,
+          ),
+        )
+        .get();
     String? chatId = chatDoc.exists ? chatDoc.id : null;
     if (chatId == null) {
-      final chats = await FirebaseFirestore.instance.collection('chats')
+      final chats = await FirebaseFirestore.instance
+          .collection('chats')
           .where('adoptanteId', isEqualTo: adoptanteId)
           .where('animalNombre', isEqualTo: nombre)
-          .limit(1).get();
+          .limit(1)
+          .get();
       if (chats.docs.isEmpty) return;
       chatId = chats.docs.first.id;
     }
     final n = DateTime.now();
     final hora = '${n.hour}:${n.minute.toString().padLeft(2, '0')}';
-    final texto = 'Lamentamos informarte que $nombre falleció. '
+    final texto =
+        'Lamentamos informarte que $nombre falleció. '
         'Gracias por tu interés en darle un hogar. 🌈'
         '${nota.isNotEmpty ? '\n\n$nota' : ''}';
-    await FirebaseFirestore.instance.collection('chats').doc(chatId)
-        .collection('mensajes').add({
-      'texto': texto, 'emisor': 'rescatista', 'hora': hora,
-      'creadoEn': FieldValue.serverTimestamp(),
-    });
+    await FirebaseFirestore.instance
+        .collection('chats')
+        .doc(chatId)
+        .collection('mensajes')
+        .add({
+          'texto': texto,
+          'emisor': 'rescatista',
+          'hora': hora,
+          'creadoEn': FieldValue.serverTimestamp(),
+        });
     await FirebaseFirestore.instance.collection('chats').doc(chatId).update({
-      'ultimoMensaje': texto, 'ultimaHora': hora,
+      'ultimoMensaje': texto,
+      'ultimaHora': hora,
       'ultimoMensajeEn': FieldValue.serverTimestamp(),
       'noLeidosAdoptante': FieldValue.increment(1),
     });
   }
 
   static const _estados = [
-    ('Rescatado',              '🟢', 'Disponible para adopción'),
-    ('Hogar de paso',          '🟣', 'Temporalmente con un cuidador'),
+    ('Rescatado', '🟢', 'Disponible para adopción'),
+    ('Hogar de paso', '🟣', 'Temporalmente con un cuidador'),
     ('En proceso de adopción', '🟠', 'Tiene una solicitud activa'),
-    ('Adoptado',               '🔵', 'Ya encontró su hogar'),
-    ('Regresado',              '🔴', 'Fue devuelto, disponible de nuevo'),
-    ('Fallecido',              '🌈', 'Ya no está con nosotros'),
+    ('Adoptado', '🔵', 'Ya encontró su hogar'),
+    ('Regresado', '🔴', 'Fue devuelto, disponible de nuevo'),
+    ('Fallecido', '🌈', 'Ya no está con nosotros'),
   ];
 
   @override
   Widget build(BuildContext context) => SingleChildScrollView(
     padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-    child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Center(child: Container(width: 36, height: 4,
-          decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
-      const SizedBox(height: 16),
-      const Text('Estado del animal', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-      const SizedBox(height: 4),
-      Text('Toca para cambiar el estado', style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
-      const SizedBox(height: 16),
-      ..._estados.map((e) {
-        final sel = e.$1 == estadoActual;
-        return GestureDetector(
-          onTap: () async {
-            if (e.$1 != 'Regresado' && e.$1 != 'Fallecido') {
-              final ok = await _actualizarEstado(context, e.$1, extra: {
-                if (e.$1 == 'Adoptado') 'fechaAdopcion': FieldValue.serverTimestamp(),
-              });
-              if (ok && context.mounted) Navigator.pop(context);
-              return;
-            }
-            final esFallecido = e.$1 == 'Fallecido';
-            final ctrl = TextEditingController();
-            final sheetCtx = context;
-            // .then() en vez de un dispose() suelto después de showDialog:
-            // este showDialog no se espera (el onTap sigue corriendo, no es
-            // async void bloqueado acá), así que un dispose() puesto justo
-            // debajo se ejecutaría ANTES de que la persona llegue a escribir
-            // nada. .then() sí espera a que el diálogo se cierre de verdad
-            // (Cancelar o Guardar, los dos hacen Navigator.pop), sea cual
-            // sea el camino — recién ahí libera el controller.
-            showDialog(
-              context: context,
-              builder: (dlgCtx) => AlertDialog(
-                title: Text(esFallecido ? 'Lo sentimos mucho 🌈' : '¿Por qué fue regresado?'),
-                content: TextField(
-                  controller: ctrl,
-                  maxLines: 3,
-                  autofocus: true,
-                  decoration: InputDecoration(
-                    hintText: esFallecido
-                        ? 'Puedes dejar una nota sobre este angelito...'
-                        : 'Ej: Incompatibilidad con otros animales, mudanza...',
-                    border: const OutlineInputBorder(),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Center(
+          child: Container(
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade300,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        const Text(
+          'Estado del animal',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Toca para cambiar el estado',
+          style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+        ),
+        const SizedBox(height: 16),
+        ..._estados.map((e) {
+          final sel = e.$1 == estadoActual;
+          return GestureDetector(
+            onTap: () async {
+              if (e.$1 != 'Regresado' && e.$1 != 'Fallecido') {
+                final ok = await _actualizarEstado(
+                  context,
+                  e.$1,
+                  extra: {
+                    if (e.$1 == 'Adoptado')
+                      'fechaAdopcion': FieldValue.serverTimestamp(),
+                  },
+                );
+                if (ok && context.mounted) Navigator.pop(context);
+                return;
+              }
+              final esFallecido = e.$1 == 'Fallecido';
+              final ctrl = TextEditingController();
+              final sheetCtx = context;
+              // .then() en vez de un dispose() suelto después de showDialog:
+              // este showDialog no se espera (el onTap sigue corriendo, no es
+              // async void bloqueado acá), así que un dispose() puesto justo
+              // debajo se ejecutaría ANTES de que la persona llegue a escribir
+              // nada. .then() sí espera a que el diálogo se cierre de verdad
+              // (Cancelar o Guardar, los dos hacen Navigator.pop), sea cual
+              // sea el camino — recién ahí libera el controller.
+              showDialog(
+                context: context,
+                builder: (dlgCtx) => AlertDialog(
+                  title: Text(
+                    esFallecido
+                        ? 'Lo sentimos mucho 🌈'
+                        : '¿Por qué fue regresado?',
                   ),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(dlgCtx),
-                    child: const Text('Cancelar'),
+                  content: TextField(
+                    controller: ctrl,
+                    maxLines: 3,
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      hintText: esFallecido
+                          ? 'Puedes dejar una nota sobre este angelito...'
+                          : 'Ej: Incompatibilidad con otros animales, mudanza...',
+                      border: const OutlineInputBorder(),
+                    ),
                   ),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(dlgCtx),
+                      child: const Text('Cancelar'),
+                    ),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
                         backgroundColor: esFallecido
                             ? const Color(0xFF78909C)
-                            : const Color(0xFFD32F2F)),
-                    onPressed: () async {
-                      final motivo = ctrl.text.trim();
-                      Navigator.pop(dlgCtx);
-                      final ok = await _actualizarEstado(sheetCtx, e.$1, extra: {
-                        if (esFallecido && motivo.isNotEmpty)
-                          'notaFallecido': motivo
-                        else if (!esFallecido)
-                          'motivoRegreso': motivo,
-                      });
-                      if (esFallecido && ok) _avisarAdoptanteFallecido(motivo);
-                      if (ok && sheetCtx.mounted) Navigator.pop(sheetCtx);
-                    },
-                    child: const Text('Guardar', style: TextStyle(color: Colors.white)),
+                            : const Color(0xFFD32F2F),
+                      ),
+                      onPressed: () async {
+                        final motivo = ctrl.text.trim();
+                        Navigator.pop(dlgCtx);
+                        final ok = await _actualizarEstado(
+                          sheetCtx,
+                          e.$1,
+                          extra: {
+                            if (esFallecido && motivo.isNotEmpty)
+                              'notaFallecido': motivo
+                            else if (!esFallecido)
+                              'motivoRegreso': motivo,
+                          },
+                        );
+                        if (esFallecido && ok)
+                          _avisarAdoptanteFallecido(motivo);
+                        if (ok && sheetCtx.mounted) Navigator.pop(sheetCtx);
+                      },
+                      child: const Text(
+                        'Guardar',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ),
+                  ],
+                ),
+              ).then((_) => ctrl.dispose());
+            },
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: sel
+                    ? cicloColor(e.$1).withValues(alpha: 0.1)
+                    : Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: sel ? cicloColor(e.$1) : Colors.grey.shade200,
+                  width: sel ? 2 : 1,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Text(e.$2, style: const TextStyle(fontSize: 20)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          e.$1,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: sel ? cicloColor(e.$1) : appInk,
+                          ),
+                        ),
+                        Text(
+                          e.$3,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
+                  if (sel)
+                    Icon(Icons.check_circle, color: cicloColor(e.$1), size: 20),
                 ],
               ),
-            ).then((_) => ctrl.dispose());
-          },
-          child: Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: sel ? cicloColor(e.$1).withValues(alpha: 0.1) : Colors.grey.shade50,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: sel ? cicloColor(e.$1) : Colors.grey.shade200, width: sel ? 2 : 1),
             ),
-            child: Row(children: [
-              Text(e.$2, style: const TextStyle(fontSize: 20)),
-              const SizedBox(width: 12),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(e.$1, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600,
-                    color: sel ? cicloColor(e.$1) : appInk)),
-                Text(e.$3, style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
-              ])),
-              if (sel) Icon(Icons.check_circle, color: cicloColor(e.$1), size: 20),
-            ]),
-          ),
-        );
-      }),
-    ]),
+          );
+        }),
+      ],
+    ),
   );
 }
 
@@ -1039,23 +1294,27 @@ Future<void> mostrarCambiarRolDebug(BuildContext context) async {
   final uid = FirebaseAuth.instance.currentUser?.uid;
   if (uid == null) return;
   const opciones = <String, List<String>>{
-    'Solo Adoptante':         ['adoptante'],
-    'Solo Rescatista':        ['rescatista'],
+    'Solo Adoptante': ['adoptante'],
+    'Solo Rescatista': ['rescatista'],
     'Adoptante + Rescatista': ['adoptante', 'rescatista'],
-    'Albergue':               ['albergue'],
-    'Aliado':                 ['aliado'],
+    'Albergue': ['albergue'],
+    'Aliado': ['aliado'],
   };
   final sel = await showDialog<List<String>>(
     context: context,
     builder: (ctx) => SimpleDialog(
       title: const Text('🛠 Cambiar rol (DEBUG)'),
-      children: opciones.entries.map((e) => SimpleDialogOption(
-        onPressed: () => Navigator.pop(ctx, e.value),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Text(e.key),
-        ),
-      )).toList(),
+      children: opciones.entries
+          .map(
+            (e) => SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, e.value),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Text(e.key),
+              ),
+            ),
+          )
+          .toList(),
     ),
   );
   if (sel == null || !context.mounted) return;
@@ -1063,8 +1322,13 @@ Future<void> mostrarCambiarRolDebug(BuildContext context) async {
     await UsuariosRepository().actualizarRoles(uid, sel);
   } catch (_) {
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('No se pudo cambiar el rol. Revisá tu conexión e intentá de nuevo.'),
-        backgroundColor: msgError));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'No se pudo cambiar el rol. Revisá tu conexión e intentá de nuevo.',
+        ),
+        backgroundColor: msgError,
+      ),
+    );
   }
 }

@@ -38,6 +38,24 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
   final _rescatesRepo = RescatesRepository();
   final _solicitudesRepo = SolicitudesRepository();
 
+  // late final, no getters (lo que había acá antes) — un getter reevalúa su
+  // cuerpo cada vez que se lo LEE, y build() lo lee en cada rebuild (cada
+  // toque del menú de abajo, _nav). Como el body usa IndexedStack (mantiene
+  // las pestañas vivas, no las arma de nuevo), esto tiraba abajo y volvía a
+  // levantar los 4 listeners de esta pantalla juntos en cada toque, con el
+  // parpadeo de "cargando" que eso genera para datos que ya estaban
+  // cargados — mismo bug ya encontrado y arreglado en aliado_home_screen.
+  // dart y home_screen.dart, nunca replicado acá. Hallazgo de auditoría de
+  // código.
+  late final Stream<DocumentSnapshot> _perfilStream =
+      FirebaseFirestore.instance.collection('usuarios').doc(_uid).snapshots();
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _rescatesStream =
+      _rescatesRepo.misRescates(uid: _uid, role: CreatorRole.albergue);
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _solicitudesStream =
+      _solicitudesRepo.paraOwner(uid: _uid, role: CreatorRole.albergue, estado: 'pendiente');
+  late final Stream<QuerySnapshot> _chatsUnreadStream = FirebaseFirestore.instance
+      .collection('chats').where('rescatistaId', isEqualTo: _uid).snapshots();
+
   @override
   void initState() {
     super.initState();
@@ -100,16 +118,10 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
     await mostrarCambiarRolDebug(context);
   }
 
-  Stream<QuerySnapshot<Map<String, dynamic>>> get _rescatesStream =>
-      _rescatesRepo.misRescates(uid: _uid, role: CreatorRole.albergue);
-
-  Stream<QuerySnapshot<Map<String, dynamic>>> get _solicitudesStream =>
-      _solicitudesRepo.paraOwner(uid: _uid, role: CreatorRole.albergue, estado: 'pendiente');
-
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance.collection('usuarios').doc(_uid).snapshots(),
+      stream: _perfilStream,
       builder: (context, userSnap) {
         final data         = userSnap.data?.data() as Map<String, dynamic>? ?? {};
         final nombre       = data['albergueNombre']    as String? ?? 'Albergue';
@@ -1293,8 +1305,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
               );
               }),
               StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance.collection('chats')
-                    .where('rescatistaId', isEqualTo: _uid).snapshots(),
+                stream: _chatsUnreadStream,
                 builder: (_, snap) {
                   final unread = (snap.data?.docs ?? []).where((doc) {
                     final d = doc.data() as Map<String, dynamic>;

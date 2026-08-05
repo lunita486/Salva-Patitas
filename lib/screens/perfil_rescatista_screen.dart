@@ -22,6 +22,7 @@ class PerfilRescatistaScreen extends StatelessWidget {
     if (!context.mounted) return;
     final seleccion = await showModalBottomSheet<List<String>>(
       context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => _RolesSheet(rolesActuales: roles),
@@ -311,34 +312,43 @@ class _RolesSheetState extends State<_RolesSheet> {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Container(width: 36, height: 4,
-            decoration: BoxDecoration(color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(2))),
-        const SizedBox(height: 16),
-        const Text('Mis roles', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 6),
-        Text('Podés tener los dos roles al mismo tiempo',
-            style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
-        const SizedBox(height: 20),
-        _rolTile('adoptante', '🐾 Adoptante', 'Busco animales para adoptar'),
-        const SizedBox(height: 10),
-        _rolTile('rescatista', '🦺 Rescatista', 'Rescato y publico animales'),
-        const SizedBox(height: 24),
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton(
-            onPressed: _roles.isNotEmpty ? () => Navigator.pop(context, _roles) : null,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: appTeal, foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-              elevation: 0,
+      // SingleChildScrollView a propósito: en horizontal hay mucha menos
+      // altura disponible y este Column (título + 2 tiles + botón) no
+      // entraba entero — sin scroll, lo que sobraba quedaba cortado en
+      // silencio (ni error ni aviso), y con eso el botón Guardar
+      // directamente no se podía tocar. Hallazgo de prueba en teléfono
+      // real, 2026-08-02: la hoja "se quedaba ahí" sin poder subir ni
+      // bajar apenas se rotaba a horizontal.
+      child: SingleChildScrollView(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(width: 36, height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 16),
+          const Text('Mis roles', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 6),
+          Text('Podés tener los dos roles al mismo tiempo',
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
+          const SizedBox(height: 20),
+          _rolTile('adoptante', '🐾 Adoptante', 'Busco animales para adoptar'),
+          const SizedBox(height: 10),
+          _rolTile('rescatista', '🦺 Rescatista', 'Rescato y publico animales'),
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _roles.isNotEmpty ? () => Navigator.pop(context, _roles) : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: appTeal, foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                elevation: 0,
+              ),
+              child: const Text('Guardar', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
             ),
-            child: const Text('Guardar', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
           ),
-        ),
-      ]),
+        ]),
+      ),
     );
   }
 

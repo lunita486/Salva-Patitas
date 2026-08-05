@@ -158,14 +158,41 @@ class RescatesRepository {
     }).toSet();
   }
 
+  /// Tamaño de cada tanda del feed público paginado — ver [feedPublico].
+  /// Hallazgo de auditoría de código: antes `feedPublico()` no tenía
+  /// ningún límite, así que abrir el feed bajaba TODA la colección de
+  /// `rescates` de una sola vez, sin importar cuántos animales hubiera.
+  /// Con pocos animales no se nota; es un problema de costo (Firestore
+  /// cobra por lectura) y performance que crece sin techo junto con el
+  /// catálogo.
+  static const feedPageSize = 50;
+
   /// Feed público de adopción — sin scope por diseño, cualquiera lo ve.
+  /// Paginado: trae como mucho [limite] animales (por defecto
+  /// [feedPageSize]), ordenados por fecha de publicación, los más viejos
+  /// primero. `adoptante_feed_screen.dart` va agrandando [limite] de a
+  /// [feedPageSize] a medida que la persona se acerca al final de lo ya
+  /// cargado — un catálogo enorme nunca se descarga entero de golpe, y
+  /// como sigue siendo el MISMO stream en vivo (no una serie de páginas
+  /// sueltas), un animal publicado por otra cuenta mientras alguien ya
+  /// está mirando el feed va a aparecer solo, apenas el límite crezca lo
+  /// suficiente para alcanzarlo — sin que nadie tenga que cerrar y volver
+  /// a abrir la pantalla.
   ///
-  /// Sin `orderBy('creadoEn')` a propósito: Firestore no solo ordenaría mal
-  /// los documentos que no tengan ese campo (legados, o un futuro path que
-  /// se olvide de setearlo) — los EXCLUIRÍA del resultado por completo,
-  /// desapareciéndolos del feed en silencio. El orden por fecha se aplica
-  /// del lado del cliente, en la pantalla que consume este stream.
-  Stream<QuerySnapshot<Map<String, dynamic>>> feedPublico() => _col.snapshots();
+  /// CAMBIO DE DISEÑO — antes esto NO ordenaba por `creadoEn` a propósito
+  /// (ver el test viejo que este comentario reemplaza en
+  /// rescates_repository_test.dart): Firestore excluye de un `orderBy`
+  /// cualquier documento que no tenga ese campo, y antes existían rescates
+  /// legados sin él. Ordenar es necesario para que la paginación tenga
+  /// sentido (sin orden, "los primeros N" serían un subconjunto arbitrario
+  /// que no crece hacia ningún lado predecible). Confirmado con Eliza
+  /// (2026-08-02) que hoy TODOS los rescates reales tienen `creadoEn`
+  /// (crear() lo pone siempre) — el riesgo que sigue abierto es a futuro:
+  /// un rescate cargado por fuera de este repositorio (a mano en Firebase
+  /// Console, o un script) que se olvide de ese campo quedaría invisible
+  /// en el feed, sin ningún aviso.
+  Stream<QuerySnapshot<Map<String, dynamic>>> feedPublico({int limite = feedPageSize}) =>
+      _col.orderBy('creadoEn').limit(limite).snapshots();
 
   /// Stream de UN rescate por id — para pantallas que necesitan reaccionar
   /// en vivo a cambios de estado (ej. chat_screen.dart, que muestra "✅

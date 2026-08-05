@@ -251,12 +251,26 @@ service cloud.firestore {
         // usa la app de verdad, no a quien escribe directo contra
         // Firestore). Mismo tope que el campo de la app (2000). Hallazgo
         // de auditoría de código.
+        //
+        // El ternario chequea adoptanteId PRIMERO, no rescatistaId — en un
+        // chat de consulta a un negocio (`consulta_aliado`), una cuenta que
+        // publicó ese mismo negocio aliado tiene adoptanteId == rescatistaId
+        // == su propio uid al consultarse a sí misma (probado en teléfono
+        // real, 2026-08-03: "No se pudo enviar el mensaje" al escribirle a
+        // un negocio registrado con la misma cuenta que preguntaba).
+        // chat_screen.dart SIEMPRE manda emisor 'adoptante' para quien inició
+        // la consulta (es la convención del esquema: adoptanteId es
+        // "quien preguntó", sin importar qué rol tenga en la vida real) —
+        // con rescatistaId comprobado primero, ese caso exigía 'rescatista'
+        // en cambio, y la escritura se rechazaba siempre. Priorizar
+        // adoptanteId resuelve la ambigüedad a favor de lo que el cliente
+        // realmente manda.
         allow create: if signedIn() &&
           (get(/databases/$(database)/documents/chats/$(chatId)).data.adoptanteId == uid() ||
            get(/databases/$(database)/documents/chats/$(chatId)).data.rescatistaId == uid()) &&
           request.resource.data.emisor == (
-            get(/databases/$(database)/documents/chats/$(chatId)).data.rescatistaId == uid()
-              ? 'rescatista' : 'adoptante'
+            get(/databases/$(database)/documents/chats/$(chatId)).data.adoptanteId == uid()
+              ? 'adoptante' : 'rescatista'
           ) &&
           request.resource.data.texto is string &&
           request.resource.data.texto.size() <= 2000;

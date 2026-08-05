@@ -222,8 +222,14 @@ class _FavoritosGrid extends StatelessWidget {
                   SliverPadding(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                     sliver: SliverGrid(
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
+                      // MaxCrossAxisExtent en vez de FixedCrossAxisCount(2):
+                      // mismo motivo que aliados_screen.dart — con conteo
+                      // fijo, en horizontal cada columna se estiraba mucho
+                      // más allá de su ancho de vertical, dejando la tarjeta
+                      // con su contenido centrado y mucho espacio en blanco
+                      // arriba y abajo.
+                      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                        maxCrossAxisExtent: 180,
                         crossAxisSpacing: 12,
                         mainAxisSpacing: 12,
                         childAspectRatio: 0.72,

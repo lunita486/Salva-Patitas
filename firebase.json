@@ -15,7 +15,15 @@
     "rules": "storage.rules"
   },
   "emulators": {
-    "firestore": { "port": 8080 },
+    // 8080, no 8097 — cambiado a propósito: en esta máquina, con el
+    // emulador de Android corriendo (algo de su propia red interna,
+    // netsimd probablemente), el puerto 8080 ya está ocupado, y el
+    // emulador de Firestore no podía arrancar ("Port taken") ni para
+    // correr los tests ni para desplegar. 8097 es libre. Si esto se
+    // corre en otra máquina sin el emulador de Android abierto, 8080
+    // también hubiera andado — no es un problema del proyecto, es un
+    // choque puntual con lo que ya estaba corriendo acá.
+    "firestore": { "port": 8097 },
     "ui": { "enabled": false },
     "singleProjectMode": true
   }

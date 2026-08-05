@@ -7,6 +7,7 @@ import '../theme.dart';
 import '../services/notificaciones_service.dart';
 import '../data/auth_helper.dart';
 import '../data/chats_repository.dart';
+import '../data/firestore_resiliencia.dart';
 import 'adoptante_chats_screen.dart';
 import 'subir_servicio_screen.dart';
 import 'aliado_perfil_screen.dart';
@@ -106,8 +107,23 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
     }
   }
 
+  // guardarConAviso, no un await directo suelto (lo que había acá antes,
+  // sin try/catch ni aviso de ningún tipo): mismo bug encontrado y
+  // arreglado ya 3 veces en otras pantallas de esta colección/app
+  // (albergue_perfil_screen.dart, aliado_perfil_screen.dart,
+  // subir_servicio_screen.dart) y nunca replicado acá — si esto fallaba de
+  // verdad (offline, permission-denied), el switch se veía cambiar en la
+  // UI pero nada se guardaba, sin ningún aviso. Hallazgo de auditoría de
+  // código.
   Future<void> _toggleActivo(String docId, bool actual) async {
-    await FirebaseFirestore.instance.collection('servicios').doc(docId).update({'activo': !actual});
+    final resultado = await guardarConAviso(() => FirebaseFirestore.instance
+        .collection('servicios').doc(docId).update({'activo': !actual}));
+    if (!mounted || resultado == ResultadoGuardado.confirmado) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        backgroundColor: resultado == ResultadoGuardado.fallo ? msgError : msgAdvertencia,
+        content: Text(resultado == ResultadoGuardado.fallo
+            ? 'No se pudo guardar. Revisá tu conexión e intentá de nuevo.'
+            : 'Esto está tardando. Se va a guardar solo apenas vuelva la señal.')));
   }
 
   Future<void> _eliminarServicio(String docId) async {
@@ -126,7 +142,15 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
         ],
       ),
     );
-    if (ok == true) await FirebaseFirestore.instance.collection('servicios').doc(docId).delete();
+    if (ok != true || !context.mounted) return;
+    final resultado = await guardarConAviso(
+        () => FirebaseFirestore.instance.collection('servicios').doc(docId).delete());
+    if (!mounted || resultado == ResultadoGuardado.confirmado) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        backgroundColor: resultado == ResultadoGuardado.fallo ? msgError : msgAdvertencia,
+        content: Text(resultado == ResultadoGuardado.fallo
+            ? 'No se pudo eliminar. Revisá tu conexión e intentá de nuevo.'
+            : 'Esto está tardando. Se va a eliminar solo apenas vuelva la señal.')));
   }
 
   String _fmt(int precio) {

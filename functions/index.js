@@ -1,6 +1,6 @@
 const { onDocumentCreated, onDocumentUpdated, onDocumentDeleted } = require('firebase-functions/v2/firestore');
 const { initializeApp } = require('firebase-admin/app');
-const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { getFirestore, FieldValue, Timestamp } = require('firebase-admin/firestore');
 const { getMessaging } = require('firebase-admin/messaging');
 const { getStorage } = require('firebase-admin/storage');
 
@@ -78,7 +78,16 @@ async function notificar(uid, title, body, tipoPreferencia) {
 async function primeraVezQueSeVeEsteEvento(eventId) {
   const ref = getFirestore().collection('_eventosProcesados').doc(eventId);
   try {
-    await ref.create({ procesadoEn: FieldValue.serverTimestamp() });
+    // expiraEn (no procesadoEn) es el campo que apunta la política de TTL
+    // de Firestore (se activa aparte, en la consola — ver ARCHITECTURE.md):
+    // esa política borra el documento cuando el RELOJ pasa el valor de este
+    // campo, así que tiene que ser "ahora + margen", no la hora de creación.
+    // 7 días de margen es de sobra frente a los reintentos reales de
+    // Eventarc (minutos a pocas horas) — sin este campo, la colección
+    // crecía un documento por cada mensaje/solicitud/cambio de estado, para
+    // siempre, sin que nada la vaciara nunca.
+    const expiraEn = Timestamp.fromMillis(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    await ref.create({ procesadoEn: FieldValue.serverTimestamp(), expiraEn });
     return true;
   } catch (e) {
     // code 6 = ALREADY_EXISTS (gRPC) — ya se procesó este evento, o se está

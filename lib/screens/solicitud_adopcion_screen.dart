@@ -501,11 +501,18 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
           ]),
         ),
         const SizedBox(height: 20),
+        // 3 y 2 dígitos, no 20 y 30 — hallazgo real de Eliza probando en
+        // teléfono, 2026-08-04: ese tope original era el mismo criterio
+        // "genérico" que se usó en otros campos de texto libre, pero acá
+        // el teclado ya es numérico y el dato tiene un máximo real: nadie
+        // vive con cientos de personas, y un día tiene 24 horas como
+        // mucho. 3 dígitos para personas (hasta 999, de sobra) y 2 para
+        // horas (hasta 99, ya más que un día entero).
         _campoTexto('¿Cuántas personas en casa?', _integrantesCtl, 'ej. 3',
-            teclado: TextInputType.number),
+            teclado: TextInputType.number, maxLength: 3),
         const SizedBox(height: 24),
         _campoTexto('¿Cuántas horas al día estás fuera de casa?', _horasCtl,
-            'ej. 4 horas', teclado: TextInputType.number),
+            'ej. 4 horas', teclado: TextInputType.number, maxLength: 2),
         const SizedBox(height: 24),
         _pregunta('¿Dónde vives?', '🏠', _viviendaOpts, _vivienda,
             (v) => setState(() => _vivienda = v)),
@@ -521,7 +528,7 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
         const SizedBox(height: 24),
         _campoTexto('¿Por qué quieres adoptarlo?', _motivacionCtl,
             'ej. Siempre quise tener un perro, tengo espacio y mucho amor...',
-            maxLines: 3),
+            maxLines: 3, maxLength: 600),
         if (_tipoSolicitud == 'hogar_de_paso') ...[
           const SizedBox(height: 24),
           RichText(text: const TextSpan(
@@ -576,8 +583,14 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
     );
   }
 
+  // maxLength obligatorio (no con default) a propósito: sin tope acá, ni el
+  // cliente ni firestore.rules (que en `solicitudes` solo valida dueño y
+  // estado, no tamaño de campos) frenaban un pegado gigante en "motivación"
+  // — mismo bug ya encontrado y arreglado en subir_servicio_screen.dart,
+  // nunca replicado acá. Hallazgo de auditoría de código.
   Widget _campoTexto(String titulo, TextEditingController ctl,
-      String hint, {TextInputType teclado = TextInputType.text, int maxLines = 1}) {
+      String hint, {TextInputType teclado = TextInputType.text, int maxLines = 1,
+      required int maxLength}) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       RichText(text: TextSpan(
         text: titulo,
@@ -597,6 +610,7 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
           controller: ctl,
           keyboardType: teclado,
           maxLines: maxLines,
+          maxLength: maxLength,
           onChanged: (_) => setState(() {}),
           decoration: InputDecoration(
             hintText: hint,
@@ -661,7 +675,10 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
             child: child!,
           ),
         );
-        if (picked != null) onPick(picked);
+        // El picker puede tardar (o la pantalla cerrarse mientras está
+        // abierto) — sin este chequeo, onPick (que hace setState) se
+        // llamaba igual sobre un State ya destruido y crasheaba.
+        if (picked != null && mounted) onPick(picked);
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),

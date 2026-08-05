@@ -1,9 +1,13 @@
 import 'dart:async';
+import 'dart:ui' show PlatformDispatcher;
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'firebase_options.dart';
 import 'theme.dart';
 import 'data/auth_helper.dart';
@@ -25,6 +29,37 @@ final FirebaseAnalyticsObserver analyticsObserver =
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  // Play Integrity solo existe para builds firmados/distribuidos de verdad
+  // (Play Store o instalación directa de un APK release) — en debug (el
+  // emulador, `flutter run`) no hay forma de que pase esa verificación, así
+  // que se usa el proveedor `debug` en su lugar. Todavía NO hay ningún
+  // servicio de Firebase exigiendo este token (Firestore/Storage/Functions
+  // siguen aceptando pedidos sin él) — activar esto acá solo empieza a
+  // generar los tokens; el día que se decida exigirlos desde la consola,
+  // ya van a estar viajando en cada pedido de quien tenga esta versión o
+  // una más nueva instalada.
+  await FirebaseAppCheck.instance.activate(
+    androidProvider: kDebugMode ? AndroidProvider.debug : AndroidProvider.playIntegrity,
+  );
+
+  // Apagado en debug: sin esto, cada excepción de una sesión de desarrollo
+  // (la tuya, la mía probando en el emulador) ensucia el panel de
+  // Crashlytics de producción mezclada con crashes reales de gente usando
+  // la app de verdad — quedaría imposible distinguir una cosa de la otra.
+  await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(!kDebugMode);
+  // Los dos manejadores de arriba cubren errores DISTINTOS: FlutterError.
+  // onError es lo que Flutter dispara para errores durante el build/layout/
+  // paint de un widget (ej. un RenderBox roto); PlatformDispatcher.instance.
+  // onError es la puerta de errores async fuera de ese ciclo (un Future que
+  // rompe sin que nadie lo esperara). Sin los dos, la mitad de los crashes
+  // reales seguiría sin llegar nunca a Crashlytics.
+  FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+  PlatformDispatcher.instance.onError = (error, stack) {
+    FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+    return true;
+  };
+
   // NotificacionesService.inicializar() ya se protege sola por dentro (cada
   // paso atrapa su propio error — ver ese archivo), pero runApp() de acá
   // abajo es lo único que de verdad importa: sin ESTE try/catch también,
