@@ -7,9 +7,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:patitas_medellin/data/creator_role.dart';
-import 'package:patitas_medellin/data/rescate_fotos_repository.dart';
-import 'package:patitas_medellin/data/rescates_repository.dart';
+import 'package:salva_patitas/data/creator_role.dart';
+import 'package:salva_patitas/data/rescate_fotos_repository.dart';
+import 'package:salva_patitas/data/rescates_repository.dart';
 
 // fake_cloud_firestore no simula fallas transitorias de red — para probar
 // la tolerancia de existeNombre() hace falta controlar a mano cuándo falla

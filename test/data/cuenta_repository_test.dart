@@ -1,7 +1,7 @@
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:patitas_medellin/data/cuenta_repository.dart';
+import 'package:salva_patitas/data/cuenta_repository.dart';
 
 // Mismo patrón que usuarios_repository_test.dart: se mockean los tipos de
 // Firebase (acá cloud_functions) para poder controlar a mano qué devuelve/

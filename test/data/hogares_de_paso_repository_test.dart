@@ -4,7 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:patitas_medellin/data/hogares_de_paso_repository.dart';
+import 'package:salva_patitas/data/hogares_de_paso_repository.dart';
 
 // fake_cloud_firestore siempre resuelve al toque — para probar que una
 // escritura que NUNCA resuelve (sin señal) se corta sola con timeout hace

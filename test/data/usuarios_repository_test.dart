@@ -3,7 +3,7 @@ import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:patitas_medellin/data/usuarios_repository.dart';
+import 'package:salva_patitas/data/usuarios_repository.dart';
 
 // Mismo patrón que rescates_repository_test.dart: para probar el reintento
 // tras un permission-denied hace falta controlar a mano cuándo falla la

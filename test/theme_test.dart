@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:patitas_medellin/theme.dart';
+import 'package:salva_patitas/theme.dart';
 
 Widget _envolver(Widget child) => MaterialApp(home: Scaffold(body: child));
 

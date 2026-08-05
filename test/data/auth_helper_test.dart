@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:patitas_medellin/data/auth_helper.dart';
+import 'package:salva_patitas/data/auth_helper.dart';
 
 // auth_helper.dart NO tiene fake_cloud_firestore de por medio (no es lo que
 // prueba): iniciarSesionGoogle()/cerrarSesion() son funciones de nivel de

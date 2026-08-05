@@ -2,8 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:patitas_medellin/data/creator_role.dart';
-import 'package:patitas_medellin/data/solicitudes_repository.dart';
+import 'package:salva_patitas/data/creator_role.dart';
+import 'package:salva_patitas/data/solicitudes_repository.dart';
 
 // fake_cloud_firestore no simula fallas transitorias de red — para probar
 // el reintento de tienePendientesPara() hace falta controlar a mano cuándo

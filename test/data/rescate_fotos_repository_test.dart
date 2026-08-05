@@ -4,7 +4,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:firebase_storage_mocks/firebase_storage_mocks.dart' as fsm;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:patitas_medellin/data/rescate_fotos_repository.dart';
+import 'package:salva_patitas/data/rescate_fotos_repository.dart';
 
 // firebase_storage_mocks simula el camino feliz (subir/borrar un archivo que
 // existe) pero su delete() nunca tira object-not-found para un archivo que

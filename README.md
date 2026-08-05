@@ -1,6 +1,6 @@
-# patitas_medellin
+# Salva Patitas
 
-A new Flutter project.
+App de Flutter + Firebase para conectar animales rescatados con adoptantes, hogares de paso y negocios aliados.
 
 ## Getting Started
 

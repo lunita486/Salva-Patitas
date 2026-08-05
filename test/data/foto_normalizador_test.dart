@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
-import 'package:patitas_medellin/data/foto_normalizador.dart';
+import 'package:salva_patitas/data/foto_normalizador.dart';
 
 // No usa fake_cloud_firestore (no aplica, este archivo no toca Firestore) —
 // normalizarFoto() es una función pura sobre bytes de imagen, así que se

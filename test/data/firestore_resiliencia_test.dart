@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:patitas_medellin/data/firestore_resiliencia.dart';
+import 'package:salva_patitas/data/firestore_resiliencia.dart';
 
 class MockFirebaseAuth extends Mock implements FirebaseAuth {}
 

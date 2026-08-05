@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:patitas_medellin/services/notificaciones_service.dart';
+import 'package:salva_patitas/services/notificaciones_service.dart';
 
 // El caso real que esto prueba: un celular sin Google Play Services (Huawei
 // sin GMS, algunos emuladores) hace que requestPermission()/getToken()

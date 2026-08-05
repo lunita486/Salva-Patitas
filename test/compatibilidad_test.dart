@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:patitas_medellin/compatibilidad.dart';
+import 'package:salva_patitas/compatibilidad.dart';
 
 void main() {
   group('calcularCompatibilidad', () {

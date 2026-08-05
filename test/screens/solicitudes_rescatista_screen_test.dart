@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:patitas_medellin/screens/solicitudes_rescatista_screen.dart';
+import 'package:salva_patitas/screens/solicitudes_rescatista_screen.dart';
 
 // aprobarSolicitud()/rechazarSolicitud() tocan Firestore de verdad apenas
 // pasan su candado (SolicitudesRepository()/RescatesRepository() sin
