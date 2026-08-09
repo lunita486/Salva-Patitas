@@ -1,0 +1,629 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Salva Patitas — Cada patita merece un hogar</title>
+<meta name="description" content="Salva Patitas conecta animales rescatados con familias que los están esperando. Albergues y rescatistas publican, adoptantes encuentran su próxima patita.">
+<link rel="icon" href="assets/icon-small.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Figtree:ital,wght@0,400;0,500;0,600;0,700;1,500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:        #DFFBEC;
+    --surface:   #FFFFFF;
+    --surface-2: #F2FBF6;
+    --text:      #162416;
+    --muted:     #4B6357;
+    --teal:      #1F8A62;
+    --teal-dark: #146A4A;
+    --orange:    #D84E18;
+    --orange-ink:#FFF3EC;
+    --border:    #CDEBDB;
+    --shadow:    0 18px 40px -22px rgba(20, 60, 40, 0.35);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:        #0E1C14;
+      --surface:   #14261B;
+      --surface-2: #182B1F;
+      --text:      #E9F7EE;
+      --muted:     #93B6A2;
+      --teal:      #35B084;
+      --teal-dark: #2A9070;
+      --orange:    #FF7A44;
+      --orange-ink:#3A2118;
+      --border:    #234433;
+      --shadow:    0 18px 40px -20px rgba(0, 0, 0, 0.55);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg:        #0E1C14;
+    --surface:   #14261B;
+    --surface-2: #182B1F;
+    --text:      #E9F7EE;
+    --muted:     #93B6A2;
+    --teal:      #35B084;
+    --teal-dark: #2A9070;
+    --orange:    #FF7A44;
+    --orange-ink:#3A2118;
+    --border:    #234433;
+    --shadow:    0 18px 40px -20px rgba(0, 0, 0, 0.55);
+  }
+  :root[data-theme="light"] {
+    --bg:        #DFFBEC;
+    --surface:   #FFFFFF;
+    --surface-2: #F2FBF6;
+    --text:      #162416;
+    --muted:     #4B6357;
+    --teal:      #1F8A62;
+    --teal-dark: #146A4A;
+    --orange:    #D84E18;
+    --orange-ink:#FFF3EC;
+    --border:    #CDEBDB;
+    --shadow:    0 18px 40px -22px rgba(20, 60, 40, 0.35);
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Figtree', system-ui, sans-serif;
+    font-size: 17px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  }
+
+  h1, h2, h3 {
+    font-family: 'Baloo 2', system-ui, sans-serif;
+    font-weight: 800;
+    line-height: 1.08;
+    text-wrap: balance;
+    margin: 0;
+    color: var(--text);
+  }
+
+  a { color: inherit; }
+
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+
+  /* ---------- decorative background (paw-print bubbles, like the app) ---------- */
+  .bubbles {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    z-index: 0;
+    pointer-events: none;
+  }
+  .bubbles span {
+    position: absolute;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--teal) 14%, transparent);
+  }
+
+  /* ---------- header ---------- */
+  header {
+    position: relative;
+    z-index: 2;
+    padding: 22px 0;
+  }
+  .nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: 'Baloo 2', system-ui, sans-serif;
+    font-weight: 800;
+    font-size: 1.25rem;
+  }
+  .brand img { width: 34px; height: 34px; border-radius: 10px; }
+  nav.links a {
+    text-decoration: none;
+    font-weight: 600;
+    color: var(--teal-dark);
+    padding: 10px 16px;
+    border-radius: 999px;
+    border: 1.5px solid var(--border);
+    background: var(--surface);
+    white-space: nowrap;
+    font-size: 0.95rem;
+  }
+  :root[data-theme="dark"] nav.links a { color: #BEE8D3; }
+  @media (prefers-color-scheme: dark) { nav.links a { color: #BEE8D3; } }
+
+  /* ---------- hero ---------- */
+  .hero {
+    position: relative;
+    z-index: 1;
+    padding: 56px 0 88px;
+  }
+  .hero-grid {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 48px;
+    align-items: center;
+  }
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    font-size: 0.85rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--teal-dark);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    padding: 7px 14px 7px 10px;
+    border-radius: 999px;
+    margin-bottom: 18px;
+  }
+  h1 { font-size: clamp(2.2rem, 4.6vw, 3.4rem); }
+  h1 em { font-style: normal; color: var(--teal); }
+  .lede {
+    margin: 20px 0 30px;
+    font-size: 1.15rem;
+    color: var(--muted);
+    max-width: 46ch;
+  }
+  .cta-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    font-size: 1rem;
+    padding: 15px 26px;
+    border-radius: 14px;
+    text-decoration: none;
+    border: none;
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .btn:hover { transform: translateY(-1px); }
+  .btn:focus-visible { outline: 3px solid var(--teal); outline-offset: 2px; }
+  .btn-primary { background: var(--orange); color: #fff; box-shadow: var(--shadow); }
+  .btn-ghost { background: transparent; color: var(--teal-dark); border: 1.5px solid var(--border); }
+  .fineprint { margin-top: 14px; font-size: 0.88rem; color: var(--muted); }
+
+  .hero-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    padding: 26px;
+    box-shadow: var(--shadow);
+    position: relative;
+  }
+  .hero-card .tag {
+    display: inline-block;
+    background: var(--teal);
+    color: #fff;
+    font-weight: 700;
+    font-size: 0.8rem;
+    padding: 5px 12px;
+    border-radius: 999px;
+    margin-bottom: 14px;
+  }
+  .hero-card h3 { font-size: 1.3rem; margin-bottom: 8px; }
+  .hero-card p { color: var(--muted); margin: 0; font-size: 0.98rem; }
+  .paw-row { display: flex; gap: 10px; margin-top: 20px; }
+  .paw-row svg { width: 26px; height: 26px; opacity: 0.85; }
+
+  /* ---------- vidriera ---------- */
+  section { position: relative; z-index: 1; padding: 70px 0; }
+  .section-head { max-width: 60ch; margin-bottom: 36px; }
+  .section-head .kicker {
+    font-weight: 700;
+    color: var(--teal-dark);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 0.82rem;
+    margin-bottom: 10px;
+    display: block;
+  }
+  .section-head h2 { font-size: clamp(1.7rem, 3vw, 2.3rem); }
+  .section-head p { color: var(--muted); margin-top: 12px; font-size: 1.05rem; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 18px;
+  }
+  .animal-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+  }
+  .animal-card .photo {
+    aspect-ratio: 4 / 3;
+    background: var(--surface-2);
+    overflow: hidden;
+  }
+  .animal-card .photo img {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+  }
+  .animal-card .info { padding: 14px 16px 16px; }
+  .animal-card .info .name {
+    font-family: 'Baloo 2', system-ui, sans-serif;
+    font-weight: 700;
+    font-size: 1.05rem;
+  }
+  .animal-card .info .meta { color: var(--muted); font-size: 0.88rem; margin-top: 3px; }
+
+  .skeleton { animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:.55} 50%{opacity:1} }
+  .skeleton .photo { background: var(--surface-2); }
+
+  .empty-state, .error-state {
+    grid-column: 1 / -1;
+    text-align: center;
+    background: var(--surface-2);
+    border: 1.5px dashed var(--border);
+    border-radius: 20px;
+    padding: 48px 24px;
+  }
+  .empty-state .big-paw { width: 46px; height: 46px; margin-bottom: 14px; opacity: 0.7; }
+  .empty-state h3 { font-size: 1.25rem; margin-bottom: 8px; }
+  .empty-state p { color: var(--muted); max-width: 42ch; margin: 0 auto 20px; }
+
+  /* ---------- how it works ---------- */
+  .steps {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+  }
+  .step {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 26px 22px;
+  }
+  .step .num {
+    width: 34px; height: 34px;
+    border-radius: 10px;
+    background: var(--teal);
+    color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Baloo 2', system-ui, sans-serif;
+    font-weight: 800;
+    margin-bottom: 14px;
+  }
+  .step h3 { font-size: 1.08rem; margin-bottom: 6px; }
+  .step p { color: var(--muted); margin: 0; font-size: 0.96rem; }
+
+  /* ---------- shelters ---------- */
+  .shelters {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 28px;
+    padding: 48px;
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 40px;
+    align-items: center;
+  }
+  .shelters .kicker { color: var(--orange); }
+  .shelters h2 { font-size: clamp(1.6rem, 2.8vw, 2.1rem); }
+  .shelters p.copy { color: var(--muted); margin: 16px 0 26px; font-size: 1.03rem; }
+  .shelters .side {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 24px;
+  }
+  .shelters .side .quote {
+    font-family: 'Baloo 2', system-ui, sans-serif;
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--teal-dark);
+    margin-bottom: 10px;
+  }
+  .shelters .side p { color: var(--muted); font-size: 0.95rem; margin: 0; }
+
+  /* ---------- declaraciones de impacto ---------- */
+  .statement {
+    position: relative;
+    overflow: hidden;
+    text-align: center;
+    padding: 100px 0;
+  }
+  .statement::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='72' viewBox='0 0 24 24'%3E%3Cpath fill='%23ffffff' fill-opacity='0.5' d='M12 14c-3 0-6 2.2-6 5.2 0 1.5 1.1 2.3 2.6 2.3.9 0 1.8-.3 2.7-.6.5-.2.9-.2 1.4 0 .9.3 1.8.6 2.7.6 1.5 0 2.6-.8 2.6-2.3C18 16.2 15 14 12 14Z'/%3E%3Ccircle cx='6.5' cy='10.5' r='2' fill='%23ffffff' fill-opacity='0.5'/%3E%3Ccircle cx='17.5' cy='10.5' r='2' fill='%23ffffff' fill-opacity='0.5'/%3E%3Ccircle cx='9.5' cy='6.5' r='1.8' fill='%23ffffff' fill-opacity='0.5'/%3E%3Ccircle cx='14.5' cy='6.5' r='1.8' fill='%23ffffff' fill-opacity='0.5'/%3E%3C/svg%3E");
+    background-size: 96px 96px;
+    opacity: 0.08;
+  }
+  .statement .wrap { position: relative; z-index: 1; max-width: 780px; }
+  .statement h2 {
+    font-size: clamp(2rem, 5vw, 3.1rem);
+    color: #fff;
+  }
+  .statement p {
+    font-size: 1.15rem;
+    margin: 22px auto 0;
+    max-width: 56ch;
+  }
+  .statement-adopta {
+    background: linear-gradient(155deg, #0E2118, #16301F);
+  }
+  .statement-adopta h2 { color: #FDF6EA; }
+  .statement-adopta .accent { color: var(--orange); }
+  .statement-adopta p { color: #C9DDCE; }
+  .statement-mission {
+    background: linear-gradient(155deg, var(--teal-dark), var(--teal));
+  }
+  .statement-mission p { color: rgba(255,255,255,0.92); font-family: 'Baloo 2', system-ui, sans-serif; font-weight: 600; font-size: 1.3rem; line-height: 1.4; }
+  .statement-mission .signoff { font-family: 'Figtree', system-ui, sans-serif; font-weight: 500; font-size: 1rem; opacity: 0.85; margin-top: 18px; }
+
+  /* ---------- reveal on scroll (progressive enhancement — sin JS, todo visible) ---------- */
+  .reveal-init { opacity: 0; transform: translateY(18px); transition: opacity 0.7s ease, transform 0.7s ease; }
+  .reveal-init.in { opacity: 1; transform: none; }
+
+  /* ---------- footer ---------- */
+  footer {
+    position: relative; z-index: 1;
+    border-top: 1px solid var(--border);
+    padding: 34px 0 46px;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  footer .foot-row {
+    display: flex; flex-wrap: wrap; gap: 18px 28px;
+    justify-content: space-between; align-items: center;
+  }
+  footer a { text-decoration: none; color: var(--muted); }
+  footer a:hover { color: var(--teal-dark); }
+  footer .links { display: flex; gap: 22px; flex-wrap: wrap; }
+
+  @media (max-width: 880px) {
+    .hero-grid { grid-template-columns: 1fr; }
+    .shelters { grid-template-columns: 1fr; padding: 32px 24px; border-radius: 22px; }
+    .steps { grid-template-columns: 1fr; }
+    nav.links { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="bubbles" aria-hidden="true" id="bubbles"></div>
+
+<header>
+  <div class="wrap nav">
+    <div class="brand">
+      <img src="assets/icon-small.png" alt="">
+      Salva Patitas
+    </div>
+    <nav class="links">
+      <a href="#albergues">¿Tenés un albergue o rescatás animales?</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div>
+        <span class="eyebrow">🐾 Muy pronto en Google Play</span>
+        <h1>Cada patita merece<br><em>un hogar que la espere.</em></h1>
+        <p class="lede">
+          Salva Patitas conecta animales rescatados con familias listas para adoptar.
+          Albergues y rescatistas publican en minutos; quien busca una mascota
+          encuentra, cerca suyo, a quien lo está esperando.
+        </p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="mailto:salvapatitasadopta@gmail.com?subject=Avisenme%20cuando%20est%C3%A9%20disponible&body=Hola%2C%20quiero%20que%20me%20avisen%20apenas%20Salva%20Patitas%20est%C3%A9%20disponible%20para%20descargar.">
+            Avisame cuando esté lista
+          </a>
+          <a class="btn btn-ghost" href="#albergues">Soy albergue / rescatista</a>
+        </div>
+        <p class="fineprint">Sin spam — un solo correo el día que podés descargarla.</p>
+      </div>
+      <div class="hero-card">
+        <span class="tag">En este momento</span>
+        <h3>Estamos afinando los últimos detalles</h3>
+        <p>La app ya está construida y en pruebas. Dejanos tu correo y sos de las primeras personas en enterarte cuando esté disponible para descargar.</p>
+        <div class="paw-row" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 14c-3 0-6 2.2-6 5.2 0 1.5 1.1 2.3 2.6 2.3.9 0 1.8-.3 2.7-.6.5-.2.9-.2 1.4 0 .9.3 1.8.6 2.7.6 1.5 0 2.6-.8 2.6-2.3C18 16.2 15 14 12 14Z" fill="#1F8A62"/><circle cx="6.5" cy="10.5" r="2" fill="#1F8A62"/><circle cx="17.5" cy="10.5" r="2" fill="#1F8A62"/><circle cx="9.5" cy="6.5" r="1.8" fill="#1F8A62"/><circle cx="14.5" cy="6.5" r="1.8" fill="#1F8A62"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 14c-3 0-6 2.2-6 5.2 0 1.5 1.1 2.3 2.6 2.3.9 0 1.8-.3 2.7-.6.5-.2.9-.2 1.4 0 .9.3 1.8.6 2.7.6 1.5 0 2.6-.8 2.6-2.3C18 16.2 15 14 12 14Z" fill="#D84E18"/><circle cx="6.5" cy="10.5" r="2" fill="#D84E18"/><circle cx="17.5" cy="10.5" r="2" fill="#D84E18"/><circle cx="9.5" cy="6.5" r="1.8" fill="#D84E18"/><circle cx="14.5" cy="6.5" r="1.8" fill="#D84E18"/></svg>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="statement statement-adopta">
+    <div class="wrap reveal-target">
+      <h2>No compres.<br><span class="accent">Adoptá.</span></h2>
+      <p>Cada perrito o gatico que se compra en una tienda es un lugar menos para uno que ya está esperando en un albergue o en la calle. La próxima patita de tu casa ya existe en algún lugar — solo falta que la encuentres.</p>
+    </div>
+  </section>
+
+  <section id="vidriera">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="kicker">Ahora mismo, en Salva Patitas</span>
+        <h2>Patitas esperando un hogar</h2>
+        <p>Esta es una muestra real de los animales publicados en la app — se actualiza sola, sin que nadie la edite a mano.</p>
+      </div>
+      <div class="grid" id="animales-grid">
+        <div class="animal-card skeleton"><div class="photo"></div><div class="info"><div class="name">&nbsp;</div></div></div>
+        <div class="animal-card skeleton"><div class="photo"></div><div class="info"><div class="name">&nbsp;</div></div></div>
+        <div class="animal-card skeleton"><div class="photo"></div><div class="info"><div class="name">&nbsp;</div></div></div>
+        <div class="animal-card skeleton"><div class="photo"></div><div class="info"><div class="name">&nbsp;</div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="statement statement-mission">
+    <div class="wrap reveal-target">
+      <p>"Un animal abandonado no elige su historia — pero alguien puede elegir cambiarla. Cada persona que rescata, cada familia que adopta, cada quien comparte esta app, escribe entre todos el final distinto que esa patita se merecía."</p>
+      <p class="signoff">— El equipo de Salva Patitas</p>
+    </div>
+  </section>
+
+  <section id="como-funciona">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="kicker">Simple, de verdad</span>
+        <h2>Así se usa Salva Patitas</h2>
+      </div>
+      <div class="steps">
+        <div class="step">
+          <div class="num">1</div>
+          <h3>Publicás el rescate</h3>
+          <p>Fotos, especie, tamaño y estado de salud — en minutos, desde el celular.</p>
+        </div>
+        <div class="step">
+          <div class="num">2</div>
+          <h3>Las familias te escriben</h3>
+          <p>Quien quiere adoptar ve el perfil ideal del animal y te contacta directo por la app.</p>
+        </div>
+        <div class="step">
+          <div class="num">3</div>
+          <h3>Vos elegís el hogar</h3>
+          <p>Revisás la solicitud, aprobás cuando estés convencido, y hacés seguimiento después.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="albergues">
+    <div class="wrap">
+      <div class="shelters">
+        <div>
+          <span class="eyebrow" style="background:var(--orange-ink); color:var(--orange); border-color:transparent;">Para albergues y rescatistas</span>
+          <h2>Vos ya hacés la parte difícil.<br>Dejanos ayudarte con el resto.</h2>
+          <p class="copy">
+            Sabemos lo que cuesta cada rescate: las noches sin dormir, el gasto de tu
+            propio bolsillo, la angustia de un animal que lleva demasiado tiempo
+            esperando. Salva Patitas es gratis y existe para que ese esfuerzo
+            llegue más lejos — a más familias, más rápido, sin depender solo de
+            publicar y esperar en redes sociales.
+          </p>
+          <div class="cta-row">
+            <a class="btn btn-primary" href="mailto:salvapatitasadopta@gmail.com?subject=Quiero%20sumar%20mi%20albergue%20a%20Salva%20Patitas&body=Hola%2C%20tengo%20un%20albergue%2Frescato%20animales%20y%20quiero%20sumarme%20a%20Salva%20Patitas.%0A%0ANombre%20del%20albergue%2Frescate%3A%0ACiudad%3A%0A">
+              Quiero sumar mi albergue
+            </a>
+          </div>
+        </div>
+        <div class="side">
+          <p class="quote">"Cada patita que publicás merece más de un par de ojos mirándola."</p>
+          <p>Escribinos y te ayudamos a subir tus primeros animales apenas la app esté disponible — sin costo, sin letra chica.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap foot-row">
+    <span>© <span id="year"></span> Salva Patitas</span>
+    <div class="links">
+      <a href="privacidad.html">Política de privacidad</a>
+      <a href="eliminar-cuenta.html">Eliminar mi cuenta</a>
+      <a href="mailto:salvapatitasadopta@gmail.com">salvapatitasadopta@gmail.com</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  document.getElementById('year').textContent = new Date().getFullYear();
+
+  // Fondo decorativo de burbujas, igual que en la app — generado una sola vez.
+  (function bubbles() {
+    const host = document.getElementById('bubbles');
+    const n = 9;
+    for (let i = 0; i < n; i++) {
+      const s = document.createElement('span');
+      const size = 60 + Math.random() * 160;
+      s.style.width = size + 'px';
+      s.style.height = size + 'px';
+      s.style.left = Math.random() * 100 + '%';
+      s.style.top = (Math.random() * 70) + '%';
+      host.appendChild(s);
+    }
+  })();
+
+  // Revelado suave al hacer scroll para las dos declaraciones de impacto.
+  // Progresivo a propósito: el contenido arranca visible en el HTML/CSS
+  // base, y solo si este script corre se le agrega la clase que lo oculta
+  // un instante antes de animarlo — así nunca depende de JS para verse.
+  (function revealOnScroll() {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const targets = document.querySelectorAll('.reveal-target');
+    targets.forEach(el => el.classList.add('reveal-init'));
+    const obs = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('in');
+          obs.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.2 });
+    targets.forEach(el => obs.observe(el));
+  })();
+
+  // Vidriera: trae animales disponibles desde la Cloud Function pública.
+  // Si no hay ninguno (o falla la red), muestra un estado vacío que empuja
+  // a la sección de albergues en vez de una grilla rota o vacía.
+  (function cargarAnimales() {
+    const grid = document.getElementById('animales-grid');
+    const API = 'https://us-central1-patitas-dd0bb.cloudfunctions.net/landingAnimales';
+
+    fetch(API).then(r => r.json()).then(data => {
+      const animales = (data && data.animales) || [];
+      if (animales.length === 0) {
+        grid.innerHTML = estadoVacio();
+        return;
+      }
+      grid.innerHTML = animales.map(tarjeta).join('');
+    }).catch(() => {
+      grid.innerHTML = estadoVacio();
+    });
+
+    function tarjeta(a) {
+      const meta = [a.especie, a.edad, a.ubicacion].filter(Boolean).join(' · ');
+      return `<div class="animal-card">
+        <div class="photo"><img src="${escapeAttr(a.foto)}" alt="${escapeAttr(a.nombre)}" loading="lazy"></div>
+        <div class="info">
+          <div class="name">${escapeHtml(a.nombre)}</div>
+          <div class="meta">${escapeHtml(meta)}</div>
+        </div>
+      </div>`;
+    }
+
+    function estadoVacio() {
+      return `<div class="empty-state">
+        <svg class="big-paw" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 14c-3 0-6 2.2-6 5.2 0 1.5 1.1 2.3 2.6 2.3.9 0 1.8-.3 2.7-.6.5-.2.9-.2 1.4 0 .9.3 1.8.6 2.7.6 1.5 0 2.6-.8 2.6-2.3C18 16.2 15 14 12 14Z" fill="#1F8A62"/><circle cx="6.5" cy="10.5" r="2" fill="#1F8A62"/><circle cx="17.5" cy="10.5" r="2" fill="#1F8A62"/><circle cx="9.5" cy="6.5" r="1.8" fill="#1F8A62"/><circle cx="14.5" cy="6.5" r="1.8" fill="#1F8A62"/></svg>
+        <h3>Todavía no hay animales publicados</h3>
+        <p>Sé el primero en aparecer acá — si tenés un albergue o rescatás animales, contanos y te ayudamos a subir tu primer caso.</p>
+        <a class="btn btn-primary" href="#albergues">Quiero publicar el mío</a>
+      </div>`;
+    }
+
+    function escapeHtml(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+    function escapeAttr(s) { return escapeHtml(s); }
+  })();
+</script>
+
+</body>
+</html>

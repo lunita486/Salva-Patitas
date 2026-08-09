@@ -11,6 +11,9 @@ initializeApp();
 // para el razonamiento completo de qué se borra/anonimiza/bloquea.
 exports.eliminarCuenta = require('./eliminar_cuenta').eliminarCuenta;
 
+// Endpoint público para la vidriera de animales de la landing (docs/index.html).
+exports.landingAnimales = require('./landing_animales').landingAnimales;
+
 // Tokens que FCM reporta como muertos (app desinstalada, token vencido/rotado).
 // Sin esto, un usuario que desinstaló la app acumula intentos de envío fallidos
 // para siempre y el token nunca se limpia.
