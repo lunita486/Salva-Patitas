@@ -3,6 +3,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import '../theme.dart';
+import '../domain/reglas_negocio.dart';
+import '../widgets/estado_error_feed.dart';
+import '../widgets/fotos.dart';
 import '../data/creator_role.dart';
 import '../data/solicitudes_repository.dart';
 import '../data/preferencias_repository.dart';
@@ -11,33 +14,35 @@ class SolicitudAdopcionScreen extends StatefulWidget {
   final Map<String, dynamic> animal;
   const SolicitudAdopcionScreen({super.key, required this.animal});
   @override
-  State<SolicitudAdopcionScreen> createState() => _SolicitudAdopcionScreenState();
+  State<SolicitudAdopcionScreen> createState() =>
+      _SolicitudAdopcionScreenState();
 }
 
 class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
   final _solicitudesRepo = SolicitudesRepository();
   int _step = 0;
 
-  String _vivienda          = '';
-  String _ninos             = '';
-  String _mascotas          = '';
+  String _vivienda = '';
+  String _ninos = '';
+  String _mascotas = '';
   String _experienciaPrevia = '';
-  final  _integrantesCtl = TextEditingController();
-  final  _horasCtl       = TextEditingController();
-  final  _motivacionCtl  = TextEditingController();
+  final _integrantesCtl = TextEditingController();
+  final _horasCtl = TextEditingController();
+  final _motivacionCtl = TextEditingController();
   late String _tipoSolicitud;
   DateTime? _fechaInicio;
   DateTime? _fechaFin;
-  bool   _enviando        = false;
-  bool   _verificando     = true;
-  bool   _errorVerificacion = false;
-  bool   _yaAplico        = false;
+  bool _enviando = false;
+  bool _verificando = true;
+  bool _errorVerificacion = false;
+  bool _yaAplico = false;
   String _estadoExistente = '';
 
   @override
   void initState() {
     super.initState();
-    _tipoSolicitud = (widget.animal['tipoSolicitud'] as String?) == 'hogar_de_paso'
+    _tipoSolicitud =
+        (widget.animal['tipoSolicitud'] as String?) == 'hogar_de_paso'
         ? 'hogar_de_paso'
         : 'adopcion';
     _verificarDuplicado();
@@ -49,7 +54,10 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
       setState(() => _verificando = false);
       return;
     }
-    setState(() { _verificando = true; _errorVerificacion = false; });
+    setState(() {
+      _verificando = true;
+      _errorVerificacion = false;
+    });
     try {
       final estado = await _solicitudesRepo.estadoExistente(
         uid: uid,
@@ -58,9 +66,9 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
       );
       if (!mounted) return;
       setState(() {
-        _yaAplico        = estado != null;
+        _yaAplico = estado != null;
         _estadoExistente = estado ?? '';
-        _verificando     = false;
+        _verificando = false;
       });
     } catch (_) {
       // Antes esto no tenía ningún try/catch: si estadoExistente() fallaba
@@ -72,70 +80,88 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
       // spinner sin botón de volver ni de reintentar. Hallazgo de
       // auditoría de código.
       if (!mounted) return;
-      setState(() { _verificando = false; _errorVerificacion = true; });
+      setState(() {
+        _verificando = false;
+        _errorVerificacion = true;
+      });
     }
   }
 
-  static const _viviendaOpts   = ['Finca', 'Casa con jardín', 'Casa sin jardín', 'Apartamento con balcón', 'Apartamento sin área exterior'];
-  static const _ninosOpts      = ['Sí', 'No'];
-  static const _mascotasOpts   = ['Sí', 'No'];
+  static const _viviendaOpts = [
+    'Finca',
+    'Casa con jardín',
+    'Casa sin jardín',
+    'Apartamento con balcón',
+    'Apartamento sin área exterior',
+  ];
+  static const _ninosOpts = ['Sí', 'No'];
+  static const _mascotasOpts = ['Sí', 'No'];
   static const _experienciaOpts = ['Sí', 'No, sería mi primera mascota'];
 
   bool get _completo =>
       _integrantesCtl.text.trim().isNotEmpty &&
       _horasCtl.text.trim().isNotEmpty &&
-      _vivienda.isNotEmpty && _ninos.isNotEmpty && _mascotas.isNotEmpty &&
+      _vivienda.isNotEmpty &&
+      _ninos.isNotEmpty &&
+      _mascotas.isNotEmpty &&
       _experienciaPrevia.isNotEmpty &&
       _motivacionCtl.text.trim().isNotEmpty &&
-      (_tipoSolicitud != 'hogar_de_paso' || (_fechaInicio != null && _fechaFin != null));
-
+      (_tipoSolicitud != 'hogar_de_paso' ||
+          (_fechaInicio != null && _fechaFin != null));
 
   Future<void> _enviar() async {
     setState(() => _enviando = true);
     final user = FirebaseAuth.instance.currentUser;
     try {
       final userDoc = await FirebaseFirestore.instance
-          .collection('usuarios').doc(user?.uid).get();
-      final nombreAdoptante = (userDoc.data()?['nombre'] as String?)?.isNotEmpty == true
+          .collection('usuarios')
+          .doc(user?.uid)
+          .get();
+      final nombreAdoptante =
+          (userDoc.data()?['nombre'] as String?)?.isNotEmpty == true
           ? userDoc.data()!['nombre'] as String
           : user?.displayName ?? user?.email ?? 'Adoptante';
       await _solicitudesRepo.crear(
         adoptanteUid: user?.uid ?? '',
         rescatistaId: widget.animal['rescatistaId'] as String? ?? '',
-        creadoPor: creatorRoleFromFirestore(widget.animal['creadoPor'] as String?),
+        creadoPor: creatorRoleFromFirestore(
+          widget.animal['creadoPor'] as String?,
+        ),
         datos: {
-          'animalNombre':  widget.animal['nombre'],
-          'rescateId':     widget.animal['rescateId']    ?? '',
-          'nombre':            nombreAdoptante,
-          'email':             user?.email ?? '',
-          'integrantes':       _integrantesCtl.text.trim(),
-          'horasFuera':        _horasCtl.text.trim(),
-          'vivienda':          _vivienda,
-          'tieneNinos':        _ninos == 'Sí',
-          'tieneMascotas':     _mascotas == 'Sí',
+          'animalNombre': widget.animal['nombre'],
+          'rescateId': widget.animal['rescateId'] ?? '',
+          'nombre': nombreAdoptante,
+          'email': user?.email ?? '',
+          'integrantes': _integrantesCtl.text.trim(),
+          'horasFuera': _horasCtl.text.trim(),
+          'vivienda': _vivienda,
+          'tieneNinos': _ninos == 'Sí',
+          'tieneMascotas': _mascotas == 'Sí',
           'experienciaPrevia': _experienciaPrevia == 'Sí',
-          'motivacion':        _motivacionCtl.text.trim(),
-          'tipoSolicitud':     _tipoSolicitud,
+          'motivacion': _motivacionCtl.text.trim(),
+          'tipoSolicitud': _tipoSolicitud,
           if (_tipoSolicitud == 'hogar_de_paso' && _fechaInicio != null)
             'fechaInicioHogar': Timestamp.fromDate(_fechaInicio!),
           if (_tipoSolicitud == 'hogar_de_paso' && _fechaFin != null)
             'fechaFinHogar': Timestamp.fromDate(_fechaFin!),
-          'fotoUrl':           widget.animal['fotoUrl'],
+          'fotoUrl': widget.animal['fotoUrl'],
           // etiquetas del animal para calcular compatibilidad
-          'animalEnergia':          widget.animal['energia'],
-          'animalTamano':           widget.animal['tamano'],
-          'animalOkConNinos':       widget.animal['okConNinos'],
-          'animalOkConMascotas':    widget.animal['okConMascotas'],
-          'animalRequiereExp':      widget.animal['requiereExperiencia'],
+          'animalEnergia': widget.animal['energia'],
+          'animalTamano': widget.animal['tamano'],
+          'animalOkConNinos': widget.animal['okConNinos'],
+          'animalOkConMascotas': widget.animal['okConMascotas'],
+          'animalRequiereExp': widget.animal['requiereExperiencia'],
         },
       );
-      FirebaseAnalytics.instance.logEvent(
-        name: 'solicitud_enviada',
-        parameters: {
-          'tipo': _tipoSolicitud,
-          'rescatista_id': widget.animal['rescatistaId'] as String? ?? '',
-        },
-      ).catchError((_) {});
+      FirebaseAnalytics.instance
+          .logEvent(
+            name: 'solicitud_enviada',
+            parameters: {
+              'tipo': _tipoSolicitud,
+              'rescatista_id': widget.animal['rescatistaId'] as String? ?? '',
+            },
+          )
+          .catchError((_) {});
       // Guarda el perfil para el score de compatibilidad en el feed. Va en
       // preferencias/{uid} (privado, solo lo lee el dueño) y NO en
       // usuarios/{uid} — ese doc es legible por cualquier usuario logueado
@@ -143,19 +169,23 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
       // hay niños en casa, cuántas horas queda solo el animal.
       await PreferenciasRepository().actualizar(user?.uid ?? '', {
         'perfilAdopcion': {
-          'vivienda':          _vivienda,
-          'horasFuera':        _horasCtl.text.trim(),
-          'tieneNinos':        _ninos == 'Sí',
-          'tieneMascotas':     _mascotas == 'Sí',
+          'vivienda': _vivienda,
+          'horasFuera': _horasCtl.text.trim(),
+          'tieneNinos': _ninos == 'Sí',
+          'tieneMascotas': _mascotas == 'Sí',
           'experienciaPrevia': _experienciaPrevia == 'Sí',
-        }
+        },
       });
       if (!mounted) return;
       setState(() => _step = 2);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(backgroundColor: msgError, content: Text('Error al enviar: $e')));
+        SnackBar(
+          backgroundColor: msgError,
+          content: Text('Error al enviar: $e'),
+        ),
+      );
     } finally {
       if (mounted) setState(() => _enviando = false);
     }
@@ -181,40 +211,55 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
       return Scaffold(
         backgroundColor: appBg,
         body: SafeArea(
-          child: Column(children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-                tooltip: 'Volver',
-                onPressed: () => Navigator.pop(context),
-              ),
-            ),
-            Expanded(
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(mainAxisSize: MainAxisSize.min, children: [
-                    errorFeedState(
-                        mensaje: 'No pudimos verificar si ya pediste adoptar a '
-                            '${widget.animal['nombre']}. Revisá tu conexión e intentá de nuevo.'),
-                    const SizedBox(height: 12),
-                    ElevatedButton(
-                      onPressed: _verificarDuplicado,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: appTeal,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                        elevation: 0,
-                      ),
-                      child: const Text('Reintentar', style: TextStyle(fontWeight: FontWeight.w600)),
-                    ),
-                  ]),
+          child: Column(
+            children: [
+              Align(
+                alignment: Alignment.centerLeft,
+                child: IconButton(
+                  icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+                  tooltip: 'Volver',
+                  onPressed: () => Navigator.pop(context),
                 ),
               ),
-            ),
-          ]),
+              Expanded(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        errorFeedState(
+                          mensaje:
+                              'No pudimos verificar si ya pediste adoptar a '
+                              '${widget.animal['nombre']}. Revisá tu conexión e intentá de nuevo.',
+                        ),
+                        const SizedBox(height: 12),
+                        ElevatedButton(
+                          onPressed: _verificarDuplicado,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: appTeal,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 28,
+                              vertical: 14,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            elevation: 0,
+                          ),
+                          child: const Text(
+                            'Reintentar',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -226,45 +271,73 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
           child: Center(
             child: Padding(
               padding: const EdgeInsets.all(32),
-              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Container(
-                  width: 90, height: 90,
-                  decoration: BoxDecoration(
-                    color: (aprobada ? appTeal : appOrange).withValues(alpha: 0.12),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(aprobada ? Icons.favorite : Icons.access_time,
-                      color: aprobada ? appTeal : appOrange, size: 44),
-                ),
-                const SizedBox(height: 24),
-                Text(
-                  aprobada ? '¡Solicitud aprobada!' : 'Ya enviaste una solicitud',
-                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: appInk),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  aprobada
-                      ? 'Tu solicitud para ${widget.animal['nombre']} fue aprobada. Revisa el chat para coordinar el encuentro.'
-                      : 'Tu solicitud para ${widget.animal['nombre']} está pendiente de revisión. Te avisaremos por el chat.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 14, color: Colors.grey.shade700, height: 1.6),
-                ),
-                const SizedBox(height: 32),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.pop(context),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: appDark, foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                      elevation: 0,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 90,
+                    height: 90,
+                    decoration: BoxDecoration(
+                      color: (aprobada ? appTeal : appOrange).withValues(
+                        alpha: 0.12,
+                      ),
+                      shape: BoxShape.circle,
                     ),
-                    child: const Text('Volver', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    child: Icon(
+                      aprobada ? Icons.favorite : Icons.access_time,
+                      color: aprobada ? appTeal : appOrange,
+                      size: 44,
+                    ),
                   ),
-                ),
-              ]),
+                  const SizedBox(height: 24),
+                  Text(
+                    aprobada
+                        ? '¡Solicitud aprobada!'
+                        : 'Ya enviaste una solicitud',
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: appInk,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    aprobada
+                        ? 'Tu solicitud para ${widget.animal['nombre']} fue aprobada. Revisa el chat para coordinar el encuentro.'
+                        : 'Tu solicitud para ${widget.animal['nombre']} está pendiente de revisión. Te avisaremos por el chat.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey.shade700,
+                      height: 1.6,
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: appDark,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(30),
+                        ),
+                        elevation: 0,
+                      ),
+                      child: const Text(
+                        'Volver',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -273,313 +346,501 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
     return Scaffold(
       backgroundColor: appBg,
       body: SafeArea(
-        child: Column(children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 10, 20, 4),
-            child: Row(children: [
-              IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-                tooltip: 'Volver',
-                onPressed: () {
-                  if (_step == 1) setState(() => _step = 0);
-                  else Navigator.pop(context);
-                },
-              ),
-              Expanded(child: Text(
-                _step == 0 ? 'Antes de continuar' :
-                _step == 1 ? 'Cuéntanos sobre ti' : '¡Solicitud enviada!',
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: appInk,
-                    fontFamily: 'Baloo2'),
-              )),
-              if (_step < 2)
-                Text('${_step + 1} / 2',
-                    style: TextStyle(fontSize: 13, color: Colors.grey.shade700, fontWeight: FontWeight.w600)),
-            ]),
-          ),
-          if (_step < 2)
+        child: Column(
+          children: [
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: _step == 0 ? 0.5 : 1.0,
-                  minHeight: 4,
-                  backgroundColor: Colors.grey.shade200,
-                  valueColor: const AlwaysStoppedAnimation<Color>(appTeal),
-                ),
+              padding: const EdgeInsets.fromLTRB(8, 10, 20, 4),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+                    tooltip: 'Volver',
+                    onPressed: () {
+                      if (_step == 1)
+                        setState(() => _step = 0);
+                      else
+                        Navigator.pop(context);
+                    },
+                  ),
+                  Expanded(
+                    child: Text(
+                      _step == 0
+                          ? 'Antes de continuar'
+                          : _step == 1
+                          ? 'Cuéntanos sobre ti'
+                          : '¡Solicitud enviada!',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: appInk,
+                        fontFamily: 'Baloo2',
+                      ),
+                    ),
+                  ),
+                  if (_step < 2)
+                    Text(
+                      '${_step + 1} / 2',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey.shade700,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                ],
               ),
             ),
-          Expanded(
-            child: _step == 0 ? _stepConciencia() :
-                   _step == 1 ? _stepCuestionario() :
-                                _stepExito(),
-          ),
-        ]),
+            if (_step < 2)
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 4,
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: _step == 0 ? 0.5 : 1.0,
+                    minHeight: 4,
+                    backgroundColor: Colors.grey.shade200,
+                    valueColor: const AlwaysStoppedAnimation<Color>(appTeal),
+                  ),
+                ),
+              ),
+            Expanded(
+              child: _step == 0
+                  ? _stepConciencia()
+                  : _step == 1
+                  ? _stepCuestionario()
+                  : _stepExito(),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _stepConciencia() {
-    final nombre     = widget.animal['nombre'] as String;
-    final emoji      = widget.animal['especie'] == 'Gato' ? '🐱' : '🐶';
+    final nombre = widget.animal['nombre'] as String;
+    final emoji = widget.animal['especie'] == 'Gato' ? '🐱' : '🐶';
     final fotoUrl = widget.animal['fotoUrl'] as String?;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
-      child: Column(children: [
-        const SizedBox(height: 8),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: fotoUrl != null
-            // FotoAnimal (no FotoUrl con recorte): a este tamaño de card, un
-            // retrato con el animal en la mitad inferior de la foto (como
-            // "Bruno Diaz", con el perrito abajo y puro fondo verde arriba)
-            // se veía como un bloque de color sólido sin ningún animal —
-            // mismo bug de "Tobyiii" ya resuelto en otras pantallas.
-            ? FotoAnimal(
-                url: fotoUrl,
-                height: 200, width: double.infinity,
-                fallback: Container(
-                    height: 200, width: double.infinity,
+      child: Column(
+        children: [
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: fotoUrl != null
+                // FotoAnimal (no FotoUrl con recorte): a este tamaño de card, un
+                // retrato con el animal en la mitad inferior de la foto (como
+                // "Bruno Diaz", con el perrito abajo y puro fondo verde arriba)
+                // se veía como un bloque de color sólido sin ningún animal —
+                // mismo bug de "Tobyiii" ya resuelto en otras pantallas.
+                ? FotoAnimal(
+                    url: fotoUrl,
+                    height: 200,
+                    width: double.infinity,
+                    fallback: Container(
+                      height: 200,
+                      width: double.infinity,
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Color(0xFF3D7A52), Color(0xFF1F4A30)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                      ),
+                      child: Center(
+                        child: Text(
+                          emoji,
+                          style: const TextStyle(fontSize: 80),
+                        ),
+                      ),
+                    ),
+                  )
+                : Container(
+                    height: 200,
+                    width: double.infinity,
                     decoration: const BoxDecoration(
                       gradient: LinearGradient(
                         colors: [Color(0xFF3D7A52), Color(0xFF1F4A30)],
-                        begin: Alignment.topLeft, end: Alignment.bottomRight,
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
                     ),
-                    child: Center(child: Text(emoji, style: const TextStyle(fontSize: 80)))),
-              )
-            : Container(
-                height: 200, width: double.infinity,
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Color(0xFF3D7A52), Color(0xFF1F4A30)],
-                    begin: Alignment.topLeft, end: Alignment.bottomRight,
+                    child: Center(
+                      child: Text(emoji, style: const TextStyle(fontSize: 80)),
+                    ),
+                  ),
+          ),
+          const SizedBox(height: 28),
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: appDark,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Column(
+              children: [
+                const Text('🐾', style: TextStyle(fontSize: 32)),
+                const SizedBox(height: 16),
+                Text(
+                  '$nombre te está esperando.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    height: 1.4,
                   ),
                 ),
-                child: Center(child: Text(emoji, style: const TextStyle(fontSize: 80)))),
-        ),
-        const SizedBox(height: 28),
-        Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(color: appDark, borderRadius: BorderRadius.circular(20)),
-          child: Column(children: [
-            const Text('🐾', style: TextStyle(fontSize: 32)),
-            const SizedBox(height: 16),
-            Text(
-              '$nombre te está esperando.',
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold,
-                  color: Colors.white, height: 1.4),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Un animal no es un juguete ni decoración.\nTe amará sin condiciones, en los buenos momentos y en los difíciles.\n\nAdoptar es una promesa de por vida.\n\n¿Estás listo?',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 14, color: Color(0xFFB8D8C8), height: 1.7),
-            ),
-          ]),
-        ),
-        const SizedBox(height: 28),
-        Row(children: [
-          Expanded(
-            child: GestureDetector(
-              onTap: () => setState(() => _tipoSolicitud = 'adopcion'),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                decoration: BoxDecoration(
-                  color: _tipoSolicitud == 'adopcion' ? appOrange : Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: _tipoSolicitud == 'adopcion' ? appOrange : Colors.grey.shade300,
-                    width: 2,
+                const SizedBox(height: 16),
+                const Text(
+                  'Un animal no es un juguete ni decoración.\nTe amará sin condiciones, en los buenos momentos y en los difíciles.\n\nAdoptar es una promesa de por vida.\n\n¿Estás listo?',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFFB8D8C8),
+                    height: 1.7,
                   ),
                 ),
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  const Text('🏠', style: TextStyle(fontSize: 24)),
-                  const SizedBox(height: 4),
-                  Text('Adoptar',
-                      style: TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.bold,
-                        color: _tipoSolicitud == 'adopcion' ? Colors.white : appInk,
-                      )),
-                ]),
+              ],
+            ),
+          ),
+          const SizedBox(height: 28),
+          Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _tipoSolicitud = 'adopcion'),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    decoration: BoxDecoration(
+                      color: _tipoSolicitud == 'adopcion'
+                          ? appOrange
+                          : Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: _tipoSolicitud == 'adopcion'
+                            ? appOrange
+                            : Colors.grey.shade300,
+                        width: 2,
+                      ),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('🏠', style: TextStyle(fontSize: 24)),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Adoptar',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: _tipoSolicitud == 'adopcion'
+                                ? Colors.white
+                                : appInk,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () {
+                    // Solo en la transición real hacia hogar_de_paso — no en
+                    // cada tap repetido sobre la misma pestaña ya activa.
+                    if (_tipoSolicitud != 'hogar_de_paso') {
+                      FirebaseAnalytics.instance
+                          .logEvent(name: 'toco_ser_hogar_de_paso')
+                          .catchError((_) {});
+                    }
+                    setState(() => _tipoSolicitud = 'hogar_de_paso');
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    decoration: BoxDecoration(
+                      color: _tipoSolicitud == 'hogar_de_paso'
+                          ? appTeal
+                          : Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: _tipoSolicitud == 'hogar_de_paso'
+                            ? appTeal
+                            : Colors.grey.shade300,
+                        width: 2,
+                      ),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('🏡', style: TextStyle(fontSize: 24)),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Hogar de paso',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: _tipoSolicitud == 'hogar_de_paso'
+                                ? Colors.white
+                                : appInk,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () => setState(() => _step = 1),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _tipoSolicitud == 'adopcion'
+                    ? appOrange
+                    : appTeal,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(30),
+                ),
+                elevation: 0,
+              ),
+              child: Text(
+                _tipoSolicitud == 'adopcion'
+                    ? 'Quiero adoptar 🏠'
+                    : 'Quiero dar hogar de paso 🏡',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: GestureDetector(
-              onTap: () {
-                // Solo en la transición real hacia hogar_de_paso — no en
-                // cada tap repetido sobre la misma pestaña ya activa.
-                if (_tipoSolicitud != 'hogar_de_paso') {
-                  FirebaseAnalytics.instance
-                      .logEvent(name: 'toco_ser_hogar_de_paso')
-                      .catchError((_) {});
-                }
-                setState(() => _tipoSolicitud = 'hogar_de_paso');
-              },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                decoration: BoxDecoration(
-                  color: _tipoSolicitud == 'hogar_de_paso' ? appTeal : Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: _tipoSolicitud == 'hogar_de_paso' ? appTeal : Colors.grey.shade300,
-                    width: 2,
-                  ),
-                ),
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  const Text('🏡', style: TextStyle(fontSize: 24)),
-                  const SizedBox(height: 4),
-                  Text('Hogar de paso',
-                      style: TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.bold,
-                        color: _tipoSolicitud == 'hogar_de_paso' ? Colors.white : appInk,
-                      )),
-                ]),
-              ),
-            ),
-          ),
-        ]),
-        const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton(
-            onPressed: () => setState(() => _step = 1),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _tipoSolicitud == 'adopcion' ? appOrange : appTeal,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-              elevation: 0,
-            ),
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: () => Navigator.pop(context),
             child: Text(
-              _tipoSolicitud == 'adopcion' ? 'Quiero adoptar 🏠' : 'Quiero dar hogar de paso 🏡',
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              'Aún no estoy seguro/a',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey.shade700,
+                decoration: TextDecoration.underline,
+              ),
             ),
           ),
-        ),
-        const SizedBox(height: 12),
-        GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: Text('Aún no estoy seguro/a',
-              style: TextStyle(fontSize: 14, color: Colors.grey.shade700,
-                  decoration: TextDecoration.underline)),
-        ),
-        const SizedBox(height: 24),
-      ]),
+          const SizedBox(height: 24),
+        ],
+      ),
     );
   }
 
   Widget _stepCuestionario() {
+    // La mitad del ancho de la pantalla, no un píxel fijo — el 90 de antes
+    // (ver comentario más abajo) se sentía chico en cualquier teléfono;
+    // esto se adapta al tamaño real del dispositivo. Pedido explícito de
+    // Eliza: "yo quiero que ocupe al menos la mitad de la pantalla".
+    final anchoCampoNumerico = MediaQuery.of(context).size.width / 2;
     return SingleChildScrollView(
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 60),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const SizedBox(height: 8),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            color: appTeal.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: appTeal.withValues(alpha: 0.3)),
-          ),
-          child: Row(children: [
-            const Icon(Icons.person_rounded, color: appTeal, size: 20),
-            const SizedBox(width: 10),
-            Text(
-              FirebaseAuth.instance.currentUser?.displayName ?? 'Tu nombre de Google',
-              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: appTeal),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: appTeal.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: appTeal.withValues(alpha: 0.3)),
             ),
-            const Spacer(),
-            const Text('via Gmail', style: TextStyle(fontSize: 12, color: Colors.grey)),
-          ]),
-        ),
-        const SizedBox(height: 20),
-        // 3 y 2 dígitos, no 20 y 30 — hallazgo real de Eliza probando en
-        // teléfono, 2026-08-04: ese tope original era el mismo criterio
-        // "genérico" que se usó en otros campos de texto libre, pero acá
-        // el teclado ya es numérico y el dato tiene un máximo real: nadie
-        // vive con cientos de personas, y un día tiene 24 horas como
-        // mucho. 3 dígitos para personas (hasta 999, de sobra) y 2 para
-        // horas (hasta 99, ya más que un día entero).
-        _campoTexto('¿Cuántas personas en casa?', _integrantesCtl, 'ej. 3',
-            teclado: TextInputType.number, maxLength: 3),
-        const SizedBox(height: 24),
-        _campoTexto('¿Cuántas horas al día estás fuera de casa?', _horasCtl,
-            'ej. 4 horas', teclado: TextInputType.number, maxLength: 2),
-        const SizedBox(height: 24),
-        _pregunta('¿Dónde vives?', '🏠', _viviendaOpts, _vivienda,
-            (v) => setState(() => _vivienda = v)),
-        const SizedBox(height: 24),
-        _pregunta('¿Tienes niños menores de 8 años?', '👶', _ninosOpts, _ninos,
-            (v) => setState(() => _ninos = v)),
-        const SizedBox(height: 24),
-        _pregunta('¿Tienes otras mascotas?', '🐕', _mascotasOpts, _mascotas,
-            (v) => setState(() => _mascotas = v)),
-        const SizedBox(height: 24),
-        _pregunta('¿Has tenido mascotas antes?', '🐾', _experienciaOpts,
-            _experienciaPrevia, (v) => setState(() => _experienciaPrevia = v)),
-        const SizedBox(height: 24),
-        _campoTexto('¿Por qué quieres adoptarlo?', _motivacionCtl,
-            'ej. Siempre quise tener un perro, tengo espacio y mucho amor...',
-            maxLines: 3, maxLength: 600),
-        if (_tipoSolicitud == 'hogar_de_paso') ...[
+            child: Row(
+              children: [
+                const Icon(Icons.person_rounded, color: appTeal, size: 20),
+                const SizedBox(width: 10),
+                Text(
+                  FirebaseAuth.instance.currentUser?.displayName ??
+                      'Tu nombre de Google',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: appTeal,
+                  ),
+                ),
+                const Spacer(),
+                const Text(
+                  'via Gmail',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          // 3 y 2 dígitos, no 20 y 30 — hallazgo real de Eliza probando en
+          // teléfono, 2026-08-04: ese tope original era el mismo criterio
+          // "genérico" que se usó en otros campos de texto libre, pero acá
+          // el teclado ya es numérico y el dato tiene un máximo real: nadie
+          // vive con cientos de personas, y un día tiene 24 horas como
+          // mucho. 3 dígitos para personas (hasta 999, de sobra) y 2 para
+          // horas (hasta 99, ya más que un día entero).
+          // ancho: mitad de la pantalla (ver anchoCampoNumerico más arriba) —
+          // un ancho fijo chico (90, lo que había antes) se sintió "una caja
+          // horrible" probando en el teléfono real; pedido explícito de
+          // Eliza de volver a agrandarlo, esta vez de forma proporcional al
+          // dispositivo en vez de un número fijo.
+          _campoTexto(
+            '¿Cuántas personas en casa?',
+            _integrantesCtl,
+            'ej. 3',
+            teclado: TextInputType.number,
+            maxLength: 3,
+            ancho: anchoCampoNumerico,
+          ),
           const SizedBox(height: 24),
-          RichText(text: const TextSpan(
-            text: 'Período del hogar de paso',
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: appInk),
-            children: [TextSpan(text: ' *', style: TextStyle(color: appTeal))],
-          )),
-          const SizedBox(height: 6),
-          Text('📅  ¿Cuándo puedes recibirlo y hasta cuándo?',
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
-          const SizedBox(height: 12),
-          Row(children: [
-            Expanded(child: _selectorFecha(
-              label: 'Desde',
-              fecha: _fechaInicio,
-              onPick: (d) => setState(() {
-                _fechaInicio = d;
-                if (_fechaFin != null && _fechaFin!.isBefore(d)) _fechaFin = null;
-              }),
-              firstDate: DateTime.now(),
-            )),
-            const SizedBox(width: 12),
-            Expanded(child: _selectorFecha(
-              label: 'Hasta',
-              fecha: _fechaFin,
-              onPick: (d) => setState(() => _fechaFin = d),
-              firstDate: _fechaInicio ?? DateTime.now(),
-            )),
-          ]),
-        ],
-        const SizedBox(height: 32),
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton(
-            onPressed: _completo && !_enviando ? _enviar : null,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: appOrange, foregroundColor: Colors.white,
-              disabledBackgroundColor: Colors.grey.shade300,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-              elevation: 0,
-            ),
-            child: _enviando
-                ? const SizedBox(width: 20, height: 20,
-                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                : const Text('Enviar solicitud',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          _campoTexto(
+            '¿Cuántas horas al día estás fuera de casa?',
+            _horasCtl,
+            'ej. 4',
+            teclado: TextInputType.number,
+            maxLength: 2,
+            ancho: anchoCampoNumerico,
           ),
-        ),
-        const SizedBox(height: 40),
-      ]),
+          const SizedBox(height: 24),
+          _pregunta(
+            '¿Dónde vives?',
+            '🏠',
+            _viviendaOpts,
+            _vivienda,
+            (v) => setState(() => _vivienda = v),
+          ),
+          const SizedBox(height: 24),
+          _pregunta(
+            '¿Tienes niños menores de 8 años?',
+            '👶',
+            _ninosOpts,
+            _ninos,
+            (v) => setState(() => _ninos = v),
+          ),
+          const SizedBox(height: 24),
+          _pregunta(
+            '¿Tienes otras mascotas?',
+            '🐕',
+            _mascotasOpts,
+            _mascotas,
+            (v) => setState(() => _mascotas = v),
+          ),
+          const SizedBox(height: 24),
+          _pregunta(
+            '¿Has tenido mascotas antes?',
+            '🐾',
+            _experienciaOpts,
+            _experienciaPrevia,
+            (v) => setState(() => _experienciaPrevia = v),
+          ),
+          const SizedBox(height: 24),
+          _campoTexto(
+            '¿Por qué quieres adoptarlo?',
+            _motivacionCtl,
+            'ej. Siempre quise tener un perro, tengo espacio y mucho amor...',
+            maxLines: 3,
+            maxLength: 600,
+          ),
+          if (_tipoSolicitud == 'hogar_de_paso') ...[
+            const SizedBox(height: 24),
+            RichText(
+              text: const TextSpan(
+                text: 'Período del hogar de paso',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: appInk,
+                ),
+                children: [
+                  TextSpan(
+                    text: ' *',
+                    style: TextStyle(color: appTeal),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '📅  ¿Cuándo puedes recibirlo y hasta cuándo?',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _selectorFecha(
+                    label: 'Desde',
+                    fecha: _fechaInicio,
+                    onPick: (d) => setState(() {
+                      _fechaInicio = d;
+                      if (_fechaFin != null && _fechaFin!.isBefore(d))
+                        _fechaFin = null;
+                    }),
+                    firstDate: DateTime.now(),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _selectorFecha(
+                    label: 'Hasta',
+                    fecha: _fechaFin,
+                    onPick: (d) => setState(() => _fechaFin = d),
+                    firstDate: _fechaInicio ?? DateTime.now(),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 32),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _completo && !_enviando ? _enviar : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: appOrange,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: Colors.grey.shade300,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(30),
+                ),
+                elevation: 0,
+              ),
+              child: _enviando
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : const Text(
+                      'Enviar solicitud',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+            ),
+          ),
+          const SizedBox(height: 40),
+        ],
+      ),
     );
   }
 
@@ -588,71 +849,142 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
   // estado, no tamaño de campos) frenaban un pegado gigante en "motivación"
   // — mismo bug ya encontrado y arreglado en subir_servicio_screen.dart,
   // nunca replicado acá. Hallazgo de auditoría de código.
-  Widget _campoTexto(String titulo, TextEditingController ctl,
-      String hint, {TextInputType teclado = TextInputType.text, int maxLines = 1,
-      required int maxLength}) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      RichText(text: TextSpan(
-        text: titulo,
-        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: appInk),
-        children: const [
-          TextSpan(text: ' *', style: TextStyle(color: appOrange, fontSize: 15)),
+  // [ancho]: null = ocupa todo el ancho disponible (el default de siempre,
+  // para texto libre como "motivación"). Con un valor, el campo se achica
+  // a ese ancho en vez de estirarse — para campos de 2-3 dígitos como
+  // "personas en casa" no tiene sentido una caja del ancho de la pantalla.
+  Widget _campoTexto(
+    String titulo,
+    TextEditingController ctl,
+    String hint, {
+    TextInputType teclado = TextInputType.text,
+    int maxLines = 1,
+    required int maxLength,
+    double? ancho,
+  }) {
+    final campo = Container(
+      width: ancho,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6),
         ],
-      )),
-      const SizedBox(height: 8),
-      Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6)],
-        ),
-        child: TextField(
-          controller: ctl,
-          keyboardType: teclado,
-          maxLines: maxLines,
-          maxLength: maxLength,
-          onChanged: (_) => setState(() {}),
-          decoration: InputDecoration(
-            hintText: hint,
-            hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
-            border: InputBorder.none,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      ),
+      child: TextField(
+        controller: ctl,
+        keyboardType: teclado,
+        maxLines: maxLines,
+        maxLength: maxLength,
+        onChanged: (_) => setState(() {}),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 14,
           ),
+          // Sin contador en los campos angostos: Flutter le reserva una
+          // línea entera abajo para el "0/3" sin importar el ancho, así
+          // que con una caja angosta el campo quedaba cuadrado — parecía
+          // que aceptaba texto hacia abajo, cuando en realidad es una
+          // sola línea de 2-3 dígitos. Hallazgo real de Eliza.
+          counterText: ancho != null ? '' : null,
         ),
       ),
-    ]);
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        RichText(
+          text: TextSpan(
+            text: titulo,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: appInk,
+            ),
+            children: const [
+              TextSpan(
+                text: ' *',
+                style: TextStyle(color: appOrange, fontSize: 15),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        campo,
+      ],
+    );
   }
 
-  Widget _pregunta(String titulo, String icono, List<String> opciones,
-      String seleccion, ValueChanged<String> onSelect) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(titulo,
-          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: appInk)),
-      const SizedBox(height: 4),
-      Text('$icono  Elige una opción',
-          style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
-      const SizedBox(height: 10),
-      Wrap(spacing: 8, runSpacing: 8, children: opciones.map((o) {
-        final sel = o == seleccion;
-        return GestureDetector(
-          onTap: () => onSelect(o),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 160),
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-            decoration: BoxDecoration(
-              color: sel ? appTeal : Colors.white,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: sel ? appTeal : Colors.grey.shade300),
-              boxShadow: sel ? [] :
-                  [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 4)],
-            ),
-            child: Text(o, style: TextStyle(
-                fontSize: 13, fontWeight: FontWeight.w600,
-                color: sel ? Colors.white : Colors.grey.shade700)),
+  Widget _pregunta(
+    String titulo,
+    String icono,
+    List<String> opciones,
+    String seleccion,
+    ValueChanged<String> onSelect,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          titulo,
+          style: const TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            color: appInk,
           ),
-        );
-      }).toList()),
-    ]);
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '$icono  Elige una opción',
+          style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: opciones.map((o) {
+            final sel = o == seleccion;
+            return GestureDetector(
+              onTap: () => onSelect(o),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 160),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: sel ? appTeal : Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: sel ? appTeal : Colors.grey.shade300,
+                  ),
+                  boxShadow: sel
+                      ? []
+                      : [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.04),
+                            blurRadius: 4,
+                          ),
+                        ],
+                ),
+                child: Text(
+                  o,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: sel ? Colors.white : Colors.grey.shade700,
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ],
+    );
   }
 
   Widget _selectorFecha({
@@ -669,9 +1001,9 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
           firstDate: firstDate,
           lastDate: DateTime.now().add(const Duration(days: 365)),
           builder: (_, child) => Theme(
-            data: Theme.of(context).copyWith(
-              colorScheme: const ColorScheme.light(primary: appTeal),
-            ),
+            data: Theme.of(
+              context,
+            ).copyWith(colorScheme: const ColorScheme.light(primary: appTeal)),
             child: child!,
           ),
         );
@@ -689,23 +1021,45 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
             color: fecha != null ? appTeal : Colors.grey.shade300,
             width: fecha != null ? 1.5 : 1,
           ),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6)],
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 6,
+            ),
+          ],
         ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(label, style: TextStyle(fontSize: 11, color: Colors.grey.shade700, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 4),
-          Row(children: [
-            Icon(Icons.calendar_today, size: 14, color: fecha != null ? appTeal : Colors.grey.shade400),
-            const SizedBox(width: 6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             Text(
-              fecha != null ? formatearFecha(fecha) : 'Seleccionar',
+              label,
               style: TextStyle(
-                fontSize: 13, fontWeight: FontWeight.w600,
-                color: fecha != null ? appInk : Colors.grey.shade400,
+                fontSize: 11,
+                color: Colors.grey.shade700,
+                fontWeight: FontWeight.w600,
               ),
             ),
-          ]),
-        ]),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Icon(
+                  Icons.calendar_today,
+                  size: 14,
+                  color: fecha != null ? appTeal : Colors.grey.shade400,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  fecha != null ? formatearFecha(fecha) : 'Seleccionar',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: fecha != null ? appInk : Colors.grey.shade400,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -715,38 +1069,59 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
-        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Container(
-            width: 100, height: 100,
-            decoration: BoxDecoration(
-                color: appTeal.withValues(alpha: 0.12), shape: BoxShape.circle),
-            child: const Icon(Icons.favorite, color: appTeal, size: 50),
-          ),
-          const SizedBox(height: 28),
-          const Text('¡Solicitud enviada!',
-              style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: appInk)),
-          const SizedBox(height: 12),
-          Text(
-            'Le avisamos a la rescatista.\nPronto sabrás si $nombre encontró su hogar contigo. 🌿',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 15, color: Colors.grey.shade700, height: 1.6),
-          ),
-          const SizedBox(height: 36),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () => Navigator.popUntil(context, (r) => r.isFirst),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: appDark, foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                elevation: 0,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 100,
+              height: 100,
+              decoration: BoxDecoration(
+                color: appTeal.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
               ),
-              child: const Text('Ver más animales',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              child: const Icon(Icons.favorite, color: appTeal, size: 50),
             ),
-          ),
-        ]),
+            const SizedBox(height: 28),
+            const Text(
+              '¡Solicitud enviada!',
+              style: TextStyle(
+                fontSize: 26,
+                fontWeight: FontWeight.bold,
+                color: appInk,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Le avisamos a la rescatista.\nPronto sabrás si $nombre encontró su hogar contigo. 🌿',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 15,
+                color: Colors.grey.shade700,
+                height: 1.6,
+              ),
+            ),
+            const SizedBox(height: 36),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.popUntil(context, (r) => r.isFirst),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: appDark,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(30),
+                  ),
+                  elevation: 0,
+                ),
+                child: const Text(
+                  'Ver más animales',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -9,10 +9,12 @@ import 'firestore_resiliencia.dart';
 /// misma colección: el nombre del método ya dice qué relación es, así
 /// que no se puede llamar el equivocado por error.
 class SolicitudesRepository {
-  SolicitudesRepository({FirebaseFirestore? db}) : _db = db ?? FirebaseFirestore.instance;
+  SolicitudesRepository({FirebaseFirestore? db})
+    : _db = db ?? FirebaseFirestore.instance;
   final FirebaseFirestore _db;
 
-  CollectionReference<Map<String, dynamic>> get _col => _db.collection('solicitudes');
+  CollectionReference<Map<String, dynamic>> get _col =>
+      _db.collection('solicitudes');
 
   /// Solicitudes recibidas por el rescatista/albergue dueño del animal.
   /// [role] es obligatorio por la misma razón que en RescatesRepository.
@@ -32,6 +34,24 @@ class SolicitudesRepository {
   /// adoptante no tiene doble sombrero.
   Stream<QuerySnapshot<Map<String, dynamic>>> misSolicitudes(String uid) =>
       _col.where('adoptanteId', isEqualTo: uid).snapshots();
+
+  /// `fotoUrl` de la primera solicitud de [adoptanteId] sobre un animal
+  /// llamado [animalNombre] — usado solo para rellenar (una vez) la foto de
+  /// chats de animal creados antes de que ese campo se guardara ahí mismo
+  /// (ver AdoptanteChatsScreen). Sin ambigüedad de rol, igual que
+  /// [misSolicitudes]: se busca por el lado adoptante, no por dueño.
+  Future<String?> fotoUrlPorAnimalNombre({
+    required String adoptanteId,
+    required String animalNombre,
+  }) async {
+    final snap = await _col
+        .where('adoptanteId', isEqualTo: adoptanteId)
+        .where('animalNombre', isEqualTo: animalNombre)
+        .limit(1)
+        .get();
+    if (snap.docs.isEmpty) return null;
+    return snap.docs.first.data()['fotoUrl'] as String?;
+  }
 
   /// Hay al menos una solicitud PENDIENTE sobre este animal — se usa para
   /// bloquear el borrado del rescate mientras alguien espera respuesta,
@@ -55,8 +75,14 @@ class SolicitudesRepository {
   ///     desde la canequita como desde editar → eliminar.
   /// Solo si hasta la caché falla (rarísimo) se propaga el error y las
   /// pantallas muestran el mensaje de conexión.
-  Future<bool> tienePendientesPara(String rescateId, {required String rescatistaId}) =>
-      _hayAlguna(rescateId: rescateId, rescatistaId: rescatistaId, estado: 'pendiente');
+  Future<bool> tienePendientesPara(
+    String rescateId, {
+    required String rescatistaId,
+  }) => _hayAlguna(
+    rescateId: rescateId,
+    rescatistaId: rescatistaId,
+    estado: 'pendiente',
+  );
 
   /// Motor compartido de [tienePendientesPara] y [tuvoSolicitudAprobada]:
   /// "¿existe al menos una solicitud en [estado] para este animal?".
@@ -116,8 +142,14 @@ class SolicitudesRepository {
   /// Mismo criterio de tolerancia a fallas que [tienePendientesPara]: si
   /// el servidor no responde, reintenta una vez, y si sigue sin responder
   /// cae a la copia local en caché.
-  Future<bool> tuvoSolicitudAprobada(String rescateId, {required String rescatistaId}) =>
-      _hayAlguna(rescateId: rescateId, rescatistaId: rescatistaId, estado: 'aprobada');
+  Future<bool> tuvoSolicitudAprobada(
+    String rescateId, {
+    required String rescatistaId,
+  }) => _hayAlguna(
+    rescateId: rescateId,
+    rescatistaId: rescatistaId,
+    estado: 'aprobada',
+  );
 
   /// Estado de la solicitud pendiente/aprobada que ya tenga [uid] sobre este
   /// animal, o `null` si no aplicó todavía. Con [rescateId] se compara por
@@ -160,15 +192,14 @@ class SolicitudesRepository {
     required String rescatistaId,
     required CreatorRole creadoPor,
     required Map<String, dynamic> datos,
-  }) =>
-      _col.add({
-        ...datos,
-        'adoptanteId': adoptanteUid,
-        'rescatistaId': rescatistaId,
-        'creadoPor': creadoPor.firestoreValue,
-        'estado': 'pendiente',
-        'creadoEn': FieldValue.serverTimestamp(),
-      });
+  }) => _col.add({
+    ...datos,
+    'adoptanteId': adoptanteUid,
+    'rescatistaId': rescatistaId,
+    'creadoPor': creadoPor.firestoreValue,
+    'estado': 'pendiente',
+    'creadoEn': FieldValue.serverTimestamp(),
+  });
 
   Future<void> cambiarEstado(String solicitudId, String estado) =>
       _col.doc(solicitudId).update({'estado': estado});
@@ -180,15 +211,17 @@ class SolicitudesRepository {
   /// autenticada del adoptante, con la fecha del servidor, dentro de la
   /// misma solicitud ya aprobada. Solo el propio adoptante puede llamarlo
   /// (ver firestore.rules) y solo una vez la solicitud está aprobada.
-  Future<void> aceptarAcuerdo(String solicitudId) => _col.doc(solicitudId).update({
+  Future<void> aceptarAcuerdo(String solicitudId) =>
+      _col.doc(solicitudId).update({
         'acuerdoAceptado': true,
         'acuerdoAceptadoEn': FieldValue.serverTimestamp(),
       });
 
   /// Rechaza una solicitud dejando registrado el motivo (a diferencia de
   /// [cambiarEstado], que no toca `motivoRechazo`).
-  Future<void> rechazar(String solicitudId, String motivo) =>
-      _col.doc(solicitudId).update({'estado': 'rechazada', 'motivoRechazo': motivo});
+  Future<void> rechazar(String solicitudId, String motivo) => _col
+      .doc(solicitudId)
+      .update({'estado': 'rechazada', 'motivoRechazo': motivo});
 
   /// Cuando se aprueba una solicitud, rechaza automáticamente cualquier otra
   /// solicitud PENDIENTE por el mismo animal (excepto [excluirDocId]) — ya
@@ -228,12 +261,37 @@ class SolicitudesRepository {
       if (doc.id == excluirDocId) continue;
       batch.update(doc.reference, {
         'estado': 'rechazada',
-        'motivoRechazo': 'El proceso de adopción ya fue iniciado con otro adoptante.',
+        'motivoRechazo':
+            'El proceso de adopción ya fue iniciado con otro adoptante.',
       });
       rechazadas.add({...doc.data(), 'id': doc.id});
     }
     if (rechazadas.isNotEmpty) await batch.commit();
     return rechazadas;
+  }
+
+  /// Todas las solicitudes PENDIENTES de un rescate — de solo lectura, no
+  /// las toca. Mismo filtro que [rechazarCompetidoras], pero sin el
+  /// `batch.update` que las rechaza.
+  ///
+  /// Existe porque `adoptanteIdEnProceso` (el campo que usan los avisos
+  /// automáticos, ver `CambiarEstadoSheet` en widgets/cambiar_estado_sheet.dart) solo se completa
+  /// cuando una solicitud se APRUEBA — así que un animal marcado
+  /// 'Fallecido' con solicitudes todavía pendientes (nunca aprobadas)
+  /// dejaba a esas personas sin ningún aviso: no hay error, simplemente no
+  /// hay a quién avisarle según ese campo. Hallazgo real de Eliza: pidió
+  /// adoptar un animal, el rescatista lo marcó fallecido sin aprobar la
+  /// solicitud primero, y nunca le llegó nada.
+  Future<List<Map<String, dynamic>>> pendientesPara({
+    required String rescateId,
+    required String rescatistaId,
+  }) async {
+    final q = await _col
+        .where('rescateId', isEqualTo: rescateId)
+        .where('rescatistaId', isEqualTo: rescatistaId)
+        .where('estado', isEqualTo: 'pendiente')
+        .get();
+    return q.docs.map((d) => {...d.data(), 'id': d.id}).toList();
   }
 
   /// Aprueba [solicitudId] de forma atómica junto con el rescate
@@ -283,17 +341,20 @@ class SolicitudesRepository {
       if (!rescateSnap.exists) {
         tx.update(solicitudRef, {
           'estado': 'rechazada',
-          'motivoRechazo': 'Este animalito ya no está disponible en la plataforma.',
+          'motivoRechazo':
+              'Este animalito ya no está disponible en la plataforma.',
         });
         return (aprobada: false, animalEliminado: true);
       }
 
-      final yaClaimadoPor = (rescateSnap.data()?['adoptanteIdEnProceso'] as String?) ?? '';
+      final yaClaimadoPor =
+          (rescateSnap.data()?['adoptanteIdEnProceso'] as String?) ?? '';
 
       if (yaClaimadoPor.isNotEmpty && yaClaimadoPor != adoptanteId) {
         tx.update(solicitudRef, {
           'estado': 'rechazada',
-          'motivoRechazo': 'El proceso de adopción ya fue iniciado con otro adoptante.',
+          'motivoRechazo':
+              'El proceso de adopción ya fue iniciado con otro adoptante.',
         });
         return (aprobada: false, animalEliminado: false);
       }

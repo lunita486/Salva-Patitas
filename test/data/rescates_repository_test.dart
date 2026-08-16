@@ -57,19 +57,25 @@ class _TaskExitoso implements UploadTask {
   @override
   Stream<TaskSnapshot> get snapshotEvents => const Stream.empty();
   @override
-  Future<S> then<S>(FutureOr<S> Function(TaskSnapshot) onValue, {Function? onError}) =>
-      _completer.future.then(onValue, onError: onError);
+  Future<S> then<S>(
+    FutureOr<S> Function(TaskSnapshot) onValue, {
+    Function? onError,
+  }) => _completer.future.then(onValue, onError: onError);
   @override
   Stream<TaskSnapshot> asStream() => _completer.future.asStream();
   @override
-  Future<TaskSnapshot> catchError(Function onError, {bool Function(Object)? test}) =>
-      _completer.future.catchError(onError, test: test);
+  Future<TaskSnapshot> catchError(
+    Function onError, {
+    bool Function(Object)? test,
+  }) => _completer.future.catchError(onError, test: test);
   @override
   Future<TaskSnapshot> whenComplete(FutureOr<void> Function() action) =>
       _completer.future.whenComplete(action);
   @override
-  Future<TaskSnapshot> timeout(Duration timeLimit, {FutureOr<TaskSnapshot> Function()? onTimeout}) =>
-      _completer.future.timeout(timeLimit, onTimeout: onTimeout);
+  Future<TaskSnapshot> timeout(
+    Duration timeLimit, {
+    FutureOr<TaskSnapshot> Function()? onTimeout,
+  }) => _completer.future.timeout(timeLimit, onTimeout: onTimeout);
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -79,18 +85,25 @@ class _TaskExitoso implements UploadTask {
 /// entre la foto obligatoria y la opcional. Devuelve también las 2
 /// referencias de mentira, para poder verificar con mocktail (`verify`)
 /// que el rollback de verdad intentó borrarlas.
-({MockFirebaseStorage storage, MockStorageReference ref1, MockStorageReference ref2})
-    _storageControlada({required bool foto1Falla, required bool foto2Falla}) {
+({
+  MockFirebaseStorage storage,
+  MockStorageReference ref1,
+  MockStorageReference ref2,
+})
+_storageControlada({required bool foto1Falla, required bool foto2Falla}) {
   final storage = MockFirebaseStorage();
 
   MockStorageReference construirRef(String path, {required bool falla}) {
     final ref = MockStorageReference();
     if (falla) {
       when(() => ref.putData(any(), any())).thenThrow(
-          FirebaseException(plugin: 'firebase_storage', code: 'unauthorized'));
+        FirebaseException(plugin: 'firebase_storage', code: 'unauthorized'),
+      );
     } else {
       when(() => ref.putData(any(), any())).thenAnswer((_) => _TaskExitoso());
-      when(() => ref.getDownloadURL()).thenAnswer((_) async => 'https://fake.storage/$path');
+      when(
+        () => ref.getDownloadURL(),
+      ).thenAnswer((_) async => 'https://fake.storage/$path');
     }
     when(() => ref.delete()).thenAnswer((_) async {});
     return ref;
@@ -98,6 +111,43 @@ class _TaskExitoso implements UploadTask {
 
   final ref1 = construirRef('foto1.jpg', falla: foto1Falla);
   final ref2 = construirRef('foto2.jpg', falla: foto2Falla);
+  when(() => storage.ref(any())).thenAnswer((invocation) {
+    final path = invocation.positionalArguments[0] as String;
+    return path.contains('foto1.jpg') ? ref1 : ref2;
+  });
+  return (storage: storage, ref1: ref1, ref2: ref2);
+}
+
+// Storage controlable para las pruebas de resolverFotosAlEditar. A
+// diferencia de _storageControlada (pensada para publicar), acá hace falta
+// que getData() responda — moverFoto() descarga los bytes del slot origen
+// antes de re-subirlos al destino.
+({
+  MockFirebaseStorage storage,
+  MockStorageReference ref1,
+  MockStorageReference ref2,
+})
+_storageParaEditar({Uint8List? bytesEnSlot2}) {
+  final storage = MockFirebaseStorage();
+
+  MockStorageReference construirRef(String path) {
+    final ref = MockStorageReference();
+    when(() => ref.putData(any(), any())).thenAnswer((_) => _TaskExitoso());
+    when(
+      () => ref.getDownloadURL(),
+    ).thenAnswer((_) async => 'https://fake.storage/$path');
+    when(() => ref.delete()).thenAnswer((_) async {});
+    // Por defecto "no hay archivo": moverFoto lo traduce a null y no toca
+    // nada, que es justo uno de los casos a probar.
+    when(() => ref.getData(any())).thenAnswer((_) async => null);
+    return ref;
+  }
+
+  final ref1 = construirRef('foto1.jpg');
+  final ref2 = construirRef('foto2.jpg');
+  if (bytesEnSlot2 != null) {
+    when(() => ref2.getData(any())).thenAnswer((_) async => bytesEnSlot2);
+  }
   when(() => storage.ref(any())).thenAnswer((invocation) {
     final path = invocation.positionalArguments[0] as String;
     return path.contains('foto1.jpg') ? ref1 : ref2;
@@ -117,104 +167,339 @@ void main() {
       repo = RescatesRepository(db: firestore);
     });
 
-    test('misRescates solo devuelve los del uid y del CreatorRole pedidos', () async {
-      const uid = 'user-1';
-      await firestore.collection('rescates').add({
-        'nombre': 'Henry', 'rescatistaId': uid, 'creadoPor': 'rescatista',
-      });
-      await firestore.collection('rescates').add({
-        'nombre': 'Amy', 'rescatistaId': uid, 'creadoPor': 'albergue',
-      });
-      await firestore.collection('rescates').add({
-        'nombre': 'Otro', 'rescatistaId': 'otro-uid', 'creadoPor': 'rescatista',
-      });
+    test(
+      'misRescates solo devuelve los del uid y del CreatorRole pedidos',
+      () async {
+        const uid = 'user-1';
+        await firestore.collection('rescates').add({
+          'nombre': 'Henry',
+          'rescatistaId': uid,
+          'creadoPor': 'rescatista',
+        });
+        await firestore.collection('rescates').add({
+          'nombre': 'Amy',
+          'rescatistaId': uid,
+          'creadoPor': 'albergue',
+        });
+        await firestore.collection('rescates').add({
+          'nombre': 'Otro',
+          'rescatistaId': 'otro-uid',
+          'creadoPor': 'rescatista',
+        });
 
-      final soloRescatista = await repo
-          .misRescates(uid: uid, role: CreatorRole.rescatista)
-          .first;
-      expect(soloRescatista.docs.length, 1);
-      expect(soloRescatista.docs.first['nombre'], 'Henry');
+        final soloRescatista = await repo
+            .misRescates(uid: uid, role: CreatorRole.rescatista)
+            .first;
+        expect(soloRescatista.docs.length, 1);
+        expect(soloRescatista.docs.first['nombre'], 'Henry');
 
-      final soloAlbergue = await repo
-          .misRescates(uid: uid, role: CreatorRole.albergue)
-          .first;
-      expect(soloAlbergue.docs.length, 1);
-      expect(soloAlbergue.docs.first['nombre'], 'Amy');
-    });
+        final soloAlbergue = await repo
+            .misRescates(uid: uid, role: CreatorRole.albergue)
+            .first;
+        expect(soloAlbergue.docs.length, 1);
+        expect(soloAlbergue.docs.first['nombre'], 'Amy');
+      },
+    );
 
-    test('crear() guarda rescatistaId y creadoPor a partir de los parámetros, no de los datos', () async {
-      final ref = await repo.crear(
-        uid: 'user-2',
-        role: CreatorRole.albergue,
-        datos: {'nombre': 'Toby'},
-      );
-      final doc = await ref.get();
-      expect(doc['rescatistaId'], 'user-2');
-      expect(doc['creadoPor'], 'albergue');
-      expect(doc['nombre'], 'Toby');
-    });
+    test(
+      'misRescates con estadoAdopcion solo cuenta animales en ese estado ahora mismo — '
+      'no solicitudes aprobadas alguna vez (perfil_rescatista_screen.dart usaba eso antes: '
+      'contaba también hogares de paso aprobados, y nunca bajaba cuando terminaban)',
+      () async {
+        const uid = 'user-adoptados';
+        await firestore.collection('rescates').add({
+          'nombre': 'Firu',
+          'rescatistaId': uid,
+          'creadoPor': 'rescatista',
+          'estadoAdopcion': 'Adoptado',
+        });
+        await firestore.collection('rescates').add({
+          'nombre': 'Sarita',
+          'rescatistaId': uid,
+          'creadoPor': 'rescatista',
+          'estadoAdopcion': 'Hogar de paso',
+        });
+        await firestore.collection('rescates').add({
+          'nombre': 'Toby',
+          'rescatistaId': uid,
+          'creadoPor': 'rescatista',
+          'estadoAdopcion': 'Rescatado',
+        });
 
-    test('existeNombre() true si el mismo uid y el mismo rol ya tienen un animal con ese '
-        'nombre (sin importar mayúsculas ni espacios)', () async {
-      await repo.crear(uid: 'user-4', role: CreatorRole.rescatista, datos: {'nombre': 'Blanquito'});
-      expect(await repo.existeNombre(uid: 'user-4', nombre: 'blanquito', role: CreatorRole.rescatista), true);
-      expect(await repo.existeNombre(uid: 'user-4', nombre: '  Blanquito  ', role: CreatorRole.rescatista), true);
-    });
+        final adoptados = await repo
+            .misRescates(
+              uid: uid,
+              role: CreatorRole.rescatista,
+              estadoAdopcion: 'Adoptado',
+            )
+            .first;
+        expect(adoptados.docs.length, 1);
+        expect(adoptados.docs.first['nombre'], 'Firu');
+      },
+    );
 
-    test('existeNombre() NO cruza CreatorRole a propósito — una cuenta con rol de '
-        'rescatista Y de albergue son "dos negocios" distintos para este aviso; publicar '
-        'el mismo nombre en cada uno por separado no es necesariamente un error (decisión '
-        'de producto, ver comentario en existeNombre)', () async {
-      await repo.crear(uid: 'user-5', role: CreatorRole.rescatista, datos: {'nombre': 'Richard'});
-      expect(await repo.existeNombre(uid: 'user-5', nombre: 'Richard', role: CreatorRole.albergue), false);
-      expect(await repo.existeNombre(uid: 'user-5', nombre: 'Richard', role: CreatorRole.rescatista), true);
-    });
+    test(
+      'crear() guarda rescatistaId y creadoPor a partir de los parámetros, no de los datos',
+      () async {
+        final ref = await repo.crear(
+          uid: 'user-2',
+          role: CreatorRole.albergue,
+          datos: {'nombre': 'Toby'},
+        );
+        final doc = await ref.get();
+        expect(doc['rescatistaId'], 'user-2');
+        expect(doc['creadoPor'], 'albergue');
+        expect(doc['nombre'], 'Toby');
+      },
+    );
+
+    test(
+      'existeNombre() true si el mismo uid y el mismo rol ya tienen un animal con ese '
+      'nombre (sin importar mayúsculas ni espacios)',
+      () async {
+        await repo.crear(
+          uid: 'user-4',
+          role: CreatorRole.rescatista,
+          datos: {'nombre': 'Blanquito'},
+        );
+        expect(
+          await repo.existeNombre(
+            uid: 'user-4',
+            nombre: 'blanquito',
+            role: CreatorRole.rescatista,
+          ),
+          true,
+        );
+        expect(
+          await repo.existeNombre(
+            uid: 'user-4',
+            nombre: '  Blanquito  ',
+            role: CreatorRole.rescatista,
+          ),
+          true,
+        );
+      },
+    );
+
+    test(
+      'existeNombre() NO cruza CreatorRole a propósito — una cuenta con rol de '
+      'rescatista Y de albergue son "dos negocios" distintos para este aviso; publicar '
+      'el mismo nombre en cada uno por separado no es necesariamente un error (decisión '
+      'de producto, ver comentario en existeNombre)',
+      () async {
+        await repo.crear(
+          uid: 'user-5',
+          role: CreatorRole.rescatista,
+          datos: {'nombre': 'Richard'},
+        );
+        expect(
+          await repo.existeNombre(
+            uid: 'user-5',
+            nombre: 'Richard',
+            role: CreatorRole.albergue,
+          ),
+          false,
+        );
+        expect(
+          await repo.existeNombre(
+            uid: 'user-5',
+            nombre: 'Richard',
+            role: CreatorRole.rescatista,
+          ),
+          true,
+        );
+      },
+    );
 
     test('existeNombre() false para otro uid o un nombre distinto', () async {
-      await repo.crear(uid: 'user-6', role: CreatorRole.rescatista, datos: {'nombre': 'Blanquito'});
-      expect(await repo.existeNombre(uid: 'otro-uid', nombre: 'Blanquito', role: CreatorRole.rescatista), false);
-      expect(await repo.existeNombre(uid: 'user-6', nombre: 'Firulais', role: CreatorRole.rescatista), false);
+      await repo.crear(
+        uid: 'user-6',
+        role: CreatorRole.rescatista,
+        datos: {'nombre': 'Blanquito'},
+      );
+      expect(
+        await repo.existeNombre(
+          uid: 'otro-uid',
+          nombre: 'Blanquito',
+          role: CreatorRole.rescatista,
+        ),
+        false,
+      );
+      expect(
+        await repo.existeNombre(
+          uid: 'user-6',
+          nombre: 'Firulais',
+          role: CreatorRole.rescatista,
+        ),
+        false,
+      );
     });
 
-    test('existeNombre() false para nombre vacío — no cuenta como duplicado entre '
-        'animales sin nombre', () async {
-      await repo.crear(uid: 'user-7', role: CreatorRole.rescatista, datos: {'nombre': ''});
-      expect(await repo.existeNombre(uid: 'user-7', nombre: '', role: CreatorRole.rescatista), false);
-      expect(await repo.existeNombre(uid: 'user-7', nombre: '   ', role: CreatorRole.rescatista), false);
-    });
+    test(
+      'existeNombre() false para nombre vacío — no cuenta como duplicado entre '
+      'animales sin nombre',
+      () async {
+        await repo.crear(
+          uid: 'user-7',
+          role: CreatorRole.rescatista,
+          datos: {'nombre': ''},
+        );
+        expect(
+          await repo.existeNombre(
+            uid: 'user-7',
+            nombre: '',
+            role: CreatorRole.rescatista,
+          ),
+          false,
+        );
+        expect(
+          await repo.existeNombre(
+            uid: 'user-7',
+            nombre: '   ',
+            role: CreatorRole.rescatista,
+          ),
+          false,
+        );
+      },
+    );
 
-    test('existeNombre() con especie: false si el nombre y el rol coinciden pero la especie '
-        'no — un "Richard" perro no debería chocar con un "Richard" gato del mismo rol', () async {
-      await repo.crear(uid: 'user-8', role: CreatorRole.rescatista,
-          datos: {'nombre': 'Richard', 'especie': 'Perro'});
-      expect(await repo.existeNombre(uid: 'user-8', nombre: 'Richard', role: CreatorRole.rescatista, especie: 'Gato'), false);
-      expect(await repo.existeNombre(uid: 'user-8', nombre: 'Richard', role: CreatorRole.rescatista, especie: 'Perro'), true);
-    });
+    test(
+      'existeNombre() con especie: false si el nombre y el rol coinciden pero la especie '
+      'no — un "Richard" perro no debería chocar con un "Richard" gato del mismo rol',
+      () async {
+        await repo.crear(
+          uid: 'user-8',
+          role: CreatorRole.rescatista,
+          datos: {'nombre': 'Richard', 'especie': 'Perro'},
+        );
+        expect(
+          await repo.existeNombre(
+            uid: 'user-8',
+            nombre: 'Richard',
+            role: CreatorRole.rescatista,
+            especie: 'Gato',
+          ),
+          false,
+        );
+        expect(
+          await repo.existeNombre(
+            uid: 'user-8',
+            nombre: 'Richard',
+            role: CreatorRole.rescatista,
+            especie: 'Perro',
+          ),
+          true,
+        );
+      },
+    );
 
-    test('existeNombre() sin especie (null) sigue comparando solo por nombre + rol, '
-        'para no romper a los llamadores que todavía no la pasan', () async {
-      await repo.crear(uid: 'user-9', role: CreatorRole.rescatista,
-          datos: {'nombre': 'Richard', 'especie': 'Perro'});
-      expect(await repo.existeNombre(uid: 'user-9', nombre: 'Richard', role: CreatorRole.rescatista), true);
-    });
+    test(
+      'existeNombre() sin especie (null) sigue comparando solo por nombre + rol, '
+      'para no romper a los llamadores que todavía no la pasan',
+      () async {
+        await repo.crear(
+          uid: 'user-9',
+          role: CreatorRole.rescatista,
+          datos: {'nombre': 'Richard', 'especie': 'Perro'},
+        );
+        expect(
+          await repo.existeNombre(
+            uid: 'user-9',
+            nombre: 'Richard',
+            role: CreatorRole.rescatista,
+          ),
+          true,
+        );
+      },
+    );
 
-    test('buscarDuplicado() devuelve el DOCUMENTO (no solo bool) del animal '
-        'existente — para poder ofrecer "Ver ficha existente" en vez de '
-        'solo cancelar/continuar a ciegas sobre cuál es el otro animal', () async {
-      final ref = await repo.crear(uid: 'user-10', role: CreatorRole.rescatista,
-          datos: {'nombre': 'Firulais', 'especie': 'Perro'});
-      final encontrado = await repo.buscarDuplicado(
-          uid: 'user-10', nombre: 'firulais', role: CreatorRole.rescatista, especie: 'Perro');
-      expect(encontrado, isNotNull);
-      expect(encontrado!.id, ref.id);
-      expect(encontrado.data()['nombre'], 'Firulais');
-    });
+    test(
+      'buscarDuplicado() devuelve el DOCUMENTO (no solo bool) del animal '
+      'existente — para poder ofrecer "Ver ficha existente" en vez de '
+      'solo cancelar/continuar a ciegas sobre cuál es el otro animal',
+      () async {
+        final ref = await repo.crear(
+          uid: 'user-10',
+          role: CreatorRole.rescatista,
+          datos: {'nombre': 'Firulais', 'especie': 'Perro'},
+        );
+        final encontrado = await repo.buscarDuplicado(
+          uid: 'user-10',
+          nombre: 'firulais',
+          role: CreatorRole.rescatista,
+          especie: 'Perro',
+        );
+        expect(encontrado, isNotNull);
+        expect(encontrado!.id, ref.id);
+        expect(encontrado.data()['nombre'], 'Firulais');
+      },
+    );
 
     test('buscarDuplicado() null si no hay ningún cruce', () async {
       expect(
-        await repo.buscarDuplicado(uid: 'user-11', nombre: 'Nadie', role: CreatorRole.rescatista),
+        await repo.buscarDuplicado(
+          uid: 'user-11',
+          nombre: 'Nadie',
+          role: CreatorRole.rescatista,
+        ),
         isNull,
       );
+    });
+
+    test('crear() guarda nombreBusqueda normalizado (minúsculas, sin espacios '
+        'de más) — buscarDuplicado() filtra por ese campo del lado del '
+        'servidor en vez de traer todos los animales del rol y comparar acá, '
+        'así que sin este campo dejaría de encontrar cualquier duplicado. '
+        'Hallazgo real de Eliza: publicar tardaba cada vez más con una cuenta '
+        'de pruebas que ya tenía muchos animales publicados', () async {
+      final ref = await repo.crear(
+        uid: 'user-12',
+        role: CreatorRole.rescatista,
+        datos: {'nombre': '  Luna  '},
+      );
+      final doc = await ref.get();
+      expect(doc['nombreBusqueda'], 'luna');
+    });
+
+    test(
+      'actualizar() mantiene nombreBusqueda sincronizado si la actualización '
+      'cambia el nombre — sin esto, renombrar un animal ya publicado lo '
+      'dejaría invisible para buscarDuplicado() bajo el nombre nuevo',
+      () async {
+        final ref = await repo.crear(
+          uid: 'user-13',
+          role: CreatorRole.rescatista,
+          datos: {'nombre': 'Firulais'},
+        );
+        await repo.actualizar(ref.id, {'nombre': 'Rocky'});
+
+        final encontrado = await repo.buscarDuplicado(
+          uid: 'user-13',
+          nombre: 'rocky',
+          role: CreatorRole.rescatista,
+        );
+        expect(encontrado?.id, ref.id);
+
+        final yaNoEsFirulais = await repo.buscarDuplicado(
+          uid: 'user-13',
+          nombre: 'firulais',
+          role: CreatorRole.rescatista,
+        );
+        expect(yaNoEsFirulais, isNull);
+      },
+    );
+
+    test('actualizar() que no toca el nombre no pisa nombreBusqueda', () async {
+      final ref = await repo.crear(
+        uid: 'user-14',
+        role: CreatorRole.rescatista,
+        datos: {'nombre': 'Firulais'},
+      );
+      await repo.actualizar(ref.id, {'estadoAdopcion': 'Adoptado'});
+
+      final doc = await ref.get();
+      expect(doc['nombreBusqueda'], 'firulais');
+      expect(doc['estadoAdopcion'], 'Adoptado');
     });
 
     test('existeNombre() si el servidor falla (canal reconectando tras modo '
@@ -228,50 +513,73 @@ void main() {
       final query = MockQuery();
       final snapshotCache = MockQuerySnapshot();
       when(() => db.collection('rescates')).thenReturn(col);
-      when(() => col.where(any(), isEqualTo: any(named: 'isEqualTo')))
-          .thenReturn(query);
-      when(() => query.where(any(), isEqualTo: any(named: 'isEqualTo')))
-          .thenReturn(query);
+      when(
+        () => col.where(any(), isEqualTo: any(named: 'isEqualTo')),
+      ).thenReturn(query);
+      when(
+        () => query.where(any(), isEqualTo: any(named: 'isEqualTo')),
+      ).thenReturn(query);
       when(() => query.get()).thenThrow(
-          FirebaseException(plugin: 'cloud_firestore', code: 'unavailable'));
+        FirebaseException(plugin: 'cloud_firestore', code: 'unavailable'),
+      );
       // Solo el pedido explícito a la caché local responde.
-      when(() => query.get(any(
-              that: isA<GetOptions>()
-                  .having((o) => o.source, 'source', Source.cache))))
-          .thenAnswer((_) async => snapshotCache);
+      when(
+        () => query.get(
+          any(
+            that: isA<GetOptions>().having(
+              (o) => o.source,
+              'source',
+              Source.cache,
+            ),
+          ),
+        ),
+      ).thenAnswer((_) async => snapshotCache);
       when(() => snapshotCache.docs).thenReturn([]);
 
       final repoConMock = RescatesRepository(db: db);
       expect(
         await repoConMock.existeNombre(
-            uid: 'u1', nombre: 'Richard', role: CreatorRole.rescatista),
+          uid: 'u1',
+          nombre: 'Richard',
+          role: CreatorRole.rescatista,
+        ),
         false,
       );
     });
 
-    test('existeNombre() si hasta la caché local falla devuelve false en vez '
-        'de propagar — es un aviso de cortesía, no una barrera: mejor '
-        'publicar sin el aviso de duplicados que bloquear la publicación', () async {
-      final db = MockFirebaseFirestore();
-      final col = MockCollectionReference();
-      final query = MockQuery();
-      when(() => db.collection('rescates')).thenReturn(col);
-      when(() => col.where(any(), isEqualTo: any(named: 'isEqualTo')))
-          .thenReturn(query);
-      when(() => query.where(any(), isEqualTo: any(named: 'isEqualTo')))
-          .thenReturn(query);
-      when(() => query.get()).thenThrow(
-          FirebaseException(plugin: 'cloud_firestore', code: 'unavailable'));
-      when(() => query.get(any())).thenThrow(
-          FirebaseException(plugin: 'cloud_firestore', code: 'unavailable'));
+    test(
+      'existeNombre() si hasta la caché local falla devuelve false en vez '
+      'de propagar — es un aviso de cortesía, no una barrera: mejor '
+      'publicar sin el aviso de duplicados que bloquear la publicación',
+      () async {
+        final db = MockFirebaseFirestore();
+        final col = MockCollectionReference();
+        final query = MockQuery();
+        when(() => db.collection('rescates')).thenReturn(col);
+        when(
+          () => col.where(any(), isEqualTo: any(named: 'isEqualTo')),
+        ).thenReturn(query);
+        when(
+          () => query.where(any(), isEqualTo: any(named: 'isEqualTo')),
+        ).thenReturn(query);
+        when(() => query.get()).thenThrow(
+          FirebaseException(plugin: 'cloud_firestore', code: 'unavailable'),
+        );
+        when(() => query.get(any())).thenThrow(
+          FirebaseException(plugin: 'cloud_firestore', code: 'unavailable'),
+        );
 
-      final repoConMock = RescatesRepository(db: db);
-      expect(
-        await repoConMock.existeNombre(
-            uid: 'u1', nombre: 'Richard', role: CreatorRole.rescatista),
-        false,
-      );
-    });
+        final repoConMock = RescatesRepository(db: db);
+        expect(
+          await repoConMock.existeNombre(
+            uid: 'u1',
+            nombre: 'Richard',
+            role: CreatorRole.rescatista,
+          ),
+          false,
+        );
+      },
+    );
 
     test('nuevoRef() genera un id sin escribir nada todavía', () async {
       final ref = repo.nuevoRef();
@@ -280,22 +588,25 @@ void main() {
       expect(doc.exists, false);
     });
 
-    test('crear() con ref: usa exactamente ese id en vez de generar uno nuevo — '
-        'así el llamador conoce el id ANTES de que la escritura termine, y puede '
-        'hacer rollback aunque un timeout se dispare antes de que el create '
-        'realmente resuelva (Future.timeout no cancela la escritura original)', () async {
-      final miRef = repo.nuevoRef();
-      final ref = await repo.crear(
-        ref: miRef,
-        uid: 'user-3',
-        role: CreatorRole.rescatista,
-        datos: {'nombre': 'Amy'},
-      );
-      expect(ref.id, miRef.id);
-      final doc = await miRef.get();
-      expect(doc['nombre'], 'Amy');
-      expect(doc['rescatistaId'], 'user-3');
-    });
+    test(
+      'crear() con ref: usa exactamente ese id en vez de generar uno nuevo — '
+      'así el llamador conoce el id ANTES de que la escritura termine, y puede '
+      'hacer rollback aunque un timeout se dispare antes de que el create '
+      'realmente resuelva (Future.timeout no cancela la escritura original)',
+      () async {
+        final miRef = repo.nuevoRef();
+        final ref = await repo.crear(
+          ref: miRef,
+          uid: 'user-3',
+          role: CreatorRole.rescatista,
+          datos: {'nombre': 'Amy'},
+        );
+        expect(ref.id, miRef.id);
+        final doc = await miRef.get();
+        expect(doc['nombre'], 'Amy');
+        expect(doc['rescatistaId'], 'user-3');
+      },
+    );
 
     test('eliminar() borra el documento', () async {
       final ref = await firestore.collection('rescates').add({'nombre': 'X'});
@@ -321,12 +632,17 @@ void main() {
         when(() => db.collection('rescates')).thenReturn(col);
         when(() => col.doc('r1')).thenReturn(ref);
         when(() => auth.currentUser).thenReturn(user);
-        when(() => user.getIdToken(true)).thenAnswer((_) async => 'token-nuevo');
+        when(
+          () => user.getIdToken(true),
+        ).thenAnswer((_) async => 'token-nuevo');
         var intentos = 0;
         when(() => ref.delete()).thenAnswer((_) {
           intentos++;
           if (intentos == 1) {
-            throw FirebaseException(plugin: 'cloud_firestore', code: 'permission-denied');
+            throw FirebaseException(
+              plugin: 'cloud_firestore',
+              code: 'permission-denied',
+            );
           }
           return Future.value();
         });
@@ -338,26 +654,35 @@ void main() {
         verify(() => user.getIdToken(true)).called(1);
       });
 
-      test('si sigue fallando con permission-denied incluso con el token '
-          'renovado, propaga la excepción — no es un reintento infinito', () async {
-        final db = MockFirebaseFirestore();
-        final col = MockCollectionReference();
-        final ref = MockDocumentReference();
-        final auth = MockFirebaseAuth();
-        final user = MockUser();
-        when(() => db.collection('rescates')).thenReturn(col);
-        when(() => col.doc('r1')).thenReturn(ref);
-        when(() => auth.currentUser).thenReturn(user);
-        when(() => user.getIdToken(true)).thenAnswer((_) async => 'token-nuevo');
-        when(() => ref.delete()).thenThrow(
-            FirebaseException(plugin: 'cloud_firestore', code: 'permission-denied'));
+      test(
+        'si sigue fallando con permission-denied incluso con el token '
+        'renovado, propaga la excepción — no es un reintento infinito',
+        () async {
+          final db = MockFirebaseFirestore();
+          final col = MockCollectionReference();
+          final ref = MockDocumentReference();
+          final auth = MockFirebaseAuth();
+          final user = MockUser();
+          when(() => db.collection('rescates')).thenReturn(col);
+          when(() => col.doc('r1')).thenReturn(ref);
+          when(() => auth.currentUser).thenReturn(user);
+          when(
+            () => user.getIdToken(true),
+          ).thenAnswer((_) async => 'token-nuevo');
+          when(() => ref.delete()).thenThrow(
+            FirebaseException(
+              plugin: 'cloud_firestore',
+              code: 'permission-denied',
+            ),
+          );
 
-        final repoConMock = RescatesRepository(db: db, auth: auth);
-        await expectLater(
-          repoConMock.eliminar('r1'),
-          throwsA(isA<FirebaseException>()),
-        );
-      });
+          final repoConMock = RescatesRepository(db: db, auth: auth);
+          await expectLater(
+            repoConMock.eliminar('r1'),
+            throwsA(isA<FirebaseException>()),
+          );
+        },
+      );
 
       test('en cualquier OTRO error (ej. sin conexión) NO reintenta ni '
           'toca el token — el refresh forzado es específico del caso '
@@ -369,7 +694,8 @@ void main() {
         when(() => db.collection('rescates')).thenReturn(col);
         when(() => col.doc('r1')).thenReturn(ref);
         when(() => ref.delete()).thenThrow(
-            FirebaseException(plugin: 'cloud_firestore', code: 'unavailable'));
+          FirebaseException(plugin: 'cloud_firestore', code: 'unavailable'),
+        );
 
         final repoConMock = RescatesRepository(db: db, auth: auth);
         await expectLater(
@@ -392,13 +718,21 @@ void main() {
         when(() => user.uid).thenReturn('rescatista-1');
         final repoConAuth = RescatesRepository(db: firestore, auth: auth);
 
-        final ref = await firestore.collection('rescates').add({'nombre': 'Firulais'});
-        await firestore.collection('favoritos').add({
-          'rescateId': ref.id, 'adoptanteId': 'adoptante-1', 'rescatistaId': 'rescatista-1',
+        final ref = await firestore.collection('rescates').add({
+          'nombre': 'Firulais',
         });
-        final otroRef = await firestore.collection('rescates').add({'nombre': 'Otro'});
         await firestore.collection('favoritos').add({
-          'rescateId': otroRef.id, 'adoptanteId': 'adoptante-2', 'rescatistaId': 'rescatista-1',
+          'rescateId': ref.id,
+          'adoptanteId': 'adoptante-1',
+          'rescatistaId': 'rescatista-1',
+        });
+        final otroRef = await firestore.collection('rescates').add({
+          'nombre': 'Otro',
+        });
+        await firestore.collection('favoritos').add({
+          'rescateId': otroRef.id,
+          'adoptanteId': 'adoptante-2',
+          'rescatistaId': 'rescatista-1',
         });
 
         await repoConAuth.eliminar(ref.id);
@@ -422,9 +756,13 @@ void main() {
         when(() => user.uid).thenReturn('rescatista-1');
         final repoConAuth = RescatesRepository(db: firestore, auth: auth);
 
-        final ref = await firestore.collection('rescates').add({'nombre': 'Firulais'});
+        final ref = await firestore.collection('rescates').add({
+          'nombre': 'Firulais',
+        });
         await firestore.collection('favoritos').add({
-          'rescateId': ref.id, 'adoptanteId': 'adoptante-1', 'rescatistaId': 'otro-rescatista',
+          'rescateId': ref.id,
+          'adoptanteId': 'adoptante-1',
+          'rescatistaId': 'otro-rescatista',
         });
 
         await repoConAuth.eliminar(ref.id);
@@ -463,12 +801,18 @@ void main() {
         when(() => auth.currentUser).thenReturn(user);
         when(() => user.uid).thenReturn('rescatista-1');
         when(() => db.collection('favoritos')).thenReturn(favoritosCol);
-        when(() => favoritosCol.where('rescateId', isEqualTo: 'r1')).thenReturn(query1);
-        when(() => query1.where('rescatistaId', isEqualTo: 'rescatista-1')).thenReturn(query2);
+        when(
+          () => favoritosCol.where('rescateId', isEqualTo: 'r1'),
+        ).thenReturn(query1);
+        when(
+          () => query1.where('rescatistaId', isEqualTo: 'rescatista-1'),
+        ).thenReturn(query2);
         // La consulta de favoritos nunca resuelve — simula una limpieza de
         // fondo lenta/colgada. Si eliminar() todavía la esperara, este test
         // se colgaría hasta el timeout de 2s de acá abajo.
-        when(() => query2.get()).thenAnswer((_) => Completer<QuerySnapshot<Map<String, dynamic>>>().future);
+        when(() => query2.get()).thenAnswer(
+          (_) => Completer<QuerySnapshot<Map<String, dynamic>>>().future,
+        );
 
         final repoConMock = RescatesRepository(db: db, auth: auth);
         await expectLater(
@@ -482,7 +826,11 @@ void main() {
         'termina fallando de verdad', () {
       test('permission-denied → sugiere renovar sesión, no jerga técnica', () {
         final msg = RescatesRepository.mensajeErrorEliminar(
-            FirebaseException(plugin: 'cloud_firestore', code: 'permission-denied'));
+          FirebaseException(
+            plugin: 'cloud_firestore',
+            code: 'permission-denied',
+          ),
+        );
         expect(msg, contains('sesión'));
         expect(msg, isNot(contains('cloud_firestore')));
       });
@@ -490,11 +838,14 @@ void main() {
       test('cualquier otro error → mensaje genérico de conexión', () {
         expect(
           RescatesRepository.mensajeErrorEliminar(
-              FirebaseException(plugin: 'cloud_firestore', code: 'unavailable')),
+            FirebaseException(plugin: 'cloud_firestore', code: 'unavailable'),
+          ),
           contains('conexión'),
         );
-        expect(RescatesRepository.mensajeErrorEliminar(Exception('cualquier cosa')),
-            contains('conexión'));
+        expect(
+          RescatesRepository.mensajeErrorEliminar(Exception('cualquier cosa')),
+          contains('conexión'),
+        );
       });
 
       // Nota histórica: acá hubo un test para un mensaje especial de
@@ -509,35 +860,54 @@ void main() {
       // mensaje?").
     });
 
-    test('actualizarPorNombre encuentra el rescate por nombre+dueño y lo actualiza '
-        '(fallback para solicitudes viejas sin rescateId guardado)', () async {
-      final ref = await firestore.collection('rescates').add({
-        'nombre': 'Firulais', 'rescatistaId': 'r1', 'estadoAdopcion': 'Rescatado',
-      });
-      await repo.actualizarPorNombre(
-        nombre: 'Firulais', rescatistaId: 'r1', cambios: {'estadoAdopcion': 'Adoptado'},
-      );
-      expect((await ref.get())['estadoAdopcion'], 'Adoptado');
-    });
+    test(
+      'actualizarPorNombre encuentra el rescate por nombre+dueño y lo actualiza '
+      '(fallback para solicitudes viejas sin rescateId guardado)',
+      () async {
+        final ref = await firestore.collection('rescates').add({
+          'nombre': 'Firulais',
+          'rescatistaId': 'r1',
+          'estadoAdopcion': 'Rescatado',
+        });
+        await repo.actualizarPorNombre(
+          nombre: 'Firulais',
+          rescatistaId: 'r1',
+          cambios: {'estadoAdopcion': 'Adoptado'},
+        );
+        expect((await ref.get())['estadoAdopcion'], 'Adoptado');
+      },
+    );
 
-    test('actualizarPorNombre no confunde animales con el mismo nombre de otro dueño', () async {
-      final deOtro = await firestore.collection('rescates').add({
-        'nombre': 'Firulais', 'rescatistaId': 'otro-uid', 'estadoAdopcion': 'Rescatado',
-      });
-      await repo.actualizarPorNombre(
-        nombre: 'Firulais', rescatistaId: 'r1', cambios: {'estadoAdopcion': 'Adoptado'},
-      );
-      expect((await deOtro.get())['estadoAdopcion'], 'Rescatado');
-    });
+    test(
+      'actualizarPorNombre no confunde animales con el mismo nombre de otro dueño',
+      () async {
+        final deOtro = await firestore.collection('rescates').add({
+          'nombre': 'Firulais',
+          'rescatistaId': 'otro-uid',
+          'estadoAdopcion': 'Rescatado',
+        });
+        await repo.actualizarPorNombre(
+          nombre: 'Firulais',
+          rescatistaId: 'r1',
+          cambios: {'estadoAdopcion': 'Adoptado'},
+        );
+        expect((await deOtro.get())['estadoAdopcion'], 'Rescatado');
+      },
+    );
 
-    test('actualizarPorNombre no rompe si no encuentra ningún rescate', () async {
-      await expectLater(
-        repo.actualizarPorNombre(
-          nombre: 'NoExiste', rescatistaId: 'r1', cambios: {'estadoAdopcion': 'Adoptado'},
-        ),
-        completes,
-      );
-    });
+    test(
+      'actualizarPorNombre no rompe si no encuentra ningún rescate',
+      () async {
+        await expectLater(
+          repo.actualizarPorNombre(
+            nombre: 'NoExiste',
+            rescatistaId: 'r1',
+            cambios: {'estadoAdopcion': 'Adoptado'},
+          ),
+          completes,
+        );
+      },
+    );
 
     // Reemplaza el test viejo "feedPublico no excluye rescates sin
     // creadoEn" — CAMBIO DE DISEÑO a propósito (ver el comentario largo en
@@ -557,96 +927,136 @@ void main() {
     // comentario en feedPublico(), no un test que esta librería no puede
     // validar de verdad.
 
-    test('feedPublico ordena por creadoEn (más viejo primero) y respeta el límite pedido', () async {
-      final base = DateTime(2026, 1, 1);
-      for (var i = 0; i < 5; i++) {
-        await firestore.collection('rescates').add({
-          'nombre': 'Animal$i',
-          'creadoEn': Timestamp.fromDate(base.add(Duration(minutes: i))),
-        });
-      }
-      final docs = await repo.feedPublico(limite: 3).first;
-      expect(docs.docs.map((d) => d['nombre']), ['Animal0', 'Animal1', 'Animal2']);
-    });
+    test(
+      'feedPublico ordena por creadoEn (más viejo primero) y respeta el límite pedido',
+      () async {
+        final base = DateTime(2026, 1, 1);
+        for (var i = 0; i < 5; i++) {
+          await firestore.collection('rescates').add({
+            'nombre': 'Animal$i',
+            'creadoEn': Timestamp.fromDate(base.add(Duration(minutes: i))),
+          });
+        }
+        final docs = await repo.feedPublico(limite: 3).first;
+        expect(docs.docs.map((d) => d['nombre']), [
+          'Animal0',
+          'Animal1',
+          'Animal2',
+        ]);
+      },
+    );
 
-    test('feedPageSize es 50 (tamaño de tanda por defecto del feed paginado)', () {
-      expect(RescatesRepository.feedPageSize, 50);
-    });
+    test(
+      'feedPageSize es 50 (tamaño de tanda por defecto del feed paginado)',
+      () {
+        expect(RescatesRepository.feedPageSize, 50);
+      },
+    );
 
     group('cambiarEstadoAdopcion', () {
       test('guarda el nuevo estado y los campos extra juntos', () async {
         final ref = await firestore.collection('rescates').add({
-          'nombre': 'Henry', 'estadoAdopcion': 'Rescatado',
+          'nombre': 'Henry',
+          'estadoAdopcion': 'Rescatado',
         });
-        await repo.cambiarEstadoAdopcion(ref.id, 'Adoptado', extra: {'fechaAdopcion': Timestamp.now()});
+        await repo.cambiarEstadoAdopcion(
+          ref.id,
+          'Adoptado',
+          extra: {'fechaAdopcion': Timestamp.now()},
+        );
         final doc = await ref.get();
         expect(doc['estadoAdopcion'], 'Adoptado');
         expect(doc['fechaAdopcion'], isNotNull);
       });
 
-      test('vuelve a "Rescatado" limpia adoptanteIdEnProceso (bug real: quedaba pegado y la '
-          'próxima solicitud aprobada se autorrechazaba para siempre, creyendo que el animal '
-          'seguía en proceso con el adoptante viejo)', () async {
-        final ref = await firestore.collection('rescates').add({
-          'nombre': 'Henry', 'estadoAdopcion': 'En proceso de adopción',
-          'adoptanteIdEnProceso': 'adoptante-viejo',
-        });
-        await repo.cambiarEstadoAdopcion(ref.id, 'Rescatado');
-        final doc = await ref.get();
-        expect(doc['estadoAdopcion'], 'Rescatado');
-        expect(doc.data()!.containsKey('adoptanteIdEnProceso'), false);
-      });
+      test(
+        'vuelve a "Rescatado" limpia adoptanteIdEnProceso (bug real: quedaba pegado y la '
+        'próxima solicitud aprobada se autorrechazaba para siempre, creyendo que el animal '
+        'seguía en proceso con el adoptante viejo)',
+        () async {
+          final ref = await firestore.collection('rescates').add({
+            'nombre': 'Henry',
+            'estadoAdopcion': 'En proceso de adopción',
+            'adoptanteIdEnProceso': 'adoptante-viejo',
+          });
+          await repo.cambiarEstadoAdopcion(ref.id, 'Rescatado');
+          final doc = await ref.get();
+          expect(doc['estadoAdopcion'], 'Rescatado');
+          expect(doc.data()!.containsKey('adoptanteIdEnProceso'), false);
+        },
+      );
 
       test('"Regresado" también limpia adoptanteIdEnProceso', () async {
         final ref = await firestore.collection('rescates').add({
-          'nombre': 'Henry', 'estadoAdopcion': 'Hogar de paso',
+          'nombre': 'Henry',
+          'estadoAdopcion': 'Hogar de paso',
           'adoptanteIdEnProceso': 'adoptante-viejo',
         });
-        await repo.cambiarEstadoAdopcion(ref.id, 'Regresado', extra: {'motivoRegreso': 'Mudanza'});
+        await repo.cambiarEstadoAdopcion(
+          ref.id,
+          'Regresado',
+          extra: {'motivoRegreso': 'Mudanza'},
+        );
         final doc = await ref.get();
         expect(doc['estadoAdopcion'], 'Regresado');
         expect(doc['motivoRegreso'], 'Mudanza');
         expect(doc.data()!.containsKey('adoptanteIdEnProceso'), false);
       });
 
-      test('"Adoptado" NO limpia adoptanteIdEnProceso (es el adoptante real, se conserva)', () async {
-        final ref = await firestore.collection('rescates').add({
-          'nombre': 'Henry', 'estadoAdopcion': 'En proceso de adopción',
-          'adoptanteIdEnProceso': 'el-adoptante',
-        });
-        await repo.cambiarEstadoAdopcion(ref.id, 'Adoptado');
-        final doc = await ref.get();
-        expect(doc['adoptanteIdEnProceso'], 'el-adoptante');
-      });
-    });
-
-    test('misRescatesPorEstado filtra por uid, CreatorRole y estado a la vez', () async {
-      const uid = 'user-3';
-      await firestore.collection('rescates').add({
-        'nombre': 'Henry', 'rescatistaId': uid, 'creadoPor': 'rescatista',
-        'estadoAdopcion': 'Hogar de paso',
-      });
-      await firestore.collection('rescates').add({
-        'nombre': 'Amy', 'rescatistaId': uid, 'creadoPor': 'albergue',
-        'estadoAdopcion': 'Hogar de paso',
-      });
-      await firestore.collection('rescates').add({
-        'nombre': 'Toby', 'rescatistaId': uid, 'creadoPor': 'rescatista',
-        'estadoAdopcion': 'Rescatado',
-      });
-
-      final result = await repo.misRescatesPorEstado(
-        uid: uid, role: CreatorRole.rescatista, estadoAdopcion: 'Hogar de paso',
+      test(
+        '"Adoptado" NO limpia adoptanteIdEnProceso (es el adoptante real, se conserva)',
+        () async {
+          final ref = await firestore.collection('rescates').add({
+            'nombre': 'Henry',
+            'estadoAdopcion': 'En proceso de adopción',
+            'adoptanteIdEnProceso': 'el-adoptante',
+          });
+          await repo.cambiarEstadoAdopcion(ref.id, 'Adoptado');
+          final doc = await ref.get();
+          expect(doc['adoptanteIdEnProceso'], 'el-adoptante');
+        },
       );
-      expect(result.docs.length, 1);
-      expect(result.docs.first['nombre'], 'Henry');
     });
+
+    test(
+      'misRescatesPorEstado filtra por uid, CreatorRole y estado a la vez',
+      () async {
+        const uid = 'user-3';
+        await firestore.collection('rescates').add({
+          'nombre': 'Henry',
+          'rescatistaId': uid,
+          'creadoPor': 'rescatista',
+          'estadoAdopcion': 'Hogar de paso',
+        });
+        await firestore.collection('rescates').add({
+          'nombre': 'Amy',
+          'rescatistaId': uid,
+          'creadoPor': 'albergue',
+          'estadoAdopcion': 'Hogar de paso',
+        });
+        await firestore.collection('rescates').add({
+          'nombre': 'Toby',
+          'rescatistaId': uid,
+          'creadoPor': 'rescatista',
+          'estadoAdopcion': 'Rescatado',
+        });
+
+        final result = await repo.misRescatesPorEstado(
+          uid: uid,
+          role: CreatorRole.rescatista,
+          estadoAdopcion: 'Hogar de paso',
+        );
+        expect(result.docs.length, 1);
+        expect(result.docs.first['nombre'], 'Henry');
+      },
+    );
 
     group('obtener() — lectura puntual usada para chequear el estado real '
         'de un animal justo antes de eliminarlo', () {
       test('devuelve el documento con sus datos actuales', () async {
         final ref = await firestore.collection('rescates').add({
-          'nombre': 'Sarita', 'estadoAdopcion': 'Hogar de paso',
+          'nombre': 'Sarita',
+          'estadoAdopcion': 'Hogar de paso',
         });
 
         final doc = await repo.obtener(ref.id);
@@ -656,20 +1066,24 @@ void main() {
         expect(doc.data()?['estadoAdopcion'], 'Hogar de paso');
       });
 
-      test('un id que no existe devuelve un doc sin datos, no una excepción — '
-          'el llamador decide qué hacer (bloquear el borrado por las dudas)', () async {
-        final doc = await repo.obtener('no-existe');
+      test(
+        'un id que no existe devuelve un doc sin datos, no una excepción — '
+        'el llamador decide qué hacer (bloquear el borrado por las dudas)',
+        () async {
+          final doc = await repo.obtener('no-existe');
 
-        expect(doc.exists, isFalse);
-        expect(doc.data(), isNull);
-      });
+          expect(doc.exists, isFalse);
+          expect(doc.data(), isNull);
+        },
+      );
     });
 
     group('porId() — stream de un rescate, para pantallas que reaccionan en '
         'vivo a cambios de estado (chat_screen.dart)', () {
       test('emite el documento con sus datos actuales', () async {
         final ref = await firestore.collection('rescates').add({
-          'nombre': 'Toby', 'estadoAdopcion': 'Rescatado',
+          'nombre': 'Toby',
+          'estadoAdopcion': 'Rescatado',
         });
 
         final doc = await repo.porId(ref.id).first;
@@ -680,12 +1094,16 @@ void main() {
 
       test('vuelve a emitir cuando el documento cambia', () async {
         final ref = await firestore.collection('rescates').add({
-          'nombre': 'Toby', 'estadoAdopcion': 'Rescatado',
+          'nombre': 'Toby',
+          'estadoAdopcion': 'Rescatado',
         });
 
         final emisiones = <String?>[];
-        final sub = repo.porId(ref.id).listen((doc) =>
-            emisiones.add(doc.data()?['estadoAdopcion'] as String?));
+        final sub = repo
+            .porId(ref.id)
+            .listen(
+              (doc) => emisiones.add(doc.data()?['estadoAdopcion'] as String?),
+            );
 
         await Future.delayed(Duration.zero);
         await ref.update({'estadoAdopcion': 'Adoptado'});
@@ -700,22 +1118,28 @@ void main() {
         'rescateId guardado (mismo criterio que actualizarPorNombre)', () {
       test('encuentra el rescate por nombre + rescatistaId', () async {
         await firestore.collection('rescates').add({
-          'nombre': 'Rocky', 'rescatistaId': 'user-9', 'estadoAdopcion': 'Rescatado',
+          'nombre': 'Rocky',
+          'rescatistaId': 'user-9',
+          'estadoAdopcion': 'Rescatado',
         });
         await firestore.collection('rescates').add({
-          'nombre': 'Rocky', 'rescatistaId': 'otro-uid', 'estadoAdopcion': 'Adoptado',
+          'nombre': 'Rocky',
+          'rescatistaId': 'otro-uid',
+          'estadoAdopcion': 'Adoptado',
         });
 
-        final snap = await repo.porNombreYDueno(
-            rescatistaId: 'user-9', nombre: 'Rocky').first;
+        final snap = await repo
+            .porNombreYDueno(rescatistaId: 'user-9', nombre: 'Rocky')
+            .first;
 
         expect(snap.docs.length, 1);
         expect(snap.docs.first['rescatistaId'], 'user-9');
       });
 
       test('vacío si no hay ningún rescate con ese nombre+dueño', () async {
-        final snap = await repo.porNombreYDueno(
-            rescatistaId: 'user-9', nombre: 'Sin publicar').first;
+        final snap = await repo
+            .porNombreYDueno(rescatistaId: 'user-9', nombre: 'Sin publicar')
+            .first;
 
         expect(snap.docs, isEmpty);
       });
@@ -724,155 +1148,271 @@ void main() {
     group('bloqueoParaEliminar() — centraliza los 3 chequeos que antes '
         'estaban duplicados en mis_rescates_screen.dart y '
         'editar_rescate_screen.dart', () {
-      test('null (se puede eliminar) si está Rescatado, sin pendientes y sin aprobada previa', () async {
-        final ref = await firestore.collection('rescates').add({
-          'nombre': 'Toby', 'estadoAdopcion': 'Rescatado',
-        });
+      test(
+        'null (se puede eliminar) si está Rescatado, sin pendientes y sin aprobada previa',
+        () async {
+          final ref = await firestore.collection('rescates').add({
+            'nombre': 'Toby',
+            'estadoAdopcion': 'Rescatado',
+          });
 
-        final bloqueo = await repo.bloqueoParaEliminar(rescateId: ref.id, nombre: 'Toby', rescatistaId: 'alb-1');
+          final bloqueo = await repo.bloqueoParaEliminar(
+            rescateId: ref.id,
+            nombre: 'Toby',
+            rescatistaId: 'alb-1',
+          );
 
-        expect(bloqueo, isNull);
-      });
+          expect(bloqueo, isNull);
+        },
+      );
 
-      test('bloquea con el mensaje de solicitud pendiente, incluso si el estado ya es Rescatado', () async {
-        final ref = await firestore.collection('rescates').add({
-          'nombre': 'Toby', 'estadoAdopcion': 'Rescatado',
-        });
-        await firestore.collection('solicitudes').add({
-          'rescateId': ref.id, 'rescatistaId': 'alb-1', 'estado': 'pendiente',
-        });
+      test(
+        'bloquea con el mensaje de solicitud pendiente, incluso si el estado ya es Rescatado',
+        () async {
+          final ref = await firestore.collection('rescates').add({
+            'nombre': 'Toby',
+            'estadoAdopcion': 'Rescatado',
+          });
+          await firestore.collection('solicitudes').add({
+            'rescateId': ref.id,
+            'rescatistaId': 'alb-1',
+            'estado': 'pendiente',
+          });
 
-        final bloqueo = await repo.bloqueoParaEliminar(rescateId: ref.id, nombre: 'Toby', rescatistaId: 'alb-1');
+          final bloqueo = await repo.bloqueoParaEliminar(
+            rescateId: ref.id,
+            nombre: 'Toby',
+            rescatistaId: 'alb-1',
+          );
 
-        expect(bloqueo?.$1, 'No se puede eliminar todavía');
-        expect(bloqueo?.$2, contains('solicitud esperando respuesta'));
-      });
+          expect(bloqueo?.$1, 'No se puede eliminar todavía');
+          expect(bloqueo?.$2, contains('solicitud esperando respuesta'));
+        },
+      );
 
-      test('bloquea con el mensaje del estado actual si no está Rescatado', () async {
-        final ref = await firestore.collection('rescates').add({
-          'nombre': 'Toby', 'estadoAdopcion': 'Hogar de paso',
-        });
+      test(
+        'bloquea con el mensaje del estado actual si no está Rescatado',
+        () async {
+          final ref = await firestore.collection('rescates').add({
+            'nombre': 'Toby',
+            'estadoAdopcion': 'Hogar de paso',
+          });
 
-        final bloqueo = await repo.bloqueoParaEliminar(rescateId: ref.id, nombre: 'Toby', rescatistaId: 'alb-1');
+          final bloqueo = await repo.bloqueoParaEliminar(
+            rescateId: ref.id,
+            nombre: 'Toby',
+            rescatistaId: 'alb-1',
+          );
 
-        expect(bloqueo, RescatesRepository.mensajeBloqueoEliminar('Hogar de paso', 'Toby'));
-      });
+          expect(
+            bloqueo,
+            RescatesRepository.mensajeBloqueoEliminar('Hogar de paso', 'Toby'),
+          );
+        },
+      );
 
-      test('bloquea como registro permanente si tuvo una solicitud aprobada alguna vez, '
-          'aunque el estado ACTUAL ya esté de vuelta en Rescatado (revertido a mano)', () async {
-        final ref = await firestore.collection('rescates').add({
-          'nombre': 'Toby', 'estadoAdopcion': 'Rescatado',
-        });
-        await firestore.collection('solicitudes').add({
-          'rescateId': ref.id, 'rescatistaId': 'alb-1', 'estado': 'aprobada',
-        });
+      test(
+        'bloquea como registro permanente si tuvo una solicitud aprobada alguna vez, '
+        'aunque el estado ACTUAL ya esté de vuelta en Rescatado (revertido a mano)',
+        () async {
+          final ref = await firestore.collection('rescates').add({
+            'nombre': 'Toby',
+            'estadoAdopcion': 'Rescatado',
+          });
+          await firestore.collection('solicitudes').add({
+            'rescateId': ref.id,
+            'rescatistaId': 'alb-1',
+            'estado': 'aprobada',
+          });
 
-        final bloqueo = await repo.bloqueoParaEliminar(rescateId: ref.id, nombre: 'Toby', rescatistaId: 'alb-1');
+          final bloqueo = await repo.bloqueoParaEliminar(
+            rescateId: ref.id,
+            nombre: 'Toby',
+            rescatistaId: 'alb-1',
+          );
 
-        expect(bloqueo?.$1, 'No se puede eliminar');
-        expect(bloqueo?.$2, contains('registro permanente'));
-      });
+          expect(bloqueo?.$1, 'No se puede eliminar');
+          expect(bloqueo?.$2, contains('registro permanente'));
+        },
+      );
 
-      test('la solicitud pendiente gana sobre "tuvo aprobada" cuando las dos aplican — '
-          'mismo orden de prioridad que la versión secuencial que reemplaza', () async {
-        final ref = await firestore.collection('rescates').add({
-          'nombre': 'Toby', 'estadoAdopcion': 'Rescatado',
-        });
-        await firestore.collection('solicitudes').add({
-          'rescateId': ref.id, 'rescatistaId': 'alb-1', 'estado': 'aprobada',
-        });
-        await firestore.collection('solicitudes').add({
-          'rescateId': ref.id, 'rescatistaId': 'alb-1', 'estado': 'pendiente',
-        });
+      test(
+        'la solicitud pendiente gana sobre "tuvo aprobada" cuando las dos aplican — '
+        'mismo orden de prioridad que la versión secuencial que reemplaza',
+        () async {
+          final ref = await firestore.collection('rescates').add({
+            'nombre': 'Toby',
+            'estadoAdopcion': 'Rescatado',
+          });
+          await firestore.collection('solicitudes').add({
+            'rescateId': ref.id,
+            'rescatistaId': 'alb-1',
+            'estado': 'aprobada',
+          });
+          await firestore.collection('solicitudes').add({
+            'rescateId': ref.id,
+            'rescatistaId': 'alb-1',
+            'estado': 'pendiente',
+          });
 
-        final bloqueo = await repo.bloqueoParaEliminar(rescateId: ref.id, nombre: 'Toby', rescatistaId: 'alb-1');
+          final bloqueo = await repo.bloqueoParaEliminar(
+            rescateId: ref.id,
+            nombre: 'Toby',
+            rescatistaId: 'alb-1',
+          );
 
-        expect(bloqueo?.$2, contains('solicitud esperando respuesta'));
-      });
+          expect(bloqueo?.$2, contains('solicitud esperando respuesta'));
+        },
+      );
     });
 
     group('nombresExistentes()', () {
-      test('devuelve "nombre_especie" en minúscula de todo lo publicado por ese uid+role', () async {
-        await repo.crear(uid: 'user-10', role: CreatorRole.rescatista,
-            datos: {'nombre': 'Blanquito', 'especie': 'Perro'});
-        await repo.crear(uid: 'user-10', role: CreatorRole.rescatista,
-            datos: {'nombre': '  Orejas  ', 'especie': 'Gato'});
+      test(
+        'devuelve "nombre_especie" en minúscula de todo lo publicado por ese uid+role',
+        () async {
+          await repo.crear(
+            uid: 'user-10',
+            role: CreatorRole.rescatista,
+            datos: {'nombre': 'Blanquito', 'especie': 'Perro'},
+          );
+          await repo.crear(
+            uid: 'user-10',
+            role: CreatorRole.rescatista,
+            datos: {'nombre': '  Orejas  ', 'especie': 'Gato'},
+          );
 
-        final nombres = await repo.nombresExistentes(uid: 'user-10', role: CreatorRole.rescatista);
+          final nombres = await repo.nombresExistentes(
+            uid: 'user-10',
+            role: CreatorRole.rescatista,
+          );
 
-        expect(nombres, {'blanquito_Perro', 'orejas_Gato'},
-            reason: 'nombre en minúscula y sin espacios, especie tal cual');
-      });
+          expect(
+            nombres,
+            {'blanquito_Perro', 'orejas_Gato'},
+            reason: 'nombre en minúscula y sin espacios, especie tal cual',
+          );
+        },
+      );
 
-      test('no mezcla animales de OTRO uid, ni del mismo uid con otro CreatorRole — '
-          'mismo criterio que existeNombre()', () async {
-        await repo.crear(uid: 'user-11', role: CreatorRole.rescatista,
-            datos: {'nombre': 'Rocky', 'especie': 'Perro'});
-        await repo.crear(uid: 'user-11', role: CreatorRole.albergue,
-            datos: {'nombre': 'Otro', 'especie': 'Perro'});
-        await repo.crear(uid: 'otro-uid', role: CreatorRole.rescatista,
-            datos: {'nombre': 'Ajeno', 'especie': 'Perro'});
+      test(
+        'no mezcla animales de OTRO uid, ni del mismo uid con otro CreatorRole — '
+        'mismo criterio que existeNombre()',
+        () async {
+          await repo.crear(
+            uid: 'user-11',
+            role: CreatorRole.rescatista,
+            datos: {'nombre': 'Rocky', 'especie': 'Perro'},
+          );
+          await repo.crear(
+            uid: 'user-11',
+            role: CreatorRole.albergue,
+            datos: {'nombre': 'Otro', 'especie': 'Perro'},
+          );
+          await repo.crear(
+            uid: 'otro-uid',
+            role: CreatorRole.rescatista,
+            datos: {'nombre': 'Ajeno', 'especie': 'Perro'},
+          );
 
-        final nombres = await repo.nombresExistentes(uid: 'user-11', role: CreatorRole.rescatista);
+          final nombres = await repo.nombresExistentes(
+            uid: 'user-11',
+            role: CreatorRole.rescatista,
+          );
 
-        expect(nombres, {'rocky_Perro'});
-      });
+          expect(nombres, {'rocky_Perro'});
+        },
+      );
 
       test('vacío si esa cuenta+rol nunca publicó nada', () async {
-        final nombres = await repo.nombresExistentes(uid: 'sin-publicar', role: CreatorRole.rescatista);
+        final nombres = await repo.nombresExistentes(
+          uid: 'sin-publicar',
+          role: CreatorRole.rescatista,
+        );
 
         expect(nombres, isEmpty);
       });
 
-      test('tolera fallas transitorias igual que existeNombre() — reintenta desde caché en '
-          'vez de romper todo el chequeo de duplicados de un lote', () async {
-        final db = MockFirebaseFirestore();
-        final col = MockCollectionReference();
-        final query = MockQuery();
-        final snapshotCache = MockQuerySnapshot();
-        when(() => db.collection('rescates')).thenReturn(col);
-        when(() => col.where(any(), isEqualTo: any(named: 'isEqualTo'))).thenReturn(query);
-        when(() => query.where(any(), isEqualTo: any(named: 'isEqualTo'))).thenReturn(query);
-        when(() => query.get()).thenThrow(
-            FirebaseException(plugin: 'cloud_firestore', code: 'unavailable'));
-        when(() => query.get(any())).thenThrow(
-            FirebaseException(plugin: 'cloud_firestore', code: 'unavailable'));
-        when(() => snapshotCache.docs).thenReturn([]);
+      test(
+        'tolera fallas transitorias igual que existeNombre() — reintenta desde caché en '
+        'vez de romper todo el chequeo de duplicados de un lote',
+        () async {
+          final db = MockFirebaseFirestore();
+          final col = MockCollectionReference();
+          final query = MockQuery();
+          final snapshotCache = MockQuerySnapshot();
+          when(() => db.collection('rescates')).thenReturn(col);
+          when(
+            () => col.where(any(), isEqualTo: any(named: 'isEqualTo')),
+          ).thenReturn(query);
+          when(
+            () => query.where(any(), isEqualTo: any(named: 'isEqualTo')),
+          ).thenReturn(query);
+          when(() => query.get()).thenThrow(
+            FirebaseException(plugin: 'cloud_firestore', code: 'unavailable'),
+          );
+          when(() => query.get(any())).thenThrow(
+            FirebaseException(plugin: 'cloud_firestore', code: 'unavailable'),
+          );
+          when(() => snapshotCache.docs).thenReturn([]);
 
-        final repoConMock = RescatesRepository(db: db);
-        final nombres = await repoConMock.nombresExistentes(uid: 'x', role: CreatorRole.rescatista);
+          final repoConMock = RescatesRepository(db: db);
+          final nombres = await repoConMock.nombresExistentes(
+            uid: 'x',
+            role: CreatorRole.rescatista,
+          );
 
-        expect(nombres, isEmpty, reason: 'ni el servidor ni la caché respondieron — vacío, no una excepción');
-      });
+          expect(
+            nombres,
+            isEmpty,
+            reason:
+                'ni el servidor ni la caché respondieron — vacío, no una excepción',
+          );
+        },
+      );
     });
 
     group('porIds()', () {
-      test('devuelve solo los rescates cuyo id está en la lista pedida', () async {
-        final ref1 = await firestore.collection('rescates').add({'nombre': 'Uno'});
-        await firestore.collection('rescates').add({'nombre': 'Dos'});
-        final ref3 = await firestore.collection('rescates').add({'nombre': 'Tres'});
+      test(
+        'devuelve solo los rescates cuyo id está en la lista pedida',
+        () async {
+          final ref1 = await firestore.collection('rescates').add({
+            'nombre': 'Uno',
+          });
+          await firestore.collection('rescates').add({'nombre': 'Dos'});
+          final ref3 = await firestore.collection('rescates').add({
+            'nombre': 'Tres',
+          });
 
-        final snap = await repo.porIds([ref1.id, ref3.id]).first;
+          final snap = await repo.porIds([ref1.id, ref3.id]).first;
 
-        expect(snap.docs.map((d) => d['nombre']).toSet(), {'Uno', 'Tres'});
-      });
+          expect(snap.docs.map((d) => d['nombre']).toSet(), {'Uno', 'Tres'});
+        },
+      );
 
-      test('lista vacía no rompe nada — devuelve un stream sin resultados, sin '
-          'consultarle nada a Firestore (whereIn no acepta una lista vacía)', () async {
-        final eventos = await repo.porIds([]).toList();
+      test(
+        'lista vacía no rompe nada — devuelve un stream sin resultados, sin '
+        'consultarle nada a Firestore (whereIn no acepta una lista vacía)',
+        () async {
+          final eventos = await repo.porIds([]).toList();
 
-        expect(eventos, isEmpty);
-      });
+          expect(eventos, isEmpty);
+        },
+      );
 
-      test('un id que no existe en absoluto simplemente no aparece en el resultado '
-          '(no rompe, no tira error)', () async {
-        final ref1 = await firestore.collection('rescates').add({'nombre': 'Real'});
+      test(
+        'un id que no existe en absoluto simplemente no aparece en el resultado '
+        '(no rompe, no tira error)',
+        () async {
+          final ref1 = await firestore.collection('rescates').add({
+            'nombre': 'Real',
+          });
 
-        final snap = await repo.porIds([ref1.id, 'este-id-no-existe']).first;
+          final snap = await repo.porIds([ref1.id, 'este-id-no-existe']).first;
 
-        expect(snap.docs.length, 1);
-        expect(snap.docs.first['nombre'], 'Real');
-      });
+          expect(snap.docs.length, 1);
+          expect(snap.docs.first['nombre'], 'Real');
+        },
+      );
     });
 
     group('publicarConFotos() — crea el rescate y sube su(s) foto(s), con '
@@ -886,38 +1426,61 @@ void main() {
           'fotoUrl2, foto2Fallo=false', () async {
         final mocks = _storageControlada(foto1Falla: false, foto2Falla: false);
         final repoConFotos = RescatesRepository(
-            db: firestore, fotosRepo: RescateFotosRepository(storage: mocks.storage));
+          db: firestore,
+          fotosRepo: RescateFotosRepository(storage: mocks.storage),
+        );
 
         final resultado = await repoConFotos.publicarConFotos(
-          uid: 'user-20', role: CreatorRole.rescatista,
+          uid: 'user-20',
+          role: CreatorRole.rescatista,
           datos: {'nombre': 'Toby'},
-          fotos: [Uint8List.fromList([1, 2, 3])],
+          fotos: [
+            Uint8List.fromList([1, 2, 3]),
+          ],
         );
 
         expect(resultado.foto2Fallo, false);
-        final doc = await firestore.collection('rescates').doc(resultado.rescateId).get();
+        final doc = await firestore
+            .collection('rescates')
+            .doc(resultado.rescateId)
+            .get();
         expect(doc.exists, true);
         expect(doc['nombre'], 'Toby');
         expect(doc['fotoUrl'], 'https://fake.storage/foto1.jpg');
         expect(doc.data()!.containsKey('fotoUrl2'), false);
       });
 
-      test('camino feliz con 2 fotos: crea el rescate con fotoUrl Y fotoUrl2', () async {
-        final mocks = _storageControlada(foto1Falla: false, foto2Falla: false);
-        final repoConFotos = RescatesRepository(
-            db: firestore, fotosRepo: RescateFotosRepository(storage: mocks.storage));
+      test(
+        'camino feliz con 2 fotos: crea el rescate con fotoUrl Y fotoUrl2',
+        () async {
+          final mocks = _storageControlada(
+            foto1Falla: false,
+            foto2Falla: false,
+          );
+          final repoConFotos = RescatesRepository(
+            db: firestore,
+            fotosRepo: RescateFotosRepository(storage: mocks.storage),
+          );
 
-        final resultado = await repoConFotos.publicarConFotos(
-          uid: 'user-21', role: CreatorRole.rescatista,
-          datos: {'nombre': 'Amy'},
-          fotos: [Uint8List.fromList([1]), Uint8List.fromList([2])],
-        );
+          final resultado = await repoConFotos.publicarConFotos(
+            uid: 'user-21',
+            role: CreatorRole.rescatista,
+            datos: {'nombre': 'Amy'},
+            fotos: [
+              Uint8List.fromList([1]),
+              Uint8List.fromList([2]),
+            ],
+          );
 
-        expect(resultado.foto2Fallo, false);
-        final doc = await firestore.collection('rescates').doc(resultado.rescateId).get();
-        expect(doc['fotoUrl'], 'https://fake.storage/foto1.jpg');
-        expect(doc['fotoUrl2'], 'https://fake.storage/foto2.jpg');
-      });
+          expect(resultado.foto2Fallo, false);
+          final doc = await firestore
+              .collection('rescates')
+              .doc(resultado.rescateId)
+              .get();
+          expect(doc['fotoUrl'], 'https://fake.storage/foto1.jpg');
+          expect(doc['fotoUrl2'], 'https://fake.storage/foto2.jpg');
+        },
+      );
 
       test('si falla la foto OBLIGATORIA (slot 1): rollback completo — el '
           'rescate NO queda creado, se relanza la excepción, y se intenta '
@@ -925,20 +1488,30 @@ void main() {
           'paralelo antes de que la falla de slot 1 se propagara)', () async {
         final mocks = _storageControlada(foto1Falla: true, foto2Falla: false);
         final repoConFotos = RescatesRepository(
-            db: firestore, fotosRepo: RescateFotosRepository(storage: mocks.storage));
+          db: firestore,
+          fotosRepo: RescateFotosRepository(storage: mocks.storage),
+        );
 
         await expectLater(
           repoConFotos.publicarConFotos(
-            uid: 'user-22', role: CreatorRole.rescatista,
+            uid: 'user-22',
+            role: CreatorRole.rescatista,
             datos: {'nombre': 'Firulais'},
-            fotos: [Uint8List.fromList([1]), Uint8List.fromList([2])],
+            fotos: [
+              Uint8List.fromList([1]),
+              Uint8List.fromList([2]),
+            ],
           ),
           throwsA(anything),
         );
 
         final todos = await firestore.collection('rescates').get();
-        expect(todos.docs.where((d) => d['nombre'] == 'Firulais'), isEmpty,
-            reason: 'el rescate fantasma sin foto es justo el bug real que este rollback evita');
+        expect(
+          todos.docs.where((d) => d['nombre'] == 'Firulais'),
+          isEmpty,
+          reason:
+              'el rescate fantasma sin foto es justo el bug real que este rollback evita',
+        );
         verify(() => mocks.ref2.delete()).called(1);
       });
 
@@ -946,18 +1519,31 @@ void main() {
           'se publica igual con la foto 1, y foto2Fallo queda en true', () async {
         final mocks = _storageControlada(foto1Falla: false, foto2Falla: true);
         final repoConFotos = RescatesRepository(
-            db: firestore, fotosRepo: RescateFotosRepository(storage: mocks.storage));
+          db: firestore,
+          fotosRepo: RescateFotosRepository(storage: mocks.storage),
+        );
 
         final resultado = await repoConFotos.publicarConFotos(
-          uid: 'user-23', role: CreatorRole.rescatista,
+          uid: 'user-23',
+          role: CreatorRole.rescatista,
           datos: {'nombre': 'Molly'},
-          fotos: [Uint8List.fromList([1]), Uint8List.fromList([2])],
+          fotos: [
+            Uint8List.fromList([1]),
+            Uint8List.fromList([2]),
+          ],
         );
 
         expect(resultado.foto2Fallo, true);
-        final doc = await firestore.collection('rescates').doc(resultado.rescateId).get();
-        expect(doc.exists, true,
-            reason: 'a diferencia de la foto obligatoria, esta falla NO debe deshacer la publicación');
+        final doc = await firestore
+            .collection('rescates')
+            .doc(resultado.rescateId)
+            .get();
+        expect(
+          doc.exists,
+          true,
+          reason:
+              'a diferencia de la foto obligatoria, esta falla NO debe deshacer la publicación',
+        );
         expect(doc['fotoUrl'], 'https://fake.storage/foto1.jpg');
         expect(doc.data()!.containsKey('fotoUrl2'), false);
       });
@@ -966,13 +1552,18 @@ void main() {
           'igual, sin ninguna foto 2 de la cual preocuparse', () async {
         final mocks = _storageControlada(foto1Falla: true, foto2Falla: false);
         final repoConFotos = RescatesRepository(
-            db: firestore, fotosRepo: RescateFotosRepository(storage: mocks.storage));
+          db: firestore,
+          fotosRepo: RescateFotosRepository(storage: mocks.storage),
+        );
 
         await expectLater(
           repoConFotos.publicarConFotos(
-            uid: 'user-24', role: CreatorRole.rescatista,
+            uid: 'user-24',
+            role: CreatorRole.rescatista,
             datos: {'nombre': 'Solito'},
-            fotos: [Uint8List.fromList([1])],
+            fotos: [
+              Uint8List.fromList([1]),
+            ],
           ),
           throwsA(anything),
         );
@@ -980,6 +1571,263 @@ void main() {
         final todos = await firestore.collection('rescates').get();
         expect(todos.docs.where((d) => d['nombre'] == 'Solito'), isEmpty);
       });
+    });
+  });
+
+  group('RescatesRepository.nombreDe() — mismo criterio de "sin nombre" en '
+      'toda la app. Bug real que esto arregla: "nombre" queda \'\' (vacío), '
+      'no null, cuando se publica sin nombre — un simple "as String? ?? '
+      '...\'" no lo detecta nunca. Estaba mal en dos avisos automáticos '
+      '(el mensaje salía "Venció el hogar de paso de " sin nada después) '
+      'mientras el feed sí lo hacía bien: 3 copias de la misma decisión, '
+      'ahora una sola', () {
+    test('con nombre cargado, lo devuelve tal cual', () {
+      expect(RescatesRepository.nombreDe({'nombre': 'Luna'}), 'Luna');
+    });
+
+    test('con el campo vacío (el caso real: se publicó sin nombre) cae al '
+        'valor por defecto — esto es lo que fallaba con "?? \'valor\'"', () {
+      expect(RescatesRepository.nombreDe({'nombre': ''}), 'Sin nombre');
+    });
+
+    test('con el campo ausente (dato legado, ni siquiera se guardó vacío) '
+        'también cae al valor por defecto', () {
+      expect(RescatesRepository.nombreDe({}), 'Sin nombre');
+    });
+
+    test('el valor por defecto se puede personalizar por llamador — los '
+        'avisos de vencimiento usan "Sin nombre" igual que el feed, pero '
+        'nada obliga a que sea siempre ese texto', () {
+      expect(
+        RescatesRepository.nombreDe({'nombre': ''}, siVacio: 'El animal'),
+        'El animal',
+      );
+    });
+  });
+
+  group('vocabulario del dominio — los valores válidos de cada campo de un '
+      'rescate. Estaban declarados por separado en subir_rescate_screen.dart '
+      'y editar_rescate_screen.dart y YA se habían desincronizado: publicar '
+      'ofrecía Herido/Crítico y editar no, así que esos animales se abrían '
+      'en Editar sin ningún estado marcado y tocar otra opción pisaba el '
+      'valor real (hallazgo de auditoría)', () {
+    test('estados incluye TODOS los valores que alguna de las dos pantallas '
+        'ofrecía antes — sacar uno dejaría a los animales que ya lo tienen '
+        'guardado sin poder mostrarlo, que es el mismo bug al revés', () {
+      // Unión de las dos listas que había, ninguno se puede perder.
+      for (final v in [
+        'Sano',
+        'Herido',
+        'En tratamiento',
+        'Crítico',
+        'Recuperado',
+      ]) {
+        expect(
+          RescatesRepository.estados,
+          contains(v),
+          reason: '$v se guardó alguna vez desde una de las dos pantallas',
+        );
+      }
+    });
+
+    test('ninguna lista tiene valores repetidos — un duplicado dibujaría dos '
+        'chips idénticos, los dos marcados a la vez', () {
+      final listas = {
+        'especies': RescatesRepository.especies,
+        'estados': RescatesRepository.estados,
+        'urgencias': RescatesRepository.urgencias,
+        'energias': RescatesRepository.energias,
+        'tamanos': RescatesRepository.tamanos,
+        'edades': RescatesRepository.edades,
+        'generos': RescatesRepository.generos,
+        'siNo': RescatesRepository.siNo,
+        'salud': RescatesRepository.salud,
+        'tiposRaza': RescatesRepository.tiposRaza,
+      };
+      listas.forEach((nombre, lista) {
+        expect(lista.toSet().length, lista.length, reason: '$nombre repite');
+      });
+    });
+
+    test('los valores por defecto que usan las pantallas al crear o al abrir '
+        'un animal sin ese campo SÍ existen en su lista — si no, el chip '
+        'arrancaría sin nada marcado desde el primer momento', () {
+      expect(RescatesRepository.especies, contains('Perro'));
+      expect(RescatesRepository.estados, contains('Sano'));
+      expect(RescatesRepository.urgencias, contains('Media'));
+      expect(RescatesRepository.urgencias, contains('Alta'));
+      expect(RescatesRepository.energias, contains('Tranquilo'));
+      expect(RescatesRepository.tamanos, contains('Mediano'));
+      expect(RescatesRepository.edades, contains('Cachorro'));
+      expect(RescatesRepository.generos, contains('No sé'));
+      expect(RescatesRepository.salud, contains('Aún no lo sé'));
+      expect(RescatesRepository.tiposRaza, contains('Criolla'));
+    });
+  });
+
+  group('resolverFotosAlEditar() — la coreografía de Storage al EDITAR: la '
+      'única parte que BORRA y MUEVE archivos, no solo sube. Vivía inline en '
+      'editar_rescate_screen.dart, sin ningún test posible — estos cubren '
+      'los escenarios que antes solo estaban trazados a mano', () {
+    setUpAll(() {
+      registerFallbackValue(Uint8List(0));
+      registerFallbackValue(SettableMetadata());
+    });
+
+    const url1 = 'https://fake.storage/rescates%2Fr1%2Ffoto1.jpg';
+    const url2 = 'https://fake.storage/rescates%2Fr1%2Ffoto2.jpg';
+
+    RescatesRepository conStorage(MockFirebaseStorage storage) =>
+        RescatesRepository(
+          db: FakeFirebaseFirestore(),
+          fotosRepo: RescateFotosRepository(storage: storage),
+        );
+
+    test(
+      'sin tocar nada: devuelve las MISMAS URLs y no toca Storage — '
+      'guardar solo la descripción no debe mover ni borrar una foto',
+      () async {
+        final mocks = _storageParaEditar();
+
+        final r = await conStorage(mocks.storage).resolverFotosAlEditar(
+          rescateId: 'r1',
+          nuevaFoto1: null,
+          nuevaFoto2: null,
+          urlExistente1: url1,
+          urlExistente2: url2,
+        );
+
+        expect(r.fotoUrl, url1);
+        expect(r.fotoUrl2, url2);
+        verifyNever(() => mocks.ref1.delete());
+        verifyNever(() => mocks.ref2.delete());
+        verifyNever(() => mocks.ref1.putData(any(), any()));
+      },
+    );
+
+    test('foto nueva en el slot 1: la sube y conserva la 2 intacta', () async {
+      final mocks = _storageParaEditar();
+
+      final r = await conStorage(mocks.storage).resolverFotosAlEditar(
+        rescateId: 'r1',
+        nuevaFoto1: Uint8List.fromList([9]),
+        nuevaFoto2: null,
+        urlExistente1: url1,
+        urlExistente2: url2,
+      );
+
+      expect(r.fotoUrl, 'https://fake.storage/foto1.jpg');
+      expect(r.fotoUrl2, url2);
+      verify(() => mocks.ref1.putData(any(), any())).called(1);
+      verifyNever(() => mocks.ref2.delete());
+    });
+
+    test(
+      'quitar SOLO la foto 2: borra foto2.jpg y deja la 1 como estaba',
+      () async {
+        final mocks = _storageParaEditar();
+
+        final r = await conStorage(mocks.storage).resolverFotosAlEditar(
+          rescateId: 'r1',
+          nuevaFoto1: null,
+          nuevaFoto2: null,
+          urlExistente1: url1,
+          urlExistente2: null,
+        );
+
+        expect(r.fotoUrl, url1);
+        expect(r.fotoUrl2, isNull);
+        verify(() => mocks.ref2.delete()).called(1);
+        verifyNever(() => mocks.ref1.delete());
+      },
+    );
+
+    test('PROMOCIÓN (el bug de "rarito 2"): al quitar la foto 1 teniendo 2, '
+        'el slot 1 queda apuntando a foto2.jpg — se mueve el ARCHIVO de '
+        'verdad (descarga + re-sube a foto1.jpg + borra el origen), y NO se '
+        'vuelve a borrar foto2.jpg como "slot vacío"', () async {
+      final mocks = _storageParaEditar(bytesEnSlot2: Uint8List.fromList([7]));
+
+      final r = await conStorage(mocks.storage).resolverFotosAlEditar(
+        rescateId: 'r1',
+        nuevaFoto1: null,
+        nuevaFoto2: null,
+        // Lo que deja la pantalla al quitar la foto 1: el slot 1 muestra la
+        // que era la foto 2, y todavía apunta a SU archivo.
+        urlExistente1: url2,
+        urlExistente2: null,
+      );
+
+      // El archivo se movió: fotoUrl ahora apunta a foto1.jpg, no a foto2.
+      expect(r.fotoUrl, 'https://fake.storage/foto1.jpg');
+      expect(r.fotoUrl2, isNull);
+      verify(() => mocks.ref2.getData(any())).called(1);
+      verify(() => mocks.ref1.putData(any(), any())).called(1);
+      // Exactamente UN borrado del origen (el de moverFoto). Si el guard
+      // fallara, resolverSlot(2) borraría de nuevo — inofensivo hoy, pero
+      // señal de que la red de seguridad dejó de funcionar.
+      verify(() => mocks.ref2.delete()).called(1);
+    });
+
+    test('promoción CON una segunda foto nueva en la misma edición: primero '
+        'se mueve (que borra foto2.jpg) y RECIÉN DESPUÉS se sube la nueva a '
+        'ese mismo path — en paralelo se pisarían', () async {
+      final mocks = _storageParaEditar(bytesEnSlot2: Uint8List.fromList([7]));
+
+      final r = await conStorage(mocks.storage).resolverFotosAlEditar(
+        rescateId: 'r1',
+        nuevaFoto1: null,
+        nuevaFoto2: Uint8List.fromList([8]),
+        urlExistente1: url2,
+        urlExistente2: null,
+      );
+
+      expect(r.fotoUrl, 'https://fake.storage/foto1.jpg');
+      expect(r.fotoUrl2, 'https://fake.storage/foto2.jpg');
+      verifyInOrder([
+        () => mocks.ref2.getData(any()), // moverFoto descarga el origen
+        () => mocks.ref2.delete(), // moverFoto borra el origen
+        () => mocks.ref2.putData(any(), any()), // recién ahí sube la nueva
+      ]);
+    });
+
+    test('si el archivo de origen ya no está, moverFoto devuelve null y se '
+        'CONSERVA la URL que había — perder la referencia sería peor que '
+        'dejarla como estaba', () async {
+      // getData devuelve null por defecto en el helper = origen ausente.
+      final mocks = _storageParaEditar();
+
+      final r = await conStorage(mocks.storage).resolverFotosAlEditar(
+        rescateId: 'r1',
+        nuevaFoto1: null,
+        nuevaFoto2: null,
+        urlExistente1: url2,
+        urlExistente2: null,
+      );
+
+      expect(r.fotoUrl, url2, reason: 'se conserva, no se pierde la foto');
+      verifyNever(() => mocks.ref1.putData(any(), any()));
+    });
+
+    test('la red de seguridad: si el slot 1 sube una foto NUEVA mientras su '
+        'URL vieja apuntaba a foto2.jpg (se quitó la 1, se promovió la 2 en '
+        'pantalla, y después se reemplazó esa por otra), foto2.jpg SÍ se '
+        'borra — ya no queda referenciado por nadie', () async {
+      final mocks = _storageParaEditar();
+
+      final r = await conStorage(mocks.storage).resolverFotosAlEditar(
+        rescateId: 'r1',
+        nuevaFoto1: Uint8List.fromList([9]),
+        nuevaFoto2: null,
+        urlExistente1: url2,
+        urlExistente2: null,
+      );
+
+      expect(r.fotoUrl, 'https://fake.storage/foto1.jpg');
+      expect(r.fotoUrl2, isNull);
+      verify(() => mocks.ref2.delete()).called(1);
+      // No hubo promoción: había foto nueva para el slot 1.
+      verifyNever(() => mocks.ref2.getData(any()));
     });
   });
 }

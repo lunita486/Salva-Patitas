@@ -17,9 +17,12 @@ import 'package:salva_patitas/data/auth_helper.dart';
 // el estado expuesto y el contrato del enum que el resto de la app consume.
 void main() {
   group('auth_helper', () {
-    test('hayOperacionDeSesionEnCurso arranca en false (sin ninguna operación real disparada)', () {
-      expect(hayOperacionDeSesionEnCurso, isFalse);
-    });
+    test(
+      'hayOperacionDeSesionEnCurso arranca en false (sin ninguna operación real disparada)',
+      () {
+        expect(hayOperacionDeSesionEnCurso, isFalse);
+      },
+    );
 
     test('ResultadoLogin conserva sus 3 valores esperados — login_screen.dart '
         'depende de un switch exhaustivo sobre estos 3; que alguno cambie de '

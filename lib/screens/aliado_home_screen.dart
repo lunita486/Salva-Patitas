@@ -4,13 +4,18 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme.dart';
+import '../widgets/avatares.dart';
+import '../widgets/cambiar_rol_debug.dart';
+import '../widgets/estado_error_feed.dart';
+import '../widgets/fondo_decorativo.dart';
+import '../widgets/fotos.dart';
+import '../widgets/texto_sin_desborde.dart';
 import '../services/notificaciones_service.dart';
 import '../data/auth_helper.dart';
 import '../data/chats_repository.dart';
 import '../data/firestore_resiliencia.dart';
-import 'adoptante_chats_screen.dart';
-import 'subir_servicio_screen.dart';
-import 'aliado_perfil_screen.dart';
+import 'package:go_router/go_router.dart';
+import '../routing/app_router.dart';
 import 'eliminar_cuenta_dialog.dart';
 
 class AliadoHomeScreen extends StatefulWidget {
@@ -35,32 +40,33 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
   // lugares distintos, cada una con su propio listener): ahora es un solo
   // listener compartido. `late final`: se arman una sola vez, la primera
   // vez que hacen falta. Hallazgo de auditoría de código.
-  late final Stream<DocumentSnapshot> _perfilStream =
-      FirebaseFirestore.instance.collection('usuarios').doc(_uid).snapshots();
-  late final Stream<QuerySnapshot> _serviciosStream = FirebaseFirestore.instance
-      .collection('servicios').where('aliadoId', isEqualTo: _uid).snapshots();
-  late final Stream<QuerySnapshot> _consultasStream = FirebaseFirestore.instance
-      .collection('chats')
-      .where('rescatistaId', isEqualTo: _uid)
-      .where('tipoSolicitud', isEqualTo: 'consulta_aliado')
+  late final Stream<DocumentSnapshot> _perfilStream = FirebaseFirestore.instance
+      .collection('usuarios')
+      .doc(_uid)
       .snapshots();
+  late final Stream<QuerySnapshot> _serviciosStream = FirebaseFirestore.instance
+      .collection('servicios')
+      .where('aliadoId', isEqualTo: _uid)
+      .snapshots();
+  late final Stream<QuerySnapshot> _consultasStream = ChatsRepository()
+      .consultasRecibidas(uid: _uid);
 
   static const _catEmoji = {
     'Baño y peluquería': '🛁',
-    'Veterinaria':       '🩺',
-    'Tienda':            '🛍️',
-    'Adiestramiento':    '🎓',
-    'Transporte':        '🚗',
-    'Otro':              '🐾',
+    'Veterinaria': '🩺',
+    'Tienda': '🛍️',
+    'Adiestramiento': '🎓',
+    'Transporte': '🚗',
+    'Otro': '🐾',
   };
 
   static const _catColor = {
     'Baño y peluquería': Color(0xFF1565C0),
-    'Veterinaria':       Color(0xFFB71C1C),
-    'Tienda':            Color(0xFF6A1B9A),
-    'Adiestramiento':    Color(0xFFF57F17),
-    'Transporte':        Color(0xFFE65100),
-    'Otro':              appTeal,
+    'Veterinaria': Color(0xFFB71C1C),
+    'Tienda': Color(0xFF6A1B9A),
+    'Adiestramiento': Color(0xFFF57F17),
+    'Transporte': Color(0xFFE65100),
+    'Otro': appTeal,
   };
 
   @override
@@ -74,7 +80,7 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
     });
   }
 
-  // El diálogo/escritura viven en mostrarCambiarRolDebug (theme.dart,
+  // El diálogo/escritura viven en mostrarCambiarRolDebug (widgets/cambiar_rol_debug.dart,
   // compartida entre 5 pantallas que antes cada una tenía su propia copia
   // — hallazgo de auditoría de código).
   Future<void> _cambiarRolDebug() => mostrarCambiarRolDebug(context);
@@ -87,12 +93,16 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
         title: const Text('Cerrar sesión'),
         content: const Text('¿Seguro que quieres cerrar sesión?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancelar', style: TextStyle(color: Colors.grey))),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Cerrar sesión',
-                style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600)),
+            child: const Text(
+              'Cerrar sesión',
+              style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600),
+            ),
           ),
         ],
       ),
@@ -100,9 +110,12 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
     if (ok == true) {
       final cerro = await cerrarSesion();
       if (!cerro && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
             backgroundColor: msgError,
-            content: Text('Esperá unos segundos e intentá de nuevo.')));
+            content: Text('Esperá unos segundos e intentá de nuevo.'),
+          ),
+        );
       }
     }
   }
@@ -116,14 +129,25 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
   // UI pero nada se guardaba, sin ningún aviso. Hallazgo de auditoría de
   // código.
   Future<void> _toggleActivo(String docId, bool actual) async {
-    final resultado = await guardarConAviso(() => FirebaseFirestore.instance
-        .collection('servicios').doc(docId).update({'activo': !actual}));
+    final resultado = await guardarConAviso(
+      () => FirebaseFirestore.instance
+          .collection('servicios')
+          .doc(docId)
+          .update({'activo': !actual}),
+    );
     if (!mounted || resultado == ResultadoGuardado.confirmado) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        backgroundColor: resultado == ResultadoGuardado.fallo ? msgError : msgAdvertencia,
-        content: Text(resultado == ResultadoGuardado.fallo
-            ? 'No se pudo guardar. Revisá tu conexión e intentá de nuevo.'
-            : 'Esto está tardando. Se va a guardar solo apenas vuelva la señal.')));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: resultado == ResultadoGuardado.fallo
+            ? msgError
+            : msgAdvertencia,
+        content: Text(
+          resultado == ResultadoGuardado.fallo
+              ? 'No se pudo guardar. Revisá tu conexión e intentá de nuevo.'
+              : 'Esto está tardando. Se va a guardar solo apenas vuelva la señal.',
+        ),
+      ),
+    );
   }
 
   Future<void> _eliminarServicio(String docId) async {
@@ -133,9 +157,15 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
         title: const Text('Eliminar servicio'),
         content: const Text('¿Seguro que querés eliminar este servicio?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Eliminar'),
           ),
@@ -144,13 +174,24 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
     );
     if (ok != true || !context.mounted) return;
     final resultado = await guardarConAviso(
-        () => FirebaseFirestore.instance.collection('servicios').doc(docId).delete());
+      () => FirebaseFirestore.instance
+          .collection('servicios')
+          .doc(docId)
+          .delete(),
+    );
     if (!mounted || resultado == ResultadoGuardado.confirmado) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        backgroundColor: resultado == ResultadoGuardado.fallo ? msgError : msgAdvertencia,
-        content: Text(resultado == ResultadoGuardado.fallo
-            ? 'No se pudo eliminar. Revisá tu conexión e intentá de nuevo.'
-            : 'Esto está tardando. Se va a eliminar solo apenas vuelva la señal.')));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: resultado == ResultadoGuardado.fallo
+            ? msgError
+            : msgAdvertencia,
+        content: Text(
+          resultado == ResultadoGuardado.fallo
+              ? 'No se pudo eliminar. Revisá tu conexión e intentá de nuevo.'
+              : 'Esto está tardando. Se va a eliminar solo apenas vuelva la señal.',
+        ),
+      ),
+    );
   }
 
   String _fmt(int precio) {
@@ -168,39 +209,85 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
     return StreamBuilder<DocumentSnapshot>(
       stream: _perfilStream,
       builder: (context, userSnap) {
-        final data      = userSnap.data?.data() as Map<String, dynamic>? ?? {};
-        final nombre    = data['aliadoNombre'] as String? ?? 'Mi negocio';
-        final tipo      = data['aliadoTipo']   as String? ?? '';
-        final foto      = data['aliadoFotoBase64'] as String?;
-        final iniciales = nombre.trim().split(' ')
-            .take(2).map((w) => w.isNotEmpty ? w[0].toUpperCase() : '').join();
+        final data = userSnap.data?.data() as Map<String, dynamic>? ?? {};
+        final nombre = data['aliadoNombre'] as String? ?? 'Mi negocio';
+        final tipo = data['aliadoTipo'] as String? ?? '';
+        final foto = data['aliadoFotoBase64'] as String?;
+        final iniciales = nombre
+            .trim()
+            .split(' ')
+            .take(2)
+            .map((w) => w.isNotEmpty ? w[0].toUpperCase() : '')
+            .join();
 
-        return Scaffold(
-          backgroundColor: appBg,
-          floatingActionButton: kDebugMode
-              ? FloatingActionButton.small(
-                  heroTag: 'debug_rol',
-                  onPressed: _cambiarRolDebug,
-                  backgroundColor: Colors.purple.shade100,
-                  elevation: 4,
-                  tooltip: 'Cambiar rol (debug)',
-                  child: Icon(Icons.developer_mode, color: Colors.purple.shade700),
-                )
-              : null,
-          bottomNavigationBar: _bottomNav(),
-          body: Stack(children: [
-            const Positioned.fill(child: LeafOverlay()),
-            SafeArea(
-              child: IndexedStack(
-                index: _nav,
+        // Único lugar que calcula "mensajes nuevos" de este aliado — el
+        // panel (_statCard más abajo) y el ícono de Chats de _bottomNav
+        // reciben el mismo número ya calculado en vez de suscribirse cada
+        // uno por su cuenta a _consultasStream y recalcularlo por separado.
+        // Antes cada uno tenía su propio StreamBuilder, y el del panel
+        // aplicaba un filtro (solo chats con vista previa) que el de
+        // _bottomNav no tenía — mismo bug real que ya se encontró y
+        // arregló del lado del rescatista/albergue (home_screen.dart,
+        // ChatsRepository.noLeidosPara): un chat con mensajes sin leer
+        // pero sin vista previa podía contar distinto en el panel que en
+        // el ícono de abajo. `soloConsultas: true` porque esta es la
+        // bandeja propia del aliado — sin eso, una autoconsulta (el aliado
+        // contactándose a sí mismo) haría mirar el campo equivocado.
+        return StreamBuilder<QuerySnapshot>(
+          stream: _consultasStream,
+          builder: (context, chatSnap) {
+            final consultaDocs = chatSnap.data?.docs ?? [];
+            final chatsNuevos = consultaDocs.where((d) {
+              final data = d.data() as Map<String, dynamic>;
+              return ChatsRepository.noLeidosPara(
+                    data,
+                    uid: _uid,
+                    esRescatista: true,
+                    soloConsultas: true,
+                  ) >
+                  0;
+            }).length;
+
+            return Scaffold(
+              backgroundColor: appBg,
+              floatingActionButton: kDebugMode
+                  ? FloatingActionButton.small(
+                      heroTag: 'debug_rol',
+                      onPressed: _cambiarRolDebug,
+                      backgroundColor: Colors.purple.shade100,
+                      elevation: 4,
+                      tooltip: 'Cambiar rol (debug)',
+                      child: Icon(
+                        Icons.developer_mode,
+                        color: Colors.purple.shade700,
+                      ),
+                    )
+                  : null,
+              bottomNavigationBar: _bottomNav(chatsNuevos),
+              body: Stack(
                 children: [
-                  _panelTab(nombre, tipo, foto, iniciales),
-                  _catalogoTab(nombre, foto, iniciales),
-                  _perfilTab(nombre, tipo, foto, iniciales),
+                  const Positioned.fill(child: LeafOverlay()),
+                  SafeArea(
+                    child: IndexedStack(
+                      index: _nav,
+                      children: [
+                        _panelTab(
+                          nombre,
+                          tipo,
+                          foto,
+                          iniciales,
+                          consultaDocs,
+                          chatsNuevos,
+                        ),
+                        _catalogoTab(nombre, foto, iniciales),
+                        _perfilTab(nombre, tipo, foto, iniciales),
+                      ],
+                    ),
+                  ),
                 ],
               ),
-            ),
-          ]),
+            );
+          },
         );
       },
     );
@@ -208,29 +295,38 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
 
   // ── Panel ────────────────────────────────────────────────────────────────────
 
-  Widget _panelTab(String nombre, String tipo, String? foto, String iniciales) {
+  Widget _panelTab(
+    String nombre,
+    String tipo,
+    String? foto,
+    String iniciales,
+    List<QueryDocumentSnapshot> consultaDocs,
+    int chatsNuevos,
+  ) {
     return StreamBuilder<QuerySnapshot>(
       stream: _serviciosStream,
       builder: (context, svcSnap) {
         final servicios = svcSnap.data?.docs ?? [];
-        final activos   = servicios.where((d) => (d.data() as Map)['activo'] == true).length;
+        final activos = servicios
+            .where((d) => (d.data() as Map)['activo'] == true)
+            .length;
 
-        return StreamBuilder<QuerySnapshot>(
-          stream: _consultasStream,
-          builder: (context, chatSnap) {
-            final chats       = (chatSnap.data?.docs ?? []).where((d) {
-              final data = d.data() as Map<String, dynamic>;
-              return ((data['ultimoMensaje'] as String?) ?? '').isNotEmpty;
-            }).toList();
-            final chatsNuevos = chats.where((d) {
-              final data = d.data() as Map<String, dynamic>;
-              return ((data['noLeidosRescatista'] as int?) ?? 0) > 0;
-            }).length;
-
-            return SingleChildScrollView(
-              padding: const EdgeInsets.only(bottom: 24),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-
+        // Sin vista previa (chat creado pero nunca escrito) no vale la
+        // pena mostrarlo en "Conversaciones recientes" — a diferencia de
+        // `chatsNuevos` (arriba en build()), esto es solo para decidir QUÉ
+        // MOSTRAR acá, no cuánto contar, así que si el conteo y esta lista
+        // usaran el mismo filtro, un chat con mensajes sin leer pero sin
+        // preview podía contarse arriba y no aparecer nunca acá abajo.
+        final chats = consultaDocs.where((d) {
+          final data = d.data() as Map<String, dynamic>;
+          return ((data['ultimoMensaje'] as String?) ?? '').isNotEmpty;
+        }).toList();
+        {
+          return SingleChildScrollView(
+            padding: const EdgeInsets.only(bottom: 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 // ── Header ──────────────────────────────────────────────────
                 Container(
                   width: double.infinity,
@@ -238,95 +334,184 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                   decoration: const BoxDecoration(
                     gradient: LinearGradient(
                       colors: [Color(0xFF0A5C40), appTeal],
-                      begin: Alignment.topLeft, end: Alignment.bottomRight,
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                     ),
                   ),
-                  child: Column(children: [
-                    // Avatar grande
-                    Container(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.5), width: 3),
-                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2),
-                            blurRadius: 16, offset: const Offset(0, 6))],
+                  child: Column(
+                    children: [
+                      // Avatar grande
+                      Container(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.5),
+                            width: 3,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.2),
+                              blurRadius: 16,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
+                        ),
+                        child: Builder(
+                          builder: (_) {
+                            final fotoBytes = bytesFotoSegura(foto);
+                            return CircleAvatar(
+                              radius: 52,
+                              backgroundColor: Colors.white.withValues(
+                                alpha: 0.2,
+                              ),
+                              backgroundImage: fotoBytes != null
+                                  ? MemoryImage(fotoBytes)
+                                  : null,
+                              onBackgroundImageError: fotoBytes != null
+                                  ? (_, __) {}
+                                  : null,
+                              child: fotoBytes == null
+                                  ? Text(
+                                      iniciales,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 32,
+                                      ),
+                                    )
+                                  : null,
+                            );
+                          },
+                        ),
                       ),
-                      child: Builder(builder: (_) {
-                        final fotoBytes = bytesFotoSegura(foto);
-                        return CircleAvatar(
-                          radius: 52,
-                          backgroundColor: Colors.white.withValues(alpha: 0.2),
-                          backgroundImage: fotoBytes != null ? MemoryImage(fotoBytes) : null,
-                          onBackgroundImageError: fotoBytes != null ? (_, __) {} : null,
-                          child: fotoBytes == null
-                              ? Text(iniciales, style: const TextStyle(color: Colors.white,
-                                  fontWeight: FontWeight.bold, fontSize: 32))
-                              : null,
-                        );
-                      }),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                      Text(nombre,
-                          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold,
-                              color: Colors.white),
-                          textAlign: TextAlign.center),
-                      const SizedBox(width: 8),
-                      Container(width: 10, height: 10,
+                      const SizedBox(height: 16),
+                      TextoSinDesborde(
+                        texto: nombre,
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                        textAlign: TextAlign.center,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        despues: Container(
+                          width: 10,
+                          height: 10,
                           decoration: const BoxDecoration(
-                              color: Color(0xFF4ADE80), shape: BoxShape.circle)),
-                    ]),
-                    if (tipo.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(tipo, style: TextStyle(fontSize: 14,
-                          color: Colors.white.withValues(alpha: 0.75))),
+                            color: Color(0xFF4ADE80),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
+                      if (tipo.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          tipo,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.white.withValues(alpha: 0.75),
+                          ),
+                        ),
+                      ],
                     ],
-                  ]),
+                  ),
                 ),
 
                 // ── Stats ────────────────────────────────────────────────────
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
-                  child: Row(children: [
-                    _statCard('$activos', 'Servicios\nactivos',
-                        const Color(0xFFD8F0E4), appTeal, Icons.spa_outlined,
-                        onTap: () => setState(() => _nav = 1)),
-                    const SizedBox(width: 12),
-                    _statCard('${servicios.length}', 'Servicios\ntotales',
-                        Colors.white, const Color(0xFF444444), Icons.list_alt_outlined,
-                        onTap: () => setState(() => _nav = 1)),
-                    const SizedBox(width: 12),
-                    _statCard('$chatsNuevos', 'Mensajes\nnuevos',
-                        const Color(0xFFFFF0E6), appOrange, Icons.chat_bubble_outline,
-                        onTap: () => Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => const AdoptanteChatsScreen(esRescatista: true, soloConsultas: true)))),
-                  ]),
+                  child: Row(
+                    children: [
+                      _statCard(
+                        '$activos',
+                        'Servicios\nactivos',
+                        const Color(0xFFD8F0E4),
+                        appTeal,
+                        Icons.spa_outlined,
+                        onTap: () => setState(() => _nav = 1),
+                      ),
+                      const SizedBox(width: 12),
+                      _statCard(
+                        '${servicios.length}',
+                        'Servicios\ntotales',
+                        Colors.white,
+                        const Color(0xFF444444),
+                        Icons.list_alt_outlined,
+                        onTap: () => setState(() => _nav = 1),
+                      ),
+                      const SizedBox(width: 12),
+                      _statCard(
+                        '$chatsNuevos',
+                        'Mensajes\nnuevos',
+                        const Color(0xFFFFF0E6),
+                        appOrange,
+                        Icons.chat_bubble_outline,
+                        onTap: () => context.push(
+                          AppRoutes.adoptanteChats,
+                          extra: (
+                            esRescatista: true,
+                            soloConsultas: true,
+                            esAlbergue: false,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
 
                 // ── Acceso rápido ─────────────────────────────────────────────
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
-                  child: Text('ACCIONES RÁPIDAS',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
-                          letterSpacing: 1.2, color: Colors.grey.shade700)),
+                  child: Text(
+                    'ACCIONES RÁPIDAS',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.2,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 12),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Row(children: [
-                    _quickAction(Icons.add_circle_outline, 'Nuevo\nservicio', appTeal, () {
-                      Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const SubirServicioScreen()));
-                    }),
-                    const SizedBox(width: 12),
-                    _quickAction(Icons.list_alt_outlined, 'Ver\nservicios', const Color(0xFF444444), () {
-                      setState(() => _nav = 1);
-                    }),
-                    const SizedBox(width: 12),
-                    _quickAction(Icons.chat_bubble_outline, 'Ver\nchats', appOrange, () {
-                      Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const AdoptanteChatsScreen(esRescatista: true, soloConsultas: true)));
-                    }),
-                  ]),
+                  child: Row(
+                    children: [
+                      _quickAction(
+                        Icons.add_circle_outline,
+                        'Nuevo\nservicio',
+                        appTeal,
+                        () {
+                          context.push(AppRoutes.subirServicio);
+                        },
+                      ),
+                      const SizedBox(width: 12),
+                      _quickAction(
+                        Icons.list_alt_outlined,
+                        'Ver\nservicios',
+                        const Color(0xFF444444),
+                        () {
+                          setState(() => _nav = 1);
+                        },
+                      ),
+                      const SizedBox(width: 12),
+                      _quickAction(
+                        Icons.chat_bubble_outline,
+                        'Ver\nchats',
+                        appOrange,
+                        () {
+                          context.push(
+                            AppRoutes.adoptanteChats,
+                            extra: (
+                              esRescatista: true,
+                              soloConsultas: true,
+                              esAlbergue: false,
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
                 ),
 
                 // ── Últimos chats ─────────────────────────────────────────────
@@ -336,27 +521,44 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('CONVERSACIONES RECIENTES',
-                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
-                                letterSpacing: 1.2, color: Colors.grey.shade700)),
+                        Text(
+                          'CONVERSACIONES RECIENTES',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.2,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
                         GestureDetector(
-                          onTap: () => Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => const AdoptanteChatsScreen(esRescatista: true, soloConsultas: true))),
-                          child: const Text('Ver todas',
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
-                                  color: appTeal)),
+                          onTap: () => context.push(
+                            AppRoutes.adoptanteChats,
+                            extra: (
+                              esRescatista: true,
+                              soloConsultas: true,
+                              esAlbergue: false,
+                            ),
+                          ),
+                          child: const Text(
+                            'Ver todas',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: appTeal,
+                            ),
+                          ),
                         ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 10),
                   ...chats.take(3).map((doc) {
-                    final d        = doc.data() as Map<String, dynamic>;
-                    final quien    = d['adoptanteNombre'] as String? ?? 'Usuario';
-                    final ultimo   = d['ultimoMensaje']   as String? ?? '';
-                    final hora     = d['ultimaHora']      as String? ?? '';
+                    final d = doc.data() as Map<String, dynamic>;
+                    final quien = d['adoptanteNombre'] as String? ?? 'Usuario';
+                    final ultimo = d['ultimoMensaje'] as String? ?? '';
+                    final hora = d['ultimaHora'] as String? ?? '';
                     final noLeidos = (d['noLeidosRescatista'] as int?) ?? 0;
-                    final ini      = quien.isNotEmpty ? quien[0].toUpperCase() : 'U';
+                    final ini = quien.isNotEmpty ? quien[0].toUpperCase() : 'U';
                     // Con qué sombrero te escribió — sin esto, la misma
                     // persona contactándote como adoptante, rescatista y
                     // albergue aparece 3 veces con el mismo nombre y sin
@@ -365,8 +567,8 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                     final rotulo = creadoPorConsulta == 'albergue'
                         ? 'Albergue'
                         : creadoPorConsulta == 'rescatista'
-                            ? 'Rescatista'
-                            : 'Adoptante';
+                        ? 'Rescatista'
+                        : 'Adoptante';
                     return Container(
                       key: ValueKey(doc.id),
                       margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -374,85 +576,179 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(14),
-                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05),
-                            blurRadius: 6, offset: const Offset(0, 2))],
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.05),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
                       ),
-                      child: Row(children: [
-                        AvatarUsuario(
-                          userId: d['adoptanteId'] as String?,
-                          inicial: ini,
-                          radius: 20,
-                          backgroundColor: appTeal.withValues(alpha: 0.12),
-                          textColor: appTeal,
-                          // ChatsRepository.campoLogoAdoptante es la única
-                          // fuente de "qué campo mirar para el logo de quien
-                          // contactó" — no volver a derivarlo acá a mano.
-                          campoLogoNegocio: ChatsRepository.campoLogoAdoptante(d),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Row(children: [
-                            Flexible(child: Text(quien, style: const TextStyle(fontSize: 13,
-                                fontWeight: FontWeight.w600, color: appInk),
-                                overflow: TextOverflow.ellipsis)),
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(color: appTeal.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(20)),
-                              child: Text(rotulo, style: const TextStyle(fontSize: 9,
-                                  fontWeight: FontWeight.w700, color: appTeal)),
+                      child: Row(
+                        children: [
+                          AvatarUsuario(
+                            userId: d['adoptanteId'] as String?,
+                            inicial: ini,
+                            radius: 20,
+                            backgroundColor: appTeal.withValues(alpha: 0.12),
+                            textColor: appTeal,
+                            // ChatsRepository.campoLogoAdoptante es la única
+                            // fuente de "qué campo mirar para el logo de quien
+                            // contactó" — no volver a derivarlo acá a mano.
+                            campoLogoNegocio:
+                                ChatsRepository.campoLogoAdoptante(d),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        quien,
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                          color: appInk,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: appTeal.withValues(alpha: 0.1),
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      child: Text(
+                                        rotulo,
+                                        style: const TextStyle(
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.w700,
+                                          color: appTeal,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                if (ultimo.isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    ultimo,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey.shade700,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ],
                             ),
-                          ]),
-                          if (ultimo.isNotEmpty) ...[
-                            const SizedBox(height: 2),
-                            Text(ultimo, style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                                maxLines: 1, overflow: TextOverflow.ellipsis),
-                          ],
-                        ])),
-                        Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                          if (hora.isNotEmpty)
-                            Text(hora, style: TextStyle(fontSize: 11, color: Colors.grey.shade400)),
-                          if (noLeidos > 0) ...[
-                            const SizedBox(height: 4),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: const BoxDecoration(color: appOrange, shape: BoxShape.circle),
-                              child: Text('$noLeidos', style: const TextStyle(fontSize: 11,
-                                  color: Colors.white, fontWeight: FontWeight.bold)),
-                            ),
-                          ],
-                        ]),
-                      ]),
+                          ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              if (hora.isNotEmpty)
+                                Text(
+                                  hora,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey.shade400,
+                                  ),
+                                ),
+                              if (noLeidos > 0) ...[
+                                const SizedBox(height: 4),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: const BoxDecoration(
+                                    color: appOrange,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Text(
+                                    '$noLeidos',
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ],
+                      ),
                     );
                   }),
                 ],
-              ]),
-            );
-          },
-        );
+              ],
+            ),
+          );
+        }
       },
     );
   }
 
-  Widget _statCard(String valor, String label, Color bg, Color color, IconData icon, {VoidCallback? onTap}) => Expanded(
+  Widget _statCard(
+    String valor,
+    String label,
+    Color bg,
+    Color color,
+    IconData icon, {
+    VoidCallback? onTap,
+  }) => Expanded(
     child: GestureDetector(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
-        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(16)),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Icon(icon, size: 18, color: color.withValues(alpha: 0.7)),
-          const SizedBox(height: 8),
-          Text(valor, style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: color)),
-          const SizedBox(height: 2),
-          Text(label, style: TextStyle(fontSize: 10, color: color.withValues(alpha: 0.75), height: 1.3)),
-        ]),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 18, color: color.withValues(alpha: 0.7)),
+            const SizedBox(height: 8),
+            Text(
+              valor,
+              style: TextStyle(
+                fontSize: 26,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10,
+                color: color.withValues(alpha: 0.75),
+                height: 1.3,
+              ),
+            ),
+          ],
+        ),
       ),
     ),
   );
 
-  Widget _quickAction(IconData icon, String label, Color color, VoidCallback onTap) => Expanded(
+  Widget _quickAction(
+    IconData icon,
+    String label,
+    Color color,
+    VoidCallback onTap,
+  ) => Expanded(
     child: GestureDetector(
       onTap: onTap,
       child: Container(
@@ -460,19 +756,38 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 6, offset: const Offset(0, 2))],
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
-        child: Column(children: [
-          Container(
-            width: 40, height: 40,
-            decoration: BoxDecoration(color: color.withValues(alpha: 0.1), shape: BoxShape.circle),
-            child: Icon(icon, size: 20, color: color),
-          ),
-          const SizedBox(height: 8),
-          Text(label, textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: color, height: 1.2)),
-        ]),
+        child: Column(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: 20, color: color),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: color,
+                height: 1.2,
+              ),
+            ),
+          ],
+        ),
       ),
     ),
   );
@@ -489,7 +804,7 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
         // Sin esto, un error real se veía igual que "todavía no publicaste
         // ningún servicio" — mismo patrón ya arreglado en
         // favoritos_screen.dart y otras pantallas (errorFeedState,
-        // theme.dart), acá en el catálogo del aliado (hallazgo de
+        // widgets/estado_error_feed.dart), acá en el catálogo del aliado (hallazgo de
         // auditoría de código).
         if (snap.hasError) return errorFeedState();
         final docs = (snap.data?.docs ?? [])
@@ -501,305 +816,513 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
             return tB.compareTo(tA);
           });
 
-        return Column(children: [
-          // Header
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
-            child: Row(children: [
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Text('MIS SERVICIOS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
-                    letterSpacing: 1.2, color: appTeal)),
-                const Text('Servicios activos', style: TextStyle(fontSize: 26,
-                    fontWeight: FontWeight.bold, color: appInk)),
-              ])),
-              GestureDetector(
-                onTap: () => Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => const SubirServicioScreen())),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-                  decoration: BoxDecoration(color: appTeal, borderRadius: BorderRadius.circular(20)),
-                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.add, color: Colors.white, size: 16),
-                    SizedBox(width: 4),
-                    Text('Nuevo', style: TextStyle(color: Colors.white,
-                        fontSize: 13, fontWeight: FontWeight.w600)),
-                  ]),
-                ),
-              ),
-            ]),
-          ),
-
-          // Lista
-          Expanded(
-            child: docs.isEmpty
-                ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    Icon(Icons.spa_outlined, size: 56, color: Colors.grey.shade300),
-                    const SizedBox(height: 16),
-                    Text('Sin servicios publicados',
-                        style: TextStyle(fontSize: 15, color: Colors.grey.shade700)),
-                    const SizedBox(height: 8),
-                    Text('Toca "Nuevo" para agregar el primero',
-                        style: TextStyle(fontSize: 13, color: Colors.grey.shade400)),
-                  ]))
-                : ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
-                    itemCount: docs.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 10),
-                    itemBuilder: (_, i) {
-                      final doc    = docs[i];
-                      final d      = doc.data() as Map<String, dynamic>;
-                      final sNombre = d['nombre']      as String? ?? '';
-                      final precio  = d['precio']      as int?    ?? 0;
-                      final desc    = d['descripcion'] as String? ?? '';
-                      final activo  = d['activo']      as bool?   ?? true;
-                      final cat     = d['categoria']   as String? ?? '';
-                      final catColor = _catColor[cat] ?? appTeal;
-                      final catEmoji = _catEmoji[cat] ?? '🐾';
-
-                      return Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05),
-                              blurRadius: 8, offset: const Offset(0, 2))],
+        return Column(
+          children: [
+            // Header
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'MIS SERVICIOS',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.2,
+                            color: appTeal,
+                          ),
                         ),
-                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Row(children: [
-                            Container(
-                              width: 48, height: 48,
-                              decoration: BoxDecoration(
-                                color: catColor.withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Center(child: Text(catEmoji,
-                                  style: const TextStyle(fontSize: 24))),
+                        const Text(
+                          'Servicios activos',
+                          style: TextStyle(
+                            fontSize: 26,
+                            fontWeight: FontWeight.bold,
+                            color: appInk,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () => context.push(AppRoutes.subirServicio),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 9,
+                      ),
+                      decoration: BoxDecoration(
+                        color: appTeal,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.add, color: Colors.white, size: 16),
+                          SizedBox(width: 4),
+                          Text(
+                            'Nuevo',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
                             ),
-                            const SizedBox(width: 12),
-                            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Lista
+            Expanded(
+              child: docs.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.spa_outlined,
+                            size: 56,
+                            color: Colors.grey.shade300,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Sin servicios publicados',
+                            style: TextStyle(
+                              fontSize: 15,
+                              color: Colors.grey.shade700,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Toca "Nuevo" para agregar el primero',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey.shade400,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+                      itemCount: docs.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 10),
+                      itemBuilder: (_, i) {
+                        final doc = docs[i];
+                        final d = doc.data() as Map<String, dynamic>;
+                        final sNombre = d['nombre'] as String? ?? '';
+                        final precio = d['precio'] as int? ?? 0;
+                        final desc = d['descripcion'] as String? ?? '';
+                        final activo = d['activo'] as bool? ?? true;
+                        final cat = d['categoria'] as String? ?? '';
+                        final catColor = _catColor[cat] ?? appTeal;
+                        final catEmoji = _catEmoji[cat] ?? '🐾';
+
+                        return Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.05),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
                                 children: [
-                              Text(sNombre, style: const TextStyle(fontSize: 15,
-                                  fontWeight: FontWeight.w700, color: appInk)),
-                              if (desc.isNotEmpty) ...[
-                                const SizedBox(height: 3),
-                                Text(desc, style: TextStyle(fontSize: 12,
-                                    color: Colors.grey.shade700),
-                                    maxLines: 1, overflow: TextOverflow.ellipsis),
-                              ],
-                            ])),
-                            const SizedBox(width: 12),
-                            Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                              Text('\$${_fmt(precio)}', style: TextStyle(fontSize: 17,
-                                  fontWeight: FontWeight.bold, color: catColor)),
-                              const SizedBox(height: 6),
-                              // Toggle
-                              GestureDetector(
-                                onTap: () => _toggleActivo(doc.id, activo),
-                                child: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 200),
-                                  width: 44, height: 24,
-                                  decoration: BoxDecoration(
-                                    color: activo ? appTeal : Colors.grey.shade300,
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: AnimatedAlign(
-                                    duration: const Duration(milliseconds: 200),
-                                    alignment: activo ? Alignment.centerRight : Alignment.centerLeft,
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(2),
-                                      child: Container(
-                                        width: 20, height: 20,
-                                        decoration: const BoxDecoration(
-                                            color: Colors.white, shape: BoxShape.circle),
+                                  Container(
+                                    width: 48,
+                                    height: 48,
+                                    decoration: BoxDecoration(
+                                      color: catColor.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Center(
+                                      child: Text(
+                                        catEmoji,
+                                        style: const TextStyle(fontSize: 24),
                                       ),
                                     ),
                                   ),
-                                ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          sNombre,
+                                          style: const TextStyle(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w700,
+                                            color: appInk,
+                                          ),
+                                        ),
+                                        if (desc.isNotEmpty) ...[
+                                          const SizedBox(height: 3),
+                                          Text(
+                                            desc,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey.shade700,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      Text(
+                                        '\$${_fmt(precio)}',
+                                        style: TextStyle(
+                                          fontSize: 17,
+                                          fontWeight: FontWeight.bold,
+                                          color: catColor,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      // Toggle
+                                      GestureDetector(
+                                        onTap: () =>
+                                            _toggleActivo(doc.id, activo),
+                                        child: AnimatedContainer(
+                                          duration: const Duration(
+                                            milliseconds: 200,
+                                          ),
+                                          width: 44,
+                                          height: 24,
+                                          decoration: BoxDecoration(
+                                            color: activo
+                                                ? appTeal
+                                                : Colors.grey.shade300,
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
+                                          ),
+                                          child: AnimatedAlign(
+                                            duration: const Duration(
+                                              milliseconds: 200,
+                                            ),
+                                            alignment: activo
+                                                ? Alignment.centerRight
+                                                : Alignment.centerLeft,
+                                            child: Padding(
+                                              padding: const EdgeInsets.all(2),
+                                              child: Container(
+                                                width: 20,
+                                                height: 20,
+                                                decoration: const BoxDecoration(
+                                                  color: Colors.white,
+                                                  shape: BoxShape.circle,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
                               ),
-                            ]),
-                          ]),
-                          const SizedBox(height: 12),
-                          Row(children: [
-                            _miniBtn(Icons.edit_outlined, 'Editar',
-                                Colors.grey.shade700, Colors.grey.shade50,
-                                Colors.grey.shade200, () => Navigator.push(context,
-                                    MaterialPageRoute(builder: (_) =>
-                                        SubirServicioScreen(docId: doc.id, data: d)))),
-                            const SizedBox(width: 8),
-                            _miniBtn(Icons.delete_outline, 'Eliminar',
-                                Colors.red.shade400, Colors.red.shade50,
-                                Colors.red.shade100, () => _eliminarServicio(doc.id)),
-                          ]),
-                        ]),
-                      );
-                    },
-                  ),
-          ),
-        ]);
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  _miniBtn(
+                                    Icons.edit_outlined,
+                                    'Editar',
+                                    Colors.grey.shade700,
+                                    Colors.grey.shade50,
+                                    Colors.grey.shade200,
+                                    () => context.push(
+                                      AppRoutes.subirServicio,
+                                      extra: (docId: doc.id, data: d),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  _miniBtn(
+                                    Icons.delete_outline,
+                                    'Eliminar',
+                                    Colors.red.shade400,
+                                    Colors.red.shade50,
+                                    Colors.red.shade100,
+                                    () => _eliminarServicio(doc.id),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        );
       },
     );
   }
 
-  Widget _miniBtn(IconData icon, String label, Color fg, Color bg, Color border,
-      VoidCallback onTap) =>
-    Tooltip(
-      message: label,
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: border)),
-          child: Icon(icon, size: 16, color: fg),
+  Widget _miniBtn(
+    IconData icon,
+    String label,
+    Color fg,
+    Color bg,
+    Color border,
+    VoidCallback onTap,
+  ) => Tooltip(
+    message: label,
+    child: GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: border),
         ),
+        child: Icon(icon, size: 16, color: fg),
       ),
-    );
+    ),
+  );
 
   // ── Perfil ────────────────────────────────────────────────────────────────────
 
-  Widget _perfilTab(String nombre, String tipo, String? foto, String iniciales) {
+  Widget _perfilTab(
+    String nombre,
+    String tipo,
+    String? foto,
+    String iniciales,
+  ) {
     return SingleChildScrollView(
-      child: Column(children: [
-        // Header verde
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(24, 36, 24, 32),
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFF0A5C40), appTeal],
-              begin: Alignment.topLeft, end: Alignment.bottomRight,
+      child: Column(
+        children: [
+          // Header verde
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(24, 36, 24, 32),
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFF0A5C40), appTeal],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+            child: Column(
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.5),
+                      width: 3,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.2),
+                        blurRadius: 16,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: Builder(
+                    builder: (_) {
+                      final fotoBytes = bytesFotoSegura(foto);
+                      return CircleAvatar(
+                        radius: 52,
+                        backgroundColor: Colors.white.withValues(alpha: 0.2),
+                        backgroundImage: fotoBytes != null
+                            ? MemoryImage(fotoBytes)
+                            : null,
+                        onBackgroundImageError: fotoBytes != null
+                            ? (_, __) {}
+                            : null,
+                        child: fotoBytes == null
+                            ? Text(
+                                iniciales,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 32,
+                                ),
+                              )
+                            : null,
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  nombre,
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                if (tipo.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    tipo,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.white.withValues(alpha: 0.8),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
-          child: Column(children: [
-            Container(
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white.withValues(alpha: 0.5), width: 3),
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2),
-                    blurRadius: 16, offset: const Offset(0, 6))],
-              ),
-              child: Builder(builder: (_) {
-                final fotoBytes = bytesFotoSegura(foto);
-                return CircleAvatar(
-                  radius: 52,
-                  backgroundColor: Colors.white.withValues(alpha: 0.2),
-                  backgroundImage: fotoBytes != null ? MemoryImage(fotoBytes) : null,
-                  onBackgroundImageError: fotoBytes != null ? (_, __) {} : null,
-                  child: fotoBytes == null
-                      ? Text(iniciales, style: const TextStyle(color: Colors.white,
-                          fontWeight: FontWeight.bold, fontSize: 32))
-                      : null,
-                );
-              }),
-            ),
-            const SizedBox(height: 16),
-            Text(nombre, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold,
-                color: Colors.white), textAlign: TextAlign.center),
-            if (tipo.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(tipo, style: TextStyle(fontSize: 14, color: Colors.white.withValues(alpha: 0.8))),
-            ],
-          ]),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(children: [
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () => Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const AliadoPerfilScreen())),
-                icon: const Icon(Icons.edit_outlined, size: 18),
-                label: const Text('Editar perfil del negocio'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: appTeal,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  elevation: 0,
+          Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              children: [
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () => context.push(AppRoutes.aliadoPerfil),
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    label: const Text('Editar perfil del negocio'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: appTeal,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      elevation: 0,
+                    ),
+                  ),
                 ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: _cerrarSesion,
-                icon: const Icon(Icons.logout, size: 18),
-                label: const Text('Cerrar sesión'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.red.shade400,
-                  side: BorderSide(color: Colors.red.shade200),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _cerrarSesion,
+                    icon: const Icon(Icons.logout, size: 18),
+                    label: const Text('Cerrar sesión'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red.shade400,
+                      side: BorderSide(color: Colors.red.shade200),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () => mostrarEliminarCuentaDialog(context),
-                icon: const Icon(Icons.delete_outline, size: 18),
-                label: const Text('Eliminar mi cuenta'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.red.shade700,
-                  side: BorderSide(color: Colors.red.shade200),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => mostrarEliminarCuentaDialog(context),
+                    icon: const Icon(Icons.delete_outline, size: 18),
+                    label: const Text('Eliminar mi cuenta'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red.shade700,
+                      side: BorderSide(color: Colors.red.shade200),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
+                const SizedBox(height: 16),
+                GestureDetector(
+                  onTap: () => launchUrl(
+                    Uri.parse(
+                      'https://lunita486.github.io/Salva-Patitas/privacidad.html',
+                    ),
+                    mode: LaunchMode.externalApplication,
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.shield_outlined,
+                          size: 16,
+                          color: Colors.grey.shade500,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Política de Privacidad',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey.shade700,
+                            decoration: TextDecoration.underline,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
-            GestureDetector(
-              onTap: () => launchUrl(
-                Uri.parse('https://lunita486.github.io/Salva-Patitas/privacidad.html'),
-                mode: LaunchMode.externalApplication,
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Icon(Icons.shield_outlined, size: 16, color: Colors.grey.shade500),
-                  const SizedBox(width: 6),
-                  Text('Política de Privacidad',
-                      style: TextStyle(fontSize: 13, color: Colors.grey.shade700,
-                          decoration: TextDecoration.underline)),
-                ]),
-              ),
-            ),
-          ]),
-        ),
-      ]),
+          ),
+        ],
+      ),
     );
   }
 
   // ── Bottom Nav ───────────────────────────────────────────────────────────────
 
-  Widget _bottomNav() => Container(
-    decoration: BoxDecoration(color: Colors.white,
-      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.07),
-          blurRadius: 12, offset: const Offset(0, -2))]),
+  Widget _bottomNav(int chatsNuevos) => Container(
+    decoration: BoxDecoration(
+      color: Colors.white,
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.07),
+          blurRadius: 12,
+          offset: const Offset(0, -2),
+        ),
+      ],
+    ),
     child: SafeArea(
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-          _navItem(Icons.dashboard_outlined, Icons.dashboard, 'Panel', 0),
-          _navItem(Icons.spa_outlined, Icons.spa, 'Servicios', 1),
-          StreamBuilder<QuerySnapshot>(
-            stream: _consultasStream,
-            builder: (_, snap) {
-              final unread = (snap.data?.docs ?? []).where((doc) {
-                final d = doc.data() as Map<String, dynamic>;
-                return ((d['noLeidosRescatista'] as int?) ?? 0) > 0;
-              }).length;
-              return _navTapBadge(Icons.chat_bubble_outline, Icons.chat_bubble, 'Chats', unread,
-                () => Navigator.push(context, MaterialPageRoute(
-                  builder: (_) => const AdoptanteChatsScreen(esRescatista: true, soloConsultas: true))));
-            },
-          ),
-          _navItem(Icons.person_outline, Icons.person, 'Perfil', 2),
-        ]),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            _navItem(Icons.dashboard_outlined, Icons.dashboard, 'Panel', 0),
+            _navItem(Icons.spa_outlined, Icons.spa, 'Servicios', 1),
+            _navTapBadge(
+              Icons.chat_bubble_outline,
+              Icons.chat_bubble,
+              'Chats',
+              chatsNuevos,
+              () => context.push(
+                AppRoutes.adoptanteChats,
+                extra: (
+                  esRescatista: true,
+                  soloConsultas: true,
+                  esAlbergue: false,
+                ),
+              ),
+            ),
+            _navItem(Icons.person_outline, Icons.person, 'Perfil', 2),
+          ],
+        ),
       ),
     ),
   );
@@ -808,38 +1331,78 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
     final active = _nav == idx;
     return GestureDetector(
       onTap: () => setState(() => _nav = idx),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Icon(active ? iconActive : icon,
-            color: active ? appTeal : Colors.grey.shade400, size: 24),
-        const SizedBox(height: 3),
-        Text(label, style: TextStyle(fontSize: 10,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            active ? iconActive : icon,
             color: active ? appTeal : Colors.grey.shade400,
-            fontWeight: active ? FontWeight.w700 : FontWeight.normal)),
-      ]),
+            size: 24,
+          ),
+          const SizedBox(height: 3),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              color: active ? appTeal : Colors.grey.shade400,
+              fontWeight: active ? FontWeight.w700 : FontWeight.normal,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _navTapBadge(IconData icon, IconData iconActive, String label, int badge, VoidCallback onTap) {
+  Widget _navTapBadge(
+    IconData icon,
+    IconData iconActive,
+    String label,
+    int badge,
+    VoidCallback onTap,
+  ) {
     return GestureDetector(
       onTap: onTap,
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Stack(clipBehavior: Clip.none, children: [
-          Icon(icon, color: Colors.grey.shade400, size: 24),
-          if (badge > 0)
-            Positioned(top: -4, right: -6,
-              child: Container(
-                padding: const EdgeInsets.all(3),
-                constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-                decoration: const BoxDecoration(color: appOrange, shape: BoxShape.circle),
-                child: Text(badge > 9 ? '9+' : '$badge',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 9, color: Colors.white,
-                        fontWeight: FontWeight.bold)),
-              )),
-        ]),
-        const SizedBox(height: 3),
-        Text(label, style: TextStyle(fontSize: 10, color: Colors.grey.shade400)),
-      ]),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Icon(icon, color: Colors.grey.shade400, size: 24),
+              if (badge > 0)
+                Positioned(
+                  top: -4,
+                  right: -6,
+                  child: Container(
+                    padding: const EdgeInsets.all(3),
+                    constraints: const BoxConstraints(
+                      minWidth: 16,
+                      minHeight: 16,
+                    ),
+                    decoration: const BoxDecoration(
+                      color: appOrange,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Text(
+                      badge > 9 ? '9+' : '$badge',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 9,
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 3),
+          Text(
+            label,
+            style: TextStyle(fontSize: 10, color: Colors.grey.shade400),
+          ),
+        ],
+      ),
     );
   }
 }

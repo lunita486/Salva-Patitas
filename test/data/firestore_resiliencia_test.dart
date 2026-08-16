@@ -25,13 +25,16 @@ void main() {
     // (un `.update()` de Firestore sin señal no lanza, simplemente no
     // vuelve hasta que reconecta). Esta prueba simula exactamente eso:
     // una escritura que nunca se resuelve sola.
-    test('siguePendiente (no fallo) si la escritura nunca termina — el bug real que arregla esto', () async {
-      final resultado = await guardarConAviso(
-        () => Completer<void>().future, // nunca se resuelve
-        timeout: const Duration(milliseconds: 200),
-      );
-      expect(resultado, ResultadoGuardado.siguePendiente);
-    });
+    test(
+      'siguePendiente (no fallo) si la escritura nunca termina — el bug real que arregla esto',
+      () async {
+        final resultado = await guardarConAviso(
+          () => Completer<void>().future, // nunca se resuelve
+          timeout: const Duration(milliseconds: 200),
+        );
+        expect(resultado, ResultadoGuardado.siguePendiente);
+      },
+    );
 
     test('fallo si la escritura lanza de verdad', () async {
       final resultado = await guardarConAviso(
@@ -41,20 +44,27 @@ void main() {
       expect(resultado, ResultadoGuardado.fallo);
     });
 
-    test('nunca deja una excepción sin atrapar, ni con timeout ni con error real '
-        '— la garantía completa: quien llama a esto SIEMPRE puede soltar el '
-        'botón de guardar, pase lo que pase', () async {
-      await expectLater(
-        guardarConAviso(() => Completer<void>().future,
-            timeout: const Duration(milliseconds: 50)),
-        completion(isA<ResultadoGuardado>()),
-      );
-      await expectLater(
-        guardarConAviso(() async => throw Exception('boom'),
-            timeout: const Duration(milliseconds: 50)),
-        completion(isA<ResultadoGuardado>()),
-      );
-    });
+    test(
+      'nunca deja una excepción sin atrapar, ni con timeout ni con error real '
+      '— la garantía completa: quien llama a esto SIEMPRE puede soltar el '
+      'botón de guardar, pase lo que pase',
+      () async {
+        await expectLater(
+          guardarConAviso(
+            () => Completer<void>().future,
+            timeout: const Duration(milliseconds: 50),
+          ),
+          completion(isA<ResultadoGuardado>()),
+        );
+        await expectLater(
+          guardarConAviso(
+            () async => throw Exception('boom'),
+            timeout: const Duration(milliseconds: 50),
+          ),
+          completion(isA<ResultadoGuardado>()),
+        );
+      },
+    );
   });
 
   group('conReintentoSiTokenVencido', () {
@@ -70,11 +80,9 @@ void main() {
 
     test('la escritura feliz se resuelve normal, sin tocar auth', () async {
       var llamadas = 0;
-      await conReintentoSiTokenVencido(
-        () => auth,
-        () async { llamadas++; },
-        timeout: const Duration(milliseconds: 200),
-      );
+      await conReintentoSiTokenVencido(() => auth, () async {
+        llamadas++;
+      }, timeout: const Duration(milliseconds: 200));
       expect(llamadas, 1);
       verifyNever(() => user.getIdToken(true));
     });
@@ -102,16 +110,15 @@ void main() {
     test('un permission-denied SÍ sigue reintentando una vez tras refrescar '
         'el token — no se rompió el comportamiento existente', () async {
       var llamadas = 0;
-      await conReintentoSiTokenVencido(
-        () => auth,
-        () async {
-          llamadas++;
-          if (llamadas == 1) {
-            throw FirebaseException(plugin: 'cloud_firestore', code: 'permission-denied');
-          }
-        },
-        timeout: const Duration(milliseconds: 200),
-      );
+      await conReintentoSiTokenVencido(() => auth, () async {
+        llamadas++;
+        if (llamadas == 1) {
+          throw FirebaseException(
+            plugin: 'cloud_firestore',
+            code: 'permission-denied',
+          );
+        }
+      }, timeout: const Duration(milliseconds: 200));
       expect(llamadas, 2);
       verify(() => user.getIdToken(true)).called(1);
     });
@@ -121,7 +128,10 @@ void main() {
       await expectLater(
         conReintentoSiTokenVencido(
           () => auth,
-          () async => throw FirebaseException(plugin: 'cloud_firestore', code: 'permission-denied'),
+          () async => throw FirebaseException(
+            plugin: 'cloud_firestore',
+            code: 'permission-denied',
+          ),
           timeout: const Duration(milliseconds: 200),
         ),
         throwsA(isA<FirebaseException>()),
@@ -132,14 +142,13 @@ void main() {
         'sin reintentar ni tocar el token', () async {
       var llamadas = 0;
       await expectLater(
-        conReintentoSiTokenVencido(
-          () => auth,
-          () async {
-            llamadas++;
-            throw FirebaseException(plugin: 'cloud_firestore', code: 'unavailable');
-          },
-          timeout: const Duration(milliseconds: 200),
-        ),
+        conReintentoSiTokenVencido(() => auth, () async {
+          llamadas++;
+          throw FirebaseException(
+            plugin: 'cloud_firestore',
+            code: 'unavailable',
+          );
+        }, timeout: const Duration(milliseconds: 200)),
         throwsA(isA<FirebaseException>()),
       );
       expect(llamadas, 1);
@@ -151,18 +160,18 @@ void main() {
         'siempre', () async {
       var llamadas = 0;
       await expectLater(
-        conReintentoSiTokenVencido(
-          () => auth,
-          () {
-            llamadas++;
-            if (llamadas == 1) {
-              return Future<void>.error(
-                  FirebaseException(plugin: 'cloud_firestore', code: 'permission-denied'));
-            }
-            return Completer<void>().future;
-          },
-          timeout: const Duration(milliseconds: 50),
-        ),
+        conReintentoSiTokenVencido(() => auth, () {
+          llamadas++;
+          if (llamadas == 1) {
+            return Future<void>.error(
+              FirebaseException(
+                plugin: 'cloud_firestore',
+                code: 'permission-denied',
+              ),
+            );
+          }
+          return Completer<void>().future;
+        }, timeout: const Duration(milliseconds: 50)),
         throwsA(isA<TimeoutException>()),
       );
     });

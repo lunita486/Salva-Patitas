@@ -1,10 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../data/auth_helper.dart';
 import '../data/cuenta_repository.dart';
 
 /// Punto de entrada único del flujo de "Eliminar mi cuenta" — mismo
-/// criterio que `mostrarCambiarRolDebug` (theme.dart): una sola función
+/// criterio que `mostrarCambiarRolDebug` (widgets/cambiar_rol_debug.dart): una sola función
 /// compartida por las 4 pantallas que tienen el botón, en vez de duplicar
 /// un diálogo bastante más grande que el simple "Cerrar sesión" (acá hay
 /// un paso extra de confirmación escrita, un estado de "procesando" y 3
@@ -29,10 +30,16 @@ Future<void> mostrarEliminarCuentaDialog(BuildContext context) async {
         'hogar.',
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text('Cancelar'),
+        ),
         TextButton(
           onPressed: () => Navigator.pop(ctx, true),
-          child: const Text('Continuar', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600)),
+          child: const Text(
+            'Continuar',
+            style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600),
+          ),
         ),
       ],
     ),
@@ -54,12 +61,20 @@ Future<void> mostrarEliminarCuentaDialog(BuildContext context) async {
       canPop: false,
       child: AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        content: Row(children: const [
-          SizedBox(width: 20, height: 20,
-              child: CircularProgressIndicator(color: appTeal, strokeWidth: 2.5)),
-          SizedBox(width: 20),
-          Expanded(child: Text('Eliminando tu cuenta…')),
-        ]),
+        content: Row(
+          children: const [
+            SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                color: appTeal,
+                strokeWidth: 2.5,
+              ),
+            ),
+            SizedBox(width: 20),
+            Expanded(child: Text('Eliminando tu cuenta…')),
+          ],
+        ),
       ),
     ),
   );
@@ -83,24 +98,65 @@ Future<void> mostrarEliminarCuentaDialog(BuildContext context) async {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('No se puede eliminar todavía'),
         content: Text(e.mensaje),
-        actions: [TextButton(onPressed: () => Navigator.pop(dlgCtx), child: const Text('Entendido'))],
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dlgCtx),
+            child: const Text('Entendido'),
+          ),
+        ],
+      ),
+    );
+  } on TimeoutException {
+    // El timeout es del CLIENTE (120s) esperando la respuesta — no cancela
+    // el borrado, que sigue corriendo del lado del servidor (tiene su
+    // propio límite de 300s, y recorre 8 colecciones: para una cuenta con
+    // muchos chats/mensajes puede tardar más que esos 120s). Mostrar el
+    // mensaje genérico de "no pudimos eliminar, revisá tu conexión" acá
+    // sería mentirle a la persona — lo más probable es que el borrado
+    // termine bien igual. Hallazgo de auditoría de código: revisión
+    // pre-lanzamiento a 7 días de subir a producción.
+    if (!context.mounted) return;
+    Navigator.pop(context); // cierra "Eliminando tu cuenta…"
+    await showDialog<void>(
+      context: context,
+      builder: (dlgCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Esto está tardando más de lo normal'),
+        content: const Text(
+          'Tu cuenta se sigue eliminando del lado del servidor — no hace '
+          'falta que vuelvas a intentarlo. Cerrá la app y, en unos '
+          'minutos, probá iniciar sesión de nuevo: si ya no podés entrar, '
+          'es que terminó bien.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dlgCtx),
+            child: const Text('Entendido'),
+          ),
+        ],
       ),
     );
   } catch (e) {
     if (!context.mounted) return;
     Navigator.pop(context); // cierra "Eliminando tu cuenta…"
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        backgroundColor: msgError, content: Text(CuentaRepository.mensajeError(e))));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: msgError,
+        content: Text(CuentaRepository.mensajeError(e)),
+      ),
+    );
   }
 }
 
 class _ConfirmarEscribiendoDialog extends StatefulWidget {
   const _ConfirmarEscribiendoDialog();
   @override
-  State<_ConfirmarEscribiendoDialog> createState() => _ConfirmarEscribiendoDialogState();
+  State<_ConfirmarEscribiendoDialog> createState() =>
+      _ConfirmarEscribiendoDialogState();
 }
 
-class _ConfirmarEscribiendoDialogState extends State<_ConfirmarEscribiendoDialog> {
+class _ConfirmarEscribiendoDialogState
+    extends State<_ConfirmarEscribiendoDialog> {
   final _ctl = TextEditingController();
   bool _habilitado = false;
 
@@ -123,30 +179,40 @@ class _ConfirmarEscribiendoDialogState extends State<_ConfirmarEscribiendoDialog
   Widget build(BuildContext context) => AlertDialog(
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
     title: const Text('¿Seguro que querés eliminar tu cuenta?'),
-    content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Text('Escribí ELIMINAR para confirmar.'),
-      const SizedBox(height: 12),
-      TextField(
-        controller: _ctl,
-        autofocus: true,
-        textCapitalization: TextCapitalization.characters,
-        decoration: InputDecoration(
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: Colors.red, width: 2),
+    content: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Escribí ELIMINAR para confirmar.'),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _ctl,
+          autofocus: true,
+          textCapitalization: TextCapitalization.characters,
+          decoration: InputDecoration(
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: Colors.red, width: 2),
+            ),
           ),
         ),
-      ),
-    ]),
+      ],
+    ),
     actions: [
-      TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+      TextButton(
+        onPressed: () => Navigator.pop(context, false),
+        child: const Text('Cancelar'),
+      ),
       TextButton(
         onPressed: _habilitado ? () => Navigator.pop(context, true) : null,
-        child: Text('Eliminar mi cuenta',
-            style: TextStyle(
-                color: _habilitado ? Colors.red : Colors.grey.shade400,
-                fontWeight: FontWeight.w600)),
+        child: Text(
+          'Eliminar mi cuenta',
+          style: TextStyle(
+            color: _habilitado ? Colors.red : Colors.grey.shade400,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
       ),
     ],
   );

@@ -52,7 +52,9 @@ class _Trabajo {
 
 void _puntoDeEntrada(_Trabajo trabajo) {
   try {
-    trabajo.respuesta.send(_procesarBytes(trabajo.bytes, trabajo.maxWidth, trabajo.quality));
+    trabajo.respuesta.send(
+      _procesarBytes(trabajo.bytes, trabajo.maxWidth, trabajo.quality),
+    );
   } catch (e) {
     trabajo.respuesta.send(_ErrorEnIsolate(e.toString()));
   }
@@ -88,12 +90,17 @@ Future<Uint8List> normalizarFoto(
   Isolate? isolate;
   try {
     isolate = await Isolate.spawn(
-        _puntoDeEntrada, _Trabajo(bytes, maxWidth, quality, puerto.sendPort));
+      _puntoDeEntrada,
+      _Trabajo(bytes, maxWidth, quality, puerto.sendPort),
+    );
 
-    final resultado = await puerto.first.timeout(timeout, onTimeout: () {
-      isolate?.kill(priority: Isolate.immediate);
-      throw TimeoutException('Se agotó el tiempo procesando la foto.');
-    });
+    final resultado = await puerto.first.timeout(
+      timeout,
+      onTimeout: () {
+        isolate?.kill(priority: Isolate.immediate);
+        throw TimeoutException('Se agotó el tiempo procesando la foto.');
+      },
+    );
 
     if (resultado is _ErrorEnIsolate) {
       throw Exception('No se pudo procesar la foto: ${resultado.mensaje}');

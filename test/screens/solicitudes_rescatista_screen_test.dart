@@ -23,47 +23,66 @@ Future<_Resultado> _clasificar(Future<Object?> Function() llamada) async {
 }
 
 void main() {
-  group('aprobarSolicitud/rechazarSolicitud — candado compartido entre pantallas', () {
-    test('dos llamadas concurrentes a aprobarSolicitud con el MISMO docId — '
-        'exactamente una pasa el candado, la otra se bloquea — el caso real: '
-        'la vista previa del dashboard y la lista completa aprobando la misma '
-        'solicitud al mismo tiempo', () async {
-      final resultados = await Future.wait([
-        _clasificar(() => aprobarSolicitud('sol-conc-1', {})),
-        _clasificar(() => aprobarSolicitud('sol-conc-1', {})),
-      ]);
-      expect(resultados.where((r) => r == _Resultado.bloqueada).length, 1);
-      expect(resultados.where((r) => r == _Resultado.intento).length, 1);
-    });
+  group(
+    'aprobarSolicitud/rechazarSolicitud — candado compartido entre pantallas',
+    () {
+      test('dos llamadas concurrentes a aprobarSolicitud con el MISMO docId — '
+          'exactamente una pasa el candado, la otra se bloquea — el caso real: '
+          'la vista previa del dashboard y la lista completa aprobando la misma '
+          'solicitud al mismo tiempo', () async {
+        final resultados = await Future.wait([
+          _clasificar(() => aprobarSolicitud('sol-conc-1', {})),
+          _clasificar(() => aprobarSolicitud('sol-conc-1', {})),
+        ]);
+        expect(resultados.where((r) => r == _Resultado.bloqueada).length, 1);
+        expect(resultados.where((r) => r == _Resultado.intento).length, 1);
+      });
 
-    test('aprobarSolicitud y rechazarSolicitud sobre el MISMO docId también se '
+      test(
+        'aprobarSolicitud y rechazarSolicitud sobre el MISMO docId también se '
         'bloquean entre sí — el caso real: tocar Aprobar y después Rechazar '
-        'casi juntos, antes de que el primero termine', () async {
-      final resultados = await Future.wait([
-        _clasificar(() => aprobarSolicitud('sol-conc-2', {})),
-        _clasificar(() => rechazarSolicitud('sol-conc-2', {}, 'motivo')),
-      ]);
-      expect(resultados.where((r) => r == _Resultado.bloqueada).length, 1,
-          reason: 'una de las dos tiene que haberse bloqueado');
-      expect(resultados.where((r) => r == _Resultado.intento).length, 1);
-    });
+        'casi juntos, antes de que el primero termine',
+        () async {
+          final resultados = await Future.wait([
+            _clasificar(() => aprobarSolicitud('sol-conc-2', {})),
+            _clasificar(() => rechazarSolicitud('sol-conc-2', {}, 'motivo')),
+          ]);
+          expect(
+            resultados.where((r) => r == _Resultado.bloqueada).length,
+            1,
+            reason: 'una de las dos tiene que haberse bloqueado',
+          );
+          expect(resultados.where((r) => r == _Resultado.intento).length, 1);
+        },
+      );
 
-    test('dos docId DISTINTOS no se bloquean entre sí — no es un candado '
-        'global, cada solicitud tiene el suyo', () async {
-      final resultados = await Future.wait([
-        _clasificar(() => aprobarSolicitud('sol-conc-3', {})),
-        _clasificar(() => aprobarSolicitud('sol-conc-4', {})),
-      ]);
-      expect(resultados.every((r) => r == _Resultado.intento), true,
-          reason: 'las dos deberían haber podido intentarlo, ninguna bloqueada por la otra');
-    });
+      test('dos docId DISTINTOS no se bloquean entre sí — no es un candado '
+          'global, cada solicitud tiene el suyo', () async {
+        final resultados = await Future.wait([
+          _clasificar(() => aprobarSolicitud('sol-conc-3', {})),
+          _clasificar(() => aprobarSolicitud('sol-conc-4', {})),
+        ]);
+        expect(
+          resultados.every((r) => r == _Resultado.intento),
+          true,
+          reason:
+              'las dos deberían haber podido intentarlo, ninguna bloqueada por la otra',
+        );
+      });
 
-    test('el candado se libera al terminar — una llamada POSTERIOR (no '
-        'concurrente) al mismo docId no queda trabada para siempre', () async {
-      await _clasificar(() => aprobarSolicitud('sol-conc-5', {}));
-      final segunda = await _clasificar(() => aprobarSolicitud('sol-conc-5', {}));
-      expect(segunda, _Resultado.intento,
-          reason: 'si el candado no se liberó, esto se hubiera bloqueado para siempre');
-    });
-  });
+      test('el candado se libera al terminar — una llamada POSTERIOR (no '
+          'concurrente) al mismo docId no queda trabada para siempre', () async {
+        await _clasificar(() => aprobarSolicitud('sol-conc-5', {}));
+        final segunda = await _clasificar(
+          () => aprobarSolicitud('sol-conc-5', {}),
+        );
+        expect(
+          segunda,
+          _Resultado.intento,
+          reason:
+              'si el candado no se liberó, esto se hubiera bloqueado para siempre',
+        );
+      });
+    },
+  );
 }

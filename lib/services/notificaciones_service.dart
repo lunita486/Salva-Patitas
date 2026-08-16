@@ -17,7 +17,8 @@ class NotificacionesService {
   /// lugares de la app (main.dart y las 3 pantallas de inicio), convertirla
   /// a instancia habría significado tocar los 4 sin necesidad.
   @visibleForTesting
-  static set debugMessagingParaTests(FirebaseMessaging messaging) => _messaging = messaging;
+  static set debugMessagingParaTests(FirebaseMessaging messaging) =>
+      _messaging = messaging;
 
   static StreamSubscription<RemoteMessage>? _foregroundSub;
 
@@ -36,15 +37,21 @@ class NotificacionesService {
   /// porque el paso anterior falló.
   static Future<void> inicializar() async {
     try {
-      FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+      FirebaseMessaging.onBackgroundMessage(
+        _firebaseMessagingBackgroundHandler,
+      );
     } catch (e) {
-      debugPrint('NotificacionesService: no se pudo registrar el handler de fondo ($e)');
+      debugPrint(
+        'NotificacionesService: no se pudo registrar el handler de fondo ($e)',
+      );
     }
 
     try {
       await _messaging.requestPermission(alert: true, badge: true, sound: true);
     } catch (e) {
-      debugPrint('NotificacionesService: no se pudo pedir permiso de notificaciones ($e)');
+      debugPrint(
+        'NotificacionesService: no se pudo pedir permiso de notificaciones ($e)',
+      );
     }
 
     try {
@@ -54,7 +61,9 @@ class NotificacionesService {
         sound: true,
       );
     } catch (e) {
-      debugPrint('NotificacionesService: no se pudo configurar notificaciones en primer plano ($e)');
+      debugPrint(
+        'NotificacionesService: no se pudo configurar notificaciones en primer plano ($e)',
+      );
     }
 
     await guardarToken();
@@ -63,11 +72,14 @@ class NotificacionesService {
     try {
       _messaging.onTokenRefresh.listen(
         (_) => guardarToken(),
-        onError: (Object e) =>
-            debugPrint('NotificacionesService: falló el refresh del token ($e)'),
+        onError: (Object e) => debugPrint(
+          'NotificacionesService: falló el refresh del token ($e)',
+        ),
       );
     } catch (e) {
-      debugPrint('NotificacionesService: no se pudo escuchar el refresh del token ($e)');
+      debugPrint(
+        'NotificacionesService: no se pudo escuchar el refresh del token ($e)',
+      );
     }
   }
 
@@ -89,10 +101,9 @@ class NotificacionesService {
       // tras el primer login puede llegar antes de que el doc exista —
       // update() fallaría con "not-found" en ese momento, que es al
       // arrancar la app.
-      await FirebaseFirestore.instance
-          .collection('usuarios')
-          .doc(uid)
-          .set({'fcmToken': token}, SetOptions(merge: true));
+      await FirebaseFirestore.instance.collection('usuarios').doc(uid).set({
+        'fcmToken': token,
+      }, SetOptions(merge: true));
     } catch (e) {
       debugPrint('NotificacionesService: no se pudo guardar el token ($e)');
     }
@@ -115,7 +126,9 @@ class NotificacionesService {
   // auditoría de código previa a subir a Play Store.
   static void escucharEnPrimerPlano(BuildContext context) {
     _foregroundSub?.cancel();
-    _foregroundSub = FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+    _foregroundSub = FirebaseMessaging.onMessage.listen((
+      RemoteMessage message,
+    ) {
       if (!context.mounted) return;
       final notif = message.notification;
       if (notif == null) return;
@@ -125,17 +138,26 @@ class NotificacionesService {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(notif.title ?? '',
-                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+              Text(
+                notif.title ?? '',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
               if ((notif.body ?? '').isNotEmpty)
-                Text(notif.body ?? '',
-                    style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                Text(
+                  notif.body ?? '',
+                  style: const TextStyle(fontSize: 12, color: Colors.white70),
+                ),
             ],
           ),
           backgroundColor: appTeal,
           duration: const Duration(seconds: 4),
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
       );
     });

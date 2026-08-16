@@ -10,10 +10,79 @@ import 'rescate_fotos_repository.dart';
 /// deben llamar `FirebaseFirestore.instance.collection('rescates')`
 /// directamente — ver ARCHITECTURE.md.
 class RescatesRepository {
-  RescatesRepository({FirebaseFirestore? db, FirebaseAuth? auth, RescateFotosRepository? fotosRepo})
-      : _db = db ?? FirebaseFirestore.instance,
-        _authOverride = auth,
-        _fotosRepoOverride = fotosRepo;
+  // ── Vocabulario del dominio ───────────────────────────────────────────
+  // Los valores VÁLIDOS de cada campo de un rescate. Única fuente para
+  // toda la app: las pantallas de publicar y de editar los leen de acá en
+  // vez de declarar su propia lista.
+  //
+  // No es prolijidad — estaban declarados por separado en
+  // subir_rescate_screen.dart y editar_rescate_screen.dart, y YA se habían
+  // desincronizado sin que nadie lo notara (hallazgo de auditoría):
+  //
+  //   publicar: ['Sano', 'Herido', 'En tratamiento', 'Crítico']
+  //   editar:   ['Sano', 'En tratamiento', 'Recuperado']
+  //
+  // Con eso, un animal publicado como 'Herido' o 'Crítico' se abría en
+  // Editar SIN ningún chip marcado (su valor real no estaba en la lista de
+  // esa pantalla): parecía que el dato se había perdido, y tocar cualquier
+  // otra opción lo pisaba de verdad. Al revés, 'Recuperado' solo se podía
+  // poner editando, nunca al publicar. Dos listas para el mismo campo no
+  // pueden mantenerse iguales a mano; una sola no puede divergir.
+  //
+  // `estados` incluye la unión de las dos listas: sacar un valor dejaría a
+  // los animales que YA lo tienen guardado sin poder mostrarlo (el mismo
+  // bug, al revés). Antes de quitar alguno hay que migrar los documentos
+  // que lo usen.
+  static const especies = ['Perro', 'Gato', 'Otro'];
+  static const estados = [
+    'Sano',
+    'Herido',
+    'En tratamiento',
+    'Recuperado',
+    'Crítico',
+  ];
+  static const urgencias = ['Alta', 'Media', 'Baja'];
+  static const energias = ['Tranquilo', 'Activo', 'Muy activo'];
+  static const tamanos = ['Pequeño', 'Mediano', 'Grande'];
+  static const edades = ['Cachorro', 'Adulto', 'Senior'];
+  static const generos = ['Macho', 'Hembra', 'No sé'];
+  static const siNo = ['Sí', 'No'];
+
+  /// Salud (vacunado/desparasitado): 'Aún no lo sé' es un valor de primera
+  /// clase, no un "sin dato" — un animal recién rescatado de la calle no
+  /// pasó por veterinario todavía, y forzar Sí/No hacía que se adivinara
+  /// (sugerencia real de un tester que rescató un gato de la calle).
+  static const salud = ['Sí', 'No', 'Aún no lo sé'];
+  static const tiposRaza = ['Criolla', 'Raza definida'];
+
+  /// Nombre de un rescate, con el mismo criterio en toda la app para cuando
+  /// no tiene uno cargado.
+  ///
+  /// `datos['nombre'] as String? ?? 'valor por defecto'` es un error fácil
+  /// de cometer acá: un animal sin nombre NO tiene el campo en `null`,
+  /// publicarlo lo deja en `''` (vacío) — así que ese `??` nunca entra en
+  /// acción. Estaba mal en dos lugares (los avisos automáticos de
+  /// vencimiento y de seguimiento post-adopción en
+  /// solicitudes_rescatista_screen.dart, hallazgo real de Eliza: el mensaje
+  /// salía "Venció el hogar de paso de " sin nada después) mientras que
+  /// adoptante_feed_screen.dart sí comparaba contra vacío. Tres copias de la
+  /// misma decisión — nombreDe es la única, para que no puedan volver a
+  /// divergir entre sí.
+  static String nombreDe(
+    Map<String, dynamic> datos, {
+    String siVacio = 'Sin nombre',
+  }) {
+    final nombre = datos['nombre'] as String?;
+    return (nombre?.isNotEmpty ?? false) ? nombre! : siVacio;
+  }
+
+  RescatesRepository({
+    FirebaseFirestore? db,
+    FirebaseAuth? auth,
+    RescateFotosRepository? fotosRepo,
+  }) : _db = db ?? FirebaseFirestore.instance,
+       _authOverride = auth,
+       _fotosRepoOverride = fotosRepo;
   final FirebaseFirestore _db;
   // FirebaseAuth.instance recién se evalúa cuando hace falta de verdad
   // (dentro de eliminar(), y solo en la rama de permission-denied) — no en
@@ -30,9 +99,11 @@ class RescatesRepository {
   // código) necesita poder simular que una subida de foto falla, y sin
   // este punto de inyección eso es imposible desde afuera.
   final RescateFotosRepository? _fotosRepoOverride;
-  RescateFotosRepository get _fotosRepo => _fotosRepoOverride ?? RescateFotosRepository();
+  RescateFotosRepository get _fotosRepo =>
+      _fotosRepoOverride ?? RescateFotosRepository();
 
-  CollectionReference<Map<String, dynamic>> get _col => _db.collection('rescates');
+  CollectionReference<Map<String, dynamic>> get _col =>
+      _db.collection('rescates');
 
   /// Animales publicados por [uid] bajo el rol [role]. `role` es
   /// obligatorio a propósito: una cuenta puede ser rescatista Y albergue
@@ -40,11 +111,16 @@ class RescatesRepository {
   Stream<QuerySnapshot<Map<String, dynamic>>> misRescates({
     required String uid,
     required CreatorRole role,
-  }) =>
-      _col
-          .where('rescatistaId', isEqualTo: uid)
-          .where('creadoPor', isEqualTo: role.firestoreValue)
-          .snapshots();
+    String? estadoAdopcion,
+  }) {
+    Query<Map<String, dynamic>> q = _col
+        .where('rescatistaId', isEqualTo: uid)
+        .where('creadoPor', isEqualTo: role.firestoreValue);
+    if (estadoAdopcion != null) {
+      q = q.where('estadoAdopcion', isEqualTo: estadoAdopcion);
+    }
+    return q.snapshots();
+  }
 
   /// True si [uid] ya tiene publicado otro animal con el mismo [nombre], la
   /// misma [especie] (sin importar mayúsculas/espacios en el nombre) Y bajo
@@ -92,9 +168,21 @@ class RescatesRepository {
   }) async {
     final buscado = nombre.trim().toLowerCase();
     if (buscado.isEmpty) return null;
+    // Filtra por `nombreBusqueda` (nombre normalizado, ver crear()/actualizar())
+    // en vez de traer TODOS los animales del rol y comparar acá — antes esto
+    // escalaba con la cantidad total de animales publicados en la cuenta, sin
+    // límite, así que una cuenta con mucho historial (ej. de tanto probar)
+    // notaba cada vez más demora al publicar, con buena señal y todo. Hallazgo
+    // real de Eliza. Solo 3 filtros de igualdad (sin orderBy ni rango), así
+    // que no hace falta un índice compuesto nuevo.
+    // Cuentas con animales publicados ANTES de este cambio, sin `nombreBusqueda`
+    // todavía, no van a matchear acá hasta que ese animal se vuelva a guardar
+    // una vez — el aviso de duplicado es una cortesía, no una barrera de
+    // datos, así que ese costo se acepta a cambio de no escanear todo cada vez.
     final consulta = _col
         .where('rescatistaId', isEqualTo: uid)
-        .where('creadoPor', isEqualTo: role.firestoreValue);
+        .where('creadoPor', isEqualTo: role.firestoreValue)
+        .where('nombreBusqueda', isEqualTo: buscado);
     QuerySnapshot<Map<String, dynamic>> snap;
     try {
       snap = await consulta.get();
@@ -107,9 +195,8 @@ class RescatesRepository {
     }
     for (final d in snap.docs) {
       final data = d.data();
-      final mismoNombre = ((data['nombre'] as String?) ?? '').trim().toLowerCase() == buscado;
-      if (!mismoNombre) continue;
-      if (especie != null && especie.isNotEmpty && data['especie'] != especie) continue;
+      if (especie != null && especie.isNotEmpty && data['especie'] != especie)
+        continue;
       return d;
     }
     return null;
@@ -124,7 +211,13 @@ class RescatesRepository {
     required CreatorRole role,
     String? especie,
   }) async =>
-      (await buscarDuplicado(uid: uid, nombre: nombre, role: role, especie: especie)) != null;
+      (await buscarDuplicado(
+        uid: uid,
+        nombre: nombre,
+        role: role,
+        especie: especie,
+      )) !=
+      null;
 
   /// Todos los "nombre_especie" (nombre en minúscula) ya publicados por
   /// [uid] bajo [role], en UNA sola consulta — para chequear varios
@@ -191,8 +284,9 @@ class RescatesRepository {
   /// un rescate cargado por fuera de este repositorio (a mano en Firebase
   /// Console, o un script) que se olvide de ese campo quedaría invisible
   /// en el feed, sin ningún aviso.
-  Stream<QuerySnapshot<Map<String, dynamic>>> feedPublico({int limite = feedPageSize}) =>
-      _col.orderBy('creadoEn').limit(limite).snapshots();
+  Stream<QuerySnapshot<Map<String, dynamic>>> feedPublico({
+    int limite = feedPageSize,
+  }) => _col.orderBy('creadoEn').limit(limite).snapshots();
 
   /// Stream de UN rescate por id — para pantallas que necesitan reaccionar
   /// en vivo a cambios de estado (ej. chat_screen.dart, que muestra "✅
@@ -208,12 +302,11 @@ class RescatesRepository {
   Stream<QuerySnapshot<Map<String, dynamic>>> porNombreYDueno({
     required String rescatistaId,
     required String nombre,
-  }) =>
-      _col
-          .where('rescatistaId', isEqualTo: rescatistaId)
-          .where('nombre', isEqualTo: nombre)
-          .limit(1)
-          .snapshots();
+  }) => _col
+      .where('rescatistaId', isEqualTo: rescatistaId)
+      .where('nombre', isEqualTo: nombre)
+      .limit(1)
+      .snapshots();
 
   /// Lectura puntual de UN rescate por id — usada para chequear su estado
   /// actual justo antes de eliminarlo (ver editar_rescate_screen.dart y
@@ -229,12 +322,11 @@ class RescatesRepository {
     required String uid,
     required CreatorRole role,
     required String estadoAdopcion,
-  }) =>
-      _col
-          .where('rescatistaId', isEqualTo: uid)
-          .where('creadoPor', isEqualTo: role.firestoreValue)
-          .where('estadoAdopcion', isEqualTo: estadoAdopcion)
-          .get();
+  }) => _col
+      .where('rescatistaId', isEqualTo: uid)
+      .where('creadoPor', isEqualTo: role.firestoreValue)
+      .where('estadoAdopcion', isEqualTo: estadoAdopcion)
+      .get();
 
   /// Genera un id de rescate sin tocar la red (`.doc()` sin argumentos es
   /// puramente local) — para poder conocer el id ANTES de intentar el
@@ -256,17 +348,31 @@ class RescatesRepository {
     DocumentReference<Map<String, dynamic>>? ref,
   }) async {
     final destino = ref ?? _col.doc();
+    final nombre = datos['nombre'] as String?;
     await destino.set({
       ...datos,
       'rescatistaId': uid,
       'creadoPor': role.firestoreValue,
       'creadoEn': FieldValue.serverTimestamp(),
+      // Nombre normalizado para que buscarDuplicado() pueda filtrar del lado
+      // del servidor en vez de traer todos los animales del rol — se escribe
+      // acá, no en cada pantalla, para que ningún llamador nuevo se olvide.
+      if (nombre != null && nombre.isNotEmpty)
+        'nombreBusqueda': nombre.trim().toLowerCase(),
     });
     return destino;
   }
 
-  Future<void> actualizar(String rescateId, Map<String, dynamic> cambios) =>
-      _col.doc(rescateId).update(cambios);
+  Future<void> actualizar(String rescateId, Map<String, dynamic> cambios) {
+    final nombre = cambios['nombre'] as String?;
+    return _col.doc(rescateId).update({
+      ...cambios,
+      // Mismo motivo que en crear(): si esta actualización toca el nombre,
+      // mantiene nombreBusqueda sincronizado — sin esto, editar el nombre de
+      // un animal ya publicado lo dejaría invisible para buscarDuplicado().
+      if (nombre != null) 'nombreBusqueda': nombre.trim().toLowerCase(),
+    });
+  }
 
   /// Cambia `estadoAdopcion` desde el picker de estado (`CambiarEstadoSheet`).
   /// [extra] son campos propios de ese estado (ej. `fechaAdopcion`,
@@ -281,10 +387,15 @@ class RescatesRepository {
   /// un adoptante con el proceso activo, aunque ese adoptante ya no tenga
   /// nada que ver). Bug real: un animal "Regresado" y republicado como
   /// disponible no dejaba aprobar ninguna solicitud nueva.
-  Future<void> cambiarEstadoAdopcion(String rescateId, String nuevoEstado, {
+  Future<void> cambiarEstadoAdopcion(
+    String rescateId,
+    String nuevoEstado, {
     Map<String, dynamic> extra = const {},
   }) {
-    final limpiaClaim = nuevoEstado == 'Rescatado' || nuevoEstado == 'Regresado' || nuevoEstado == 'Fallecido';
+    final limpiaClaim =
+        nuevoEstado == 'Rescatado' ||
+        nuevoEstado == 'Regresado' ||
+        nuevoEstado == 'Fallecido';
     return _col.doc(rescateId).update({
       'estadoAdopcion': nuevoEstado,
       if (limpiaClaim) 'adoptanteIdEnProceso': FieldValue.delete(),
@@ -328,7 +439,10 @@ class RescatesRepository {
     // El refresh-token-y-reintentar vive en firestore_resiliencia.dart
     // (conReintentoSiTokenVencido), compartido con UsuariosRepository —
     // ver el porqué completo en el doc-comment de arriba.
-    await conReintentoSiTokenVencido(() => _auth, () => _col.doc(rescateId).delete());
+    await conReintentoSiTokenVencido(
+      () => _auth,
+      () => _col.doc(rescateId).delete(),
+    );
     // Sin esperar (fire-and-forget) a propósito: esto YA es best-effort
     // (ver doc de _borrarFavoritos), así que no tiene sentido que la
     // persona que está borrando su animal espere por una limpieza que ni
@@ -420,20 +534,35 @@ class RescatesRepository {
   static (String, String) mensajeBloqueoEliminar(String estado, String nombre) {
     switch (estado) {
       case 'Hogar de paso':
-        return ('No se puede eliminar todavía',
-            '$nombre está en hogar de paso ahora mismo. Cambiá su estado a "Rescatado" primero, y después podés eliminar la publicación.');
+        return (
+          'No se puede eliminar todavía',
+          '$nombre está en hogar de paso ahora mismo. Cambiá su estado a "Rescatado" primero, y después podés eliminar la publicación.',
+        );
       case 'En proceso de adopción':
-        return ('No se puede eliminar todavía',
-            '$nombre tiene un proceso de adopción en curso. Cambiá su estado primero, y después podés eliminar la publicación.');
+        return (
+          'No se puede eliminar todavía',
+          '$nombre tiene un proceso de adopción en curso. Cambiá su estado primero, y después podés eliminar la publicación.',
+        );
       case 'Regresado':
-        return ('No se puede eliminar todavía',
-            '$nombre está marcado como "Regresado". Cambiá su estado a "Rescatado" primero, y después podés eliminar la publicación.');
+        return (
+          'No se puede eliminar todavía',
+          '$nombre está marcado como "Regresado". Cambiá su estado a "Rescatado" primero, y después podés eliminar la publicación.',
+        );
       case 'Adoptado':
-        return ('No se puede eliminar', '$nombre ya fue adoptado. Queda como registro permanente, no se puede eliminar.');
+        return (
+          'No se puede eliminar',
+          '$nombre ya fue adoptado. Queda como registro permanente, no se puede eliminar.',
+        );
       case 'Fallecido':
-        return ('No se puede eliminar', '$nombre fue marcado como "Fallecido". Queda como registro permanente, no se puede eliminar.');
+        return (
+          'No se puede eliminar',
+          '$nombre fue marcado como "Fallecido". Queda como registro permanente, no se puede eliminar.',
+        );
       default:
-        return ('No se puede eliminar', '$nombre no se puede eliminar en su estado actual.');
+        return (
+          'No se puede eliminar',
+          '$nombre no se puede eliminar en su estado actual.',
+        );
     }
   }
 
@@ -473,26 +602,37 @@ class RescatesRepository {
     // ('resultados[1] as ...') no avisa en tiempo de compilación si alguien
     // reordena o agrega un elemento a la lista — esto sí.
     final solicitudesRepo = SolicitudesRepository(db: _db);
-    final futuroPendientes = solicitudesRepo.tienePendientesPara(rescateId, rescatistaId: rescatistaId);
+    final futuroPendientes = solicitudesRepo.tienePendientesPara(
+      rescateId,
+      rescatistaId: rescatistaId,
+    );
     final futuroDatos = obtener(rescateId).then((d) => d.data());
-    final futuroAprobada = solicitudesRepo.tuvoSolicitudAprobada(rescateId, rescatistaId: rescatistaId);
+    final futuroAprobada = solicitudesRepo.tuvoSolicitudAprobada(
+      rescateId,
+      rescatistaId: rescatistaId,
+    );
 
     final tienePendientes = await futuroPendientes;
-    final datosActuales   = await futuroDatos;
-    final tuvoAprobada    = await futuroAprobada;
+    final datosActuales = await futuroDatos;
+    final tuvoAprobada = await futuroAprobada;
 
     if (tienePendientes) {
-      return ('No se puede eliminar todavía',
-          '$nombre tiene una solicitud esperando respuesta. Aprobala o rechazala primero, y después podés eliminar la publicación.');
+      return (
+        'No se puede eliminar todavía',
+        '$nombre tiene una solicitud esperando respuesta. Aprobala o rechazala primero, y después podés eliminar la publicación.',
+      );
     }
-    final estadoActual = datosActuales?['estadoAdopcion'] as String? ?? 'Rescatado';
+    final estadoActual =
+        datosActuales?['estadoAdopcion'] as String? ?? 'Rescatado';
     if (estadoActual != 'Rescatado') {
       return mensajeBloqueoEliminar(estadoActual, nombre);
     }
     if (tuvoAprobada) {
-      return ('No se puede eliminar',
-          '$nombre tuvo una adopción o un hogar de paso aprobado alguna vez. '
-          'Queda como registro permanente, marcalo como "Adoptado", "Regresado" o "Fallecido" en vez de eliminarlo.');
+      return (
+        'No se puede eliminar',
+        '$nombre tuvo una adopción o un hogar de paso aprobado alguna vez. '
+            'Queda como registro permanente, marcalo como "Adoptado", "Regresado" o "Fallecido" en vez de eliminarlo.',
+      );
     }
     return null;
   }
@@ -553,14 +693,17 @@ class RescatesRepository {
       // fantasma sin foto (bug real reportado por Eliza).
       final nuevaRef = nuevoRef();
       rescateId = nuevaRef.id;
-      await crear(ref: nuevaRef, uid: uid, role: role, datos: datos)
-          .timeout(const Duration(seconds: 15), onTimeout: () =>
-              throw Exception('No hay conexión a internet.'));
+      await crear(ref: nuevaRef, uid: uid, role: role, datos: datos).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () => throw Exception('No hay conexión a internet.'),
+      );
 
       double progreso1 = 0, progreso2 = 0;
       var foto2Fallo = false;
       void actualizarProgreso() {
-        onProgreso?.call(fotos.length > 1 ? (progreso1 + progreso2) / 2 : progreso1);
+        onProgreso?.call(
+          fotos.length > 1 ? (progreso1 + progreso2) / 2 : progreso1,
+        );
       }
 
       // El timeout de cada subida vive DENTRO de fotosRepo.subir() (y
@@ -572,8 +715,13 @@ class RescatesRepository {
       Future<String?> subirFoto2(Uint8List bytes) async {
         try {
           return await fotosRepo.subir(
-            rescateId: idRescate, slot: 2, bytes: bytes,
-            onProgreso: (p) { progreso2 = p; actualizarProgreso(); },
+            rescateId: idRescate,
+            slot: 2,
+            bytes: bytes,
+            onProgreso: (p) {
+              progreso2 = p;
+              actualizarProgreso();
+            },
           );
         } catch (_) {
           foto2Fallo = true;
@@ -583,8 +731,13 @@ class RescatesRepository {
 
       final resultados = await Future.wait([
         fotosRepo.subir(
-          rescateId: idRescate, slot: 1, bytes: fotos[0],
-          onProgreso: (p) { progreso1 = p; actualizarProgreso(); },
+          rescateId: idRescate,
+          slot: 1,
+          bytes: fotos[0],
+          onProgreso: (p) {
+            progreso1 = p;
+            actualizarProgreso();
+          },
         ),
         if (fotos.length > 1) subirFoto2(fotos[1]),
       ]);
@@ -594,8 +747,10 @@ class RescatesRepository {
       await actualizar(rescateId, {
         'fotoUrl': fotoUrl,
         if (fotoUrl2 != null) 'fotoUrl2': fotoUrl2,
-      }).timeout(const Duration(seconds: 15), onTimeout: () =>
-          throw Exception('No hay conexión a internet.'));
+      }).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () => throw Exception('No hay conexión a internet.'),
+      );
 
       return (rescateId: rescateId, foto2Fallo: foto2Fallo);
     } catch (_) {
@@ -605,10 +760,121 @@ class RescatesRepository {
       // de Storage queda con permission-denied, dejando fotos huérfanas.
       if (rescateId != null) {
         final id = rescateId;
-        try { await fotosRepo.eliminarTodas(id).timeout(const Duration(seconds: 10)); } catch (_) {}
-        try { await eliminar(id).timeout(const Duration(seconds: 10)); } catch (_) {}
+        try {
+          await fotosRepo
+              .eliminarTodas(id)
+              .timeout(const Duration(seconds: 10));
+        } catch (_) {}
+        try {
+          await eliminar(id).timeout(const Duration(seconds: 10));
+        } catch (_) {}
       }
       rethrow;
     }
+  }
+
+  /// Resuelve los dos slots de fotos al EDITAR un rescate y devuelve las
+  /// URLs que hay que guardar en el documento (`null` = ese slot queda
+  /// vacío). Sube las nuevas, conserva las que no cambiaron, promociona la
+  /// foto 2 al lugar de la 1 cuando hizo falta, y borra los archivos que
+  /// dejaron de estar referenciados.
+  ///
+  /// Vivía inline en `editar_rescate_screen.dart` — la contraparte de
+  /// [publicarConFotos], que ya estaba acá. Esa asimetría dejaba la parte
+  /// más delicada del manejo de Storage (la única que BORRA y MUEVE
+  /// archivos, no solo sube) sin ningún test posible, validada nada más
+  /// que leyéndola.
+  ///
+  /// [nuevaFoto1]/[nuevaFoto2] son los bytes YA normalizados (igual que en
+  /// [publicarConFotos]: normalizar corre en su propio isolate y es
+  /// responsabilidad de la pantalla). `null` significa "no se eligió una
+  /// foto nueva para ese slot". [urlExistente1]/[urlExistente2] son las
+  /// URLs que la pantalla tiene en pantalla AHORA — ojo: después de quitar
+  /// la foto 1 teniendo dos, `urlExistente1` apunta al archivo `foto2.jpg`,
+  /// y eso es justamente lo que dispara la promoción.
+  ///
+  /// **Las tres reglas que no se ven leyendo una sola rama:**
+  ///
+  /// 1. **La promoción mueve el ARCHIVO, no la URL.** Los campos
+  ///    `fotoUrl`/`fotoUrl2` prometen apuntar a `foto1.jpg`/`foto2.jpg`, y
+  ///    el borrado por slot cuenta con eso. Copiando solo la URL, el mismo
+  ///    guardado borraba `foto2.jpg` como "slot 2 ahora vacío" y la ficha
+  ///    quedaba apuntando a un archivo borrado — el feed mostraba el emoji
+  ///    de repuesto (bug real: "rarito 2").
+  /// 2. **Nunca borrar un archivo que el otro campo todavía referencia.**
+  ///    Red de seguridad independiente de la detección de promoción: para
+  ///    que una foto se rompa tendrían que fallar las dos a la vez.
+  /// 3. **Con promoción, los slots se resuelven en SERIE.** `moverFoto` lee
+  ///    y borra `foto2.jpg`, y el slot 2 puede estar subiendo una foto
+  ///    nueva a ese mismo path (quitar la 1 y agregar otra segunda foto en
+  ///    la misma edición) — en paralelo se pisan. Sin promoción sí van en
+  ///    paralelo: son independientes.
+  Future<({String? fotoUrl, String? fotoUrl2})> resolverFotosAlEditar({
+    required String rescateId,
+    required Uint8List? nuevaFoto1,
+    required Uint8List? nuevaFoto2,
+    required String? urlExistente1,
+    required String? urlExistente2,
+    Duration timeoutBorrado = const Duration(seconds: 10),
+  }) async {
+    final fotosRepo = _fotosRepo;
+
+    Future<String?> resolverSlot(int slot) async {
+      final nueva = slot == 1 ? nuevaFoto1 : nuevaFoto2;
+      final existente = slot == 1 ? urlExistente1 : urlExistente2;
+      if (nueva != null) {
+        // El timeout vive DENTRO de subir() (cancela la subida real al
+        // vencer) — no se vuelve a envolver acá, ver el doc de ese método.
+        return fotosRepo.subir(rescateId: rescateId, slot: slot, bytes: nueva);
+      }
+      if (existente != null) return existente;
+      // Regla 2 (ver arriba). Si el otro slot tiene una foto NUEVA, su
+      // campo va a quedar apuntando a su propio archivo recién subido —
+      // este queda sin referencias y sí se puede borrar.
+      final urlDelOtroSlot = slot == 1 ? urlExistente2 : urlExistente1;
+      final nuevaDelOtroSlot = slot == 1 ? nuevaFoto2 : nuevaFoto1;
+      final referenciadoPorOtroSlot =
+          nuevaDelOtroSlot == null &&
+          RescateFotosRepository.urlApuntaASlot(urlDelOtroSlot, slot);
+      if (!referenciadoPorOtroSlot) {
+        // Timeout acá sí (a diferencia de subir/moverFoto, que lo manejan
+        // por dentro): Storage no encola los borrados sin señal, se quedan
+        // esperando para siempre.
+        await fotosRepo
+            .eliminar(rescateId: rescateId, slot: slot)
+            .timeout(timeoutBorrado);
+      }
+      return null;
+    }
+
+    // La detección es por PATH del archivo (no comparando contra la URL
+    // inicial): así también repara documentos que ya quedaron cruzados por
+    // este bug antes de que existiera el arreglo.
+    final promocionPendiente =
+        nuevaFoto1 == null &&
+        RescateFotosRepository.urlApuntaASlot(urlExistente1, 2);
+
+    if (promocionPendiente) {
+      // Sin `.timeout()` acá afuera a propósito: moverFoto() ya está
+      // acotado por dentro. Envolverlo TAMBIÉN podía darse por vencido
+      // antes de que la cancelación interna llegara a correr — dos relojes
+      // para lo mismo, y el de afuera no cancela nada real.
+      final fotoMovida = await fotosRepo.moverFoto(
+        rescateId: rescateId,
+        deSlot: 2,
+        aSlot: 1,
+      );
+      // null acá NO significa "sin foto": significa "no hubo nada que
+      // mover" (el archivo de origen ya no estaba). En ese caso el campo
+      // ya tenía una URL válida — por eso se detectó la promoción — así
+      // que se conserva en vez de borrarla: perder la referencia sería
+      // peor que dejarla como estaba.
+      final fotoUrl = fotoMovida ?? urlExistente1;
+      final fotoUrl2 = await resolverSlot(2); // Regla 3: en serie.
+      return (fotoUrl: fotoUrl, fotoUrl2: fotoUrl2);
+    }
+
+    final resultados = await Future.wait([resolverSlot(1), resolverSlot(2)]);
+    return (fotoUrl: resultados[0], fotoUrl2: resultados[1]);
   }
 }

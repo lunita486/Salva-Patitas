@@ -23,49 +23,82 @@ void main() {
   group('NotificacionesService.inicializar()', () {
     test('NO lanza aunque requestPermission() falle (el caso real: celular '
         'sin Google Play Services)', () async {
-      when(() => messaging.requestPermission(alert: true, badge: true, sound: true))
-          .thenThrow(Exception('SERVICE_NOT_AVAILABLE'));
-      when(() => messaging.setForegroundNotificationPresentationOptions(
-          alert: true, badge: true, sound: true)).thenAnswer((_) async {});
+      when(
+        () =>
+            messaging.requestPermission(alert: true, badge: true, sound: true),
+      ).thenThrow(Exception('SERVICE_NOT_AVAILABLE'));
+      when(
+        () => messaging.setForegroundNotificationPresentationOptions(
+          alert: true,
+          badge: true,
+          sound: true,
+        ),
+      ).thenAnswer((_) async {});
       when(() => messaging.getToken()).thenAnswer((_) async => null);
-      when(() => messaging.onTokenRefresh).thenAnswer((_) => const Stream.empty());
+      when(
+        () => messaging.onTokenRefresh,
+      ).thenAnswer((_) => const Stream.empty());
 
       await expectLater(NotificacionesService.inicializar(), completes);
     });
 
     test('NO lanza aunque getToken() falle', () async {
-      when(() => messaging.requestPermission(alert: true, badge: true, sound: true))
-          .thenAnswer((_) async => const NotificationSettings(
-              authorizationStatus: AuthorizationStatus.authorized,
-              alert: AppleNotificationSetting.enabled,
-              announcement: AppleNotificationSetting.notSupported,
-              badge: AppleNotificationSetting.enabled,
-              carPlay: AppleNotificationSetting.notSupported,
-              lockScreen: AppleNotificationSetting.notSupported,
-              notificationCenter: AppleNotificationSetting.notSupported,
-              showPreviews: AppleShowPreviewSetting.always,
-              timeSensitive: AppleNotificationSetting.notSupported,
-              criticalAlert: AppleNotificationSetting.notSupported,
-              sound: AppleNotificationSetting.enabled,
-              providesAppNotificationSettings: AppleNotificationSetting.notSupported));
-      when(() => messaging.setForegroundNotificationPresentationOptions(
-          alert: true, badge: true, sound: true)).thenAnswer((_) async {});
-      when(() => messaging.getToken()).thenThrow(Exception('SERVICE_NOT_AVAILABLE'));
-      when(() => messaging.onTokenRefresh).thenAnswer((_) => const Stream.empty());
+      when(
+        () =>
+            messaging.requestPermission(alert: true, badge: true, sound: true),
+      ).thenAnswer(
+        (_) async => const NotificationSettings(
+          authorizationStatus: AuthorizationStatus.authorized,
+          alert: AppleNotificationSetting.enabled,
+          announcement: AppleNotificationSetting.notSupported,
+          badge: AppleNotificationSetting.enabled,
+          carPlay: AppleNotificationSetting.notSupported,
+          lockScreen: AppleNotificationSetting.notSupported,
+          notificationCenter: AppleNotificationSetting.notSupported,
+          showPreviews: AppleShowPreviewSetting.always,
+          timeSensitive: AppleNotificationSetting.notSupported,
+          criticalAlert: AppleNotificationSetting.notSupported,
+          sound: AppleNotificationSetting.enabled,
+          providesAppNotificationSettings:
+              AppleNotificationSetting.notSupported,
+        ),
+      );
+      when(
+        () => messaging.setForegroundNotificationPresentationOptions(
+          alert: true,
+          badge: true,
+          sound: true,
+        ),
+      ).thenAnswer((_) async {});
+      when(
+        () => messaging.getToken(),
+      ).thenThrow(Exception('SERVICE_NOT_AVAILABLE'));
+      when(
+        () => messaging.onTokenRefresh,
+      ).thenAnswer((_) => const Stream.empty());
 
       await expectLater(NotificacionesService.inicializar(), completes);
     });
 
     test('NO lanza aunque TODOS los pasos fallen a la vez — el peor caso '
         'real', () async {
-      when(() => messaging.requestPermission(alert: true, badge: true, sound: true))
-          .thenThrow(Exception('sin Play Services'));
-      when(() => messaging.setForegroundNotificationPresentationOptions(
-              alert: true, badge: true, sound: true))
-          .thenThrow(Exception('sin Play Services'));
-      when(() => messaging.getToken()).thenThrow(Exception('sin Play Services'));
-      when(() => messaging.onTokenRefresh)
-          .thenThrow(Exception('sin Play Services'));
+      when(
+        () =>
+            messaging.requestPermission(alert: true, badge: true, sound: true),
+      ).thenThrow(Exception('sin Play Services'));
+      when(
+        () => messaging.setForegroundNotificationPresentationOptions(
+          alert: true,
+          badge: true,
+          sound: true,
+        ),
+      ).thenThrow(Exception('sin Play Services'));
+      when(
+        () => messaging.getToken(),
+      ).thenThrow(Exception('sin Play Services'));
+      when(
+        () => messaging.onTokenRefresh,
+      ).thenThrow(Exception('sin Play Services'));
 
       await expectLater(NotificacionesService.inicializar(), completes);
     });
@@ -83,7 +116,9 @@ void main() {
     // que alguien abría la app).
     test('NO lanza ni con FirebaseAuth sin inicializar ni con getToken() '
         'fallando', () async {
-      when(() => messaging.getToken()).thenThrow(Exception('SERVICE_NOT_AVAILABLE'));
+      when(
+        () => messaging.getToken(),
+      ).thenThrow(Exception('SERVICE_NOT_AVAILABLE'));
 
       await expectLater(NotificacionesService.guardarToken(), completes);
     });

@@ -2,26 +2,35 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
+import 'package:go_router/go_router.dart';
 import '../theme.dart';
+import '../domain/reglas_negocio.dart';
+import '../routing/app_router.dart';
+import '../widgets/avatares.dart';
+import '../widgets/fotos.dart';
+import '../widgets/texto_sin_desborde.dart';
 import '../data/chats_repository.dart';
 import '../data/rescates_repository.dart';
-import 'animal_detalle_screen.dart';
-import 'aliado_publico_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final Map<String, dynamic> animal;
   final bool esRescatista;
   final String? chatId;
-  const ChatScreen({super.key, required this.animal, this.esRescatista = false, this.chatId});
+  const ChatScreen({
+    super.key,
+    required this.animal,
+    this.esRescatista = false,
+    this.chatId,
+  });
   @override
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  final _msgCtl    = TextEditingController();
+  final _msgCtl = TextEditingController();
   final _scrollCtl = ScrollController();
   late final String _chatId;
-  late final CollectionReference _mensajesRef;
+  final _chatsRepo = ChatsRepository();
   // Se completa cuando el doc del chat ya existe en Firestore. El listener
   // de mensajes recién se conecta después de esto: las reglas de mensajes
   // verifican participante contra el doc del chat, y si el listener se
@@ -42,14 +51,15 @@ class _ChatScreenState extends State<ChatScreen> {
   // usuarios/{id} es compartido: si siempre se mirara fotoBase64, un chat
   // donde la contraparte actúa como ADOPTANTE mostraría el logo de SU
   // PROPIO albergue en vez de su foto personal — mismo bug que ya se
-  // arregló en AvatarUsuario (theme.dart), acá vive aparte porque este
+  // arregló en AvatarUsuario (widgets/avatares.dart), acá vive aparte porque este
   // encabezado tiene su propia lógica de carga, no reutiliza ese widget.
   // Ver el detalle completo (chat de animal vs. consulta a un negocio,
   // y quién mira cada uno) en los comentarios de _cargarFotoContraparte.
   late final Future<(String?, String?)> _fotoContraparte;
 
   Future<(String?, String?)> _cargarFotoContraparte() async {
-    final esConsulta = (widget.animal['tipoSolicitud'] as String? ?? '').startsWith('consulta');
+    final esConsulta = (widget.animal['tipoSolicitud'] as String? ?? '')
+        .startsWith('consulta');
     // Consulta a un negocio Y yo soy quien contactó (no el negocio): la
     // contraparte es el aliado, y su logo ya viene fijo en
     // widget.animal['fotoBase64'] (denormalizado al crear el chat) — no
@@ -62,14 +72,20 @@ class _ChatScreenState extends State<ChatScreen> {
     if (esConsulta && !widget.esRescatista) return (null, null);
     try {
       await _chatListo;
-      final chatDoc = await FirebaseFirestore.instance.collection('chats').doc(_chatId).get();
+      final chatDoc = await FirebaseFirestore.instance
+          .collection('chats')
+          .doc(_chatId)
+          .get();
       final d = chatDoc.data();
       if (d == null) return (null, null);
       final contraparteId = widget.esRescatista
           ? (d['adoptanteId'] as String? ?? '')
           : (d['rescatistaId'] as String? ?? '');
       if (contraparteId.isEmpty) return (null, null);
-      final userDoc = await FirebaseFirestore.instance.collection('usuarios').doc(contraparteId).get();
+      final userDoc = await FirebaseFirestore.instance
+          .collection('usuarios')
+          .doc(contraparteId)
+          .get();
       final data = userDoc.data();
       // ChatsRepository.campoLogo* dice exactamente qué campo de
       // usuarios/{uid} mirar para el logo de negocio de la contraparte (o
@@ -81,7 +97,9 @@ class _ChatScreenState extends State<ChatScreen> {
       final campoLogo = widget.esRescatista
           ? ChatsRepository.campoLogoAdoptante(d)
           : ChatsRepository.campoLogoRescatista(d);
-      final fotoBase64 = campoLogo != null ? (data?[campoLogo] as String?) : null;
+      final fotoBase64 = campoLogo != null
+          ? (data?[campoLogo] as String?)
+          : null;
       return (fotoBase64, data?['foto'] as String?);
     } catch (_) {
       return (null, null);
@@ -105,123 +123,173 @@ class _ChatScreenState extends State<ChatScreen> {
           ? (widget.animal['adoptanteId'] as String? ?? '')
           : propioUid;
       final rescateId = widget.animal['rescateId'] as String?;
-      if (rescateId != null && rescateId.isNotEmpty && adoptanteUid.isNotEmpty) {
+      if (rescateId != null &&
+          rescateId.isNotEmpty &&
+          adoptanteUid.isNotEmpty) {
         // Mismo esquema de id que usan todas las pantallas (ChatsRepository),
         // así dos animales con el mismo nombre nunca comparten conversación.
-        _chatId = ChatsRepository().idAnimal(rescateId: rescateId, adoptanteId: adoptanteUid);
+        _chatId = ChatsRepository().idAnimal(
+          rescateId: rescateId,
+          adoptanteId: adoptanteUid,
+        );
         // Se asegura el documento exista sin importar qué lado lo abre
         // primero. Antes solo lo creaba el adoptante: si el rescatista
         // entraba primero a un chat que todavía no existía y escribía, el
         // mensaje se guardaba pero la actualización del chat fallaba (el
         // documento no existía) — la app avisaba "no se pudo enviar" pero el
         // mensaje ya había quedado guardado, y si reintentaba quedaba duplicado.
-        _chatListo = ChatsRepository().asegurarChatAnimal(
-          adoptanteId: adoptanteUid,
-          adoptanteNombre: widget.esRescatista
-              ? (widget.animal['adoptanteNombre'] as String? ?? 'Adoptante')
-              : (FirebaseAuth.instance.currentUser?.displayName ?? 'Adoptante'),
-          rescateId: rescateId,
-          rescatistaId: widget.animal['rescatistaId'] as String? ?? '',
-          rescatista: widget.animal['rescatista'] as String? ?? 'Rescatista',
-          creadoPor: widget.animal['creadoPor'] as String? ?? 'rescatista',
-          animalNombre: widget.animal['nombre'] as String?,
-          especie: widget.animal['especie'] as String?,
-          fotoUrl: widget.animal['fotoUrl'] as String?,
-        ).catchError((_) => '');
+        _chatListo = ChatsRepository()
+            .asegurarChatAnimal(
+              adoptanteId: adoptanteUid,
+              adoptanteNombre: widget.esRescatista
+                  ? (widget.animal['adoptanteNombre'] as String? ?? 'Adoptante')
+                  : (FirebaseAuth.instance.currentUser?.displayName ??
+                        'Adoptante'),
+              rescateId: rescateId,
+              rescatistaId: widget.animal['rescatistaId'] as String? ?? '',
+              rescatista:
+                  widget.animal['rescatista'] as String? ?? 'Rescatista',
+              creadoPor: widget.animal['creadoPor'] as String? ?? 'rescatista',
+              animalNombre: widget.animal['nombre'] as String?,
+              especie: widget.animal['especie'] as String?,
+              fotoUrl: widget.animal['fotoUrl'] as String?,
+            )
+            .catchError((_) => '');
       } else {
         // Animal sin rescateId, o sin saber quién es el adoptante (dato
         // legado): se mantiene el esquema anterior.
-        final nombre     = (widget.animal['nombre'] as String? ?? '')
-            .toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_');
-        final rescatista = ((widget.animal['rescatista'] as String?) ?? 'rescatista')
-            .toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_');
+        final nombre = (widget.animal['nombre'] as String? ?? '')
+            .toLowerCase()
+            .replaceAll(RegExp(r'[^a-z0-9]'), '_');
+        final rescatista =
+            ((widget.animal['rescatista'] as String?) ?? 'rescatista')
+                .toLowerCase()
+                .replaceAll(RegExp(r'[^a-z0-9]'), '_');
         _chatId = '${nombre}_$rescatista';
         // Solo el adoptante crea/actualiza el doc del chat en este esquema
         // legado, porque es el único lado del que tenemos datos confiables.
         if (!widget.esRescatista) {
-          _chatListo = FirebaseFirestore.instance.collection('chats').doc(_chatId).set({
-            'animalNombre':  widget.animal['nombre'],
-            'rescateId':     rescateId ?? '',
-            'creadoPor':     widget.animal['creadoPor'] ?? 'rescatista',
-            'rescatista':    widget.animal['rescatista'] ?? 'Rescatista',
-            'rescatistaId':  widget.animal['rescatistaId'] ?? '',
-            'adoptanteId':     propioUid,
-            'adoptanteNombre': FirebaseAuth.instance.currentUser?.displayName ?? 'Adoptante',
-            'especie':         widget.animal['especie'] ?? 'Perro',
-            'fotoUrl':       widget.animal['fotoUrl'],
-            'ultimoMensaje': '',
-            'creadoEn':      FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true)).catchError((_) {});
+          _chatListo = FirebaseFirestore.instance
+              .collection('chats')
+              .doc(_chatId)
+              .set({
+                'animalNombre': widget.animal['nombre'],
+                'rescateId': rescateId ?? '',
+                'creadoPor': widget.animal['creadoPor'] ?? 'rescatista',
+                'rescatista': widget.animal['rescatista'] ?? 'Rescatista',
+                'rescatistaId': widget.animal['rescatistaId'] ?? '',
+                'adoptanteId': propioUid,
+                'adoptanteNombre':
+                    FirebaseAuth.instance.currentUser?.displayName ??
+                    'Adoptante',
+                'especie': widget.animal['especie'] ?? 'Perro',
+                'fotoUrl': widget.animal['fotoUrl'],
+                'ultimoMensaje': '',
+                'creadoEn': FieldValue.serverTimestamp(),
+              }, SetOptions(merge: true))
+              .catchError((_) {});
         } else {
           _chatListo = Future.value();
         }
       }
     }
-    _mensajesRef = FirebaseFirestore.instance
-        .collection('chats').doc(_chatId).collection('mensajes');
     _fotoContraparte = _cargarFotoContraparte();
     // Resetea los no leídos del rol que abre el chat — después de que el
     // doc exista, para no hacer un update sobre un doc que todavía no está.
-    _chatListo.whenComplete(() {
-      final campo = widget.esRescatista ? 'noLeidosRescatista' : 'noLeidosAdoptante';
-      FirebaseFirestore.instance.collection('chats').doc(_chatId)
-          .update({campo: 0}).catchError((_) {});
-    });
+    _chatListo.whenComplete(
+      () => _chatsRepo.marcarLeido(
+        chatId: _chatId,
+        esRescatista: widget.esRescatista,
+      ),
+    );
   }
 
-  String _nowTime() {
-    final n = DateTime.now();
-    return '${n.hour}:${n.minute.toString().padLeft(2, '0')}';
+  // Autoconsulta: la misma cuenta es adoptanteId Y rescatistaId de este chat
+  // (por ejemplo, una cuenta con rol de albergue que pidió hogar de paso
+  // para su propio animal). La regla de Firestore (firestore.rules, ver
+  // comentario junto a mensajes/create) prioriza adoptanteId para resolver
+  // esa ambigüedad y exige emisor 'adoptante' sin importar desde qué lado
+  // se abra la pantalla — sin este chequeo, entrar como rescatista/albergue
+  // a un chat así mandaba emisor 'rescatista' y la regla rechazaba la
+  // escritura entera ("No se pudo enviar el mensaje"). Mismo hallazgo que
+  // ya se arregló para consulta_aliado, ahora en un chat de animal normal.
+  bool get _autoChat {
+    final propioUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    return widget.esRescatista &&
+        propioUid.isNotEmpty &&
+        (widget.animal['adoptanteId'] as String? ?? '') == propioUid;
   }
+
+  /// Igual que [_autoChat] pero visto desde CUALQUIERA de los dos lados: la
+  /// cuenta que mira es también la contraparte de este chat.
+  ///
+  /// [_autoChat] solo lo detecta entrando como rescatista (es lo único que
+  /// necesita para elegir el `emisor` que la regla exige). Para DIBUJAR
+  /// hace falta reconocerlo también desde el lado adoptante, que es donde
+  /// Eliza vio todas las burbujas del mismo lado.
+  bool get _esAutoconsulta {
+    final propioUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (propioUid.isEmpty) return false;
+    final otroLado = widget.esRescatista
+        ? (widget.animal['adoptanteId'] as String? ?? '')
+        : (widget.animal['rescatistaId'] as String? ?? '');
+    return otroLado == propioUid;
+  }
+
+  String get _miEmisor =>
+      (widget.esRescatista && !_autoChat) ? 'rescatista' : 'adoptante';
 
   Future<void> _send(String text) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
     _msgCtl.clear();
     try {
-      // El doc del chat se actualiza ANTES de agregar el mensaje, y con
-      // set(merge:true) en vez de update() — así, si el chat todavía no
-      // existía (por ejemplo el otro lado nunca llegó a crearlo), esta
-      // escritura lo crea en vez de fallar con "no encontrado". Si el
-      // mensaje se agregara primero y esta escritura fallara después, el
-      // mensaje quedaría guardado igual aunque la app avisara error, y un
-      // reintento lo duplicaría.
-      final campoDestinatario = widget.esRescatista ? 'noLeidosAdoptante' : 'noLeidosRescatista';
-      await FirebaseFirestore.instance.collection('chats').doc(_chatId).set({
-        'ultimoMensaje':    trimmed,
-        'ultimaHora':       _nowTime(),
-        'ultimoMensajeEn':  FieldValue.serverTimestamp(),
-        campoDestinatario:  FieldValue.increment(1),
-      }, SetOptions(merge: true));
-      await _mensajesRef.add({
-        'texto':    trimmed,
-        'emisor':   widget.esRescatista ? 'rescatista' : 'adoptante',
-        'hora':     _nowTime(),
-        'creadoEn': FieldValue.serverTimestamp(),
-      });
+      // registrarMensaje es dueño del orden (vista previa del chat primero,
+      // mensaje después) y del set(merge:true) que crea el chat si el otro
+      // lado nunca llegó a crearlo — ver su doc en chats_repository.dart
+      // para el porqué completo de las dos cosas.
+      await _chatsRepo.registrarMensaje(
+        chatId: _chatId,
+        texto: trimmed,
+        emisor: _miEmisor,
+        paraAdoptante: widget.esRescatista,
+        // El sombrero real con el que se escribió, que en autoconsulta es
+        // lo único que distingue los dos lados (`emisor` ahí vale siempre
+        // 'adoptante' porque la regla lo exige) — ver agregarMensaje.
+        escritoPorRescatista: widget.esRescatista,
+      );
       // Se registra CADA mensaje, no solo "el primero" — distinguir el
       // primero de una conversación requeriría otra lectura extra (contar
       // mensajes previos) solo para este dato. Alcanza para el embudo: si
       // el evento existe al menos una vez para un chat, hubo conversación.
-      FirebaseAnalytics.instance.logEvent(
-        name: 'mensaje_enviado',
-        parameters: {
-          'emisor': widget.esRescatista ? 'rescatista' : 'adoptante',
-          'tipo_solicitud': widget.animal['tipoSolicitud'] as String? ?? 'adopcion',
-        },
-      ).catchError((_) {});
+      FirebaseAnalytics.instance
+          .logEvent(
+            name: 'mensaje_enviado',
+            parameters: {
+              'emisor': _miEmisor,
+              'tipo_solicitud':
+                  widget.animal['tipoSolicitud'] as String? ?? 'adopcion',
+            },
+          )
+          .catchError((_) {});
     } catch (e) {
       if (!mounted) return;
       _msgCtl.text = trimmed;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
           backgroundColor: msgError,
-          content: Text('No se pudo enviar el mensaje. Intentá de nuevo.')));
+          content: Text('No se pudo enviar el mensaje. Intentá de nuevo.'),
+        ),
+      );
       return;
     }
     Future.delayed(const Duration(milliseconds: 100), () {
       if (_scrollCtl.hasClients) {
-        _scrollCtl.animateTo(_scrollCtl.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+        _scrollCtl.animateTo(
+          _scrollCtl.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
       }
     });
   }
@@ -249,8 +317,24 @@ class _ChatScreenState extends State<ChatScreen> {
     if (tipo == 'consulta_aliado') {
       final aliadoId = widget.animal['rescatistaId'] as String? ?? '';
       if (aliadoId.isEmpty) return;
-      Navigator.push(context, MaterialPageRoute(
-          builder: (_) => AliadoPublicoScreen(aliadoId: aliadoId)));
+      // ChatsRepository.rolParaRecontactar — sin esto, AliadoPublicoScreen
+      // recibía esRescatista/esAlbergue en false por defecto, así que
+      // volver a tocar "Contactar" desde acá armaba el chat con contexto
+      // "general" en vez del original ('rescatista'/'albergue'),
+      // fragmentando la conversación en un documento aparte. Hallazgo de
+      // auditoría de código.
+      final rol = ChatsRepository.rolParaRecontactar(
+        esRescatistaEnEsteChat: widget.esRescatista,
+        creadoPor: widget.animal['creadoPor'] as String?,
+      );
+      context.push(
+        AppRoutes.aliadoPublico,
+        extra: (
+          aliadoId: aliadoId,
+          esRescatista: rol.esRescatista,
+          esAlbergue: rol.esAlbergue,
+        ),
+      );
       return;
     }
     final rescateId = widget.animal['rescateId'] as String? ?? '';
@@ -258,20 +342,24 @@ class _ChatScreenState extends State<ChatScreen> {
     final doc = await RescatesRepository().obtener(rescateId);
     if (!doc.exists || !context.mounted) return;
     final d = doc.data() as Map<String, dynamic>;
-    Navigator.push(context, MaterialPageRoute(
-        builder: (_) => AnimalDetalleScreen(animal: {
-          ...d,
-          'nombre':      (d['nombre'] as String?) ?? 'Sin nombre',
-          'raza':        (d['raza'] as String?) ?? 'Criolla',
-          'ubicacion':   (d['ubicacion'] as String?) ?? '',
-          'descripcion': (d['descripcion'] as String?) ?? '',
-          'tags': <String>[
-            if (d['okConNinos']    == true) 'Amigable con niños',
-            if (d['okConMascotas'] == true) 'Es sociable',
-            if ((d['energia'] as String?)?.isNotEmpty == true) d['energia'] as String,
-            if (d['estado'] != null && d['estado'] != 'Sano') d['estado'] as String,
-          ],
-        })));
+    context.push(
+      AppRoutes.animalDetalle,
+      extra: {
+        ...d,
+        'nombre': (d['nombre'] as String?) ?? 'Sin nombre',
+        'raza': (d['raza'] as String?) ?? 'Criolla',
+        'ubicacion': (d['ubicacion'] as String?) ?? '',
+        'descripcion': (d['descripcion'] as String?) ?? '',
+        'tags': <String>[
+          if (d['okConNinos'] == true) 'Amigable con niños',
+          if (d['okConMascotas'] == true) 'Es sociable',
+          if ((d['energia'] as String?)?.isNotEmpty == true)
+            d['energia'] as String,
+          if (d['estado'] != null && d['estado'] != 'Sano')
+            d['estado'] as String,
+        ],
+      },
+    );
   }
 
   // 'Hoy'/'Ayer'/'3 jul' según qué tan lejos esté [d] de hoy. Antes el
@@ -280,63 +368,98 @@ class _ChatScreenState extends State<ChatScreen> {
   // "Hoy" igual.
   String _etiquetaFecha(DateTime d) {
     final ahora = DateTime.now();
-    final hoy   = DateTime(ahora.year, ahora.month, ahora.day);
-    final dia   = DateTime(d.year, d.month, d.day);
-    final diff  = hoy.difference(dia).inDays;
+    final hoy = DateTime(ahora.year, ahora.month, ahora.day);
+    final dia = DateTime(d.year, d.month, d.day);
+    final diff = hoy.difference(dia).inDays;
     if (diff == 0) return 'Hoy';
     if (diff == 1) return 'Ayer';
     return formatearFecha(d, conAnio: d.year != ahora.year);
   }
 
   Widget _separadorFecha(String label) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        child: Row(children: [
-          const SizedBox(width: 16),
-          Expanded(child: Divider(color: Colors.grey.shade300, thickness: 1)),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: Text(label, style: TextStyle(fontSize: 11, color: Colors.grey.shade700, fontWeight: FontWeight.w500)),
+    padding: const EdgeInsets.symmetric(vertical: 10),
+    child: Row(
+      children: [
+        const SizedBox(width: 16),
+        Expanded(child: Divider(color: Colors.grey.shade300, thickness: 1)),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.grey.shade700,
+              fontWeight: FontWeight.w500,
+            ),
           ),
-          Expanded(child: Divider(color: Colors.grey.shade300, thickness: 1)),
-          const SizedBox(width: 16),
-        ]),
-      );
+        ),
+        Expanded(child: Divider(color: Colors.grey.shade300, thickness: 1)),
+        const SizedBox(width: 16),
+      ],
+    ),
+  );
 
   Widget _burbujaMensaje(Map<String, dynamic> d) {
-    final isMine = widget.esRescatista
-        ? d['emisor'] == 'rescatista'
-        : d['emisor'] == 'adoptante';
+    // La regla de qué lado va cada burbuja (y por qué son dos caminos según
+    // sea o no autoconsulta) vive en ChatsRepository.esMiBurbuja, con sus
+    // tests — acá estaba inline y sin forma de probarla, que es parte de por
+    // qué se rompió más de una vez sin que nadie se enterara hasta verlo en
+    // el teléfono.
+    final isMine = ChatsRepository.esMiBurbuja(
+      d,
+      miEmisor: _miEmisor,
+      esRescatista: widget.esRescatista,
+      esAutoconsulta: _esAutoconsulta,
+    );
     final text = d['texto'] as String? ?? '';
     final time = d['hora'] as String? ?? '';
     return Align(
       alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.72),
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.72,
+        ),
         margin: const EdgeInsets.symmetric(vertical: 4),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
           color: isMine ? appOrange : Colors.white,
           borderRadius: BorderRadius.only(
-            topLeft:     const Radius.circular(18),
-            topRight:    const Radius.circular(18),
-            bottomLeft:  Radius.circular(isMine ? 18 : 4),
-            bottomRight: Radius.circular(isMine ? 4  : 18),
+            topLeft: const Radius.circular(18),
+            topRight: const Radius.circular(18),
+            bottomLeft: Radius.circular(isMine ? 18 : 4),
+            bottomRight: Radius.circular(isMine ? 4 : 18),
           ),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 6, offset: const Offset(0, 2))],
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Column(
-          crossAxisAlignment: isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          crossAxisAlignment: isMine
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
           children: [
-            Text(text,
-                style: TextStyle(
-                    fontSize: 14,
-                    color: isMine ? Colors.white : appInk,
-                    height: 1.4)),
+            Text(
+              text,
+              style: TextStyle(
+                fontSize: 14,
+                color: isMine ? Colors.white : appInk,
+                height: 1.4,
+              ),
+            ),
             const SizedBox(height: 4),
-            Text(time,
-                style: TextStyle(
-                    fontSize: 10,
-                    color: isMine ? Colors.white.withValues(alpha: 0.7) : Colors.grey.shade400)),
+            Text(
+              time,
+              style: TextStyle(
+                fontSize: 10,
+                color: isMine
+                    ? Colors.white.withValues(alpha: 0.7)
+                    : Colors.grey.shade400,
+              ),
+            ),
           ],
         ),
       ),
@@ -344,10 +467,16 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _estadoBadge(String label, Color bg, Color fg) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
-        child: Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: fg)),
-      );
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+    decoration: BoxDecoration(
+      color: bg,
+      borderRadius: BorderRadius.circular(20),
+    ),
+    child: Text(
+      label,
+      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: fg),
+    ),
+  );
 
   Widget _estadoBadgeTipo(String tipo) {
     final esHogar = tipo == 'hogar_de_paso';
@@ -360,21 +489,23 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final nombre      = widget.animal['nombre']     as String;
-    final edad        = (widget.animal['edad'] as String?) ?? '';
+    final nombre = widget.animal['nombre'] as String;
+    final edad = (widget.animal['edad'] as String?) ?? '';
     // El chat puede ser sobre un animal (fotoUrl, en Storage) o una consulta
     // a un negocio aliado (fotoBase64, el logo propio del aliado — fuera de
     // alcance de esta migración). Se revisan los dos, el que haya presente.
-    final fotoUrl     = widget.animal['fotoUrl']    as String?;
-    final fotoBase64  = widget.animal['fotoBase64'] as String?;
-    final rescatista  = (widget.animal['rescatista'] as String?) ?? 'Rescatista';
-    final emoji       = widget.animal['especie'] == 'Gato' ? '🐱' : '🐶';
+    final fotoUrl = widget.animal['fotoUrl'] as String?;
+    final fotoBase64 = widget.animal['fotoBase64'] as String?;
+    final rescatista = (widget.animal['rescatista'] as String?) ?? 'Rescatista';
+    final emoji = widget.animal['especie'] == 'Gato' ? '🐱' : '🐶';
     // El encabezado muestra a la CONTRAPARTE: el rescatista chatea con el
     // adoptante y viceversa. Antes mostraba siempre al rescatista, así que
     // el propio rescatista veía su nombre y rótulo en el encabezado, como
     // si hablara consigo mismo.
-    final esConsulta  = (widget.animal['tipoSolicitud'] as String? ?? '').startsWith('consulta');
-    final esAlbergue  = (widget.animal['creadoPor'] as String? ?? '') == 'albergue';
+    final esConsulta = (widget.animal['tipoSolicitud'] as String? ?? '')
+        .startsWith('consulta');
+    final esAlbergue =
+        (widget.animal['creadoPor'] as String? ?? '') == 'albergue';
     final contraparte = widget.esRescatista
         ? (widget.animal['adoptanteNombre'] as String? ?? 'Adoptante')
         : rescatista;
@@ -388,292 +519,455 @@ class _ChatScreenState extends State<ChatScreen> {
     final creadoPor = widget.animal['creadoPor'] as String? ?? '';
     final rotuloContraparte = esConsulta
         ? (widget.esRescatista
-            ? (creadoPor == 'albergue'
-                ? 'Albergue'
-                : creadoPor == 'rescatista' ? 'Rescatista' : 'Adoptante')
-            : 'Negocio aliado')
-        : widget.esRescatista ? 'Adoptante' : (esAlbergue ? 'Albergue' : 'Rescatista');
+              ? (creadoPor == 'albergue'
+                    ? 'Albergue'
+                    : creadoPor == 'rescatista'
+                    ? 'Rescatista'
+                    : 'Adoptante')
+              : 'Negocio aliado')
+        : widget.esRescatista
+        ? 'Adoptante'
+        : (esAlbergue ? 'Albergue' : 'Rescatista');
 
     return Scaffold(
       backgroundColor: appBg,
       body: SafeArea(
-        child: Column(children: [
-          // ── Header ─────────────────────────────────────────────────────────
-          Container(
-            color: Colors.white,
-            padding: const EdgeInsets.fromLTRB(8, 10, 16, 10),
-            child: Row(children: [
-              IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-                tooltip: 'Volver',
-                onPressed: () => Navigator.pop(context),
-              ),
-              FutureBuilder<(String?, String?)>(
-                future: _fotoContraparte,
-                // esConsulta && !esRescatista: yo contacté al negocio, la
-                // contraparte es el aliado — su logo fijo (widget.animal).
-                // En cualquier otro caso (incluyendo esConsulta && soy el
-                // aliado) se usa lo recién buscado por _cargarFotoContraparte.
-                builder: (context, snap) => AvatarPersona(
-                  fotoBase64: (esConsulta && !widget.esRescatista) ? fotoBase64 : snap.data?.$1,
-                  fotoUrl: (esConsulta && !widget.esRescatista) ? null : snap.data?.$2,
-                  inicial: contraparte.isNotEmpty ? contraparte[0].toUpperCase() : '?',
-                  radius: 20,
-                  backgroundColor: appOrange,
-                  textColor: Colors.white,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [
-                  // Flexible + ellipsis: un nombre largo (pasa seguido con
-                  // nombre y apellido completos) empujaba el puntito de
-                  // "en línea" fuera de la pantalla y desbordaba el
-                  // encabezado — acá y en cualquier otra fila de nombre en
-                  // la app conviene el mismo tratamiento.
-                  Flexible(
-                    child: Text(contraparte,
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: appInk)),
-                  ),
-                  const SizedBox(width: 6),
-                  Container(
-                    width: 8, height: 8,
-                    decoration: const BoxDecoration(color: Color(0xFF34C759), shape: BoxShape.circle),
-                  ),
-                ]),
-                const SizedBox(height: 1),
-                Text(
-                  rotuloContraparte,
-                  style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
-                ),
-              ])),
-              const SizedBox(width: 36),
-            ]),
-          ),
-
-          // ── Context card ────────────────────────────────────────────────────
-          GestureDetector(
-          onTap: () => _abrirFicha(context),
-          child: Container(
-            margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
+        child: Column(
+          children: [
+            // ── Header ─────────────────────────────────────────────────────────
+            Container(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
+              padding: const EdgeInsets.fromLTRB(8, 10, 16, 10),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+                    tooltip: 'Volver',
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                  FutureBuilder<(String?, String?)>(
+                    future: _fotoContraparte,
+                    // esConsulta && !esRescatista: yo contacté al negocio, la
+                    // contraparte es el aliado — su logo fijo (widget.animal).
+                    // En cualquier otro caso (incluyendo esConsulta && soy el
+                    // aliado) se usa lo recién buscado por _cargarFotoContraparte.
+                    builder: (context, snap) => AvatarPersona(
+                      fotoBase64: (esConsulta && !widget.esRescatista)
+                          ? fotoBase64
+                          : snap.data?.$1,
+                      fotoUrl: (esConsulta && !widget.esRescatista)
+                          ? null
+                          : snap.data?.$2,
+                      inicial: contraparte.isNotEmpty
+                          ? contraparte[0].toUpperCase()
+                          : '?',
+                      radius: 20,
+                      backgroundColor: appOrange,
+                      textColor: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // NombreConIndicador (widgets/texto_sin_desborde.dart): esta fila es donde se
+                        // encontró el bug la primera vez — un nombre largo empujaba
+                        // el puntito de "en línea" fuera de la pantalla. Ahora la
+                        // protección vive en el widget compartido, no acá.
+                        TextoSinDesborde(
+                          texto: contraparte,
+                          separacion: 6,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: appInk,
+                          ),
+                          despues: Container(
+                            width: 8,
+                            height: 8,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF34C759),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 1),
+                        Text(
+                          rotuloContraparte,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 36),
+                ],
+              ),
             ),
-            child: Row(children: [
-              Builder(builder: (_) {
-                // Un negocio aliado sin logo no es un animal — antes caía en
-                // el mismo fallback que un chat de animal (emoji 🐶/🐱), que
-                // no tiene sentido para una cafetería o veterinaria. Muestra
-                // la inicial del negocio en su lugar, como el resto de las
-                // pantallas de aliado (ver aliado_home_screen.dart).
-                final inicial = nombre.isNotEmpty ? nombre[0].toUpperCase() : '?';
-                final fallback = Container(
-                    width: 48, height: 48, color: const Color(0xFFD8F0E4),
-                    child: Center(child: esConsulta
-                        ? Text(inicial, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: appTeal))
-                        : Text(emoji, style: const TextStyle(fontSize: 26))));
-                return ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: fotoUrl != null
-                    ? FotoUrl(url: fotoUrl, width: 48, height: 48, alignment: Alignment.topCenter, fallback: fallback)
-                    : fotoBase64 != null
-                      ? FotoSegura(base64: fotoBase64, width: 48, height: 48, fallback: fallback)
-                      : fallback,
-                );
-              }),
-              const SizedBox(width: 12),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(
-                  (widget.animal['tipoSolicitud'] as String? ?? '') == 'consulta_aliado'
-                      ? 'Conversando con $nombre'
-                      : 'Conversando sobre $nombre${edad.isNotEmpty ? " · $edad" : ""}',
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: appInk),
+
+            // ── Context card ────────────────────────────────────────────────────
+            GestureDetector(
+              onTap: () => _abrirFicha(context),
+              child: Container(
+                margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 4),
-                Builder(builder: (_) {
-                  final tipo = widget.animal['tipoSolicitud'] as String? ?? 'adopcion';
-                  if (tipo.startsWith('consulta')) return const SizedBox.shrink();
-                  final rescatistaId = widget.animal['rescatistaId'] as String? ?? '';
-                  final rescateId = widget.animal['rescateId'] as String? ?? '';
-                  if (rescatistaId.isEmpty) return _estadoBadgeTipo(tipo);
+                child: Row(
+                  children: [
+                    Builder(
+                      builder: (_) {
+                        // Un negocio aliado sin logo no es un animal — antes caía en
+                        // el mismo fallback que un chat de animal (emoji 🐶/🐱), que
+                        // no tiene sentido para una cafetería o veterinaria. Muestra
+                        // la inicial del negocio en su lugar, como el resto de las
+                        // pantallas de aliado (ver aliado_home_screen.dart).
+                        final inicial = nombre.isNotEmpty
+                            ? nombre[0].toUpperCase()
+                            : '?';
+                        final fallback = Container(
+                          width: 48,
+                          height: 48,
+                          color: const Color(0xFFD8F0E4),
+                          child: Center(
+                            child: esConsulta
+                                ? Text(
+                                    inicial,
+                                    style: const TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                      color: appTeal,
+                                    ),
+                                  )
+                                : Text(
+                                    emoji,
+                                    style: const TextStyle(fontSize: 26),
+                                  ),
+                          ),
+                        );
+                        return ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: fotoUrl != null
+                              ? FotoUrl(
+                                  url: fotoUrl,
+                                  width: 48,
+                                  height: 48,
+                                  alignment: Alignment.topCenter,
+                                  fallback: fallback,
+                                )
+                              : fotoBase64 != null
+                              ? FotoSegura(
+                                  base64: fotoBase64,
+                                  width: 48,
+                                  height: 48,
+                                  fallback: fallback,
+                                )
+                              : fallback,
+                        );
+                      },
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            (widget.animal['tipoSolicitud'] as String? ?? '') ==
+                                    'consulta_aliado'
+                                ? 'Conversando con $nombre'
+                                : 'Conversando sobre $nombre${edad.isNotEmpty ? " · $edad" : ""}',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: appInk,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Builder(
+                            builder: (_) {
+                              final tipo =
+                                  widget.animal['tipoSolicitud'] as String? ??
+                                  'adopcion';
+                              if (tipo.startsWith('consulta'))
+                                return const SizedBox.shrink();
+                              final rescatistaId =
+                                  widget.animal['rescatistaId'] as String? ??
+                                  '';
+                              final rescateId =
+                                  widget.animal['rescateId'] as String? ?? '';
+                              if (rescatistaId.isEmpty)
+                                return _estadoBadgeTipo(tipo);
 
-                  Widget badgeFor(String? estadoReal) {
-                    if (estadoReal == 'Fallecido') {
-                      return _estadoBadge('🌈 Falleció',
-                          cicloColor('Fallecido').withValues(alpha: 0.12), cicloColor('Fallecido'));
-                    }
-                    if (estadoReal == 'Adoptado') {
-                      return _estadoBadge('✅ Adoptado',
-                          cicloColor('Adoptado').withValues(alpha: 0.12), cicloColor('Adoptado'));
-                    }
-                    return _estadoBadgeTipo(tipo);
-                  }
+                              Widget badgeFor(String? estadoReal) {
+                                if (estadoReal == 'Fallecido') {
+                                  return _estadoBadge(
+                                    '🌈 Falleció',
+                                    cicloColor(
+                                      'Fallecido',
+                                    ).withValues(alpha: 0.12),
+                                    cicloColor('Fallecido'),
+                                  );
+                                }
+                                if (estadoReal == 'Adoptado') {
+                                  return _estadoBadge(
+                                    '✅ Adoptado',
+                                    cicloColor(
+                                      'Adoptado',
+                                    ).withValues(alpha: 0.12),
+                                    cicloColor('Adoptado'),
+                                  );
+                                }
+                                return _estadoBadgeTipo(tipo);
+                              }
 
-                  // Con rescateId se busca el documento exacto (sin ambigüedad
-                  // posible); sin él, se cae al buscar por nombre + rescatistaId
-                  // como antes (puede confundirse si hay 2 animales con el
-                  // mismo nombre bajo la misma cuenta en distinto rol).
-                  if (rescateId.isNotEmpty) {
-                    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                      stream: RescatesRepository().porId(rescateId),
-                      builder: (_, snap) => badgeFor(snap.data?.data()?['estadoAdopcion'] as String?),
+                              // Con rescateId se busca el documento exacto (sin ambigüedad
+                              // posible); sin él, se cae al buscar por nombre + rescatistaId
+                              // como antes (puede confundirse si hay 2 animales con el
+                              // mismo nombre bajo la misma cuenta en distinto rol).
+                              if (rescateId.isNotEmpty) {
+                                return StreamBuilder<
+                                  DocumentSnapshot<Map<String, dynamic>>
+                                >(
+                                  stream: RescatesRepository().porId(rescateId),
+                                  builder: (_, snap) => badgeFor(
+                                    snap.data?.data()?['estadoAdopcion']
+                                        as String?,
+                                  ),
+                                );
+                              }
+                              return StreamBuilder<QuerySnapshot>(
+                                stream: RescatesRepository().porNombreYDueno(
+                                  rescatistaId: rescatistaId,
+                                  nombre: nombre,
+                                ),
+                                builder: (_, snap) {
+                                  final docs = snap.data?.docs ?? [];
+                                  final estadoReal = docs.isNotEmpty
+                                      ? (docs.first.data()
+                                                as Map<
+                                                  String,
+                                                  dynamic
+                                                >)['estadoAdopcion']
+                                            as String?
+                                      : null;
+                                  return badgeFor(estadoReal);
+                                },
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(
+                      Icons.chevron_right,
+                      color: Color(0xFFCCCCCC),
+                      size: 20,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // ── Messages (con separador por día real, no fijo en "Hoy") ─────────
+            // El FutureBuilder de afuera espera a que el doc del chat exista
+            // antes de conectar el listener de mensajes (ver _chatListo).
+            Expanded(
+              child: FutureBuilder<void>(
+                future: _chatListo,
+                builder: (context, listo) {
+                  if (listo.connectionState != ConnectionState.done) {
+                    return const Center(
+                      child: CircularProgressIndicator(color: appTeal),
                     );
                   }
                   return StreamBuilder<QuerySnapshot>(
-                    stream: RescatesRepository().porNombreYDueno(
-                        rescatistaId: rescatistaId, nombre: nombre),
-                    builder: (_, snap) {
+                    stream: _chatsRepo.mensajes(_chatId),
+                    builder: (context, snap) {
+                      if (snap.connectionState == ConnectionState.waiting) {
+                        return const Center(
+                          child: CircularProgressIndicator(color: appTeal),
+                        );
+                      }
+                      if (snap.hasError) {
+                        // Antes un error del listener se veía igual que un chat
+                        // vacío ("Sé el primero en escribir") y nadie se enteraba.
+                        return Center(
+                          child: Text(
+                            'No se pudieron cargar los mensajes.\nSalí y volvé a entrar al chat.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey.shade700,
+                            ),
+                          ),
+                        );
+                      }
                       final docs = snap.data?.docs ?? [];
-                      final estadoReal = docs.isNotEmpty
-                          ? (docs.first.data() as Map<String, dynamic>)['estadoAdopcion'] as String?
-                          : null;
-                      return badgeFor(estadoReal);
+                      if (docs.isEmpty) {
+                        return Center(
+                          child: Text(
+                            'Sé el primero en escribir 🐾',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey.shade700,
+                            ),
+                          ),
+                        );
+                      }
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (!_scrollCtl.hasClients) return;
+                        _scrollCtl.jumpTo(_scrollCtl.position.maxScrollExtent);
+                        // Segundo salto, un frame después: con burbujas de altura
+                        // muy distinta (mensajes cortos mezclados con mensajes
+                        // larguísimos), ListView.builder todavía no terminó de
+                        // medir todos los items en este primer layout —
+                        // maxScrollExtent quedaba corto y el chat abría con el
+                        // último mensaje apenas arriba del borde, no visible del
+                        // todo, sin scrollear manualmente. Hallazgo real de
+                        // Eliza probando el checklist (ítem c6).
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (_scrollCtl.hasClients) {
+                            _scrollCtl.jumpTo(
+                              _scrollCtl.position.maxScrollExtent,
+                            );
+                          }
+                        });
+                      });
+                      // Etiqueta de separador por índice (o null si va pegado al
+                      // mensaje anterior) — solo compara fechas, no construye
+                      // ningún widget todavía. Antes esto armaba la lista
+                      // COMPLETA de burbujas de una (ListView con `children`), así
+                      // que cada mensaje nuevo reconstruía TODA la conversación
+                      // desde el principio. Con ListView.builder + este arreglo
+                      // liviano, cada burbuja se construye solo cuando entra en
+                      // pantalla — importa en chats largos de negociación de
+                      // adopción con muchos mensajes de ida y vuelta.
+                      final etiquetas = List<String?>.filled(docs.length, null);
+                      DateTime? ultimoDia;
+                      for (var i = 0; i < docs.length; i++) {
+                        final d = docs[i].data() as Map<String, dynamic>;
+                        // Mientras el serverTimestamp no confirma (recién enviado,
+                        // offline), creadoEn llega null del lado del cliente: se
+                        // asume "ahora" para no romper el agrupado.
+                        final creadoEn =
+                            (d['creadoEn'] as Timestamp?)?.toDate() ??
+                            DateTime.now();
+                        final dia = DateTime(
+                          creadoEn.year,
+                          creadoEn.month,
+                          creadoEn.day,
+                        );
+                        if (ultimoDia == null || dia != ultimoDia) {
+                          etiquetas[i] = _etiquetaFecha(creadoEn);
+                          ultimoDia = dia;
+                        }
+                      }
+                      return ListView.builder(
+                        controller: _scrollCtl,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 4,
+                        ),
+                        itemCount: docs.length,
+                        itemBuilder: (context, i) {
+                          final d = docs[i].data() as Map<String, dynamic>;
+                          final etiqueta = etiquetas[i];
+                          if (etiqueta == null) return _burbujaMensaje(d);
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _separadorFecha(etiqueta),
+                              _burbujaMensaje(d),
+                            ],
+                          );
+                        },
+                      );
                     },
                   );
-                }),
-              ])),
-              const Icon(Icons.chevron_right, color: Color(0xFFCCCCCC), size: 20),
-            ]),
-          ),
-          ),
-
-          // ── Messages (con separador por día real, no fijo en "Hoy") ─────────
-          // El FutureBuilder de afuera espera a que el doc del chat exista
-          // antes de conectar el listener de mensajes (ver _chatListo).
-          Expanded(
-            child: FutureBuilder<void>(
-              future: _chatListo,
-              builder: (context, listo) {
-                if (listo.connectionState != ConnectionState.done) {
-                  return const Center(child: CircularProgressIndicator(color: appTeal));
-                }
-                return StreamBuilder<QuerySnapshot>(
-              stream: _mensajesRef.orderBy('creadoEn').snapshots(),
-              builder: (context, snap) {
-                if (snap.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator(color: appTeal));
-                }
-                if (snap.hasError) {
-                  // Antes un error del listener se veía igual que un chat
-                  // vacío ("Sé el primero en escribir") y nadie se enteraba.
-                  return Center(
-                    child: Text('No se pudieron cargar los mensajes.\nSalí y volvé a entrar al chat.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
-                  );
-                }
-                final docs = snap.data?.docs ?? [];
-                if (docs.isEmpty) {
-                  return Center(
-                    child: Text('Sé el primero en escribir 🐾',
-                        style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
-                  );
-                }
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (_scrollCtl.hasClients) {
-                    _scrollCtl.jumpTo(_scrollCtl.position.maxScrollExtent);
-                  }
-                });
-                // Etiqueta de separador por índice (o null si va pegado al
-                // mensaje anterior) — solo compara fechas, no construye
-                // ningún widget todavía. Antes esto armaba la lista
-                // COMPLETA de burbujas de una (ListView con `children`), así
-                // que cada mensaje nuevo reconstruía TODA la conversación
-                // desde el principio. Con ListView.builder + este arreglo
-                // liviano, cada burbuja se construye solo cuando entra en
-                // pantalla — importa en chats largos de negociación de
-                // adopción con muchos mensajes de ida y vuelta.
-                final etiquetas = List<String?>.filled(docs.length, null);
-                DateTime? ultimoDia;
-                for (var i = 0; i < docs.length; i++) {
-                  final d = docs[i].data() as Map<String, dynamic>;
-                  // Mientras el serverTimestamp no confirma (recién enviado,
-                  // offline), creadoEn llega null del lado del cliente: se
-                  // asume "ahora" para no romper el agrupado.
-                  final creadoEn = (d['creadoEn'] as Timestamp?)?.toDate() ?? DateTime.now();
-                  final dia = DateTime(creadoEn.year, creadoEn.month, creadoEn.day);
-                  if (ultimoDia == null || dia != ultimoDia) {
-                    etiquetas[i] = _etiquetaFecha(creadoEn);
-                    ultimoDia = dia;
-                  }
-                }
-                return ListView.builder(
-                  controller: _scrollCtl,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  itemCount: docs.length,
-                  itemBuilder: (context, i) {
-                    final d = docs[i].data() as Map<String, dynamic>;
-                    final etiqueta = etiquetas[i];
-                    if (etiqueta == null) return _burbujaMensaje(d);
-                    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                      _separadorFecha(etiqueta),
-                      _burbujaMensaje(d),
-                    ]);
-                  },
-                );
-              },
-            );
-              },
+                },
+              ),
             ),
-          ),
 
-          const SizedBox(height: 8),
+            const SizedBox(height: 8),
 
-          // ── Input bar ───────────────────────────────────────────────────────
-          Container(
-            color: Colors.white,
-            padding: const EdgeInsets.fromLTRB(16, 10, 12, 14),
-            child: Row(children: [
-              Expanded(
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF4F4F4),
-                    borderRadius: BorderRadius.circular(24),
-                  ),
-                  child: TextField(
-                    controller: _msgCtl,
-                    textInputAction: TextInputAction.send,
-                    onSubmitted: _send,
-                    // Ni la app ni la regla de Firestore ponían un tope al
-                    // largo de un mensaje — un pegado gigante inflaba el
-                    // costo de guardado y rompía el diseño de la burbuja.
-                    // maxLength sin counterText visible: no hace falta
-                    // mostrar el contador en un chat normal, solo frenarlo
-                    // antes de un extremo irreal. Hallazgo de auditoría de
-                    // código.
-                    maxLength: 2000,
-                    decoration: InputDecoration(
-                      hintText: 'Escribe un mensaje...',
-                      hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                      counterText: '',
+            // ── Input bar ───────────────────────────────────────────────────────
+            Container(
+              color: Colors.white,
+              padding: const EdgeInsets.fromLTRB(16, 10, 12, 14),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF4F4F4),
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      child: TextField(
+                        controller: _msgCtl,
+                        textInputAction: TextInputAction.send,
+                        onSubmitted: _send,
+                        // Ni la app ni la regla de Firestore ponían un tope al
+                        // largo de un mensaje — un pegado gigante inflaba el
+                        // costo de guardado y rompía el diseño de la burbuja.
+                        // maxLength sin counterText visible: no hace falta
+                        // mostrar el contador en un chat normal, solo frenarlo
+                        // antes de un extremo irreal. Hallazgo de auditoría de
+                        // código.
+                        maxLength: 2000,
+                        decoration: InputDecoration(
+                          hintText: 'Escribe un mensaje...',
+                          hintStyle: TextStyle(
+                            color: Colors.grey.shade400,
+                            fontSize: 14,
+                          ),
+                          border: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 10,
+                          ),
+                          counterText: '',
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Tooltip(
-                message: 'Enviar mensaje',
-                child: GestureDetector(
-                  onTap: () => _send(_msgCtl.text),
-                  child: Container(
-                    width: 44, height: 44,
-                    decoration: const BoxDecoration(color: appOrange, shape: BoxShape.circle),
-                    child: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+                  const SizedBox(width: 8),
+                  Tooltip(
+                    message: 'Enviar mensaje',
+                    child: GestureDetector(
+                      onTap: () => _send(_msgCtl.text),
+                      child: Container(
+                        width: 44,
+                        height: 44,
+                        decoration: const BoxDecoration(
+                          color: appOrange,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.send_rounded,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
-            ]),
-          ),
-        ]),
+            ),
+          ],
+        ),
       ),
     );
   }
-
 }

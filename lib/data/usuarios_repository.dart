@@ -7,8 +7,8 @@ import 'firestore_resiliencia.dart';
 /// validar qué valores eran válidos).
 class UsuariosRepository {
   UsuariosRepository({FirebaseFirestore? db, FirebaseAuth? auth})
-      : _db = db ?? FirebaseFirestore.instance,
-        _authOverride = auth;
+    : _db = db ?? FirebaseFirestore.instance,
+      _authOverride = auth;
   final FirebaseFirestore _db;
   // Lazy, mismo motivo que en RescatesRepository: evaluar FirebaseAuth.instance
   // en el constructor rompe cualquier test que no pase un auth mockeado.
@@ -16,6 +16,46 @@ class UsuariosRepository {
   FirebaseAuth get _auth => _authOverride ?? FirebaseAuth.instance;
 
   static const rolesValidos = {'adoptante', 'rescatista', 'albergue', 'aliado'};
+
+  /// Todos los negocios aliados (`aliadoNombre` cargado), UNA sola vez —
+  /// no en vivo.
+  ///
+  /// Por qué no `.snapshots()`: un stream en vivo primero pinta lo que haya
+  /// en la CACHÉ local del teléfono (a veces vacía, a veces con apenas uno
+  /// de una sesión anterior) y recién después el snapshot real del
+  /// servidor con la lista completa — el efecto es ver aparecer un negocio
+  /// y "al ratito" el resto. La lista de negocios no necesita vivir
+  /// actualizada en tiempo real mientras la persona la mira (no es un chat),
+  /// así que no vale la pena pagar ese parpadeo por algo que no hace falta.
+  ///
+  /// Esta consulta estaba copiada en 2 pantallas (adoptante_feed_screen.dart
+  /// y aliados_screen.dart) — una se arregló primero, y la otra se quedó
+  /// con la versión en vivo hasta que Eliza encontró el mismo síntoma ahí
+  /// también. Que sea UN método achica ese riesgo a "un lugar para revisar",
+  /// no "acordarse de buscar todas las copias" cada vez.
+  Future<QuerySnapshot<Map<String, dynamic>>> aliados() =>
+      _db.collection('usuarios').where('aliadoNombre', isGreaterThan: '').get();
+
+  /// Completa las coordenadas del perfil a partir de su ciudad ya guardada.
+  ///
+  /// Existe para reparar perfiles de albergue creados antes de que guardar
+  /// la ciudad exigiera geocodificarla: tienen `ciudad` pero no
+  /// `latitud`/`longitud`, y como los animales de un albergue copian esas
+  /// coordenadas del perfil (no del GPS, porque se publican desde el
+  /// albergue), NINGUNO de sus animales podía mostrar distancia. Hallazgo
+  /// real de Eliza: "todos los cargados desde albergues no muestran la
+  /// distancia".
+  ///
+  /// Se escribe con merge y solo estos dos campos: es una reparación de
+  /// fondo, nunca debe pisar nada más de lo que la persona tenga guardado.
+  Future<void> completarCoordenadas({
+    required String uid,
+    required double latitud,
+    required double longitud,
+  }) => _db.collection('usuarios').doc(uid).set({
+    'latitud': latitud,
+    'longitud': longitud,
+  }, SetOptions(merge: true));
 
   Future<void> actualizarRoles(String uid, List<String> roles) {
     if (!roles.every(rolesValidos.contains)) {
@@ -28,8 +68,10 @@ class UsuariosRepository {
     // borrado masivo de cuentas de prueba, una cuenta que recién inicia
     // sesión puede traer un token viejo, y antes esto se mostraba como
     // "revisá tu conexión" dejando a la persona trabada sin poder elegir rol.
-    return conReintentoSiTokenVencido(() => _auth,
-        () => _db.collection('usuarios').doc(uid).update({'roles': roles}));
+    return conReintentoSiTokenVencido(
+      () => _auth,
+      () => _db.collection('usuarios').doc(uid).update({'roles': roles}),
+    );
   }
 
   /// Crea el perfil inicial de la cuenta (onboarding). `SetOptions(merge: true)`
@@ -49,14 +91,17 @@ class UsuariosRepository {
     if (!roles.every(rolesValidos.contains)) {
       throw ArgumentError('rol inválido en $roles');
     }
-    return conReintentoSiTokenVencido(() => _auth, () => _db.collection('usuarios').doc(uid).set({
-      'nombre':   nombre,
-      'email':    email,
-      'foto':     foto,
-      'roles':    roles,
-      'ciudad':   ciudad,
-      'creadoEn': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true)));
+    return conReintentoSiTokenVencido(
+      () => _auth,
+      () => _db.collection('usuarios').doc(uid).set({
+        'nombre': nombre,
+        'email': email,
+        'foto': foto,
+        'roles': roles,
+        'ciudad': ciudad,
+        'creadoEn': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true)),
+    );
   }
 
   /// Asegura que el doc usuarios/{uid} EXISTA apenas la cuenta inicia

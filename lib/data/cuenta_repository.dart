@@ -13,8 +13,22 @@ import 'package:cloud_functions/cloud_functions.dart';
 /// un documento puntual — del lado del cliente nunca sería una barrera de
 /// verdad.
 class CuentaRepository {
+  // `FirebaseFunctions.instance` (sin especificar región) apunta a
+  // us-central1 por defecto — pero `eliminarCuenta` se desplegó a
+  // propósito en europe-west1 (mismo region que el resto de functions/
+  // index.js, ver el comentario ahí). Sin esto, TODO pedido de borrado de
+  // cuenta llamaba a una función que no existe en us-central1 (nunca hubo
+  // logs de ejecución del lado del servidor, ni un solo intento real
+  // llegaba a correr) y el cliente mostraba el error genérico de "revisá
+  // tu conexión" — rompía la eliminación de cuenta para cualquier persona,
+  // con cualquier conexión. Hallazgo real de Eliza probando antes del
+  // lanzamiento.
+  // Pública (no privada) a propósito: así un test puede confirmar que
+  // sigue coincidiendo con la región real donde vive la función
+  // desplegada, sin necesitar una conexión real a Firebase para probarlo.
+  static const region = 'europe-west1';
   CuentaRepository({FirebaseFunctions? functions})
-      : _functions = functions ?? FirebaseFunctions.instance;
+    : _functions = functions ?? FirebaseFunctions.instanceFor(region: region);
   final FirebaseFunctions _functions;
 
   /// Lanza [CuentaBloqueada] si la cuenta tiene un animal en hogar de paso
@@ -29,12 +43,16 @@ class CuentaRepository {
   /// original, mismo motivo que en `RescateFotosRepository`/
   /// `ChatsRepository`), solo deja de esperar. Si vence, la pantalla debe
   /// avisar que puede seguir terminando de fondo, no que "falló".
-  Future<void> eliminarCuenta({Duration timeout = const Duration(seconds: 120)}) async {
+  Future<void> eliminarCuenta({
+    Duration timeout = const Duration(seconds: 120),
+  }) async {
     try {
       await _functions.httpsCallable('eliminarCuenta').call().timeout(timeout);
     } on FirebaseFunctionsException catch (e) {
       if (e.code == 'failed-precondition') {
-        throw CuentaBloqueada(e.message ?? 'No se puede eliminar la cuenta todavía.');
+        throw CuentaBloqueada(
+          e.message ?? 'No se puede eliminar la cuenta todavía.',
+        );
       }
       rethrow;
     }

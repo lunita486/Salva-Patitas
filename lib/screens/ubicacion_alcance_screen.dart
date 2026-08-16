@@ -30,48 +30,75 @@ class _UbicacionAlcanceScreenState extends State<UbicacionAlcanceScreen> {
   @override
   Widget build(BuildContext context) => SettingsPageScaffold(
     title: 'Ubicación y alcance',
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-        child: Text('Muéstrame animales a menos de:',
-            style: TextStyle(fontSize: 14, color: Colors.grey.shade700)),
-      ),
-      Container(
-        margin: const EdgeInsets.symmetric(horizontal: 20),
-        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.8),
-            borderRadius: BorderRadius.circular(16)),
-        child: Column(
-          children: _radios.asMap().entries.map((e) {
-            final last = e.key == _radios.length - 1;
-            final sel  = e.value == _radio;
-            return GestureDetector(
-              onTap: () {
-                setState(() => _radio = e.value);
-                _preferenciasRepo.actualizar(_uid, {'radio': e.value});
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
-                decoration: BoxDecoration(
-                  border: last ? null : Border(bottom: BorderSide(color: Colors.grey.shade100)),
-                ),
-                child: Row(children: [
-                  Expanded(child: Text(e.value,
-                      style: TextStyle(fontSize: 15,
-                          fontWeight: sel ? FontWeight.w600 : FontWeight.normal,
-                          color: sel ? appTeal : appInk))),
-                  if (sel) const Icon(Icons.check, color: appTeal, size: 20),
-                ]),
-              ),
-            );
-          }).toList(),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+          child: Text(
+            'Muéstrame animales a menos de:',
+            style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+          ),
         ),
-      ),
-      const SizedBox(height: 16),
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: Text('Los animales fuera de este radio no aparecerán en tu feed.',
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
-      ),
-    ]),
+        Container(
+          margin: const EdgeInsets.symmetric(horizontal: 20),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.8),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            children: _radios.asMap().entries.map((e) {
+              final last = e.key == _radios.length - 1;
+              final sel = e.value == _radio;
+              return GestureDetector(
+                onTap: () {
+                  setState(() => _radio = e.value);
+                  _preferenciasRepo.actualizar(_uid, {'radio': e.value});
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 15,
+                  ),
+                  decoration: BoxDecoration(
+                    border: last
+                        ? null
+                        : Border(
+                            bottom: BorderSide(color: Colors.grey.shade100),
+                          ),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          e.value,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: sel
+                                ? FontWeight.w600
+                                : FontWeight.normal,
+                            color: sel ? appTeal : appInk,
+                          ),
+                        ),
+                      ),
+                      if (sel)
+                        const Icon(Icons.check, color: appTeal, size: 20),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Text(
+            'Los animales fuera de este radio no aparecerán en tu feed.',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+          ),
+        ),
+      ],
+    ),
   );
 }

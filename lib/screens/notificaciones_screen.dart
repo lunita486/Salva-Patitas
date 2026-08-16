@@ -14,7 +14,7 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
   final _preferenciasRepo = PreferenciasRepository();
   bool _mensajes = true;
   bool _solicitudes = true;
-  bool _loading  = true;
+  bool _loading = true;
 
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
@@ -30,21 +30,25 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
   @override
   void initState() {
     super.initState();
-    _preferenciasRepo.stream(_uid).first.then((doc) {
-      if (!mounted) return;
-      if (doc.exists) {
-        final d = doc.data()!;
-        setState(() {
-          _mensajes    = d['notif_mensajes']    ?? true;
-          _solicitudes = d['notif_solicitudes'] ?? true;
-          _loading     = false;
+    _preferenciasRepo
+        .stream(_uid)
+        .first
+        .then((doc) {
+          if (!mounted) return;
+          if (doc.exists) {
+            final d = doc.data()!;
+            setState(() {
+              _mensajes = d['notif_mensajes'] ?? true;
+              _solicitudes = d['notif_solicitudes'] ?? true;
+              _loading = false;
+            });
+          } else {
+            setState(() => _loading = false);
+          }
+        })
+        .catchError((_) {
+          if (mounted) setState(() => _loading = false);
         });
-      } else {
-        setState(() => _loading = false);
-      }
-    }).catchError((_) {
-      if (mounted) setState(() => _loading = false);
-    });
   }
 
   // functions/index.js lee este mismo campo antes de mandar cada push
@@ -60,22 +64,30 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
     title: 'Notificaciones',
     child: _loading
         ? const Center(child: CircularProgressIndicator(color: appTeal))
-        : Column(children: [
-            SettingsSwitchTile(
-              icon: Icons.chat_bubble_outline,
-              label: 'Nuevos mensajes',
-              subtitle: 'Cuando un rescatista te responde en el chat',
-              value: _mensajes,
-              onChanged: (v) { setState(() => _mensajes = v); _save('notif_mensajes', v); },
-            ),
-            SettingsSwitchTile(
-              icon: Icons.assignment_outlined,
-              label: 'Actualizaciones de solicitudes',
-              subtitle: 'Estado de tus solicitudes de adopción',
-              value: _solicitudes,
-              last: true,
-              onChanged: (v) { setState(() => _solicitudes = v); _save('notif_solicitudes', v); },
-            ),
-          ]),
+        : Column(
+            children: [
+              SettingsSwitchTile(
+                icon: Icons.chat_bubble_outline,
+                label: 'Nuevos mensajes',
+                subtitle: 'Cuando un rescatista te responde en el chat',
+                value: _mensajes,
+                onChanged: (v) {
+                  setState(() => _mensajes = v);
+                  _save('notif_mensajes', v);
+                },
+              ),
+              SettingsSwitchTile(
+                icon: Icons.assignment_outlined,
+                label: 'Actualizaciones de solicitudes',
+                subtitle: 'Estado de tus solicitudes de adopción',
+                value: _solicitudes,
+                last: true,
+                onChanged: (v) {
+                  setState(() => _solicitudes = v);
+                  _save('notif_solicitudes', v);
+                },
+              ),
+            ],
+          ),
   );
 }

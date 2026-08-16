@@ -1,41 +1,190 @@
 #!/bin/sh
-# Bloquea código NUEVO que accede directo a Firestore para rescates/
-# solicitudes/preferencias fuera de lib/data/. Ver ARCHITECTURE.md.
+# Bloquea código NUEVO que se saltea una capa central y vuelve a copiar a
+# mano lógica que ya tiene un dueño único. Ver ARCHITECTURE.md.
 #
 # Solo mira las líneas AGREGADAS en este commit (diff con +), no el archivo
 # completo — así no bloquea código viejo que ya estaba ahí antes de este
 # hook, solo avisa cuando se está por agregar un caso nuevo del mismo bug
-# que motivó toda esta capa (rescatistaId sin creadoPor, doc compartido de
-# preferencias, etc.).
+# que motivó cada capa.
+#
+# Cada regla es: patrón + carpeta que SÍ puede usarlo + explicación.
 
-pattern="FirebaseFirestore\.instance\.collection\([[:space:]]*['\"](rescates|solicitudes|preferencias)['\"]"
 found=0
+
+# ── Regla 1: Firestore de rescates/solicitudes/preferencias ───────────────
+# El bug que la motivó: ~100 consultas escritas a mano en 28+ pantallas, y
+# cada una podía olvidarse de filtrar por `creadoPor` (el sub-rol con el que
+# se creó el documento). Una cuenta con doble rol veía datos del otro rol.
+patron_firestore="FirebaseFirestore\.instance\.collection\([[:space:]]*['\"](rescates|solicitudes|preferencias)['\"]"
+
+# ── Regla 2: GPS y geocoding ──────────────────────────────────────────────
+# El bug que la motivó: la secuencia de detección de ubicación estaba
+# copiada en 7 pantallas y fue divergiendo, así que cada bug de ubicación
+# existía tantas veces como copias sin arreglar hubiera (4 familias de bugs
+# en una sola jornada de pruebas). Ver "Capa 3" en ARCHITECTURE.md.
+#
+# NO se bloquean a propósito: Geolocator.distanceBetween (matemática pura) y
+# openLocationSettings/openAppSettings (abrir ajustes es UI de cada pantalla).
+patron_ubicacion="Geolocator\.(getCurrentPosition|getLastKnownPosition|isLocationServiceEnabled|checkPermission|requestPermission)|placemarkFromCoordinates\(|locationFromAddress\("
+
+# ── Regla 3: escritura de mensajes de chat ────────────────────────────────
+# El bug que la motivó: el aviso de "el animal falleció" (theme.dart) tenía
+# su propia copia, escrita a mano, de buscar-el-chat + escribir-el-mensaje.
+# Esa copia quedó atrás en CUATRO cosas a la vez sin que nada avisara:
+# invirtió el orden deliberado de escritura (mensaje antes que la vista
+# previa, lo que duplica mensajes al reintentar), se olvidó de
+# `escritoPorRescatista` (así el aviso se dibujaba del lado equivocado en
+# una autoconsulta), repitió el formato de la hora, y le faltaba el
+# try/catch que traduce el permission-denied de un chat inexistente.
+# Ver "Capa 2" en ARCHITECTURE.md.
+patron_mensajes="collection\([[:space:]]*['\"]mensajes['\"][[:space:]]*\)"
+
+# ── Regla 4: observador de ciclo de vida (reintento de ubicación) ─────────
+# El bug que la motivó: "reintentar al volver de segundo plano" estaba
+# copiado a mano en 5 pantallas, cada una con su propio addObserver/
+# removeObserver/didChangeAppLifecycleState — y 2 de esas 5 además repetían
+# el flag _volviendoDeAjustes letra por letra. Ver "ubicacion_lifecycle.dart"
+# en ARCHITECTURE.md — hay DOS mixins a propósito (uno reintenta sin pedir
+# permiso, el otro solo una vez tras volver de Ajustes) porque fusionarlos
+# reabriría el bucle de diálogo que motivó el segundo patrón.
+patron_lifecycle="void[[:space:]]+didChangeAppLifecycleState\(|WidgetsBinding\.instance\.(add|remove)Observer\("
+
+# ── Regla 5: selector de foto de galería (ImagePicker) ────────────────────
+# El bug que la motivó: elegirFotoAnimal() ya consolidó el selector de
+# animales, pero un selector CASI IGUAL para fotos de perfil/logo (solo
+# galería, sin cámara) seguía copiado a mano en 3 pantallas más
+# (aliado_perfil_screen, albergue_home_screen, albergue_perfil_screen) —
+# ya HABÍAN divergido: 2 de las 3 se saltaban normalizarFoto() (una foto
+# tomada con el celular "al revés" se guardaba rotada, porque nada
+# corregía el EXIF), y una no tenía try/catch. Consolidado en
+# elegirFotoPerfil(). Ver "Lógica compartida sin dueño único" en
+# ARCHITECTURE.md.
+#
+# El patrón busca a propósito la forma `ImagePicker().pickImage(` (instancia
+# inline, como en los 5 casos de arriba) y NO cualquier `.pickImage(` — así
+# no bloquea a subir_lote_screen.dart, que guarda su propio `_picker` en un
+# campo y normaliza en lote al publicar (junto a la primera foto, elegida
+# con pickMultiImage): es una decisión de diseño distinta, no una copia del
+# mismo patrón.
+patron_foto_perfil="ImagePicker\(\)\.pickImage\("
+
+# ── Regla 6: qué pantalla mostrar según el rol (albergue/aliado) ──────────
+# resolverPantallaPerfil() (fase 3 de la migración) es la única fuente de
+# "qué pantalla mostrar después del login según roles/albergueNombre/
+# aliadoNombre" — antes vivía inline en AuthWrapper.build(), sin poder
+# testearse sin Firebase. Esta regla es más angosta que las demás a
+# propósito: `.contains('albergue')`/`.contains('aliado')` con el string
+# LITERAL (no una variable) es, hoy, un patrón que solo aparece en
+# resolucion_perfil.dart — otras pantallas SÍ usan roles.contains(...),
+# pero con una variable (`rol`) o con 'rescatista'/'adoptante', nunca con
+# estos dos literales. Si algún día una pantalla nueva necesita ese mismo
+# chequeo por un motivo genuino y no relacionado (ej. mostrar un badge de
+# "sos albergue"), esta regla se va a activar igual — es el costo
+# aceptado de un patrón menos inequívoco que Firestore/GPS/mensajes.
+patron_resolucion_rol="\.contains\(['\"](albergue|aliado)['\"]\)"
 
 files=$(git diff --cached --name-only --diff-filter=ACM -- 'lib/*.dart')
 
 for file in $files; do
+  added=$(git diff --cached -U0 -- "$file" | grep -E '^\+' | grep -vF '+++ b/')
+  [ -z "$added" ] && continue
+
   case "$file" in
-    lib/data/*) continue ;;
+    lib/data/*) ;;
+    *)
+      hit=$(echo "$added" | grep -E "$patron_firestore")
+      if [ -n "$hit" ]; then
+        found=1
+        echo ""
+        echo "  [Firestore fuera de lib/data/] $file:"
+        echo "$hit" | sed 's/^\+/    +/'
+      fi
+      ;;
   esac
-  added=$(git diff --cached -U0 -- "$file" | grep -E '^\+' | grep -vF '+++ b/' | grep -E "$pattern")
-  if [ -n "$added" ]; then
-    found=1
-    echo ""
-    echo "  $file:"
-    echo "$added" | sed 's/^\+/    +/'
-  fi
+
+  case "$file" in
+    lib/services/ubicacion_service.dart) ;;
+    *)
+      hit=$(echo "$added" | grep -E "$patron_ubicacion")
+      if [ -n "$hit" ]; then
+        found=1
+        echo ""
+        echo "  [GPS/geocoding fuera de UbicacionService] $file:"
+        echo "$hit" | sed 's/^\+/    +/'
+      fi
+      ;;
+  esac
+
+  case "$file" in
+    lib/data/*) ;;
+    *)
+      hit=$(echo "$added" | grep -E "$patron_mensajes")
+      if [ -n "$hit" ]; then
+        found=1
+        echo ""
+        echo "  [Escritura de mensajes fuera de ChatsRepository] $file:"
+        echo "$hit" | sed 's/^\+/    +/'
+      fi
+      ;;
+  esac
+
+  case "$file" in
+    lib/services/ubicacion_lifecycle.dart) ;;
+    *)
+      hit=$(echo "$added" | grep -E "$patron_lifecycle")
+      if [ -n "$hit" ]; then
+        found=1
+        echo ""
+        echo "  [Observador de ciclo de vida fuera de ubicacion_lifecycle.dart] $file:"
+        echo "$hit" | sed 's/^\+/    +/'
+      fi
+      ;;
+  esac
+
+  case "$file" in
+    lib/widgets/elegir_foto_animal.dart|lib/widgets/elegir_foto_perfil.dart) ;;
+    *)
+      hit=$(echo "$added" | grep -E "$patron_foto_perfil")
+      if [ -n "$hit" ]; then
+        found=1
+        echo ""
+        echo "  [Selector de foto fuera de elegirFotoAnimal/elegirFotoPerfil] $file:"
+        echo "$hit" | sed 's/^\+/    +/'
+      fi
+      ;;
+  esac
+
+  case "$file" in
+    lib/domain/resolucion_perfil.dart) ;;
+    *)
+      hit=$(echo "$added" | grep -E "$patron_resolucion_rol")
+      if [ -n "$hit" ]; then
+        found=1
+        echo ""
+        echo "  [Resolución de rol fuera de resolucion_perfil.dart] $file:"
+        echo "$hit" | sed 's/^\+/    +/'
+      fi
+      ;;
+  esac
 done
 
 if [ "$found" = "1" ]; then
   echo ""
-  echo "Commit bloqueado: acceso directo a Firestore para rescates/solicitudes/"
-  echo "preferencias fuera de lib/data/."
+  echo "Commit bloqueado: se está copiando a mano lógica que ya tiene un"
+  echo "dueño único. Ver ARCHITECTURE.md."
   echo ""
-  echo "Estas colecciones pasan siempre por su repositorio (RescatesRepository,"
-  echo "SolicitudesRepository, PreferenciasRepository) — ver ARCHITECTURE.md."
+  echo "  - rescates/solicitudes/preferencias  -> lib/data/ (los repositorios)"
+  echo "  - GPS y geocoding                    -> UbicacionService"
+  echo "  - escribir mensajes de chat          -> ChatsRepository"
+  echo "  - reintento al volver de segundo plano -> ReintentoUbicacionAlVolver /"
+  echo "    ReintentoUbicacionTrasAjustes (lib/services/ubicacion_lifecycle.dart)"
+  echo "  - elegir una foto (ImagePicker)      -> elegirFotoAnimal / elegirFotoPerfil"
+  echo "  - qué pantalla según el rol          -> resolverPantallaPerfil (lib/domain/"
+  echo "    resolucion_perfil.dart)"
   echo ""
   echo "Si el método que necesitás no existe todavía, agregalo ahí (con su"
-  echo "test en test/data/) en vez de llamar a Firestore directo desde la pantalla."
+  echo "test) en vez de rehacer la secuencia en la pantalla. Cada copia suelta"
+  echo "es un lugar más donde el próximo bug va a tener que arreglarse aparte."
   echo ""
   exit 1
 fi

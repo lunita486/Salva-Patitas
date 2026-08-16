@@ -37,12 +37,15 @@ void main() {
       expect(doc['roles'], ['rescatista', 'albergue']);
     });
 
-    test('actualizarRoles rechaza un rol inválido (también en release, no solo en debug)', () {
-      expect(
-        () => repo.actualizarRoles('u1', ['rescatista', 'no-es-un-rol']),
-        throwsA(isA<ArgumentError>()),
-      );
-    });
+    test(
+      'actualizarRoles rechaza un rol inválido (también en release, no solo en debug)',
+      () {
+        expect(
+          () => repo.actualizarRoles('u1', ['rescatista', 'no-es-un-rol']),
+          throwsA(isA<ArgumentError>()),
+        );
+      },
+    );
 
     test('crearPerfil crea el perfil con sus campos y roles', () async {
       await repo.crearPerfil(
@@ -69,26 +72,31 @@ void main() {
         'fotoBase64': 'foto-perfil',
       });
 
-      await repo.crearPerfil(
-        uid: 'u3',
-        nombre: 'Ana G.',
-        roles: ['adoptante'],
-      );
+      await repo.crearPerfil(uid: 'u3', nombre: 'Ana G.', roles: ['adoptante']);
 
       final doc = await firestore.collection('usuarios').doc('u3').get();
-      expect(doc['fcmToken'], 'token-importante',
-          reason: 'merge:true no debe borrar campos que crearPerfil no escribe');
-      expect(doc['fotoBase64'], 'foto-perfil');
-      expect(doc['roles'], ['adoptante'],
-          reason: 'los campos que sí escribe se actualizan normalmente');
-    });
-
-    test('crearPerfil rechaza un rol inválido (también en release, no solo en debug)', () {
       expect(
-        () => repo.crearPerfil(uid: 'u4', nombre: 'X', roles: ['hacker']),
-        throwsA(isA<ArgumentError>()),
+        doc['fcmToken'],
+        'token-importante',
+        reason: 'merge:true no debe borrar campos que crearPerfil no escribe',
+      );
+      expect(doc['fotoBase64'], 'foto-perfil');
+      expect(
+        doc['roles'],
+        ['adoptante'],
+        reason: 'los campos que sí escribe se actualizan normalmente',
       );
     });
+
+    test(
+      'crearPerfil rechaza un rol inválido (también en release, no solo en debug)',
+      () {
+        expect(
+          () => repo.crearPerfil(uid: 'u4', nombre: 'X', roles: ['hacker']),
+          throwsA(isA<ArgumentError>()),
+        );
+      },
+    );
 
     test('asegurarPerfilBase crea el doc desde el primer login, SIN roles — '
         'así AuthWrapper nunca espera que el servidor confirme "cuenta '
@@ -105,33 +113,48 @@ void main() {
       expect(doc.exists, true);
       expect(doc['nombre'], 'Carmen');
       expect(doc['email'], 'facturas@x.com');
-      expect(doc.data()!.containsKey('roles'), false,
-          reason: 'elegir rol sigue siendo del onboarding, no del login');
+      expect(
+        doc.data()!.containsKey('roles'),
+        false,
+        reason: 'elegir rol sigue siendo del onboarding, no del login',
+      );
     });
 
-    test('asegurarPerfilBase sobre una cuenta que YA tiene perfil solo '
-        'refresca nombre/email/foto — no pisa roles ni ningún otro campo', () async {
-      await firestore.collection('usuarios').doc('u6').set({
-        'nombre': 'Ana',
-        'roles': ['albergue'],
-        'albergueNombre': 'La Perla',
-        'fcmToken': 'token-importante',
-      });
+    test(
+      'asegurarPerfilBase sobre una cuenta que YA tiene perfil solo '
+      'refresca nombre/email/foto — no pisa roles ni ningún otro campo',
+      () async {
+        await firestore.collection('usuarios').doc('u6').set({
+          'nombre': 'Ana',
+          'roles': ['albergue'],
+          'albergueNombre': 'La Perla',
+          'fcmToken': 'token-importante',
+        });
 
-      await repo.asegurarPerfilBase(uid: 'u6', nombre: 'Ana García', email: 'ana@x.com');
+        await repo.asegurarPerfilBase(
+          uid: 'u6',
+          nombre: 'Ana García',
+          email: 'ana@x.com',
+        );
 
-      final doc = await firestore.collection('usuarios').doc('u6').get();
-      expect(doc['roles'], ['albergue']);
-      expect(doc['albergueNombre'], 'La Perla');
-      expect(doc['fcmToken'], 'token-importante');
-      expect(doc['nombre'], 'Ana García');
-      expect(doc['email'], 'ana@x.com');
-    });
+        final doc = await firestore.collection('usuarios').doc('u6').get();
+        expect(doc['roles'], ['albergue']);
+        expect(doc['albergueNombre'], 'La Perla');
+        expect(doc['fcmToken'], 'token-importante');
+        expect(doc['nombre'], 'Ana García');
+        expect(doc['email'], 'ana@x.com');
+      },
+    );
 
     test('asegurarPerfilBase con datos vacíos o null no escribe basura — '
         'crea el doc igual (vacío), que es lo único que AuthWrapper necesita '
         'para no quedarse esperando al servidor', () async {
-      await repo.asegurarPerfilBase(uid: 'u7', nombre: null, email: '', foto: null);
+      await repo.asegurarPerfilBase(
+        uid: 'u7',
+        nombre: null,
+        email: '',
+        foto: null,
+      );
       final doc = await firestore.collection('usuarios').doc('u7').get();
       expect(doc.exists, true);
       expect(doc.data(), isEmpty);
@@ -152,18 +175,27 @@ void main() {
         when(() => db.collection('usuarios')).thenReturn(col);
         when(() => col.doc('u8')).thenReturn(ref);
         when(() => auth.currentUser).thenReturn(user);
-        when(() => user.getIdToken(true)).thenAnswer((_) async => 'token-nuevo');
+        when(
+          () => user.getIdToken(true),
+        ).thenAnswer((_) async => 'token-nuevo');
         var intentos = 0;
         when(() => ref.set(any(), any())).thenAnswer((_) {
           intentos++;
           if (intentos == 1) {
-            throw FirebaseException(plugin: 'cloud_firestore', code: 'permission-denied');
+            throw FirebaseException(
+              plugin: 'cloud_firestore',
+              code: 'permission-denied',
+            );
           }
           return Future.value();
         });
 
         final repoConMock = UsuariosRepository(db: db, auth: auth);
-        await repoConMock.crearPerfil(uid: 'u8', nombre: 'Carmen', roles: ['albergue']);
+        await repoConMock.crearPerfil(
+          uid: 'u8',
+          nombre: 'Carmen',
+          roles: ['albergue'],
+        );
 
         expect(intentos, 2);
         verify(() => user.getIdToken(true)).called(1);
@@ -178,12 +210,17 @@ void main() {
         when(() => db.collection('usuarios')).thenReturn(col);
         when(() => col.doc('u9')).thenReturn(ref);
         when(() => auth.currentUser).thenReturn(user);
-        when(() => user.getIdToken(true)).thenAnswer((_) async => 'token-nuevo');
+        when(
+          () => user.getIdToken(true),
+        ).thenAnswer((_) async => 'token-nuevo');
         var intentos = 0;
         when(() => ref.update(any())).thenAnswer((_) {
           intentos++;
           if (intentos == 1) {
-            throw FirebaseException(plugin: 'cloud_firestore', code: 'permission-denied');
+            throw FirebaseException(
+              plugin: 'cloud_firestore',
+              code: 'permission-denied',
+            );
           }
           return Future.value();
         });
@@ -205,9 +242,15 @@ void main() {
         when(() => db.collection('usuarios')).thenReturn(col);
         when(() => col.doc('u10')).thenReturn(ref);
         when(() => auth.currentUser).thenReturn(user);
-        when(() => user.getIdToken(true)).thenAnswer((_) async => 'token-nuevo');
+        when(
+          () => user.getIdToken(true),
+        ).thenAnswer((_) async => 'token-nuevo');
         when(() => ref.update(any())).thenThrow(
-            FirebaseException(plugin: 'cloud_firestore', code: 'permission-denied'));
+          FirebaseException(
+            plugin: 'cloud_firestore',
+            code: 'permission-denied',
+          ),
+        );
 
         final repoConMock = UsuariosRepository(db: db, auth: auth);
         await expectLater(
@@ -225,7 +268,8 @@ void main() {
         when(() => db.collection('usuarios')).thenReturn(col);
         when(() => col.doc('u11')).thenReturn(ref);
         when(() => ref.update(any())).thenThrow(
-            FirebaseException(plugin: 'cloud_firestore', code: 'unavailable'));
+          FirebaseException(plugin: 'cloud_firestore', code: 'unavailable'),
+        );
 
         final repoConMock = UsuariosRepository(db: db, auth: auth);
         await expectLater(

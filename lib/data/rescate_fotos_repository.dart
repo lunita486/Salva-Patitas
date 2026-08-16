@@ -12,7 +12,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 /// la regla en el mismo commit.
 class RescateFotosRepository {
   RescateFotosRepository({FirebaseStorage? storage})
-      : _storage = storage ?? FirebaseStorage.instance;
+    : _storage = storage ?? FirebaseStorage.instance;
   final FirebaseStorage _storage;
 
   Reference _ref({required String rescateId, required int slot}) =>
@@ -70,7 +70,10 @@ class RescateFotosRepository {
     Duration timeout = const Duration(seconds: 45),
   }) async {
     final ref = _ref(rescateId: rescateId, slot: slot);
-    final task = ref.putData(bytes, SettableMetadata(contentType: 'image/jpeg'));
+    final task = ref.putData(
+      bytes,
+      SettableMetadata(contentType: 'image/jpeg'),
+    );
     if (onProgreso != null) {
       // onError vacío a propósito: si la subida falla, el error real se
       // maneja abajo con `await task` (lo propaga al llamador). Sin este
@@ -78,18 +81,22 @@ class RescateFotosRepository {
       // y quedaría como excepción async no controlada en los logs.
       task.snapshotEvents.listen((snap) {
         try {
-          if (snap.totalBytes > 0) onProgreso(snap.bytesTransferred / snap.totalBytes);
+          if (snap.totalBytes > 0)
+            onProgreso(snap.bytesTransferred / snap.totalBytes);
         } catch (_) {}
       }, onError: (_) {});
     }
-    await task.timeout(timeout, onTimeout: () {
-      // best-effort: si ya terminó (carrera con el propio timeout) o el
-      // plugin no puede cancelarla en este estado, cancel() devuelve
-      // false en vez de lanzar — no hay nada más que hacer acá, el throw
-      // de abajo igual avisa al llamador.
-      unawaited(task.cancel().catchError((_) => false));
-      throw TimeoutException('Se agotó el tiempo subiendo la foto.');
-    });
+    await task.timeout(
+      timeout,
+      onTimeout: () {
+        // best-effort: si ya terminó (carrera con el propio timeout) o el
+        // plugin no puede cancelarla en este estado, cancel() devuelve
+        // false en vez de lanzar — no hay nada más que hacer acá, el throw
+        // de abajo igual avisa al llamador.
+        unawaited(task.cancel().catchError((_) => false));
+        throw TimeoutException('Se agotó el tiempo subiendo la foto.');
+      },
+    );
     return ref.getDownloadURL();
   }
 
@@ -123,9 +130,10 @@ class RescateFotosRepository {
       // nada que orfanar en Storage por abandonar una LECTURA (a
       // diferencia de subir(), acá el timeout es solo para no dejar a la
       // persona esperando de por vida, no una cuestión de limpieza).
-      bytes = await _ref(rescateId: rescateId, slot: deSlot)
-          .getData(_maxBytesFoto)
-          .timeout(timeoutDescarga);
+      bytes = await _ref(
+        rescateId: rescateId,
+        slot: deSlot,
+      ).getData(_maxBytesFoto).timeout(timeoutDescarga);
     } on FirebaseException catch (e) {
       if (e.code == 'object-not-found') return null;
       rethrow;

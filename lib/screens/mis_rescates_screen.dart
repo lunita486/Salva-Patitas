@@ -3,13 +3,18 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:go_router/go_router.dart';
+import '../routing/app_router.dart';
 import '../theme.dart';
+import '../domain/reglas_negocio.dart';
+import '../widgets/cambiar_estado_sheet.dart';
+import '../widgets/estado_error_feed.dart';
+import '../widgets/fotos.dart';
+import '../widgets/texto_sin_desborde.dart';
 import '../data/creator_role.dart';
 import '../data/rescates_repository.dart';
 import '../data/rescate_fotos_repository.dart';
-import 'editar_rescate_screen.dart';
 import 'compartir_animal.dart';
-import 'visor_foto_completa.dart';
 import 'solicitudes_rescatista_screen.dart' show contactarPersonaEnProceso;
 
 class TodosLosRescatesScreen extends StatefulWidget {
@@ -47,11 +52,14 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
   // encontrar hogar; 'En proceso de adopción' ya tiene a alguien
   // interesado y no necesita más visibilidad.
   //
-  // Configurable por perfil (albergue_perfil_screen.dart /
+  // Configurable por perfil (albergue_home_screen.dart /
   // perfil_rescatista_screen.dart), no fijo en 30 — cada organización
-  // conoce su propio ritmo de adopciones (pedido de Eliza). Se carga una
-  // sola vez al abrir la pantalla; 30 es el valor por defecto mientras
-  // carga o si nunca se configuró.
+  // conoce su propio ritmo de adopciones (pedido de Eliza). Guardado por
+  // separado para cada rol (ver umbralEstancadoDe en domain/reglas_negocio.dart) — por
+  // eso hace falta widget.esAlbergue acá, para leer el que corresponde a
+  // la bandeja que esta pantalla está mostrando. Se carga una sola vez al
+  // abrir la pantalla; 30 es el valor por defecto mientras carga o si
+  // nunca se configuró.
   int _umbralEstancado = umbralEstancadoDefault;
 
   Future<void> _cargarUmbralEstancado() async {
@@ -62,7 +70,12 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
         .doc(uid)
         .get();
     if (!mounted) return;
-    setState(() => _umbralEstancado = umbralEstancadoDe(doc.data()));
+    setState(
+      () => _umbralEstancado = umbralEstancadoDe(
+        doc.data(),
+        esAlbergue: widget.esAlbergue,
+      ),
+    );
   }
 
   int? _diasEsperando(Timestamp? creadoEn) {
@@ -426,26 +439,22 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
           allDocs = allDocs.where((doc) {
             final data = doc.data();
             final ea = data['estadoAdopcion'] as String? ?? 'Rescatado';
-            // "En cuidado" = físicamente presente, no "del que
-            // sos responsable" — "Regresado" sí cuenta (volvió
-            // de verdad con vos), "Hogar de paso" no (está en
-            // la casa de otra persona, libera capacidad real).
-            // Mismo criterio que el contador del panel del
-            // albergue, para que el número y esta lista
-            // siempre coincidan (pedido explícito de Eliza).
+            // cuentaComoEnCuidado/esEstancado (domain/reglas_negocio.dart) son la única
+            // fuente de estas dos reglas — antes copiadas a mano acá y en
+            // el contador del panel del albergue / el aviso de la
+            // tarjeta, cada una prometiendo en un comentario mantenerse
+            // igual que las otras.
             if (_filtroEstado == 'En cuidado') {
-              return ea == 'Rescatado' || ea == 'Regresado';
+              return cuentaComoEnCuidado(ea);
             }
-            // 'Estancados' no es un estadoAdopcion real — es un
-            // filtro calculado, mismo umbral que el aviso de la
-            // tarjeta (ver _umbralEstancado).
+            // 'Estancados' no es un estadoAdopcion real — es un filtro
+            // calculado, mismo umbral que el aviso de la tarjeta.
             if (_filtroEstado == 'Estancados') {
-              final dias = _diasEsperando(data['creadoEn'] as Timestamp?);
-              return dias != null &&
-                  dias >= _umbralEstancado &&
-                  (ea == 'Rescatado' ||
-                      ea == 'Hogar de paso' ||
-                      ea == 'Regresado');
+              return esEstancado(
+                diasEsperando: _diasEsperando(data['creadoEn'] as Timestamp?),
+                estadoAdopcion: ea,
+                umbral: _umbralEstancado,
+              );
             }
             return ea == _filtroEstado;
           }).toList();
@@ -504,17 +513,15 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
     final estadoAdopcion = d['estadoAdopcion'] as String? ?? 'Rescatado';
     final motivoRegreso = d['motivoRegreso'] as String?;
     final diasEsperando = _diasEsperando(d['creadoEn'] as Timestamp?);
-    // "Regresado" también puede quedar estancado — de
-    // hecho es el caso más urgente: ya falló una vez en
-    // encontrar hogar definitivo. Mismo criterio que el
-    // filtro "En cuidado" de arriba.
-    final estancado =
-        diasEsperando != null &&
-        diasEsperando >= _umbralEstancado &&
-        (estadoAdopcion == 'Rescatado' ||
-            estadoAdopcion == 'Hogar de paso' ||
-            estadoAdopcion == 'Regresado');
-    final colorEstancado = (diasEsperando ?? 0) >= _umbralEstancado * 2
+    // esEstancado/esEstancadoGrave (domain/reglas_negocio.dart) — mismo criterio que el
+    // filtro "Estancados" de arriba, única fuente para las dos.
+    final estancado = esEstancado(
+      diasEsperando: diasEsperando,
+      estadoAdopcion: estadoAdopcion,
+      umbral: _umbralEstancado,
+    );
+    final colorEstancado =
+        esEstancadoGrave(diasEsperando: diasEsperando, umbral: _umbralEstancado)
         ? const Color(0xFFD32F2F)
         : appOrange;
     // Pregunta real de Eliza: "tengo 3 animalitos en
@@ -567,13 +574,11 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                 // foto completa desde "Mis rescates".
                 onTap: fotoUrl == null
                     ? null
-                    : () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => VisorFotoCompleta(
-                            fotos: [fotoUrl, if (fotoUrl2 != null) fotoUrl2],
-                            indiceInicial: 0,
-                          ),
+                    : () => context.push(
+                        AppRoutes.visorFoto,
+                        extra: (
+                          fotos: [fotoUrl, if (fotoUrl2 != null) fotoUrl2],
+                          indiceInicial: 0,
                         ),
                       ),
                 child: ClipRRect(
@@ -642,22 +647,18 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                     // rescatista en home_screen.dart.
                     if ((ubicacion as String).isNotEmpty) ...[
                       const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.location_on,
-                            size: 13,
-                            color: appTeal,
-                          ),
-                          const SizedBox(width: 2),
-                          Text(
-                            ubicacion,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey.shade700,
-                            ),
-                          ),
-                        ],
+                      TextoSinDesborde(
+                        texto: ubicacion,
+                        separacion: 2,
+                        antes: const Icon(
+                          Icons.location_on,
+                          size: 13,
+                          color: appTeal,
+                        ),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade700,
+                        ),
                       ),
                     ],
                   ],
@@ -1054,12 +1055,9 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                 Tooltip(
                   message: 'Editar',
                   child: GestureDetector(
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            EditarRescateScreen(docId: docId, data: d),
-                      ),
+                    onTap: () => context.push(
+                      AppRoutes.editarRescate,
+                      extra: (docId: docId, data: d),
                     ),
                     child: Container(
                       padding: const EdgeInsets.all(8),

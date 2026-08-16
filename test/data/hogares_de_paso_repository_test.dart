@@ -27,52 +27,108 @@ void main() {
       repo = HogaresDePasoRepository(db: firestore);
     });
 
-    test('registrarAyuda() agrega a la persona con vecesAyudo=1 la primera vez', () async {
-      await repo.registrarAyuda(albergueId: 'alb-1', adoptanteId: 'ad-1', nombre: 'Karen Cancino');
+    test(
+      'registrarAyuda() agrega a la persona con vecesAyudo=1 la primera vez',
+      () async {
+        await repo.registrarAyuda(
+          albergueId: 'alb-1',
+          adoptanteId: 'ad-1',
+          nombre: 'Karen Cancino',
+        );
 
-      final doc = await firestore.collection('hogaresDePaso').doc('alb-1_ad-1').get();
-      expect(doc.exists, true);
-      expect(doc['nombre'], 'Karen Cancino');
-      expect(doc['vecesAyudo'], 1);
-      expect(doc['albergueId'], 'alb-1');
-      expect(doc['agregadoManualmente'], false);
-    });
+        final doc = await firestore
+            .collection('hogaresDePaso')
+            .doc('alb-1_ad-1')
+            .get();
+        expect(doc.exists, true);
+        expect(doc['nombre'], 'Karen Cancino');
+        expect(doc['vecesAyudo'], 1);
+        expect(doc['albergueId'], 'alb-1');
+        expect(doc['agregadoManualmente'], false);
+      },
+    );
 
-    test('registrarAyuda() suma 1 (no duplica la fila) si la misma persona ya ayudó antes — '
-        'es justo el punto de la mejora: la red recuerda el historial en vez de arrancar de cero '
-        'con cada solicitud nueva', () async {
-      await repo.registrarAyuda(albergueId: 'alb-1', adoptanteId: 'ad-1', nombre: 'Karen Cancino');
-      await repo.registrarAyuda(albergueId: 'alb-1', adoptanteId: 'ad-1', nombre: 'Karen Cancino');
-      await repo.registrarAyuda(albergueId: 'alb-1', adoptanteId: 'ad-1', nombre: 'Karen Cancino');
+    test(
+      'registrarAyuda() suma 1 (no duplica la fila) si la misma persona ya ayudó antes — '
+      'es justo el punto de la mejora: la red recuerda el historial en vez de arrancar de cero '
+      'con cada solicitud nueva',
+      () async {
+        await repo.registrarAyuda(
+          albergueId: 'alb-1',
+          adoptanteId: 'ad-1',
+          nombre: 'Karen Cancino',
+        );
+        await repo.registrarAyuda(
+          albergueId: 'alb-1',
+          adoptanteId: 'ad-1',
+          nombre: 'Karen Cancino',
+        );
+        await repo.registrarAyuda(
+          albergueId: 'alb-1',
+          adoptanteId: 'ad-1',
+          nombre: 'Karen Cancino',
+        );
 
-      final todos = await firestore.collection('hogaresDePaso').get();
-      expect(todos.docs.length, 1);
-      expect(todos.docs.first['vecesAyudo'], 3);
-    });
+        final todos = await firestore.collection('hogaresDePaso').get();
+        expect(todos.docs.length, 1);
+        expect(todos.docs.first['vecesAyudo'], 3);
+      },
+    );
 
-    test('registrarAyuda() con adoptanteId vacío no hace nada (dato legado sin adoptanteId)', () async {
-      await repo.registrarAyuda(albergueId: 'alb-1', adoptanteId: '', nombre: 'Alguien');
+    test(
+      'registrarAyuda() con adoptanteId vacío no hace nada (dato legado sin adoptanteId)',
+      () async {
+        await repo.registrarAyuda(
+          albergueId: 'alb-1',
+          adoptanteId: '',
+          nombre: 'Alguien',
+        );
 
-      final todos = await firestore.collection('hogaresDePaso').get();
-      expect(todos.docs, isEmpty);
-    });
+        final todos = await firestore.collection('hogaresDePaso').get();
+        expect(todos.docs, isEmpty);
+      },
+    );
 
-    test('registrarAyuda() fusiona con una fila agregada a mano que tenga el mismo email, '
-        'en vez de crear una fila duplicada para la misma persona', () async {
-      await repo.agregarManual(albergueId: 'alb-1', nombre: 'David Casas', email: 'david@ejemplo.com');
+    test(
+      'registrarAyuda() fusiona con una fila agregada a mano que tenga el mismo email, '
+      'en vez de crear una fila duplicada para la misma persona',
+      () async {
+        await repo.agregarManual(
+          albergueId: 'alb-1',
+          nombre: 'David Casas',
+          email: 'david@ejemplo.com',
+        );
 
-      await repo.registrarAyuda(
-          albergueId: 'alb-1', adoptanteId: 'uid-david', nombre: 'David Casas', email: 'david@ejemplo.com');
+        await repo.registrarAyuda(
+          albergueId: 'alb-1',
+          adoptanteId: 'uid-david',
+          nombre: 'David Casas',
+          email: 'david@ejemplo.com',
+        );
 
-      final todos = await firestore.collection('hogaresDePaso').get();
-      expect(todos.docs.length, 1, reason: 'no debería haber creado una segunda fila para la misma persona');
-      final d = todos.docs.first.data();
-      expect(d['adoptanteId'], 'uid-david', reason: 'la fila agregada a mano queda vinculada a la cuenta real');
-      expect(d['vecesAyudo'], 1);
-      expect(d['agregadoManualmente'], false,
-          reason: 'ya quedó vinculada a una cuenta real — no debe seguir marcada como manual para siempre '
-              '(hallazgo de auditoría de código)');
-    });
+        final todos = await firestore.collection('hogaresDePaso').get();
+        expect(
+          todos.docs.length,
+          1,
+          reason:
+              'no debería haber creado una segunda fila para la misma persona',
+        );
+        final d = todos.docs.first.data();
+        expect(
+          d['adoptanteId'],
+          'uid-david',
+          reason: 'la fila agregada a mano queda vinculada a la cuenta real',
+        );
+        expect(d['vecesAyudo'], 1);
+        expect(
+          d['agregadoManualmente'],
+          false,
+          reason:
+              'ya quedó vinculada a una cuenta real — no debe seguir marcada como manual para siempre '
+              '(hallazgo de auditoría de código)',
+        );
+      },
+    );
 
     // El bug real: David.Casas@Gmail.com (como lo tipeó el albergue a mano)
     // y david.casas@gmail.com (el email real de Google Sign-In, ya en
@@ -82,38 +138,63 @@ void main() {
         'mayúsculas distintas — David.Casas@Gmail.com y david.casas@gmail.com '
         'son la misma persona', () async {
       await repo.agregarManual(
-          albergueId: 'alb-1', nombre: 'David Casas', email: 'David.Casas@Gmail.com');
+        albergueId: 'alb-1',
+        nombre: 'David Casas',
+        email: 'David.Casas@Gmail.com',
+      );
 
       await repo.registrarAyuda(
-          albergueId: 'alb-1', adoptanteId: 'uid-david', nombre: 'David Casas',
-          email: 'david.casas@gmail.com');
+        albergueId: 'alb-1',
+        adoptanteId: 'uid-david',
+        nombre: 'David Casas',
+        email: 'david.casas@gmail.com',
+      );
 
       final todos = await firestore.collection('hogaresDePaso').get();
-      expect(todos.docs.length, 1,
-          reason: 'no debería haber creado una segunda fila por la diferencia de mayúsculas');
+      expect(
+        todos.docs.length,
+        1,
+        reason:
+            'no debería haber creado una segunda fila por la diferencia de mayúsculas',
+      );
       expect(todos.docs.first['adoptanteId'], 'uid-david');
       expect(todos.docs.first['vecesAyudo'], 1);
     });
 
-    test('agregarManual() guarda el email en minúsculas, sin espacios alrededor', () async {
-      await repo.agregarManual(
-          albergueId: 'alb-1', nombre: 'David Casas', email: '  David.Casas@Gmail.com  ');
+    test(
+      'agregarManual() guarda el email en minúsculas, sin espacios alrededor',
+      () async {
+        await repo.agregarManual(
+          albergueId: 'alb-1',
+          nombre: 'David Casas',
+          email: '  David.Casas@Gmail.com  ',
+        );
 
-      final todos = await firestore.collection('hogaresDePaso').get();
-      expect(todos.docs.first['email'], 'david.casas@gmail.com');
-    });
+        final todos = await firestore.collection('hogaresDePaso').get();
+        expect(todos.docs.first['email'], 'david.casas@gmail.com');
+      },
+    );
 
-    test('actualizarContacto() también normaliza el email a minúsculas', () async {
-      final ref = await firestore.collection('hogaresDePaso').add({
-        'albergueId': 'alb-1', 'nombre': 'Karen Cancino', 'email': '',
-      });
+    test(
+      'actualizarContacto() también normaliza el email a minúsculas',
+      () async {
+        final ref = await firestore.collection('hogaresDePaso').add({
+          'albergueId': 'alb-1',
+          'nombre': 'Karen Cancino',
+          'email': '',
+        });
 
-      await repo.actualizarContacto(ref.id,
-          telefono: '', notas: '', email: 'Karen.Cancino@Gmail.com');
+        await repo.actualizarContacto(
+          ref.id,
+          telefono: '',
+          notas: '',
+          email: 'Karen.Cancino@Gmail.com',
+        );
 
-      final doc = await ref.get();
-      expect(doc['email'], 'karen.cancino@gmail.com');
-    });
+        final doc = await ref.get();
+        expect(doc['email'], 'karen.cancino@gmail.com');
+      },
+    );
 
     // El bug real que esto arregla: antes `email` tenía un valor por
     // defecto (`= ''`), así que CUALQUIER llamado que se olvidara de
@@ -121,24 +202,39 @@ void main() {
     // permite fusionar esta fila con la cuenta real de la persona más
     // adelante (ver registrarAyuda). Ahora email es `String?` sin default:
     // si no se pasa, el campo ni se toca.
-    test('actualizarContacto() SIN pasar email no borra el que ya estaba guardado', () async {
-      final ref = await firestore.collection('hogaresDePaso').add({
-        'albergueId': 'alb-1', 'nombre': 'Karen Cancino', 'email': 'karen@ejemplo.com',
-      });
+    test(
+      'actualizarContacto() SIN pasar email no borra el que ya estaba guardado',
+      () async {
+        final ref = await firestore.collection('hogaresDePaso').add({
+          'albergueId': 'alb-1',
+          'nombre': 'Karen Cancino',
+          'email': 'karen@ejemplo.com',
+        });
 
-      await repo.actualizarContacto(ref.id, telefono: '3009999999', notas: 'Nueva nota');
+        await repo.actualizarContacto(
+          ref.id,
+          telefono: '3009999999',
+          notas: 'Nueva nota',
+        );
 
-      final doc = await ref.get();
-      expect(doc['email'], 'karen@ejemplo.com', reason: 'el email no se tocó');
-      expect(doc['telefono'], '3009999999');
-      expect(doc['notas'], 'Nueva nota');
-    });
+        final doc = await ref.get();
+        expect(
+          doc['email'],
+          'karen@ejemplo.com',
+          reason: 'el email no se tocó',
+        );
+        expect(doc['telefono'], '3009999999');
+        expect(doc['notas'], 'Nueva nota');
+      },
+    );
 
     test('actualizarContacto() SÍ borra el email si se pasa explícitamente '
         'vacío — sigue siendo una decisión consciente y posible, no un '
         'accidente por omisión', () async {
       final ref = await firestore.collection('hogaresDePaso').add({
-        'albergueId': 'alb-1', 'nombre': 'Karen Cancino', 'email': 'karen@ejemplo.com',
+        'albergueId': 'alb-1',
+        'nombre': 'Karen Cancino',
+        'email': 'karen@ejemplo.com',
       });
 
       await repo.actualizarContacto(ref.id, telefono: '', notas: '', email: '');
@@ -147,66 +243,238 @@ void main() {
       expect(doc['email'], '');
     });
 
-    test('registrarAyuda() después de fusionar por email, la segunda ayuda de esa cuenta suma '
-        'sobre la misma fila (ya no vuelve a buscar por email)', () async {
-      await repo.agregarManual(albergueId: 'alb-1', nombre: 'David Casas', email: 'david@ejemplo.com');
-      await repo.registrarAyuda(
-          albergueId: 'alb-1', adoptanteId: 'uid-david', nombre: 'David Casas', email: 'david@ejemplo.com');
+    test(
+      'registrarAyuda() después de fusionar por email, la segunda ayuda de esa cuenta suma '
+      'sobre la misma fila (ya no vuelve a buscar por email)',
+      () async {
+        await repo.agregarManual(
+          albergueId: 'alb-1',
+          nombre: 'David Casas',
+          email: 'david@ejemplo.com',
+        );
+        await repo.registrarAyuda(
+          albergueId: 'alb-1',
+          adoptanteId: 'uid-david',
+          nombre: 'David Casas',
+          email: 'david@ejemplo.com',
+        );
 
-      await repo.registrarAyuda(
-          albergueId: 'alb-1', adoptanteId: 'uid-david', nombre: 'David Casas', email: 'david@ejemplo.com');
+        await repo.registrarAyuda(
+          albergueId: 'alb-1',
+          adoptanteId: 'uid-david',
+          nombre: 'David Casas',
+          email: 'david@ejemplo.com',
+        );
 
-      final todos = await firestore.collection('hogaresDePaso').get();
-      expect(todos.docs.length, 1);
-      expect(todos.docs.first['vecesAyudo'], 2);
-    });
+        final todos = await firestore.collection('hogaresDePaso').get();
+        expect(todos.docs.length, 1);
+        expect(todos.docs.first['vecesAyudo'], 2);
+      },
+    );
 
-    test('registrarAyuda() sin email no fusiona con nada — crea su propia fila', () async {
-      await repo.agregarManual(albergueId: 'alb-1', nombre: 'David Casas', email: 'david@ejemplo.com');
+    test(
+      'registrarAyuda() sin email no fusiona con nada — crea su propia fila',
+      () async {
+        await repo.agregarManual(
+          albergueId: 'alb-1',
+          nombre: 'David Casas',
+          email: 'david@ejemplo.com',
+        );
 
-      await repo.registrarAyuda(albergueId: 'alb-1', adoptanteId: 'uid-otro', nombre: 'Otra Persona');
+        await repo.registrarAyuda(
+          albergueId: 'alb-1',
+          adoptanteId: 'uid-otro',
+          nombre: 'Otra Persona',
+        );
 
-      final todos = await firestore.collection('hogaresDePaso').get();
-      expect(todos.docs.length, 2);
-    });
+        final todos = await firestore.collection('hogaresDePaso').get();
+        expect(todos.docs.length, 2);
+      },
+    );
 
     test('deAlbergue() solo devuelve las filas de ese albergue', () async {
-      await repo.registrarAyuda(albergueId: 'alb-1', adoptanteId: 'ad-1', nombre: 'Karen');
-      await repo.registrarAyuda(albergueId: 'alb-2', adoptanteId: 'ad-2', nombre: 'Henning');
+      await repo.registrarAyuda(
+        albergueId: 'alb-1',
+        adoptanteId: 'ad-1',
+        nombre: 'Karen',
+      );
+      await repo.registrarAyuda(
+        albergueId: 'alb-2',
+        adoptanteId: 'ad-2',
+        nombre: 'Henning',
+      );
 
       final propias = await repo.deAlbergue('alb-1').first;
       expect(propias.docs.length, 1);
       expect(propias.docs.first['nombre'], 'Karen');
     });
 
-    test('agregarManual() crea una fila con vecesAyudo=0 marcada como manual — '
-        'para alguien de confianza que el albergue conoce fuera de la app', () async {
-      await repo.agregarManual(albergueId: 'alb-1', nombre: 'Doña Marta', telefono: '3001234567');
+    group('buscarDuplicado() — evita que agregarManual() cree la misma '
+        'persona varias veces (hallazgo real de Eliza: "Pepito Perez" '
+        'repetido 3 veces en la red, porque agregarManual() no chequeaba '
+        'nada antes de crear)', () {
+      test(
+        'encuentra una fila existente con el mismo nombre Y el mismo email',
+        () async {
+          await repo.agregarManual(
+            albergueId: 'alb-1',
+            nombre: 'Pepito Perez',
+            email: 'pepito@ejemplo.com',
+          );
 
-      final todos = await firestore.collection('hogaresDePaso').get();
-      expect(todos.docs.length, 1);
-      final d = todos.docs.first.data();
-      expect(d['nombre'], 'Doña Marta');
-      expect(d['telefono'], '3001234567');
-      expect(d['vecesAyudo'], 0);
-      expect(d['agregadoManualmente'], true);
-    });
+          final duplicado = await repo.buscarDuplicado(
+            albergueId: 'alb-1',
+            nombre: 'Pepito Perez',
+            email: 'pepito@ejemplo.com',
+          );
 
-    test('actualizarContacto() carga teléfono/notas en una fila existente — '
-        'para completar los datos de las filas que se agregaron solas, sin teléfono ni notas', () async {
-      final ref = await firestore.collection('hogaresDePaso').add({
-        'albergueId': 'alb-1', 'nombre': 'Karen Cancino', 'telefono': '', 'notas': '',
+          expect(duplicado, isNotNull);
+          expect(duplicado!['nombre'], 'Pepito Perez');
+        },
+      );
+
+      test(
+        'encuentra el duplicado aunque cambien mayúsculas/espacios en nombre '
+        'o email — el caso real: volver a tipear el mismo dato no calza siempre igual',
+        () async {
+          await repo.agregarManual(
+            albergueId: 'alb-1',
+            nombre: '  Pepito Perez  ',
+            email: 'Pepito@Ejemplo.com',
+          );
+
+          final duplicado = await repo.buscarDuplicado(
+            albergueId: 'alb-1',
+            nombre: 'pepito perez',
+            email: 'pepito@ejemplo.com',
+          );
+
+          expect(duplicado, isNotNull);
+        },
+      );
+
+      test('NO avisa si el nombre coincide pero el email es distinto — dos '
+          'personas reales pueden compartir nombre, pedido explícito de '
+          'Eliza para no molestar con falsos positivos', () async {
+        await repo.agregarManual(
+          albergueId: 'alb-1',
+          nombre: 'Pepito Perez',
+          email: 'pepito.uno@ejemplo.com',
+        );
+
+        final duplicado = await repo.buscarDuplicado(
+          albergueId: 'alb-1',
+          nombre: 'Pepito Perez',
+          email: 'pepito.dos@ejemplo.com',
+        );
+
+        expect(duplicado, isNull);
       });
 
-      await repo.actualizarContacto(ref.id, telefono: '3009999999', notas: 'Vive cerca del albergue');
+      test('null si no hay ninguna fila con ese nombre+email', () async {
+        await repo.agregarManual(
+          albergueId: 'alb-1',
+          nombre: 'Karen Cancino',
+          email: 'karen@ejemplo.com',
+        );
 
-      final doc = await ref.get();
-      expect(doc['telefono'], '3009999999');
-      expect(doc['notas'], 'Vive cerca del albergue');
+        final duplicado = await repo.buscarDuplicado(
+          albergueId: 'alb-1',
+          nombre: 'Pepito Perez',
+          email: 'pepito@ejemplo.com',
+        );
+
+        expect(duplicado, isNull);
+      });
+
+      test(
+        'no cruza con el mismo nombre+email en la red de OTRO albergue',
+        () async {
+          await repo.agregarManual(
+            albergueId: 'alb-2',
+            nombre: 'Pepito Perez',
+            email: 'pepito@ejemplo.com',
+          );
+
+          final duplicado = await repo.buscarDuplicado(
+            albergueId: 'alb-1',
+            nombre: 'Pepito Perez',
+            email: 'pepito@ejemplo.com',
+          );
+
+          expect(duplicado, isNull);
+        },
+      );
+
+      test('nombre o email vacíos nunca cuentan como duplicado', () async {
+        await repo.agregarManual(albergueId: 'alb-1', nombre: '', email: '');
+
+        expect(
+          await repo.buscarDuplicado(
+            albergueId: 'alb-1',
+            nombre: '',
+            email: 'x@x.com',
+          ),
+          isNull,
+        );
+        expect(
+          await repo.buscarDuplicado(
+            albergueId: 'alb-1',
+            nombre: 'Pepito',
+            email: '',
+          ),
+          isNull,
+        );
+      });
     });
 
+    test(
+      'agregarManual() crea una fila con vecesAyudo=0 marcada como manual — '
+      'para alguien de confianza que el albergue conoce fuera de la app',
+      () async {
+        await repo.agregarManual(
+          albergueId: 'alb-1',
+          nombre: 'Doña Marta',
+          telefono: '3001234567',
+        );
+
+        final todos = await firestore.collection('hogaresDePaso').get();
+        expect(todos.docs.length, 1);
+        final d = todos.docs.first.data();
+        expect(d['nombre'], 'Doña Marta');
+        expect(d['telefono'], '3001234567');
+        expect(d['vecesAyudo'], 0);
+        expect(d['agregadoManualmente'], true);
+      },
+    );
+
+    test(
+      'actualizarContacto() carga teléfono/notas en una fila existente — '
+      'para completar los datos de las filas que se agregaron solas, sin teléfono ni notas',
+      () async {
+        final ref = await firestore.collection('hogaresDePaso').add({
+          'albergueId': 'alb-1',
+          'nombre': 'Karen Cancino',
+          'telefono': '',
+          'notas': '',
+        });
+
+        await repo.actualizarContacto(
+          ref.id,
+          telefono: '3009999999',
+          notas: 'Vive cerca del albergue',
+        );
+
+        final doc = await ref.get();
+        expect(doc['telefono'], '3009999999');
+        expect(doc['notas'], 'Vive cerca del albergue');
+      },
+    );
+
     test('eliminar() borra la fila', () async {
-      final ref = await firestore.collection('hogaresDePaso').add({'nombre': 'X'});
+      final ref = await firestore.collection('hogaresDePaso').add({
+        'nombre': 'X',
+      });
 
       await repo.eliminar(ref.id);
 
@@ -221,52 +489,73 @@ void main() {
     // timeout vive DENTRO del repositorio para que ningún llamador nuevo
     // pueda volver a olvidarse de ponerlo.
     group('timeout — sin señal, no se cuelga para siempre', () {
-      test('agregarManual() se corta con TimeoutException si el .add() nunca resuelve', () async {
-        final db = MockFirebaseFirestore();
-        final col = MockCollectionReference();
-        when(() => db.collection('hogaresDePaso')).thenReturn(col);
-        when(() => col.add(any())).thenAnswer((_) => Completer<DocumentReference<Map<String, dynamic>>>().future);
+      test(
+        'agregarManual() se corta con TimeoutException si el .add() nunca resuelve',
+        () async {
+          final db = MockFirebaseFirestore();
+          final col = MockCollectionReference();
+          when(() => db.collection('hogaresDePaso')).thenReturn(col);
+          when(() => col.add(any())).thenAnswer(
+            (_) => Completer<DocumentReference<Map<String, dynamic>>>().future,
+          );
 
-        final repoConMock = HogaresDePasoRepository(db: db);
-        await expectLater(
-          repoConMock.agregarManual(
-            albergueId: 'alb-1', nombre: 'Doña Marta',
-            timeout: const Duration(milliseconds: 50),
-          ),
-          throwsA(isA<TimeoutException>()),
-        );
-      });
+          final repoConMock = HogaresDePasoRepository(db: db);
+          await expectLater(
+            repoConMock.agregarManual(
+              albergueId: 'alb-1',
+              nombre: 'Doña Marta',
+              timeout: const Duration(milliseconds: 50),
+            ),
+            throwsA(isA<TimeoutException>()),
+          );
+        },
+      );
 
-      test('actualizarContacto() se corta con TimeoutException si el .update() nunca resuelve', () async {
-        final db = MockFirebaseFirestore();
-        final col = MockCollectionReference();
-        final ref = MockDocumentReference();
-        when(() => db.collection('hogaresDePaso')).thenReturn(col);
-        when(() => col.doc(any())).thenReturn(ref);
-        when(() => ref.update(any())).thenAnswer((_) => Completer<void>().future);
+      test(
+        'actualizarContacto() se corta con TimeoutException si el .update() nunca resuelve',
+        () async {
+          final db = MockFirebaseFirestore();
+          final col = MockCollectionReference();
+          final ref = MockDocumentReference();
+          when(() => db.collection('hogaresDePaso')).thenReturn(col);
+          when(() => col.doc(any())).thenReturn(ref);
+          when(
+            () => ref.update(any()),
+          ).thenAnswer((_) => Completer<void>().future);
 
-        final repoConMock = HogaresDePasoRepository(db: db);
-        await expectLater(
-          repoConMock.actualizarContacto('hp1',
-              telefono: '300', notas: '', timeout: const Duration(milliseconds: 50)),
-          throwsA(isA<TimeoutException>()),
-        );
-      });
+          final repoConMock = HogaresDePasoRepository(db: db);
+          await expectLater(
+            repoConMock.actualizarContacto(
+              'hp1',
+              telefono: '300',
+              notas: '',
+              timeout: const Duration(milliseconds: 50),
+            ),
+            throwsA(isA<TimeoutException>()),
+          );
+        },
+      );
 
-      test('eliminar() se corta con TimeoutException si el .delete() nunca resuelve', () async {
-        final db = MockFirebaseFirestore();
-        final col = MockCollectionReference();
-        final ref = MockDocumentReference();
-        when(() => db.collection('hogaresDePaso')).thenReturn(col);
-        when(() => col.doc(any())).thenReturn(ref);
-        when(() => ref.delete()).thenAnswer((_) => Completer<void>().future);
+      test(
+        'eliminar() se corta con TimeoutException si el .delete() nunca resuelve',
+        () async {
+          final db = MockFirebaseFirestore();
+          final col = MockCollectionReference();
+          final ref = MockDocumentReference();
+          when(() => db.collection('hogaresDePaso')).thenReturn(col);
+          when(() => col.doc(any())).thenReturn(ref);
+          when(() => ref.delete()).thenAnswer((_) => Completer<void>().future);
 
-        final repoConMock = HogaresDePasoRepository(db: db);
-        await expectLater(
-          repoConMock.eliminar('hp1', timeout: const Duration(milliseconds: 50)),
-          throwsA(isA<TimeoutException>()),
-        );
-      });
+          final repoConMock = HogaresDePasoRepository(db: db);
+          await expectLater(
+            repoConMock.eliminar(
+              'hp1',
+              timeout: const Duration(milliseconds: 50),
+            ),
+            throwsA(isA<TimeoutException>()),
+          );
+        },
+      );
     });
   });
 }

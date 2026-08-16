@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui' show PlatformDispatcher;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show SystemChrome, SystemUiMode;
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -11,6 +12,8 @@ import 'package:firebase_app_check/firebase_app_check.dart';
 import 'firebase_options.dart';
 import 'theme.dart';
 import 'data/auth_helper.dart';
+import 'domain/resolucion_perfil.dart';
+import 'routing/app_router.dart';
 import 'screens/login_screen.dart';
 import 'screens/seleccion_rol_screen.dart';
 import 'screens/albergue_perfil_screen.dart';
@@ -23,11 +26,22 @@ import 'services/notificaciones_service.dart';
 // Instancia única compartida por toda la app — Fase 2 (eventos propios como
 // "solicitud_enviada") la va a importar desde acá en vez de crear la suya.
 final FirebaseAnalytics analytics = FirebaseAnalytics.instance;
-final FirebaseAnalyticsObserver analyticsObserver =
-    FirebaseAnalyticsObserver(analytics: analytics);
+final FirebaseAnalyticsObserver analyticsObserver = FirebaseAnalyticsObserver(
+  analytics: analytics,
+);
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // targetSdk 36 (Android 15+) fuerza edge-to-edge a nivel de sistema
+  // operativo sin importar lo que diga el theme nativo — sin este llamado,
+  // el engine de Flutter y el OS pelean por quién dibuja la barra de
+  // estado en cada frame. Hallazgo real de Eliza: en el Samsung Z Flip 6
+  // (One UI, Android 15+) eso se vio como la barra de estado parpadeando
+  // justo después del login y la app cerrándose sola — coincide con el
+  // momento en que se abre el diálogo de permiso de ubicación en
+  // AdoptanteFeedScreen, que agrega una transición de ventana más al
+  // mismo instante.
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   // Play Integrity solo existe para builds firmados/distribuidos de verdad
@@ -40,14 +54,18 @@ void main() async {
   // ya van a estar viajando en cada pedido de quien tenga esta versión o
   // una más nueva instalada.
   await FirebaseAppCheck.instance.activate(
-    androidProvider: kDebugMode ? AndroidProvider.debug : AndroidProvider.playIntegrity,
+    androidProvider: kDebugMode
+        ? AndroidProvider.debug
+        : AndroidProvider.playIntegrity,
   );
 
   // Apagado en debug: sin esto, cada excepción de una sesión de desarrollo
   // (la tuya, la mía probando en el emulador) ensucia el panel de
   // Crashlytics de producción mezclada con crashes reales de gente usando
   // la app de verdad — quedaría imposible distinguir una cosa de la otra.
-  await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(!kDebugMode);
+  await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(
+    !kDebugMode,
+  );
   // Los dos manejadores de arriba cubren errores DISTINTOS: FlutterError.
   // onError es lo que Flutter dispara para errores durante el build/layout/
   // paint de un widget (ej. un RenderBox roto); PlatformDispatcher.instance.
@@ -79,15 +97,13 @@ class PatitasApp extends StatelessWidget {
   const PatitasApp({super.key});
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    return MaterialApp.router(
       title: 'Salva Patitas',
       debugShowCheckedModeBanner: false,
-      // Registra automáticamente cada cambio de pantalla como evento
-      // "screen_view" — la base gratis de Analytics (aperturas de la app,
-      // navegación) sin necesidad de tocar ninguna pantalla todavía. Los
-      // eventos propios del negocio (Fase 2: solicitud_enviada, etc.) se
-      // agregan aparte, esto es solo lo automático.
-      navigatorObservers: [analyticsObserver],
+      // El observer de Analytics ("screen_view" automático en cada cambio
+      // de pantalla) ahora se pasa al GoRouter (ver lib/routing/
+      // app_router.dart), no acá — MaterialApp.router no tiene
+      // navigatorObservers propio, el Navigator vive adentro del router.
       // Antes ThemeData(useMaterial3: true) sin colorScheme ni textTheme —
       // cada pantalla pintaba sus propios colores a mano (257 Color(0xFF...)
       // hardcodeados, medido en la auditoría previa a subir a Play). Esto no
@@ -105,11 +121,11 @@ class PatitasApp extends StatelessWidget {
           surface: Colors.white,
         ),
         textTheme: ThemeData.light().textTheme.apply(
-              bodyColor: appInk,
-              displayColor: appInk,
-            ),
+          bodyColor: appInk,
+          displayColor: appInk,
+        ),
       ),
-      home: const AuthWrapper(),
+      routerConfig: appRouter,
     );
   }
 }
@@ -125,20 +141,108 @@ class _AuthWrapperState extends State<AuthWrapper> {
   // suscripción NUEVA a Firestore — es lo que hace el botón "Reintentar"
   // de _CargaConSalida cuando la primera se queda muda.
   int _intento = 0;
-  // Guarda para QUÉ cuenta ya se escribió 'ultimaVezActiva' en esta sesión
-  // — String? con el uid, no un bool. Sin este guard, escribirlo en cada
-  // rebuild de este StreamBuilder (que reacciona en vivo al propio doc de
-  // usuarios) dispararía un bucle infinito: escribir → llega un snapshot
-  // nuevo → se vuelve a escribir. Pero un bool simple ("¿ya escribí ALGUNA
-  // vez en este proceso?") tiene el problema que motivó este arreglo: la
-  // app soporta cambiar de cuenta sin cerrarla (ver "Cerrar sesión y
+
+  // ── Efectos de sesión (sync de foto, sello de actividad) ─────────────
+  // Viven en una suscripción propia, separada de los StreamBuilder que
+  // arman la UI de abajo. Antes las dos escrituras pasaban DENTRO del
+  // builder del StreamBuilder del perfil — funcionaban, pero dependían
+  // enteramente de que build() se llamara solo por los motivos que este
+  // código anticipaba. Flutter puede volver a llamar build() por
+  // cualquier otro motivo (un rebuild del padre, un cambio de tema, un
+  // InheritedWidget del que este árbol dependa) sin que eso signifique
+  // "cambió la sesión" — y una escritura a Firestore metida ahí no tiene
+  // forma de distinguir un motivo del otro. Acá SÍ: solo corren cuando
+  // authStateChanges() emite de verdad, o cuando el doc de perfil de la
+  // cuenta actual cambia de verdad.
+  StreamSubscription<User?>? _authSub;
+  StreamSubscription<DocumentSnapshot>? _perfilSub;
+  String? _perfilSubUid;
+
+  // Guarda para QUÉ cuenta ya se escribió 'ultimaVezActiva' en este
+  // proceso — String? con el uid, no un bool. Un bool simple ("¿ya
+  // escribí ALGUNA vez?") tiene el problema que motivó este arreglo: la
+  // app soporta cambiar de cuenta sin cerrar sesión (ver "Cerrar sesión y
   // volver a entrar" en _CargaConSalida), y _AuthWrapperState vive para
   // TODO el proceso de la app, no por sesión — con un bool, la cuenta B
   // nunca quedaba registrada si la cuenta A ya lo había hecho antes en el
-  // mismo proceso (justo lo que estuvimos consultando hoy: quién entró).
-  // Guardar el uid en vez de un bool, y compararlo contra la cuenta
-  // ACTUAL, deja escribir de nuevo apenas cambia de quién se trata.
+  // mismo proceso. Guardar el uid y compararlo contra la cuenta ACTUAL
+  // deja escribir de nuevo apenas cambia de quién se trata.
   String? _ultimaVezActivaMarcadaParaUid;
+
+  @override
+  void initState() {
+    super.initState();
+    _authSub = FirebaseAuth.instance.authStateChanges().listen(
+      _onCambioDeSesion,
+    );
+  }
+
+  void _onCambioDeSesion(User? user) {
+    if (user == null) {
+      // Lista para la próxima cuenta que inicie sesión en este mismo
+      // proceso — incluso si es la MISMA cuenta de antes, cerrar sesión y
+      // volver a entrar cuenta como una entrada nueva de verdad, no algo
+      // ya registrado.
+      _ultimaVezActivaMarcadaParaUid = null;
+      _perfilSub?.cancel();
+      _perfilSub = null;
+      _perfilSubUid = null;
+      return;
+    }
+    if (_perfilSubUid == user.uid)
+      return; // ya hay efectos suscriptos a esta cuenta
+    _perfilSub?.cancel();
+    _perfilSubUid = user.uid;
+    _perfilSub = FirebaseFirestore.instance
+        .collection('usuarios')
+        .doc(user.uid)
+        .snapshots()
+        .listen((snap) => _sincronizarEfectosDeSesion(user, snap));
+  }
+
+  void _sincronizarEfectosDeSesion(User user, DocumentSnapshot snap) {
+    if (!snap.exists) return;
+    final data = snap.data() as Map<String, dynamic>;
+
+    // `foto` solo se escribía una vez, al crear el perfil (ver
+    // UsuariosRepository.crearPerfil) — si la cuenta se creó cuando el
+    // photoURL de Google todavía no estaba disponible (o cambió después),
+    // quedaba null para siempre. Otras pantallas del chat necesitan poder
+    // mostrar la foto de la CONTRAPARTE leyendo este campo (no pueden usar
+    // FirebaseAuth, que solo expone al usuario propio), así que acá se
+    // mantiene sincronizado de forma oportunista cada vez que llega un
+    // snapshot nuevo del perfil de la cuenta activa.
+    final fotoAuth = user.photoURL;
+    if (fotoAuth != null && fotoAuth != data['foto']) {
+      FirebaseFirestore.instance
+          .collection('usuarios')
+          .doc(user.uid)
+          .update({'foto': fotoAuth})
+          .catchError((_) {});
+    }
+
+    // Sello de "última vez activa" — antes no había NINGÚN dato que dijera
+    // qué días entró alguien a la app, solo el último login de Firebase
+    // Auth (que ni se actualiza si la sesión ya estaba guardada). Una
+    // escritura por sesión alcanza para reconstruir un historial real de
+    // actividad día por día (pedido real de Eliza, mientras revisaba quién
+    // venía probando la app).
+    if (_ultimaVezActivaMarcadaParaUid != user.uid) {
+      _ultimaVezActivaMarcadaParaUid = user.uid;
+      FirebaseFirestore.instance
+          .collection('usuarios')
+          .doc(user.uid)
+          .update({'ultimaVezActiva': FieldValue.serverTimestamp()})
+          .catchError((_) {});
+    }
+  }
+
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    _perfilSub?.cancel();
+    super.dispose();
+  }
 
   Future<void> _reintentar() async {
     // Además de recrear la suscripción, se apaga y prende la red de
@@ -147,10 +251,12 @@ class _AuthWrapperState extends State<AuthWrapper> {
     // suscribirse sobre ese mismo canal muerto no cambia nada. El ciclo
     // fuerza canales nuevos con el token de la cuenta actual.
     try {
-      await FirebaseFirestore.instance.disableNetwork()
-          .timeout(const Duration(seconds: 5));
-      await FirebaseFirestore.instance.enableNetwork()
-          .timeout(const Duration(seconds: 5));
+      await FirebaseFirestore.instance.disableNetwork().timeout(
+        const Duration(seconds: 5),
+      );
+      await FirebaseFirestore.instance.enableNetwork().timeout(
+        const Duration(seconds: 5),
+      );
     } catch (_) {}
     if (mounted) setState(() => _intento++);
   }
@@ -164,17 +270,14 @@ class _AuthWrapperState extends State<AuthWrapper> {
           return const _CargaConSalida();
         }
         if (snap.data == null) {
-          // Lista para la próxima cuenta que inicie sesión en este mismo
-          // proceso — incluso si es la MISMA cuenta de antes, cerrar
-          // sesión y volver a entrar cuenta como una entrada nueva de
-          // verdad, no algo ya registrado.
-          _ultimaVezActivaMarcadaParaUid = null;
           return const LoginScreen();
         }
         return StreamBuilder<DocumentSnapshot>(
           key: ValueKey('perfil-$_intento'),
           stream: FirebaseFirestore.instance
-              .collection('usuarios').doc(snap.data!.uid).snapshots(),
+              .collection('usuarios')
+              .doc(snap.data!.uid)
+              .snapshots(),
           builder: (context, userSnap) {
             // Sin esto, un error del stream (regla denegada, red caída a
             // mitad de la suscripción) dejaba hasData=false para siempre →
@@ -214,55 +317,30 @@ class _AuthWrapperState extends State<AuthWrapper> {
               }
               return SeleccionRolScreen(user: snap.data!);
             }
-            final data  = userSnap.data!.data() as Map<String, dynamic>;
-            // `foto` solo se escribía una vez, al crear el perfil (ver
-            // UsuariosRepository.crearPerfil) — si la cuenta se creó cuando
-            // el photoURL de Google todavía no estaba disponible (o cambió
-            // después), quedaba null para siempre. Otras pantallas del chat
-            // necesitan poder mostrar la foto de la CONTRAPARTE leyendo este
-            // campo (no pueden usar FirebaseAuth, que solo expone al usuario
-            // propio), así que acá se mantiene sincronizado de forma
-            // oportunista cada vez que la cuenta pasa por este punto central.
-            final fotoAuth = snap.data!.photoURL;
-            if (fotoAuth != null && fotoAuth != data['foto']) {
-              FirebaseFirestore.instance.collection('usuarios').doc(snap.data!.uid)
-                  .update({'foto': fotoAuth}).catchError((_) {});
+            final data = userSnap.data!.data() as Map<String, dynamic>;
+            switch (resolverPantallaPerfil(data)) {
+              // Documento que existe pero sin ningún rol = perfil a medio
+              // crear (caso real: un login que se colgó a mitad del
+              // onboarding dejó un doc con solo fcmToken y foto — los
+              // servicios de fondo escriben esos campos apenas hay
+              // sesión, antes de que la persona elija rol). Sin este
+              // chequeo, esa cuenta salteaba la selección de rol para
+              // siempre y caía a HomeScreen sin nombre ni rol. Se la
+              // manda al onboarding, que completa el perfil con merge
+              // (no pisa lo que ya haya).
+              case PantallaPerfil.seleccionRol:
+                return SeleccionRolScreen(user: snap.data!);
+              case PantallaPerfil.alberguePerfil:
+                return const AlberguePerfilScreen();
+              case PantallaPerfil.albergueHome:
+                return const AlbergueHomeScreen();
+              case PantallaPerfil.aliadoPerfil:
+                return const AliadoPerfilScreen();
+              case PantallaPerfil.aliadoHome:
+                return const AliadoHomeScreen();
+              case PantallaPerfil.home:
+                return const HomeScreen();
             }
-            // Sello de "última vez activa" — antes no había NINGÚN dato que
-            // dijera qué días entró alguien a la app, solo el último login
-            // de Firebase Auth (que ni se actualiza si la sesión ya estaba
-            // guardada). Una escritura por sesión alcanza para reconstruir
-            // un historial real de actividad día por día (pedido real de
-            // Eliza, mientras revisaba quién venía probando la app).
-            if (_ultimaVezActivaMarcadaParaUid != snap.data!.uid) {
-              _ultimaVezActivaMarcadaParaUid = snap.data!.uid;
-              FirebaseFirestore.instance.collection('usuarios').doc(snap.data!.uid)
-                  .update({'ultimaVezActiva': FieldValue.serverTimestamp()}).catchError((_) {});
-            }
-            final roles = List<String>.from(data['roles'] as List? ?? []);
-            // Documento que existe pero sin ningún rol = perfil a medio
-            // crear (caso real: un login que se colgó a mitad del
-            // onboarding dejó un doc con solo fcmToken y foto — los
-            // servicios de fondo escriben esos campos apenas hay sesión,
-            // antes de que la persona elija rol). Sin este chequeo, esa
-            // cuenta salteaba la selección de rol para siempre y caía a
-            // HomeScreen sin nombre ni rol. Se la manda al onboarding, que
-            // completa el perfil con merge (no pisa lo que ya haya).
-            if (roles.isEmpty) return SeleccionRolScreen(user: snap.data!);
-            final esAlbergue = roles.contains('albergue');
-            final esAliado   = roles.contains('aliado');
-
-            if (esAlbergue) {
-              final perfilCompleto = (data['albergueNombre'] as String?)?.isNotEmpty == true;
-              if (!perfilCompleto) return const AlberguePerfilScreen();
-              return const AlbergueHomeScreen();
-            }
-            if (esAliado) {
-              final perfilCompleto = (data['aliadoNombre'] as String?)?.isNotEmpty == true;
-              if (!perfilCompleto) return const AliadoPerfilScreen();
-              return const AliadoHomeScreen();
-            }
-            return const HomeScreen();
           },
         );
       },
@@ -344,34 +422,49 @@ class _CargaConSalidaState extends State<_CargaConSalida> {
       body: Center(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 40),
-          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-            const CircularProgressIndicator(color: appTeal),
-            if (_tardando) ...[
-              const SizedBox(height: 28),
-              Text(
-                'Esto está tardando más de lo normal.\nRevisá tu conexión.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 14, color: Colors.grey.shade700, height: 1.4),
-              ),
-              const SizedBox(height: 16),
-              if (widget.onReintentar != null)
-                ElevatedButton(
-                  onPressed: widget.onReintentar,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: appTeal, foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const CircularProgressIndicator(color: appTeal),
+              if (_tardando) ...[
+                const SizedBox(height: 28),
+                Text(
+                  'Esto está tardando más de lo normal.\nRevisá tu conexión.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade700,
+                    height: 1.4,
                   ),
-                  child: const Text('Reintentar'),
                 ),
-              TextButton(
-                onPressed: cerrarSesion,
-                child: Text('Cerrar sesión y volver a entrar',
-                    style: TextStyle(color: Colors.grey.shade700, fontSize: 13)),
-              ),
+                const SizedBox(height: 16),
+                if (widget.onReintentar != null)
+                  ElevatedButton(
+                    onPressed: widget.onReintentar,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: appTeal,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 28,
+                        vertical: 12,
+                      ),
+                    ),
+                    child: const Text('Reintentar'),
+                  ),
+                TextButton(
+                  onPressed: cerrarSesion,
+                  child: Text(
+                    'Cerrar sesión y volver a entrar',
+                    style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+                  ),
+                ),
+              ],
             ],
-          ]),
+          ),
         ),
       ),
     );

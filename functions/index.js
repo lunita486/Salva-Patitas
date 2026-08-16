@@ -119,6 +119,21 @@ exports.onNuevoMensaje = onDocumentCreated(
     const recipientId = emisor === 'rescatista' ? chat.adoptanteId : chat.rescatistaId;
     if (!recipientId) return;
 
+    // AUTOCONSULTA: la misma cuenta es las dos partes del chat (un albergue
+    // que pidió adopción u hogar de paso para su propio animal, o alguien
+    // que le escribe a su propio negocio aliado). Ahí `emisor` vale SIEMPRE
+    // 'adoptante' — se lo exige la regla de Firestore, que resuelve quién
+    // escribe con `adoptanteId == uid`, y con los dos ids iguales ese
+    // ternario no puede dar otra cosa. Así que el destinatario calculado
+    // arriba termina siendo quien acaba de escribir, y la persona recibía
+    // una notificación push de su PROPIO mensaje cada vez.
+    //
+    // Se compara contra quien escribió en vez de contra los ids del chat
+    // para que el guard cubra también cualquier caso futuro donde
+    // destinatario y remitente coincidan por otro motivo.
+    const remitenteId = emisor === 'adoptante' ? chat.adoptanteId : chat.rescatistaId;
+    if (recipientId === remitenteId) return;
+
     const animal = chat.animalNombre || 'Animal';
     await notificar(recipientId, `Mensaje sobre ${animal}`, data.texto || '', 'notif_mensajes');
   }

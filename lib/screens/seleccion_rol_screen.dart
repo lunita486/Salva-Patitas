@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:geocoding/geocoding.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import '../theme.dart';
+import '../widgets/fondo_decorativo.dart';
 import '../data/usuarios_repository.dart';
+import '../services/ubicacion_service.dart';
 
 class SeleccionRolScreen extends StatefulWidget {
   final User user;
@@ -32,8 +32,11 @@ class _SeleccionRolScreenState extends State<SeleccionRolScreen> {
   Future<void> _cargarRolesExistentes() async {
     try {
       final doc = await FirebaseFirestore.instance
-          .collection('usuarios').doc(widget.user.uid).get();
-      final roles = (doc.data()?['roles'] as List?)
+          .collection('usuarios')
+          .doc(widget.user.uid)
+          .get();
+      final roles =
+          (doc.data()?['roles'] as List?)
               ?.cast<String>()
               .where(UsuariosRepository.rolesValidos.contains)
               .toSet() ??
@@ -62,23 +65,19 @@ class _SeleccionRolScreenState extends State<SeleccionRolScreen> {
     }
   }
 
-  Future<String> _detectarCiudad() async {
-    try {
-      var perm = await Geolocator.checkPermission();
-      if (perm == LocationPermission.denied) {
-        perm = await Geolocator.requestPermission();
-      }
-      if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) return '';
-      final pos = await Geolocator.getCurrentPosition(
-          locationSettings: const LocationSettings(accuracy: LocationAccuracy.low));
-      final marks = await placemarkFromCoordinates(pos.latitude, pos.longitude);
-      if (marks.isEmpty) return '';
-      final p = marks.first;
-      return p.locality?.isNotEmpty == true ? p.locality! : (p.administrativeArea ?? '');
-    } catch (_) {
-      return '';
-    }
-  }
+  /// La ciudad es un dato opcional del alta de perfil: si no se puede
+  /// detectar se guarda vacía y listo, nunca traba el registro (ver
+  /// _continuar, que además le pone su propio límite de 5s).
+  ///
+  /// Antes esta copia pedía la posición SIN chequear primero si el servicio
+  /// de ubicación estaba prendido — justo lo que dispara el diálogo nativo
+  /// de Android "Precisión de la ubicación", y acá encima en la primerísima
+  /// pantalla que ve alguien que se registra. Tampoco le ponía `timeLimit`
+  /// al pedido, así que el GPS seguía corriendo de fondo aunque el timeout
+  /// del llamador ya se hubiera rendido. Las dos cosas las resuelve
+  /// UbicacionService para todas las pantallas a la vez.
+  Future<String> _detectarCiudad() async =>
+      (await UbicacionService.actual(conCiudad: true)).ciudad;
 
   Future<void> _continuar() async {
     setState(() => _guardando = true);
@@ -86,34 +85,45 @@ class _SeleccionRolScreenState extends State<SeleccionRolScreen> {
       if (_perfilExiste) {
         // Perfil ya creado: solo se tocan los roles (nada de ciudad, nombre,
         // creadoEn... — eso ya lo tiene y no es asunto de esta pantalla).
-        await UsuariosRepository()
-            .actualizarRoles(widget.user.uid, _roles.toList());
+        await UsuariosRepository().actualizarRoles(
+          widget.user.uid,
+          _roles.toList(),
+        );
       } else {
         final ciudad = await _detectarCiudad().timeout(
-          const Duration(seconds: 5), onTimeout: () => '');
+          const Duration(seconds: 5),
+          onTimeout: () => '',
+        );
         await UsuariosRepository().crearPerfil(
-          uid:    widget.user.uid,
+          uid: widget.user.uid,
           nombre: widget.user.displayName ?? 'Usuario',
-          email:  widget.user.email,
-          foto:   widget.user.photoURL,
-          roles:  _roles.toList(),
+          email: widget.user.email,
+          foto: widget.user.photoURL,
+          roles: _roles.toList(),
           ciudad: ciudad,
         );
         // Solo se dispara acá (perfil NUEVO), no cuando alguien vuelve a
         // esta pantalla a sumar/quitar roles después — eso pisaría el dato
         // de "cuántos se registran de verdad" con cada cambio de rol
         // posterior. Best-effort: si falla, no debe tumbar el registro real.
-        FirebaseAnalytics.instance.logEvent(
-          name: 'registro_completado',
-          parameters: {'roles': _roles.join(',')},
-        ).catchError((_) {});
+        FirebaseAnalytics.instance
+            .logEvent(
+              name: 'registro_completado',
+              parameters: {'roles': _roles.join(',')},
+            )
+            .catchError((_) {});
       }
     } catch (e) {
       if (!mounted) return;
       setState(() => _guardando = false);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
           backgroundColor: msgError,
-          content: Text('No se pudo crear tu perfil. Revisá tu conexión e intentá de nuevo.')));
+          content: Text(
+            'No se pudo crear tu perfil. Revisá tu conexión e intentá de nuevo.',
+          ),
+        ),
+      );
     }
   }
 
@@ -160,52 +170,79 @@ class _SeleccionRolScreenState extends State<SeleccionRolScreen> {
             width: sel ? 2 : 1,
           ),
           boxShadow: [
-            BoxShadow(color: Colors.black.withValues(alpha: 0.04),
-                blurRadius: 6, offset: const Offset(0, 2)),
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
           ],
         ),
-        child: Row(children: [
-          Container(
-            width: 48, height: 48,
-            decoration: BoxDecoration(
-              color: sel ? appTeal.withValues(alpha: 0.15) : iconoBg,
-              borderRadius: BorderRadius.circular(12),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: sel ? appTeal.withValues(alpha: 0.15) : iconoBg,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icono, color: sel ? appTeal : iconoColor, size: 24),
             ),
-            child: Icon(icono, color: sel ? appTeal : iconoColor, size: 24),
-          ),
-          const SizedBox(width: 14),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Wrap(
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 8,
-              runSpacing: 4,
-              children: [
-                Text(nombre,
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold,
-                        color: appInk)),
-                if (badgeLabel != null)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: badgeBg ?? appTeal,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(badgeLabel,
-                        style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w800,
-                            color: Colors.white, letterSpacing: 0.4)),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      Text(
+                        nombre,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: appInk,
+                        ),
+                      ),
+                      if (badgeLabel != null)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: badgeBg ?? appTeal,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            badgeLabel,
+                            style: const TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
-              ],
+                  const SizedBox(height: 3),
+                  Text(
+                    descripcion,
+                    style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 3),
-            Text(descripcion,
-                style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
-          ])),
-          const SizedBox(width: 8),
-          if (sel)
-            const Icon(Icons.check_circle_rounded, color: appTeal, size: 22)
-          else
-            Icon(Icons.chevron_right, color: Colors.grey.shade400, size: 22),
-        ]),
+            const SizedBox(width: 8),
+            if (sel)
+              const Icon(Icons.check_circle_rounded, color: appTeal, size: 22)
+            else
+              Icon(Icons.chevron_right, color: Colors.grey.shade400, size: 22),
+          ],
+        ),
       ),
     );
   }
@@ -215,103 +252,145 @@ class _SeleccionRolScreenState extends State<SeleccionRolScreen> {
     final nombre = widget.user.displayName?.split(' ').first ?? 'Usuario';
     return Scaffold(
       backgroundColor: appBg,
-      body: Stack(fit: StackFit.expand, children: [
-        const LeafOverlay(),
-        SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const SizedBox(height: 40),
-              Text('Hola, $nombre 👋',
-                  style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold,
-                      color: appInk)),
-              const SizedBox(height: 6),
-              Text('¿CÓMO VAS A ENTRAR?',
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
-                      letterSpacing: 1.5, color: Colors.grey.shade700)),
-              const SizedBox(height: 28),
-              // Las 4 tarjetas + el Spacer de antes eran un Column fijo sin
-              // scroll: en una pantalla lo bastante baja (teléfono chico,
-              // o con letra grande de accesibilidad), el conjunto no
-              // entraba y el botón "Continuar" — el último elemento, empujado
-              // por el Spacer — quedaba directamente afuera de la pantalla,
-              // invisible, sin ningún aviso (el bug real que reportó una
-              // tester: "no le muestra el botón continuar"). Envolviendo
-              // las tarjetas en Expanded+scroll, el botón queda SIEMPRE
-              // pegado justo debajo, visible sin importar el tamaño de
-              // pantalla — si las tarjetas no entran, se puede deslizar
-              // para verlas todas antes de tocar Continuar.
-              Expanded(
-                child: SingleChildScrollView(
-                  child: Column(children: [
-                    _rolCard(
-                      rol: 'adoptante',
-                      icono: Icons.pets,
-                      iconoBg: const Color(0xFFD8F0E4),
-                      iconoColor: appTeal,
-                      nombre: 'Adoptante',
-                      descripcion: 'Quiero adoptar un animal',
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          const LeafOverlay(),
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 40),
+                  Text(
+                    'Hola, $nombre 👋',
+                    style: const TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: appInk,
                     ),
-                    const SizedBox(height: 10),
-                    _rolCard(
-                      rol: 'rescatista',
-                      icono: Icons.eco_outlined,
-                      iconoBg: const Color(0xFFE8F5E9),
-                      iconoColor: const Color(0xFF388E3C),
-                      nombre: 'Rescatista',
-                      descripcion: 'Rescato animales por mi cuenta',
-                    ),
-                    const SizedBox(height: 10),
-                    _rolCard(
-                      rol: 'albergue',
-                      icono: Icons.account_balance_outlined,
-                      iconoBg: const Color(0xFFF5F5F5),
-                      iconoColor: const Color(0xFF757575),
-                      nombre: 'Albergue',
-                      descripcion: 'Represento un albergue oficial',
-                      badgeLabel: 'VERIFICACIÓN OFICIAL',
-                      badgeBg: appTeal,
-                    ),
-                    const SizedBox(height: 10),
-                    _rolCard(
-                      rol: 'aliado',
-                      icono: Icons.storefront_outlined,
-                      iconoBg: const Color(0xFFEDE7F6),
-                      iconoColor: const Color(0xFF7C4DFF),
-                      nombre: 'Aliado',
-                      descripcion: 'Soy veterinario, tienda o servicio',
-                      badgeLabel: 'NEGOCIO ALIADO',
-                      badgeBg: const Color(0xFFE91E63),
-                    ),
-                  ]),
-                ),
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _guardando ? null : _continuar,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: appInk,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   ),
-                  child: _guardando
-                      ? const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                          SizedBox(width: 18, height: 18,
-                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
-                          SizedBox(width: 12),
-                          Text('Creando tu perfil...', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                        ])
-                      : const Text('Continuar', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '¿CÓMO VAS A ENTRAR?',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.5,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+                  // Las 4 tarjetas + el Spacer de antes eran un Column fijo sin
+                  // scroll: en una pantalla lo bastante baja (teléfono chico,
+                  // o con letra grande de accesibilidad), el conjunto no
+                  // entraba y el botón "Continuar" — el último elemento, empujado
+                  // por el Spacer — quedaba directamente afuera de la pantalla,
+                  // invisible, sin ningún aviso (el bug real que reportó una
+                  // tester: "no le muestra el botón continuar"). Envolviendo
+                  // las tarjetas en Expanded+scroll, el botón queda SIEMPRE
+                  // pegado justo debajo, visible sin importar el tamaño de
+                  // pantalla — si las tarjetas no entran, se puede deslizar
+                  // para verlas todas antes de tocar Continuar.
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        children: [
+                          _rolCard(
+                            rol: 'adoptante',
+                            icono: Icons.pets,
+                            iconoBg: const Color(0xFFD8F0E4),
+                            iconoColor: appTeal,
+                            nombre: 'Adoptante',
+                            descripcion: 'Quiero adoptar un animal',
+                          ),
+                          const SizedBox(height: 10),
+                          _rolCard(
+                            rol: 'rescatista',
+                            icono: Icons.eco_outlined,
+                            iconoBg: const Color(0xFFE8F5E9),
+                            iconoColor: const Color(0xFF388E3C),
+                            nombre: 'Rescatista',
+                            descripcion: 'Rescato animales por mi cuenta',
+                          ),
+                          const SizedBox(height: 10),
+                          _rolCard(
+                            rol: 'albergue',
+                            icono: Icons.account_balance_outlined,
+                            iconoBg: const Color(0xFFF5F5F5),
+                            iconoColor: const Color(0xFF757575),
+                            nombre: 'Albergue',
+                            descripcion: 'Represento un albergue oficial',
+                            badgeLabel: 'VERIFICACIÓN OFICIAL',
+                            badgeBg: appTeal,
+                          ),
+                          const SizedBox(height: 10),
+                          _rolCard(
+                            rol: 'aliado',
+                            icono: Icons.storefront_outlined,
+                            iconoBg: const Color(0xFFEDE7F6),
+                            iconoColor: const Color(0xFF7C4DFF),
+                            nombre: 'Aliado',
+                            descripcion: 'Soy veterinario, tienda o servicio',
+                            badgeLabel: 'NEGOCIO ALIADO',
+                            badgeBg: const Color(0xFFE91E63),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _guardando ? null : _continuar,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: appInk,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: _guardando
+                          ? const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                                SizedBox(width: 12),
+                                Text(
+                                  'Creando tu perfil...',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            )
+                          : const Text(
+                              'Continuar',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                ],
               ),
-              const SizedBox(height: 32),
-            ]),
+            ),
           ),
-        ),
-      ]),
+        ],
+      ),
     );
   }
 }

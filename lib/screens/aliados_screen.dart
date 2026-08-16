@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
+import 'package:go_router/go_router.dart';
 import '../theme.dart';
-import 'aliado_publico_screen.dart';
+import '../widgets/avatares.dart';
+import '../widgets/estado_error_feed.dart';
+import '../data/usuarios_repository.dart';
+import '../routing/app_router.dart';
 
 // Extraído de adoptante_feed_screen.dart (que llegó a 1642 líneas mezclando
 // varias responsabilidades) — esta pantalla no es parte del feed en sí,
 // vivía ahí solo por conveniencia histórica. La usan home_screen.dart y
 // albergue_home_screen.dart.
-class AliadosScreen extends StatelessWidget {
+class AliadosScreen extends StatefulWidget {
   final bool esRescatista;
   final bool esAlbergue;
   const AliadosScreen({
@@ -16,6 +20,20 @@ class AliadosScreen extends StatelessWidget {
     this.esRescatista = false,
     this.esAlbergue = false,
   });
+
+  @override
+  State<AliadosScreen> createState() => _AliadosScreenState();
+}
+
+class _AliadosScreenState extends State<AliadosScreen> {
+  // UsuariosRepository.aliados() es la única fuente de esta consulta para
+  // toda la app — esta pantalla (extraída de adoptante_feed_screen.dart,
+  // ver el comentario de arriba) tenía su PROPIA copia con .snapshots() en
+  // vivo, arreglada por separado la primera vez que apareció el síntoma en
+  // el feed. Con un solo método, no hay una segunda copia que se pueda
+  // quedar atrás.
+  late final Future<QuerySnapshot<Map<String, dynamic>>> _aliadosFuture =
+      UsuariosRepository().aliados();
 
   @override
   Widget build(BuildContext context) {
@@ -48,16 +66,13 @@ class AliadosScreen extends StatelessWidget {
               ),
             ),
             Expanded(
-              child: StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance
-                    .collection('usuarios')
-                    .where('aliadoNombre', isGreaterThan: '')
-                    .snapshots(),
+              child: FutureBuilder<QuerySnapshot>(
+                future: _aliadosFuture,
                 builder: (context, snap) {
                   // Sin esto, un error real del stream (sin conexión, permiso
                   // denegado) se veía IGUAL que "todavía no hay aliados" —
                   // mismo patrón ya arreglado en favoritos_screen.dart y
-                  // otras 5 pantallas más (errorFeedState, theme.dart), que
+                  // otras 5 pantallas más (errorFeedState, widgets/estado_error_feed.dart), que
                   // esta pantalla se quedó sin cuando se extrajo de
                   // adoptante_feed_screen.dart (hallazgo de auditoría de
                   // código).
@@ -137,14 +152,12 @@ class AliadosScreen extends StatelessWidget {
                                 parameters: {'aliado_id': uid},
                               )
                               .catchError((_) {});
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => AliadoPublicoScreen(
-                                aliadoId: uid,
-                                esRescatista: esRescatista,
-                                esAlbergue: esAlbergue,
-                              ),
+                          context.push(
+                            AppRoutes.aliadoPublico,
+                            extra: (
+                              aliadoId: uid,
+                              esRescatista: widget.esRescatista,
+                              esAlbergue: widget.esAlbergue,
                             ),
                           );
                         },

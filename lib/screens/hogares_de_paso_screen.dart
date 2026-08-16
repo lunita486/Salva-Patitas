@@ -3,6 +3,11 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme.dart';
+import '../domain/reglas_negocio.dart';
+import '../widgets/avatares.dart';
+import '../widgets/campo_pais_telefono.dart';
+import '../widgets/estado_error_feed.dart';
+import '../widgets/fondo_decorativo.dart';
 import '../data/hogares_de_paso_repository.dart';
 import '../data/firestore_resiliencia.dart';
 
@@ -39,26 +44,83 @@ class _HogaresDePasoScreenState extends State<HogaresDePasoScreen> {
       final resultado = await showModalBottomSheet<Map<String, String>>(
         context: context,
         isScrollControlled: true,
-        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
         builder: (ctx) => const _AgregarHogarSheet(),
       );
       if (resultado == null || _uid.isEmpty) return;
+      final nombreNuevo = resultado['nombre'] ?? '';
+      final emailNuevo = resultado['email'] ?? '';
+      // Aviso, no bloqueo. Compara nombre Y email juntos (no el nombre
+      // solo) — dos personas reales pueden compartir nombre, y el email ya
+      // es obligatorio en este formulario justo para no confundirlas.
+      // Antes nada avisaba nada acá, así que tocar "Agregar" y completar
+      // el formulario de nuevo por error (sin ver ninguna confirmación
+      // clara de que ya había funcionado la primera vez) dejaba la misma
+      // persona repetida en la red, sin ninguna forma de fusionar esas
+      // filas después.
+      final duplicado = await _repo.buscarDuplicado(
+        albergueId: _uid,
+        nombre: nombreNuevo,
+        email: emailNuevo,
+      );
+      if (duplicado != null) {
+        if (!mounted) return;
+        final continuar = await showDialog<bool>(
+          context: context,
+          builder: (dlgCtx) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            title: const Text('Posible duplicado'),
+            content: Text(
+              'Ya tenés a "$nombreNuevo" con este mismo email en tu red de '
+              'hogares de paso. Si de verdad es una persona distinta, podés agregarla igual.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dlgCtx, false),
+                child: const Text('Cancelar'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(dlgCtx, true),
+                child: const Text(
+                  'Agregar igual',
+                  style: TextStyle(color: appTeal),
+                ),
+              ),
+            ],
+          ),
+        );
+        if (continuar != true) return;
+      }
+      if (!mounted) return;
       await _repo.agregarManual(
         albergueId: _uid,
-        nombre: resultado['nombre'] ?? '',
+        nombre: nombreNuevo,
         telefono: resultado['telefono'] ?? '',
         notas: resultado['notas'] ?? '',
         email: resultado['email'] ?? '',
       );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('${resultado['nombre']} se agregó a tu red.'), backgroundColor: msgExito));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${resultado['nombre']} se agregó a tu red.'),
+            backgroundColor: msgExito,
+          ),
+        );
       }
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('No se pudo agregar. Revisá tu conexión e intentá de nuevo.'),
-            backgroundColor: msgError));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'No se pudo agregar. Revisá tu conexión e intentá de nuevo.',
+            ),
+            backgroundColor: msgError,
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _agregando = false);
@@ -66,13 +128,22 @@ class _HogaresDePasoScreenState extends State<HogaresDePasoScreen> {
   }
 
   Future<void> _editarContacto(
-      String docId, String telefonoActual, String notasActuales, String emailActual) async {
+    String docId,
+    String telefonoActual,
+    String notasActuales,
+    String emailActual,
+  ) async {
     final resultado = await showModalBottomSheet<Map<String, String>>(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (ctx) => _EditarContactoSheet(
-          telefonoInicial: telefonoActual, notasIniciales: notasActuales, emailInicial: emailActual),
+        telefonoInicial: telefonoActual,
+        notasIniciales: notasActuales,
+        emailInicial: emailActual,
+      ),
     );
     if (resultado == null) return;
     // guardarConAviso, no un await directo suelto (lo que había acá antes,
@@ -80,23 +151,41 @@ class _HogaresDePasoScreenState extends State<HogaresDePasoScreen> {
     // fallaba, se quedaba esperando al servidor para siempre — y aunque
     // fallara de verdad, no había nada que avisara nada. Hallazgo de
     // auditoría de código.
-    final r = await guardarConAviso(() => _repo.actualizarContacto(docId,
+    final r = await guardarConAviso(
+      () => _repo.actualizarContacto(
+        docId,
         telefono: resultado['telefono'] ?? '',
         notas: resultado['notas'] ?? '',
-        email: resultado['email'] ?? ''));
+        email: resultado['email'] ?? '',
+      ),
+    );
     if (!mounted) return;
     switch (r) {
       case ResultadoGuardado.confirmado:
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Contacto actualizado'), backgroundColor: msgExito));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Contacto actualizado'),
+            backgroundColor: msgExito,
+          ),
+        );
       case ResultadoGuardado.siguePendiente:
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Esto está tardando. Se va a guardar solo apenas vuelva la señal.'),
-            backgroundColor: msgAdvertencia));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Esto está tardando. Se va a guardar solo apenas vuelva la señal.',
+            ),
+            backgroundColor: msgAdvertencia,
+          ),
+        );
       case ResultadoGuardado.fallo:
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('No se pudo guardar. Revisá tu conexión e intentá de nuevo.'),
-            backgroundColor: msgError));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'No se pudo guardar. Revisá tu conexión e intentá de nuevo.',
+            ),
+            backgroundColor: msgError,
+          ),
+        );
     }
   }
 
@@ -106,9 +195,14 @@ class _HogaresDePasoScreenState extends State<HogaresDePasoScreen> {
       builder: (dlgCtx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Quitar de la red'),
-        content: Text('¿Seguro que querés quitar a $nombre de tu red de hogares de paso?'),
+        content: Text(
+          '¿Seguro que querés quitar a $nombre de tu red de hogares de paso?',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(dlgCtx, false), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(dlgCtx, false),
+            child: const Text('Cancelar'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(dlgCtx, true),
             child: const Text('Quitar', style: TextStyle(color: Colors.red)),
@@ -126,15 +220,23 @@ class _HogaresDePasoScreenState extends State<HogaresDePasoScreen> {
       // mentirle.
       case ResultadoGuardado.confirmado:
       case ResultadoGuardado.siguePendiente:
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('$nombre se quitó de tu red.'), backgroundColor: msgExito));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$nombre se quitó de tu red.'),
+            backgroundColor: msgExito,
+          ),
+        );
       case ResultadoGuardado.fallo:
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('No se pudo quitar. Revisá tu conexión e intentá de nuevo.'),
-            backgroundColor: msgError));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'No se pudo quitar. Revisá tu conexión e intentá de nuevo.',
+            ),
+            backgroundColor: msgError,
+          ),
+        );
     }
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -144,180 +246,327 @@ class _HogaresDePasoScreenState extends State<HogaresDePasoScreen> {
         onPressed: _agregando ? null : _agregarManual,
         backgroundColor: _agregando ? Colors.grey.shade400 : appTeal,
         icon: const Icon(Icons.add, color: Colors.white),
-        label: const Text('Agregar', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+        label: const Text(
+          'Agregar',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+        ),
       ),
-      body: Stack(fit: StackFit.expand, children: [
-        const LeafOverlay(),
-        SafeArea(
-          child: Column(children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 8, 20, 4),
-              child: Row(children: [
-                IconButton(
-                  icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-                tooltip: 'Volver',
-                  onPressed: () => Navigator.pop(context),
-                ),
-                const Expanded(
-                  child: Text('Red de hogares de paso',
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: appInk,
-                          fontFamily: 'Baloo2')),
-                ),
-              ]),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Text(
-                'Personas de confianza que ya te ayudaron con hogar de paso. Se agregan solas cuando aprobás una solicitud.',
-                style: TextStyle(fontSize: 12.5, color: Colors.grey.shade700),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Expanded(
-              child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                stream: _repo.deAlbergue(_uid),
-                builder: (context, snap) {
-                  if (snap.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator(color: appTeal));
-                  }
-                  if (snap.hasError) return errorFeedState();
-                  final docs = (snap.data?.docs ?? []).toList()
-                    ..sort((a, b) {
-                      final va = a.data()['vecesAyudo'] as int? ?? 0;
-                      final vb = b.data()['vecesAyudo'] as int? ?? 0;
-                      return vb.compareTo(va);
-                    });
-                  if (docs.isEmpty) {
-                    return Center(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 32),
-                        child: Column(mainAxisSize: MainAxisSize.min, children: [
-                          const Text('🏡', style: TextStyle(fontSize: 48)),
-                          const SizedBox(height: 12),
-                          Text(
-                            'Todavía no tenés hogares de paso en tu red.\nCuando apruebes una solicitud, la persona se agrega acá sola.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
-                          ),
-                        ]),
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          const LeafOverlay(),
+          SafeArea(
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 8, 20, 4),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+                        tooltip: 'Volver',
+                        onPressed: () => Navigator.pop(context),
                       ),
-                    );
-                  }
-                  return ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
-                    itemCount: docs.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 12),
-                    itemBuilder: (_, i) {
-                      final d = docs[i].data();
-                      final docId = docs[i].id;
-                      final nombre = d['nombre'] as String? ?? 'Sin nombre';
-                      final adoptanteId = d['adoptanteId'] as String? ?? '';
-                      final veces = d['vecesAyudo'] as int? ?? 0;
-                      final telefono = d['telefono'] as String? ?? '';
-                      final notas = d['notas'] as String? ?? '';
-                      final email = d['email'] as String? ?? '';
-                      final ultimaVez = (d['ultimaVez'] as Timestamp?)?.toDate();
-                      final linkWhatsapp = whatsappUrl(telefono);
-
-                      return Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
+                      const Expanded(
+                        child: Text(
+                          'Red de hogares de paso',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: appInk,
+                            fontFamily: 'Baloo2',
+                          ),
                         ),
-                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Row(children: [
-                            AvatarUsuario(
-                              userId: adoptanteId.isEmpty ? null : adoptanteId,
-                              inicial: nombre.isNotEmpty ? nombre[0].toUpperCase() : '?',
-                              radius: 22,
-                              backgroundColor: appTeal.withValues(alpha: 0.12),
-                              textColor: appTeal,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              Text(nombre, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                              const SizedBox(height: 2),
-                              Text(veces == 1 ? 'Ayudó 1 vez' : 'Ayudó $veces veces',
-                                  style: TextStyle(fontSize: 12.5, color: Colors.grey.shade700)),
-                            ])),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                              decoration: BoxDecoration(color: appTeal.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(20)),
-                              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                const Icon(Icons.favorite, size: 12, color: appTeal),
-                                const SizedBox(width: 4),
-                                Text('$veces', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: appTeal)),
-                              ]),
-                            ),
-                          ]),
-                          if (ultimaVez != null || notas.isNotEmpty) ...[
-                            const SizedBox(height: 10),
-                            if (ultimaVez != null)
-                              Text('Última vez: ${formatearFecha(ultimaVez)}', style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
-                            if (notas.isNotEmpty) ...[
-                              const SizedBox(height: 4),
-                              Text(notas, style: TextStyle(fontSize: 12.5, color: Colors.grey.shade700)),
-                            ],
-                          ],
-                          const SizedBox(height: 10),
-                          Row(children: [
-                            if (linkWhatsapp != null)
-                              GestureDetector(
-                                onTap: () => launchUrl(Uri.parse(linkWhatsapp), mode: LaunchMode.externalApplication),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF25D366).withValues(alpha: 0.12),
-                                    borderRadius: BorderRadius.circular(20),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Text(
+                    'Personas de confianza que ya te ayudaron con hogar de paso. Se agregan solas cuando aprobás una solicitud.',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                    stream: _repo.deAlbergue(_uid),
+                    builder: (context, snap) {
+                      if (snap.connectionState == ConnectionState.waiting) {
+                        return const Center(
+                          child: CircularProgressIndicator(color: appTeal),
+                        );
+                      }
+                      if (snap.hasError) return errorFeedState();
+                      final docs = (snap.data?.docs ?? []).toList()
+                        ..sort((a, b) {
+                          final va = a.data()['vecesAyudo'] as int? ?? 0;
+                          final vb = b.data()['vecesAyudo'] as int? ?? 0;
+                          return vb.compareTo(va);
+                        });
+                      if (docs.isEmpty) {
+                        return Center(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 32),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Text(
+                                  '🏡',
+                                  style: TextStyle(fontSize: 48),
+                                ),
+                                const SizedBox(height: 12),
+                                Text(
+                                  'Todavía no tenés hogares de paso en tu red.\nCuando apruebes una solicitud, la persona se agrega acá sola.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.grey.shade700,
                                   ),
-                                  child: Row(mainAxisSize: MainAxisSize.min, children: const [
-                                    Icon(Icons.chat, size: 13, color: Color(0xFF25D366)),
-                                    SizedBox(width: 5),
-                                    Text('WhatsApp', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF25D366))),
-                                  ]),
                                 ),
-                              ),
-                            const Spacer(),
-                            Tooltip(
-                              message: 'Editar contacto',
-                              child: GestureDetector(
-                                onTap: () => _editarContacto(docId, telefono, notas, email),
-                                child: Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(20)),
-                                  child: Icon(Icons.edit_outlined, size: 16, color: Colors.grey.shade600),
-                                ),
-                              ),
+                              ],
                             ),
-                            const SizedBox(width: 8),
-                            Tooltip(
-                              message: 'Quitar',
-                              child: GestureDetector(
-                                onTap: () => _eliminar(docId, nombre),
-                                child: Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(color: const Color(0xFFFFEBEE), borderRadius: BorderRadius.circular(20)),
-                                  child: const Icon(Icons.delete_outline, size: 16, color: Color(0xFFD32F2F)),
+                          ),
+                        );
+                      }
+                      return ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
+                        itemCount: docs.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 12),
+                        itemBuilder: (_, i) {
+                          final d = docs[i].data();
+                          final docId = docs[i].id;
+                          final nombre = d['nombre'] as String? ?? 'Sin nombre';
+                          final adoptanteId = d['adoptanteId'] as String? ?? '';
+                          final veces = d['vecesAyudo'] as int? ?? 0;
+                          final telefono = d['telefono'] as String? ?? '';
+                          final notas = d['notas'] as String? ?? '';
+                          final email = d['email'] as String? ?? '';
+                          final ultimaVez = (d['ultimaVez'] as Timestamp?)
+                              ?.toDate();
+                          final linkWhatsapp = whatsappUrl(telefono);
+
+                          return Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.05),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
                                 ),
-                              ),
+                              ],
                             ),
-                          ]),
-                        ]),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    AvatarUsuario(
+                                      userId: adoptanteId.isEmpty
+                                          ? null
+                                          : adoptanteId,
+                                      inicial: nombre.isNotEmpty
+                                          ? nombre[0].toUpperCase()
+                                          : '?',
+                                      radius: 22,
+                                      backgroundColor: appTeal.withValues(
+                                        alpha: 0.12,
+                                      ),
+                                      textColor: appTeal,
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            nombre,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 15,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            veces == 1
+                                                ? 'Ayudó 1 vez'
+                                                : 'Ayudó $veces veces',
+                                            style: TextStyle(
+                                              fontSize: 12.5,
+                                              color: Colors.grey.shade700,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 5,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: appTeal.withValues(alpha: 0.1),
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(
+                                            Icons.favorite,
+                                            size: 12,
+                                            color: appTeal,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            '$veces',
+                                            style: const TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w700,
+                                              color: appTeal,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                if (ultimaVez != null || notas.isNotEmpty) ...[
+                                  const SizedBox(height: 10),
+                                  if (ultimaVez != null)
+                                    Text(
+                                      'Última vez: ${formatearFecha(ultimaVez)}',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey.shade700,
+                                      ),
+                                    ),
+                                  if (notas.isNotEmpty) ...[
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      notas,
+                                      style: TextStyle(
+                                        fontSize: 12.5,
+                                        color: Colors.grey.shade700,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                                const SizedBox(height: 10),
+                                Row(
+                                  children: [
+                                    if (linkWhatsapp != null)
+                                      GestureDetector(
+                                        onTap: () => launchUrl(
+                                          Uri.parse(linkWhatsapp),
+                                          mode: LaunchMode.externalApplication,
+                                        ),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 6,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: const Color(
+                                              0xFF25D366,
+                                            ).withValues(alpha: 0.12),
+                                            borderRadius: BorderRadius.circular(
+                                              20,
+                                            ),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: const [
+                                              Icon(
+                                                Icons.chat,
+                                                size: 13,
+                                                color: Color(0xFF25D366),
+                                              ),
+                                              SizedBox(width: 5),
+                                              Text(
+                                                'WhatsApp',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: Color(0xFF25D366),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    const Spacer(),
+                                    Tooltip(
+                                      message: 'Editar contacto',
+                                      child: GestureDetector(
+                                        onTap: () => _editarContacto(
+                                          docId,
+                                          telefono,
+                                          notas,
+                                          email,
+                                        ),
+                                        child: Container(
+                                          padding: const EdgeInsets.all(8),
+                                          decoration: BoxDecoration(
+                                            color: Colors.grey.shade100,
+                                            borderRadius: BorderRadius.circular(
+                                              20,
+                                            ),
+                                          ),
+                                          child: Icon(
+                                            Icons.edit_outlined,
+                                            size: 16,
+                                            color: Colors.grey.shade600,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Tooltip(
+                                      message: 'Quitar',
+                                      child: GestureDetector(
+                                        onTap: () => _eliminar(docId, nombre),
+                                        child: Container(
+                                          padding: const EdgeInsets.all(8),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFFFEBEE),
+                                            borderRadius: BorderRadius.circular(
+                                              20,
+                                            ),
+                                          ),
+                                          child: const Icon(
+                                            Icons.delete_outline,
+                                            size: 16,
+                                            color: Color(0xFFD32F2F),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          );
+                        },
                       );
                     },
-                  );
-                },
-              ),
+                  ),
+                ),
+              ],
             ),
-          ]),
-        ),
-      ]),
+          ),
+        ],
+      ),
     );
   }
 }
-
 
 class _AgregarHogarSheet extends StatefulWidget {
   const _AgregarHogarSheet();
@@ -331,7 +580,14 @@ class _AgregarHogarSheetState extends State<_AgregarHogarSheet> {
   final _notasCtl = TextEditingController();
   final _emailCtl = TextEditingController();
 
-  bool get _valido => _nombreCtl.text.trim().isNotEmpty;
+  // Email obligatorio a propósito (antes era opcional): es el único dato
+  // que distingue a dos personas reales con el mismo nombre — sin él,
+  // buscarDuplicado() (HogaresDePasoRepository) no tiene con qué comparar
+  // además del nombre solo, y avisar por nombre solo hubiera sido un falso
+  // positivo molesto cada vez que dos personas de confianza distintas
+  // comparten nombre. Pedido explícito de Eliza.
+  bool get _valido =>
+      _nombreCtl.text.trim().isNotEmpty && _emailCtl.text.trim().isNotEmpty;
 
   @override
   void dispose() {
@@ -345,78 +601,111 @@ class _AgregarHogarSheetState extends State<_AgregarHogarSheet> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.fromLTRB(24, 16, 24, MediaQuery.of(context).viewInsets.bottom + 24),
+      padding: EdgeInsets.fromLTRB(
+        24,
+        16,
+        24,
+        MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
       child: SingleChildScrollView(
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Center(
-            child: Container(
-                width: 36, height: 4,
-                decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
-          ),
-          const SizedBox(height: 16),
-          const Text('Agregar a la red', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 6),
-          Text('Alguien de confianza que ya conocés, aunque todavía no haya pedido hogar de paso por la app.',
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
-          const SizedBox(height: 20),
-          TextField(
-            controller: _nombreCtl,
-            autofocus: true,
-            onChanged: (_) => setState(() {}),
-            decoration: _dec('Nombre *'),
-          ),
-          const SizedBox(height: 12),
-          CampoTelefono(controller: _telefonoCtl, decoracionLocal: _dec('Teléfono / WhatsApp (opcional)')),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _notasCtl,
-            maxLines: 2,
-            decoration: _dec('Notas (opcional)'),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _emailCtl,
-            keyboardType: TextInputType.emailAddress,
-            decoration: _dec('Email (opcional)'),
-          ),
-          const SizedBox(height: 6),
-          Text('Si más adelante esta persona pide hogar de paso por la app con este mismo email, '
-              'se suma acá en vez de crear una fila repetida.',
-              style: TextStyle(fontSize: 11.5, color: Colors.grey.shade700)),
-          const SizedBox(height: 20),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _valido
-                  ? () => Navigator.pop(context, {
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Agregar a la red',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Alguien de confianza que ya conocés, aunque todavía no haya pedido hogar de paso por la app.',
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+            ),
+            const SizedBox(height: 20),
+            TextField(
+              controller: _nombreCtl,
+              autofocus: true,
+              onChanged: (_) => setState(() {}),
+              decoration: _dec('Nombre *'),
+            ),
+            const SizedBox(height: 12),
+            CampoTelefono(
+              controller: _telefonoCtl,
+              decoracionLocal: _dec('Teléfono / WhatsApp (opcional)'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _notasCtl,
+              maxLines: 2,
+              decoration: _dec('Notas (opcional)'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _emailCtl,
+              keyboardType: TextInputType.emailAddress,
+              onChanged: (_) => setState(() {}),
+              decoration: _dec('Email *'),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Sirve para no confundirla con otra persona del mismo nombre, y para '
+              'sumar acá si más adelante pide hogar de paso por la app con este mismo email.',
+              style: TextStyle(fontSize: 11.5, color: Colors.grey.shade700),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _valido
+                    ? () => Navigator.pop(context, {
                         'nombre': _nombreCtl.text.trim(),
                         'telefono': _telefonoCtl.text.trim(),
                         'notas': _notasCtl.text.trim(),
                         'email': _emailCtl.text.trim(),
                       })
-                  : null,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: appTeal,
-                foregroundColor: Colors.white,
-                disabledBackgroundColor: Colors.grey.shade300,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                elevation: 0,
+                    : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: appTeal,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: Colors.grey.shade300,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  elevation: 0,
+                ),
+                child: const Text(
+                  'Agregar',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
               ),
-              child: const Text('Agregar', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
             ),
-          ),
-        ]),
+          ],
+        ),
       ),
     );
   }
 
   InputDecoration _dec(String label) => InputDecoration(
-        labelText: label,
-        filled: true,
-        fillColor: Colors.grey.shade50,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-      );
+    labelText: label,
+    filled: true,
+    fillColor: Colors.grey.shade50,
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: BorderSide.none,
+    ),
+  );
 }
 
 // Deja completar teléfono/notas después — pedido real de Eliza: las filas
@@ -428,8 +717,11 @@ class _EditarContactoSheet extends StatefulWidget {
   final String telefonoInicial;
   final String notasIniciales;
   final String emailInicial;
-  const _EditarContactoSheet(
-      {required this.telefonoInicial, required this.notasIniciales, required this.emailInicial});
+  const _EditarContactoSheet({
+    required this.telefonoInicial,
+    required this.notasIniciales,
+    required this.emailInicial,
+  });
   @override
   State<_EditarContactoSheet> createState() => _EditarContactoSheetState();
 }
@@ -450,61 +742,87 @@ class _EditarContactoSheetState extends State<_EditarContactoSheet> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.fromLTRB(24, 16, 24, MediaQuery.of(context).viewInsets.bottom + 24),
+      padding: EdgeInsets.fromLTRB(
+        24,
+        16,
+        24,
+        MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
       child: SingleChildScrollView(
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Center(
-            child: Container(
-                width: 36, height: 4,
-                decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
-          ),
-          const SizedBox(height: 16),
-          const Text('Editar contacto', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 20),
-          CampoTelefono(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Editar contacto',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 20),
+            CampoTelefono(
               controller: _telefonoCtl,
               autofocus: true,
-              decoracionLocal: _dec('Teléfono / WhatsApp (opcional)')),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _notasCtl,
-            maxLines: 2,
-            decoration: _dec('Notas (opcional)'),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _emailCtl,
-            keyboardType: TextInputType.emailAddress,
-            decoration: _dec('Email (opcional)'),
-          ),
-          const SizedBox(height: 20),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () => Navigator.pop(context, {
-                'telefono': _telefonoCtl.text.trim(),
-                'notas': _notasCtl.text.trim(),
-                'email': _emailCtl.text.trim(),
-              }),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: appTeal,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                elevation: 0,
-              ),
-              child: const Text('Guardar', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+              decoracionLocal: _dec('Teléfono / WhatsApp (opcional)'),
             ),
-          ),
-        ]),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _notasCtl,
+              maxLines: 2,
+              decoration: _dec('Notas (opcional)'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _emailCtl,
+              keyboardType: TextInputType.emailAddress,
+              decoration: _dec('Email (opcional)'),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context, {
+                  'telefono': _telefonoCtl.text.trim(),
+                  'notas': _notasCtl.text.trim(),
+                  'email': _emailCtl.text.trim(),
+                }),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: appTeal,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  elevation: 0,
+                ),
+                child: const Text(
+                  'Guardar',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   InputDecoration _dec(String label) => InputDecoration(
-        labelText: label,
-        filled: true,
-        fillColor: Colors.grey.shade50,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-      );
+    labelText: label,
+    filled: true,
+    fillColor: Colors.grey.shade50,
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: BorderSide.none,
+    ),
+  );
 }

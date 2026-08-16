@@ -5,17 +5,21 @@ import 'dart:async';
 import 'package:geolocator/geolocator.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import '../theme.dart';
-import '../compatibilidad.dart';
+import '../widgets/avatares.dart';
+import '../widgets/campo_pais_telefono.dart';
+import '../widgets/especie_chip.dart';
+import '../widgets/estado_error_feed.dart';
+import '../widgets/fotos.dart';
+import '../domain/compatibilidad.dart';
 import '../data/rescates_repository.dart';
 import '../data/preferencias_repository.dart';
 import '../data/firestore_resiliencia.dart';
-import 'animal_detalle_screen.dart';
-import 'albergue_publico_screen.dart';
-import 'aliado_publico_screen.dart';
-import 'solicitud_adopcion_screen.dart';
-import 'chat_screen.dart';
+import '../data/usuarios_repository.dart';
+import '../services/ubicacion_service.dart';
+import '../services/ubicacion_lifecycle.dart';
+import 'package:go_router/go_router.dart';
+import '../routing/app_router.dart';
 import 'compartir_animal.dart';
-import 'visor_foto_completa.dart';
 
 class AdoptanteFeedScreen extends StatefulWidget {
   const AdoptanteFeedScreen();
@@ -23,7 +27,8 @@ class AdoptanteFeedScreen extends StatefulWidget {
   State<AdoptanteFeedScreen> createState() => _AdoptanteFeedScreenState();
 }
 
-class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
+class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
+    with WidgetsBindingObserver, ReintentoUbicacionAlVolver {
   int _idx = 0;
   // Antes se llamaba `RescatesRepository()` (instancia nueva) directo
   // adentro del StreamBuilder, en build() — mismo bug ya encontrado y
@@ -32,6 +37,22 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
   // se recreaba) en CADA rebuild de esta pantalla. Hallazgo de auditoría
   // de código.
   final _rescatesRepo = RescatesRepository();
+  // Mismo motivo que _feedStream (arriba): esto vivía inline en build()
+  // como `FirebaseFirestore.instance.collection('favoritos').where(...)
+  // .snapshots()`, así que se recreaba en CADA rebuild de esta pantalla —
+  // y esta pantalla hace setState() por cada tarjeta que se pasa (`_idx++`
+  // en el botón "Pasar"), así que cada toque tiraba abajo el listener de
+  // favoritos y levantaba uno nuevo de cero. Sin este chequeo, dos
+  // StreamBuilder en cascada suscribiéndose de nuevo en cada toque además
+  // competía por CPU/red justo con la carga de la próxima tarjeta —
+  // hallazgo real de Eliza: "cuando le doy X se está demorando en cargar
+  // el próximo". Mismo bug ya encontrado y arreglado para el feed
+  // principal en esta misma pantalla, nunca replicado acá para favoritos.
+  late final String _uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+  late final Stream<QuerySnapshot> _favoritosStream = FirebaseFirestore.instance
+      .collection('favoritos')
+      .where('adoptanteId', isEqualTo: _uid)
+      .snapshots();
   // Paginación del feed (ver RescatesRepository.feedPublico): arranca en
   // una tanda y va creciendo de a `feedPageSize` a medida que la persona
   // se acerca al final de lo ya cargado — ver _pedirMasAnimalesSiHaceFalta.
@@ -47,7 +68,9 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
   // agranda el límite dos veces por una sola vez que hizo falta.
   bool _pidiendoMasAnimales = false;
   Position? _userPosition;
-  bool _posicionPrecisa = false;
+  // Evita que dos detecciones corran encima (el reintento al volver a
+  // primer plano puede caer mientras la primera sigue en curso).
+  bool _detectandoPosicion = false;
   Map<String, dynamic>? _perfilAdopcion;
   String _prefEspecie = 'Ambos';
   String _prefTamano = 'Cualquiera';
@@ -64,18 +87,11 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
   // foto de nuevo en cada rebuild (el card se reconstruye seguido: cambia
   // la distancia, el score, etc., sin que cambie el animal mostrado).
   final Set<String> _fotosPrecacheadas = {};
-  // Se pide UNA sola vez en initState, no en cada build de _aliadosSection()
-  // — antes era un StreamBuilder con .snapshots(), que primero pinta lo que
-  // haya en la caché local (a veces vacía, a veces con solo alguno de los
-  // aliados de una sesión anterior) y recién después el snapshot del
-  // servidor con la lista completa: el efecto real era ver aparecer un
-  // negocio, y "al ratito" el resto (reportado por Eliza). Con un Future
-  // guardado una sola vez, se pinta vacío mientras carga y de una sola vez
-  // completo — nunca de a uno.
-  late final Future<QuerySnapshot> _aliadosFuture = FirebaseFirestore.instance
-      .collection('usuarios')
-      .where('aliadoNombre', isGreaterThan: '')
-      .get();
+  // UsuariosRepository.aliados() es la única fuente de esta consulta para
+  // toda la app — se pide UNA sola vez acá (no en cada build de
+  // _aliadosSection()), ver el doc del método para el porqué completo.
+  late final Future<QuerySnapshot<Map<String, dynamic>>> _aliadosFuture =
+      UsuariosRepository().aliados();
 
   /// Descarga por adelantado la 2da foto (y siguientes) de la tarjeta
   /// visible — Image.network no empieza a pedir una foto hasta que su
@@ -90,7 +106,14 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
   void _precacharUrls(Iterable<String> urls) {
     for (final url in urls) {
       if (_fotosPrecacheadas.add(url))
-        precacheImage(NetworkImage(url), context);
+        // onError vacío a propósito: es una precarga best-effort, la foto
+        // se termina pidiendo igual cuando el widget la necesita de
+        // verdad. Sin este onError, un simple corte de señal (SocketException:
+        // Failed host lookup) se reportaba a Crashlytics como un crash
+        // fatal — main.dart conecta FlutterError.onError a Crashlytics, y
+        // precacheImage() reporta ahí cualquier falla si no le pasás su
+        // propio onError. Hallazgo real en producción, APK61.
+        precacheImage(NetworkImage(url), context, onError: (_, _) {});
     }
   }
 
@@ -176,11 +199,19 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
     return partes.join(' · ');
   }
 
-  /// "Ver todos" desde el estado vacío ahora saca TODOS los filtros que
-  /// pueden estar bloqueando (especie, tamaño y edad juntos), no solo
-  /// especie — antes, si el bloqueo era tamaño/edad, el botón no podía
-  /// hacer nada y mandaba a la persona al perfil a mano.
+  /// Saca TODOS los filtros que pueden estar bloqueando (especie, tamaño y
+  /// edad juntos), no solo especie. La usan tanto "Ver todos" del estado
+  /// vacío como el chip "Todos" de _chipsEspecie() — antes cada uno hacía
+  /// una cosa distinta ("Ver todos" limpiaba los 3, pero el chip "Todos"
+  /// solo tocaba especie y dejaba tamaño/edad viejos aplicados en
+  /// silencio), y "Todos son todos" para quien lo toca, sin importar cuál
+  /// de los dos botones usó. Hallazgo real de Eliza.
   Future<void> _limpiarFiltrosExtra() async {
+    if (_prefEspecie == 'Ambos' &&
+        _prefTamano == 'Cualquiera' &&
+        _prefEdad == 'Cualquiera') {
+      return;
+    }
     final anteriorEspecie = _prefEspecie;
     final anteriorTamano = _prefTamano;
     final anteriorEdad = _prefEdad;
@@ -218,7 +249,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
     }
   }
 
-  // El widget del chip y el orden de las opciones viven en theme.dart
+  // El widget del chip y el orden de las opciones viven en widgets/especie_chip.dart
   // (especieChip/especieOpciones) — se comparten con tipo_animal_screen.dart
   // para que el feed y el perfil muestren siempre el mismo estilo y el
   // mismo orden para esta misma preferencia.
@@ -233,7 +264,14 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
             especieChip(
               label: especieOpciones[i].$2,
               active: _prefEspecie == especieOpciones[i].$1,
-              onTap: () => _cambiarPrefEspecie(especieOpciones[i].$1),
+              // "Todos" (especieOpciones[0], valor 'Ambos') limpia también
+              // tamaño y edad — es el botón de "empezar de cero", no solo
+              // "cualquier especie". Perro/Gato/Otro siguen cambiando solo
+              // la especie, para no perder un tamaño/edad que la persona
+              // sí quiere mantener al comparar entre especies.
+              onTap: () => especieOpciones[i].$1 == 'Ambos'
+                  ? _limpiarFiltrosExtra()
+                  : _cambiarPrefEspecie(especieOpciones[i].$1),
             ),
           ],
         ],
@@ -248,6 +286,19 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
     _obtenerPosicion();
     _suscribirPerfil();
   }
+
+  // El reintento al volver de segundo plano vive en
+  // ReintentoUbicacionAlVolver — mismo criterio que home_screen.dart/
+  // perfil_adoptante_screen.dart, que esta pantalla no tenía (hallazgo
+  // real de Eliza: "el pin no aparece en el menú de Adoptar, pero sí en
+  // el Perfil"). Ver ese archivo para el hallazgo completo del reintento
+  // en sí.
+  @override
+  bool get yaTieneUbicacion => _userPosition != null;
+  @override
+  bool get detectandoUbicacion => _detectandoPosicion;
+  @override
+  void reintentarSinPedirPermiso() => _obtenerPosicion(pedirPermiso: false);
 
   /// Agranda `_limiteFeed` (y con eso, `_feedStream`) en `feedPageSize` más
   /// — se llama cuando la persona ya está por llegar al final de los
@@ -298,6 +349,9 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
 
   @override
   void dispose() {
+    // El removeObserver de WidgetsBindingObserver ahora lo hace
+    // ReintentoUbicacionAlVolver.dispose(), alcanzado por el super.dispose()
+    // de acá abajo — esta limpieza es la propia de esta pantalla.
     _prefSub?.cancel();
     _perfilAdopcionSub?.cancel();
     _fotoPageNotifier.dispose();
@@ -317,37 +371,29 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
     });
   }
 
-  Future<void> _obtenerPosicion() async {
+  /// Solo coordenadas (sin `conCiudad`): acá la ubicación se usa para
+  /// calcular distancias y ordenar el feed, nunca para mostrar un nombre de
+  /// ciudad — pedir el geocoding inverso sería una llamada de red de más.
+  ///
+  /// `comoAnticipo`: la última posición conocida se aplica al instante (el
+  /// feed ya puede ordenar por distancia con ella) y después se refina con
+  /// la real, sin que la persona vea ningún salto.
+  Future<void> _obtenerPosicion({bool pedirPermiso = true}) async {
+    _detectandoPosicion = true;
     try {
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled().timeout(
-        const Duration(seconds: 3),
-        onTimeout: () => false,
+      final resultado = await UbicacionService.actual(
+        ultimaConocida: UsoUltimaConocida.comoAnticipo,
+        pedirPermisoSiFalta: pedirPermiso,
+        onAproximada: (aproximada) {
+          if (mounted) setState(() => _userPosition = aproximada);
+        },
       );
-      if (!serviceEnabled) return;
-      LocationPermission perm = await Geolocator.checkPermission();
-      if (perm == LocationPermission.denied) {
-        perm = await Geolocator.requestPermission();
-        if (perm == LocationPermission.denied) return;
+      if (resultado.ok && mounted) {
+        setState(() => _userPosition = resultado.posicion);
       }
-      if (perm == LocationPermission.deniedForever) return;
-      // Intenta posición conocida primero (más rápido)
-      Position? pos = await Geolocator.getLastKnownPosition();
-      if (pos != null && mounted) {
-        setState(() => _userPosition = pos);
-      }
-      // Luego actualiza con posición actual
-      pos = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.low,
-          timeLimit: Duration(seconds: 10),
-        ),
-      );
-      if (mounted)
-        setState(() {
-          _userPosition = pos;
-          _posicionPrecisa = true;
-        });
-    } catch (_) {}
+    } finally {
+      _detectandoPosicion = false;
+    }
   }
 
   String _distancia(Map<String, dynamic> animal) {
@@ -398,12 +444,8 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('favoritos')
-          .where('adoptanteId', isEqualTo: uid)
-          .snapshots(),
+      stream: _favoritosStream,
       builder: (context, favSnap) {
         // Antes esto no se revisaba: si la consulta de favoritos fallaba
         // (token vencido, permiso denegado), favRescateIds quedaba vacío
@@ -444,8 +486,26 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
             // alguien que recién se instaló la app, justo cuando SÍ hay
             // animales, todavía cargando. Es la primera pantalla que ve un
             // adoptante nuevo. Hallazgo de auditoría de código.
-            if (favSnap.connectionState == ConnectionState.waiting ||
-                snap.connectionState == ConnectionState.waiting) {
+            //
+            // `&& snap.data == null` a propósito — no alcanza con mirar
+            // solo connectionState: _pedirMasAnimalesSiHaceFalta() arma un
+            // _feedStream NUEVO (mismo Query, límite más grande) cada vez
+            // que la persona se acerca al final de lo ya cargado, y
+            // StreamBuilder pasa por ConnectionState.waiting un instante
+            // cada vez que el `stream:` que recibe cambia de identidad —
+            // aunque el snapshot anterior siga siendo perfectamente válido
+            // (Flutter conserva `data` en esa transición, solo cambia el
+            // estado). Sin este chequeo, cada vez que se pedía más tanda el
+            // feed entero desaparecía detrás de un spinner de pantalla
+            // completa hasta que volvía el servidor — justo lo que este
+            // mecanismo se armó para evitar (ver el comentario de arriba,
+            // "para que la persona nunca vea un corte ni un 'cargando' a
+            // mitad de pasar animalitos"). Hallazgo real de Eliza: "cuando
+            // le doy X se está demorando en cargar el próximo".
+            if ((favSnap.connectionState == ConnectionState.waiting &&
+                    favSnap.data == null) ||
+                (snap.connectionState == ConnectionState.waiting &&
+                    snap.data == null)) {
               return const Center(
                 child: CircularProgressIndicator(color: appTeal),
               );
@@ -503,9 +563,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
               ...firestoreDocs.map((doc) {
                 final d = doc.data() as Map<String, dynamic>;
                 return {
-                  'nombre': (d['nombre'] as String?)?.isNotEmpty == true
-                      ? d['nombre']
-                      : 'Sin nombre',
+                  'nombre': RescatesRepository.nombreDe(d),
                   'edad': d['edad'] ?? '',
                   'genero': d['genero'] ?? '',
                   'especie': d['especie'] ?? 'Perro',
@@ -540,6 +598,9 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                   'desparasitado': d['desparasitado'],
                   'urgencia': d['urgencia'] ?? '',
                   'creadoPor': d['creadoPor'] ?? '',
+                  // Para la bandera junto a la ciudad en la tarjeta: sin
+                  // ella, "Córdoba" no distingue Argentina de España.
+                  'paisCodigo': d['paisCodigo'] ?? '',
                 };
               }),
             ];
@@ -590,24 +651,62 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
             final animal = animals[_idx];
             _precacharSiguienteAnimal(animals, _idx);
 
-            // Detectar si el más cercano está lejos (>500 km) — solo con posición precisa,
-            // para evitar mostrar el aviso con la ubicación rápida/desactualizada inicial
+            // Detectar si el más cercano CON ubicación conocida está lejos
+            // (>500 km). Usa el mismo `_userPosition` que ya usa `_distancia()`
+            // para el texto de cada tarjeta — antes esto esperaba a una
+            // bandera "posición precisa" aparte que se ponía en true recién
+            // si el segundo pedido de GPS (más lento, ver _obtenerPosicion)
+            // llegaba a tiempo; si fallaba o tardaba, el catch la tragaba en
+            // silencio y esa bandera quedaba en false para siempre en la
+            // sesión — el aviso nunca se mostraba, aunque la distancia sí se
+            // calculara bien y se viera en cada tarjeta. Con la misma
+            // posición para las dos cosas, dejan de contradecirse.
             bool sinAnimalesCerca = false;
-            if (_posicionPrecisa &&
-                _userPosition != null &&
-                animals.isNotEmpty) {
-              final lat = animals[0]['latitud'] as double?;
-              final lng = animals[0]['longitud'] as double?;
-              if (lat != null && lng != null) {
-                final metros = Geolocator.distanceBetween(
-                  _userPosition!.latitude,
-                  _userPosition!.longitude,
-                  lat,
-                  lng,
-                );
-                sinAnimalesCerca = metros > 500000;
+            if (_userPosition != null && animals.isNotEmpty) {
+              // Si algún animal de la lista no tiene latitud/longitud
+              // guardada (la ubicación es opcional al publicar, ver
+              // subir_rescate_screen.dart), no hay forma de saber si está
+              // cerca o lejos — podría estar al lado tuyo. Esos animales se
+              // van al final de la lista (ver el sort de arriba), así que
+              // sin este chequeo el aviso terminaba comparando contra el
+              // más cercano CON ubicación conocida y podía decir "no hay
+              // animales cerca" aunque hubiera uno sin ubicación guardada
+              // literalmente al lado. Hallazgo real de Eliza: animalitos
+              // suyos cargados como rescatista, cerca de ella, pero el
+              // aviso igual decía que no había nada cerca.
+              final hayAnimalesSinUbicacion = animals.any(
+                (a) =>
+                    (a['latitud'] as double?) == null ||
+                    (a['longitud'] as double?) == null,
+              );
+              if (!hayAnimalesSinUbicacion) {
+                final lat = animals[0]['latitud'] as double?;
+                final lng = animals[0]['longitud'] as double?;
+                if (lat != null && lng != null) {
+                  final metros = Geolocator.distanceBetween(
+                    _userPosition!.latitude,
+                    _userPosition!.longitude,
+                    lat,
+                    lng,
+                  );
+                  sinAnimalesCerca = metros > 500000;
+                }
               }
             }
+            // El aviso se calcula sobre `animals`, que ya está filtrado por
+            // especie — con el chip "Gatos" activo, "no hay animales cerca"
+            // podía leerse como que no hay NADA cerca (ni perros ni gatos),
+            // cuando en realidad solo el gato más cercano está lejos y sí
+            // podía haber perros cerca. El texto ahora nombra la especie del
+            // filtro activo para no sonar más general de lo que es. Hallazgo
+            // real de Eliza: "es mentira, ese animalito está lejos pero sí
+            // existen animales cerca".
+            final etiquetaCerca = switch (_prefEspecie) {
+              'Perro' => 'perros',
+              'Gato' => 'gatos',
+              'Otro' => 'otros animales',
+              _ => 'animales',
+            };
 
             final distancia = _distancia(animal);
             return Column(
@@ -647,17 +746,25 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                         // pueden quedar desincronizados entre sí (son la misma
                         // preferencia, vista desde dos lugares).
                         _chipsEspecie(),
-                        if ((animal['ubicacion'] as String? ?? '').isNotEmpty)
+                        // Antes repetía la ciudad del animal ("EN TOLEDO")
+                        // acá arriba Y de nuevo en el pin 📍 de la foto —
+                        // mismo dato dos veces, sin sumar nada. La distancia
+                        // sí es información nueva (ayuda a decidir si es
+                        // viable), así que es lo único que queda acá.
+                        // Pedido real de Eliza.
+                        // Frase normal, no mayúsculas con letterSpacing: en
+                        // versalitas apretadas ("A 4 KM DE TI") se leía como
+                        // una clave o código, no como una frase — sobre todo
+                        // con decimales ("A 5836.1 KM DE TI"). Pedido real
+                        // de Eliza.
+                        if (distancia.isNotEmpty)
                           Padding(
                             padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
                             child: Text(
-                              distancia.isNotEmpty
-                                  ? 'EN ${(animal['ubicacion'] as String? ?? '').toUpperCase()} · A ${distancia.toUpperCase()} DE TI'
-                                  : 'EN ${(animal['ubicacion'] as String? ?? '').toUpperCase()}',
+                              'Se encuentra a $distancia de ti',
                               style: const TextStyle(
-                                fontSize: 11,
+                                fontSize: 12,
                                 fontWeight: FontWeight.w600,
-                                letterSpacing: 1.2,
                                 color: appTeal,
                               ),
                             ),
@@ -687,10 +794,10 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                                     style: TextStyle(fontSize: 14),
                                   ),
                                   const SizedBox(width: 8),
-                                  const Expanded(
+                                  Expanded(
                                     child: Text(
-                                      'No hay animales cerca de ti. Mostrando todos los disponibles.',
-                                      style: TextStyle(
+                                      'No hay $etiquetaCerca cerca de ti. Mostrando todos los disponibles.',
+                                      style: const TextStyle(
                                         fontSize: 12,
                                         color: Color(0xFF8B4513),
                                       ),
@@ -735,12 +842,9 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                         appInk,
                         46,
                         () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) =>
-                                  AnimalDetalleScreen(animal: animal),
-                            ),
+                          context.push(
+                            AppRoutes.animalDetalle,
+                            extra: animal,
                           );
                         },
                         'Ver más detalles de ${animal['nombre']}',
@@ -948,13 +1052,12 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                             parameters: {'aliado_id': uid},
                           )
                           .catchError((_) {});
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => AliadoPublicoScreen(
-                            aliadoId: uid,
-                            esRescatista: false,
-                          ),
+                      context.push(
+                        AppRoutes.aliadoPublico,
+                        extra: (
+                          aliadoId: uid,
+                          esRescatista: false,
+                          esAlbergue: false,
                         ),
                       );
                     },
@@ -1084,6 +1187,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
     final rescatistaFotoUrl = a['rescatistaFotoUrl'] as String?;
     final rescateId = a['rescateId'] as String? ?? '';
     final especie = a['especie'] as String? ?? '';
+    final bandera = banderaPais(a['paisCodigo'] as String?);
     final emoji = especie == 'Gato' ? '🐱' : '🐶';
 
     Color scoreColor(int s) {
@@ -1135,14 +1239,9 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                     final idxSeguro = _fotoPageNotifier.value < fotos.length
                         ? _fotoPageNotifier.value
                         : 0;
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => VisorFotoCompleta(
-                          fotos: fotos,
-                          indiceInicial: idxSeguro,
-                        ),
-                      ),
+                    context.push(
+                      AppRoutes.visorFoto,
+                      extra: (fotos: fotos, indiceInicial: idxSeguro),
                     );
                   },
             child: SizedBox(
@@ -1346,7 +1445,16 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                                   Flexible(
                                     child: Text(
                                       ubicacion.isNotEmpty
-                                          ? ubicacion
+                                          // La bandera del país al lado de
+                                          // la ciudad: "Córdoba" sola no
+                                          // distingue Argentina de España, y
+                                          // una ciudad mal geocodificada se
+                                          // notaba solo por una distancia
+                                          // rara. Vacía si el animal no
+                                          // tiene país guardado (dato
+                                          // legado), y ahí se ve igual que
+                                          // antes.
+                                          ? '$ubicacion${bandera.isEmpty ? '' : ' $bandera'}'
                                           : distancia,
                                       overflow: TextOverflow.ellipsis,
                                       maxLines: 1,
@@ -1610,13 +1718,9 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen> {
                                       parameters: {'albergue_id': rescatistaId},
                                     )
                                     .catchError((_) {});
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => AlberguePublicoScreen(
-                                      rescatistaId: rescatistaId,
-                                    ),
-                                  ),
+                                context.push(
+                                  AppRoutes.alberguePublico,
+                                  extra: rescatistaId,
                                 );
                               }
                             : null,
@@ -1886,33 +1990,29 @@ class _MeInteresaSheet extends StatelessWidget {
                 subtitulo:
                     'Lo/la cuidás temporalmente mientras encuentra familia',
                 onTap: () {
-                  final nav = Navigator.of(context);
-                  nav.pop();
-                  nav.push(
-                    MaterialPageRoute(
-                      builder: (_) => SolicitudAdopcionScreen(
-                        animal: {
-                          'nombre': nombre, 'especie': especie, 'edad': edad,
-                          'ubicacion': ubicacion, 'rescatista': rescatista,
-                          'rescatistaId': rescatistaId, 'rescateId': rescateId,
-                          'fotoUrl': fotoUrl,
-                          'tipoSolicitud': 'hogar_de_paso',
-                          'creadoPor': creadoPor,
-                          // Etiquetas del animal para calcular compatibilidad (ver
-                          // solicitud_adopcion_screen.dart) — antes faltaban acá, así
-                          // que toda solicitud creada desde este sheet (incluida la
-                          // de "Adoptar", que también pasa por esta pantalla) guardaba
-                          // estos campos como null y compatibilidad.dart los
-                          // completaba con sus valores por defecto (ej. "Mediano"
-                          // aunque el animal fuera "Pequeño").
-                          'tamano': tamano,
-                          'energia': energia,
-                          'okConNinos': okConNinos,
-                          'okConMascotas': okConMascotas,
-                          'requiereExperiencia': requiereExperiencia,
-                        },
-                      ),
-                    ),
+                  Navigator.pop(context);
+                  context.push(
+                    AppRoutes.solicitudAdopcion,
+                    extra: {
+                      'nombre': nombre, 'especie': especie, 'edad': edad,
+                      'ubicacion': ubicacion, 'rescatista': rescatista,
+                      'rescatistaId': rescatistaId, 'rescateId': rescateId,
+                      'fotoUrl': fotoUrl,
+                      'tipoSolicitud': 'hogar_de_paso',
+                      'creadoPor': creadoPor,
+                      // Etiquetas del animal para calcular compatibilidad (ver
+                      // solicitud_adopcion_screen.dart) — antes faltaban acá, así
+                      // que toda solicitud creada desde este sheet (incluida la
+                      // de "Adoptar", que también pasa por esta pantalla) guardaba
+                      // estos campos como null y compatibilidad.dart los
+                      // completaba con sus valores por defecto (ej. "Mediano"
+                      // aunque el animal fuera "Pequeño").
+                      'tamano': tamano,
+                      'energia': energia,
+                      'okConNinos': okConNinos,
+                      'okConMascotas': okConMascotas,
+                      'requiereExperiencia': requiereExperiencia,
+                    },
                   );
                 },
               ),
@@ -1930,25 +2030,24 @@ class _MeInteresaSheet extends StatelessWidget {
                 // el chat solo, usando el mismo id determinístico (rescateId+uid)
                 // que el resto de la app — así este chat es uno más normal y
                 // aparece en la bandeja del rescatista como cualquier otro.
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => ChatScreen(
-                      esRescatista: false,
-                      animal: {
-                        'nombre': nombre,
-                        'rescatista': rescatista,
-                        'rescatistaId': rescatistaId,
-                        'fotoUrl': fotoUrl,
-                        'rescateId': rescateId,
-                        'especie': especie,
-                        'ubicacion': ubicacion,
-                        'descripcion': '',
-                        'tags': tags,
-                        'edad': edad,
-                        'creadoPor': creadoPor,
-                      },
-                    ),
+                context.push(
+                  AppRoutes.chat,
+                  extra: (
+                    esRescatista: false,
+                    chatId: null,
+                    animal: {
+                      'nombre': nombre,
+                      'rescatista': rescatista,
+                      'rescatistaId': rescatistaId,
+                      'fotoUrl': fotoUrl,
+                      'rescateId': rescateId,
+                      'especie': especie,
+                      'ubicacion': ubicacion,
+                      'descripcion': '',
+                      'tags': tags,
+                      'edad': edad,
+                      'creadoPor': creadoPor,
+                    },
                   ),
                 );
               },

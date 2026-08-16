@@ -5,10 +5,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 /// "Red de voluntarios/hogares de paso" comparada contra software real de
 /// shelters). Solo para albergues, no rescatistas — ver ARCHITECTURE.md.
 class HogaresDePasoRepository {
-  HogaresDePasoRepository({FirebaseFirestore? db}) : _db = db ?? FirebaseFirestore.instance;
+  HogaresDePasoRepository({FirebaseFirestore? db})
+    : _db = db ?? FirebaseFirestore.instance;
   final FirebaseFirestore _db;
 
-  CollectionReference<Map<String, dynamic>> get _col => _db.collection('hogaresDePaso');
+  CollectionReference<Map<String, dynamic>> get _col =>
+      _db.collection('hogaresDePaso');
 
   /// Minúsculas y sin espacios alrededor — para comparar o guardar, nunca
   /// para mostrar. Sin esto, 'David.Casas@Gmail.com' (como lo tipeó el
@@ -24,6 +26,51 @@ class HogaresDePasoRepository {
 
   Stream<QuerySnapshot<Map<String, dynamic>>> deAlbergue(String albergueId) =>
       _col.where('albergueId', isEqualTo: albergueId).snapshots();
+
+  /// Primera fila de la red de [albergueId] con el mismo [nombre] Y el
+  /// mismo [email] (sin importar mayúsculas/espacios en ninguno de los
+  /// dos) — para avisar de un posible duplicado antes de agregar a mano.
+  /// [agregarManual] no tenía ningún chequeo (a diferencia de
+  /// [registrarAyuda], que sí fusiona por adoptanteId/email): nada impedía
+  /// crear la misma persona varias veces si el albergue tocaba "Agregar" y
+  /// completaba el formulario de nuevo cada vez. Hallazgo real de Eliza,
+  /// con captura mostrando "Pepito Perez" repetido 3 veces.
+  ///
+  /// Compara nombre Y email JUNTOS (no el nombre solo) a propósito — dos
+  /// personas reales pueden compartir nombre, y avisar solo por eso
+  /// hubiera sido un falso positivo molesto. El email es el dato que de
+  /// verdad distingue a una persona de otra con el mismo nombre, y ahora
+  /// es obligatorio en el formulario de alta manual (ver
+  /// _AgregarHogarSheet) exactamente para que esta comparación siempre
+  /// tenga con qué trabajar. Pedido explícito de Eliza.
+  ///
+  /// Trae todas las filas propias (roster acotado a un albergue, nunca
+  /// miles de filas) y compara en cliente — mismo criterio que
+  /// RescatesRepository.buscarDuplicado: una query exacta se rompería con
+  /// cualquier diferencia de mayúsculas/espacios, que es justo el caso más
+  /// común al tipear el mismo dato dos veces.
+  Future<QueryDocumentSnapshot<Map<String, dynamic>>?> buscarDuplicado({
+    required String albergueId,
+    required String nombre,
+    required String email,
+  }) async {
+    final nombreBuscado = nombre.trim().toLowerCase();
+    final emailBuscado = _normalizarEmail(email);
+    if (nombreBuscado.isEmpty || emailBuscado.isEmpty) return null;
+    final snap = await _col.where('albergueId', isEqualTo: albergueId).get();
+    for (final d in snap.docs) {
+      final data = d.data();
+      final nombreActual = ((data['nombre'] as String?) ?? '')
+          .trim()
+          .toLowerCase();
+      final emailActual = ((data['email'] as String?) ?? '')
+          .trim()
+          .toLowerCase();
+      if (nombreActual == nombreBuscado && emailActual == emailBuscado)
+        return d;
+    }
+    return null;
+  }
 
   /// Se llama al aprobar una solicitud de hogar de paso: si esa persona ya
   /// está en la red, suma 1 a `vecesAyudo`; si es la primera vez, la agrega.
@@ -68,7 +115,9 @@ class HogaresDePasoRepository {
       return;
     }
 
-    final emailNorm = (email == null || email.isEmpty) ? null : _normalizarEmail(email);
+    final emailNorm = (email == null || email.isEmpty)
+        ? null
+        : _normalizarEmail(email);
 
     if (emailNorm != null) {
       final porEmail = await _col
@@ -120,8 +169,8 @@ class HogaresDePasoRepository {
     String notas = '',
     String email = '',
     Duration timeout = const Duration(seconds: 15),
-  }) =>
-      _col.add({
+  }) => _col
+      .add({
         'albergueId': albergueId,
         'adoptanteId': '',
         'nombre': nombre,
@@ -132,7 +181,8 @@ class HogaresDePasoRepository {
         'ultimaVez': null,
         'creadoEn': FieldValue.serverTimestamp(),
         'agregadoManualmente': true,
-      }).timeout(timeout);
+      })
+      .timeout(timeout);
 
   /// Las filas que se agregan solas (al aprobar una solicitud) nacen sin
   /// teléfono ni notas — esto deja completarlos después, tanto para esas
@@ -150,17 +200,23 @@ class HogaresDePasoRepository {
   /// vaciarlo a propósito, pasando `''` (el campo llega prellenado con el
   /// valor actual: un `''` real significa que la persona lo borró adrede).
   /// Hallazgo de auditoría de código.
-  Future<void> actualizarContacto(String docId,
-          {required String telefono, required String notas, String? email,
-          Duration timeout = const Duration(seconds: 15)}) =>
-      _col.doc(docId)
-          .update({
-            'telefono': telefono,
-            'notas': notas,
-            if (email != null) 'email': _normalizarEmail(email),
-          })
-          .timeout(timeout);
+  Future<void> actualizarContacto(
+    String docId, {
+    required String telefono,
+    required String notas,
+    String? email,
+    Duration timeout = const Duration(seconds: 15),
+  }) => _col
+      .doc(docId)
+      .update({
+        'telefono': telefono,
+        'notas': notas,
+        if (email != null) 'email': _normalizarEmail(email),
+      })
+      .timeout(timeout);
 
-  Future<void> eliminar(String docId, {Duration timeout = const Duration(seconds: 15)}) =>
-      _col.doc(docId).delete().timeout(timeout);
+  Future<void> eliminar(
+    String docId, {
+    Duration timeout = const Duration(seconds: 15),
+  }) => _col.doc(docId).delete().timeout(timeout);
 }

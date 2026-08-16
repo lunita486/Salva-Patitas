@@ -6,6 +6,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import '../theme.dart';
+import '../widgets/tardando_mucho_mixin.dart';
+import '../widgets/texto_sin_desborde.dart';
 import '../data/creator_role.dart';
 import '../data/rescates_repository.dart';
 import '../data/foto_normalizador.dart';
@@ -33,14 +35,15 @@ class _AnimalDraft {
   }
 }
 
-class _SubirLoteScreenState extends State<SubirLoteScreen> with TardandoMuchoMixin {
+class _SubirLoteScreenState extends State<SubirLoteScreen>
+    with TardandoMuchoMixin {
   final _picker = ImagePicker();
   int _paso = 0;
 
-  String _especie  = 'Perro';
+  String _especie = 'Perro';
   String _urgencia = 'Alta';
-  String _ciudad   = '';
-  bool   _cargandoCiudad = true;
+  String _ciudad = '';
+  bool _cargandoCiudad = true;
 
   final List<_AnimalDraft> _animales = [];
   bool _publicando = false;
@@ -59,16 +62,29 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> with TardandoMuchoMix
   Future<void> _cargarCiudad() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    final doc = await FirebaseFirestore.instance.collection('usuarios').doc(uid).get();
+    final doc = await FirebaseFirestore.instance
+        .collection('usuarios')
+        .doc(uid)
+        .get();
     final ciudad = (doc.data()?['ciudad'] as String?) ?? '';
-    if (mounted) setState(() { _ciudad = ciudad; _cargandoCiudad = false; });
+    if (mounted)
+      setState(() {
+        _ciudad = ciudad;
+        _cargandoCiudad = false;
+      });
   }
 
   Future<void> _pickFotos() async {
-    final picked = await _picker.pickMultiImage(imageQuality: 80, maxWidth: 1000, maxHeight: 1000);
+    final picked = await _picker.pickMultiImage(
+      imageQuality: 80,
+      maxWidth: 1000,
+      maxHeight: 1000,
+    );
     if (picked.isEmpty) return;
     final pathsExistentes = _animales.map((a) => a.foto1.path).toSet();
-    final nuevas = picked.where((f) => !pathsExistentes.contains(f.path)).toList();
+    final nuevas = picked
+        .where((f) => !pathsExistentes.contains(f.path))
+        .toList();
     if (nuevas.isEmpty) return;
     setState(() {
       for (final f in nuevas) _animales.add(_AnimalDraft(foto1: f));
@@ -77,11 +93,24 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> with TardandoMuchoMix
 
   Future<void> _pickSegundaFoto(int index) async {
     final img = await _picker.pickImage(
-        source: ImageSource.gallery, imageQuality: 80, maxWidth: 1000, maxHeight: 1000);
+      source: ImageSource.gallery,
+      imageQuality: 80,
+      maxWidth: 1000,
+      maxHeight: 1000,
+    );
     if (img != null && mounted) setState(() => _animales[index].foto2 = img);
   }
 
   Future<void> _publicar() async {
+    // El spinner arranca ACÁ, antes de ir a buscar nombres ya publicados
+    // (nombresExistentes trae TODOS tus animales bajo el rol albergue —
+    // tarda más cuanto más historial tengas) — no recién antes de subir
+    // fotos. Antes el botón se quedaba con su apariencia normal durante
+    // todo ese chequeo, sin ningún aviso de que ya estaba trabajando.
+    // Hallazgo real de Eliza: "también se está tardando" al cargar un
+    // animalito para el albergue — mismo tramo silencioso que el alta
+    // individual (ver el comentario igual en subir_rescate_screen.dart).
+    setState(() => _publicando = true);
     // Aviso, no bloqueo, y ANTES de arrancar el lote (no tiene sentido
     // interrumpir a mitad de un lote que ya está publicando). Chequea dos
     // cosas: nombres que ya existen en tus animales publicados como
@@ -92,7 +121,9 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> with TardandoMuchoMix
     // lote (sin ir a la red, comparando entre sí). En los dos casos se
     // compara nombre + especie juntos — un "Richard" perro no debería
     // chocar con un "Richard" gato.
-    final animalesConNombre = _animales.where((a) => a.nombreCtl.text.trim().isNotEmpty).toList();
+    final animalesConNombre = _animales
+        .where((a) => a.nombreCtl.text.trim().isNotEmpty)
+        .toList();
     // Fuera del if (no solo declarado adentro): publicarUno() más abajo lo
     // necesita para dejar el mismo rastro de auditoría que el alta
     // individual (ver _duplicadoDeId en subir_rescate_screen.dart) en cada
@@ -102,8 +133,10 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> with TardandoMuchoMix
       final uidActual = FirebaseAuth.instance.currentUser?.uid ?? '';
       // Una sola consulta para todo el lote, no una por animal (mismo
       // filtro rescatistaId+creadoPor cada vez — hallazgo de auditoría).
-      final existentes = await RescatesRepository()
-          .nombresExistentes(uid: uidActual, role: CreatorRole.albergue);
+      final existentes = await RescatesRepository().nombresExistentes(
+        uid: uidActual,
+        role: CreatorRole.albergue,
+      );
       for (final a in animalesConNombre) {
         final nombreAnimal = a.nombreCtl.text.trim();
         final especieAnimal = a.especieOverride ?? _especie;
@@ -114,7 +147,8 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> with TardandoMuchoMix
       }
       final vistos = <String>{};
       for (final a in animalesConNombre) {
-        final clave = '${a.nombreCtl.text.trim().toLowerCase()}_${a.especieOverride ?? _especie}';
+        final clave =
+            '${a.nombreCtl.text.trim().toLowerCase()}_${a.especieOverride ?? _especie}';
         if (!vistos.add(clave)) repetidos.add(a.nombreCtl.text.trim());
       }
       if (repetidos.isNotEmpty) {
@@ -122,11 +156,15 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> with TardandoMuchoMix
         final continuar = await showDialog<bool>(
           context: context,
           builder: (dlgCtx) => AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
             title: const Text('Nombres repetidos'),
-            content: Text('Ya tenés (o estás por subir más de una vez en este lote) '
-                'un animal llamado: ${repetidos.join(", ")}. Si es a propósito, '
-                'podés publicar igual.'),
+            content: Text(
+              'Ya tenés (o estás por subir más de una vez en este lote) '
+              'un animal llamado: ${repetidos.join(", ")}. Si es a propósito, '
+              'podés publicar igual.',
+            ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(dlgCtx, false),
@@ -134,12 +172,18 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> with TardandoMuchoMix
               ),
               TextButton(
                 onPressed: () => Navigator.pop(dlgCtx, true),
-                child: const Text('Publicar igual', style: TextStyle(color: appTeal)),
+                child: const Text(
+                  'Publicar igual',
+                  style: TextStyle(color: appTeal),
+                ),
               ),
             ],
           ),
         );
-        if (continuar != true) return;
+        if (continuar != true) {
+          if (mounted) setState(() => _publicando = false);
+          return;
+        }
       }
     }
 
@@ -148,7 +192,7 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> with TardandoMuchoMix
     // setState() de acá abajo corría igual sobre una pantalla ya cerrada
     // (hallazgo de auditoría de código).
     if (!mounted) return;
-    setState(() { _publicando = true; _procesados = 0; });
+    setState(() => _procesados = 0);
     // El umbral crece con la cantidad de animales — todos suben sus fotos
     // al mismo tiempo, así que un lote de 3 mueve más datos en total que
     // uno de 1, y tarda más de forma normal y esperable. Con el límite fijo
@@ -160,10 +204,15 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> with TardandoMuchoMix
     var publicados = 0;
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-      var nombre = FirebaseAuth.instance.currentUser?.displayName ?? 'Rescatista';
-      final userDoc = await FirebaseFirestore.instance.collection('usuarios').doc(uid).get();
+      var nombre =
+          FirebaseAuth.instance.currentUser?.displayName ?? 'Rescatista';
+      final userDoc = await FirebaseFirestore.instance
+          .collection('usuarios')
+          .doc(uid)
+          .get();
       final albergueNombre = userDoc.data()?['albergueNombre'] as String?;
-      if (albergueNombre != null && albergueNombre.isNotEmpty) nombre = albergueNombre;
+      if (albergueNombre != null && albergueNombre.isNotEmpty)
+        nombre = albergueNombre;
       final fotoAlbergue = userDoc.data()?['fotoBase64'] as String?;
 
       // Cada animal se publica en paralelo, no uno atrás del otro — antes
@@ -177,7 +226,8 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> with TardandoMuchoMix
       // demás, sigan corriendo en paralelo o no.
       Future<void> publicarUno(_AnimalDraft a, int i) async {
         final nombreAnimal = a.nombreCtl.text.trim().isNotEmpty
-            ? a.nombreCtl.text.trim() : 'Animal ${i + 1}';
+            ? a.nombreCtl.text.trim()
+            : 'Animal ${i + 1}';
         try {
           // normalizarFoto() corre en su propio isolate (compute()) — así
           // el procesamiento de fotos de ESTE animal corre en paralelo
@@ -200,45 +250,48 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> with TardandoMuchoMix
             uid: uid,
             role: CreatorRole.albergue,
             datos: {
-              'nombre':              a.nombreCtl.text.trim(),
-              'especie':             a.especieOverride ?? _especie,
-              'raza':                'Criolla',
-              'estado':              'Sano',
-              'urgencia':            a.urgenciaOverride ?? _urgencia,
-              'ubicacion':           _ciudad,
-              'descripcion':         a.descCtl.text.trim(),
-              'estadoAdopcion':      'Rescatado',
-              'rescatistaNombre':    nombre,
+              'nombre': a.nombreCtl.text.trim(),
+              'especie': a.especieOverride ?? _especie,
+              'raza': 'Criolla',
+              'estado': 'Sano',
+              'urgencia': a.urgenciaOverride ?? _urgencia,
+              'ubicacion': _ciudad,
+              'descripcion': a.descCtl.text.trim(),
+              'estadoAdopcion': 'Rescatado',
+              'rescatistaNombre': nombre,
               // Mismo rastro de auditoría que el alta individual: se avisó
               // un nombre repetido y se publicó igual a propósito — útil
               // para poder encontrar y limpiar duplicados reales después,
               // sin necesitar el id exacto del otro doc (acá puede haber
               // más de un candidato: contra lo ya publicado, o contra otro
               // animal del mismo lote).
-              if (repetidos.contains(nombreAnimal)) 'duplicadoConfirmadoEn': FieldValue.serverTimestamp(),
+              if (repetidos.contains(nombreAnimal))
+                'duplicadoConfirmadoEn': FieldValue.serverTimestamp(),
               if (fotoAlbergue != null) 'rescatistaFotoBase64': fotoAlbergue,
-              'edad':                'Adulto',
-              'genero':              'No sé',
-              'energia':             'Tranquilo',
-              'tamano':              'Mediano',
-              'okConNinos':          true,
-              'okConMascotas':       true,
+              'edad': 'Adulto',
+              'genero': 'No sé',
+              'energia': 'Tranquilo',
+              'tamano': 'Mediano',
+              'okConNinos': true,
+              'okConMascotas': true,
               'requiereExperiencia': false,
               // Por defecto, no asumido — igual que en el alta individual,
               // se puede corregir después editando cada animal cuando se
               // sepa de verdad (ej. tras la visita al veterinario).
-              'vacunado':            'Aún no lo sé',
-              'desparasitado':       'Aún no lo sé',
+              'vacunado': 'Aún no lo sé',
+              'desparasitado': 'Aún no lo sé',
             },
             fotos: normalizadas,
           );
-          FirebaseAnalytics.instance.logEvent(
-            name: 'animal_publicado',
-            parameters: {
-              'especie': a.especieOverride ?? _especie,
-              'creado_por': 'albergue',
-            },
-          ).catchError((_) {});
+          FirebaseAnalytics.instance
+              .logEvent(
+                name: 'animal_publicado',
+                parameters: {
+                  'especie': a.especieOverride ?? _especie,
+                  'creado_por': 'albergue',
+                },
+              )
+              .catchError((_) {});
           publicados++;
         } catch (_) {
           // Este animal falló — no se aborta el lote entero (no tiene
@@ -262,28 +315,39 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> with TardandoMuchoMix
       // más de ~6 isolates/subidas a la vez en ningún momento, sin importar
       // cuán grande sea el lote entero.
       const tandaPublicacion = 3;
-      for (var inicio = 0; inicio < _animales.length; inicio += tandaPublicacion) {
+      for (
+        var inicio = 0;
+        inicio < _animales.length;
+        inicio += tandaPublicacion
+      ) {
         final tanda = _animales.skip(inicio).take(tandaPublicacion).toList();
         await Future.wait([
-          for (var j = 0; j < tanda.length; j++) publicarUno(tanda[j], inicio + j),
+          for (var j = 0; j < tanda.length; j++)
+            publicarUno(tanda[j], inicio + j),
         ]);
       }
 
       if (!mounted) return;
       Navigator.pop(context);
       if (fallidos.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('$publicados animales publicados 🐾'),
-          backgroundColor: msgExito,
-          behavior: SnackBarBehavior.floating,
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$publicados animales publicados 🐾'),
+            backgroundColor: msgExito,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('$publicados publicados. No se pudieron publicar: ${fallidos.join(", ")}.'),
-          backgroundColor: msgAdvertencia,
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 6),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '$publicados publicados. No se pudieron publicar: ${fallidos.join(", ")}.',
+            ),
+            backgroundColor: msgAdvertencia,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 6),
+          ),
+        );
       }
     } catch (_) {
       // Rama poco común (algo falló ANTES/AFUERA del try/catch por animal
@@ -293,15 +357,23 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> with TardandoMuchoMix
       // SnackBar rojo distinto dejando a la persona parada acá.
       if (!mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('No se pudo publicar el lote. Revisá tu conexión e intentá de nuevo.'),
-        backgroundColor: msgError,
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 6),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'No se pudo publicar el lote. Revisá tu conexión e intentá de nuevo.',
+          ),
+          backgroundColor: msgError,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 6),
+        ),
+      );
     } finally {
       cancelarTimerTardando();
-      if (mounted) setState(() { _publicando = false; tardandoMucho = false; });
+      if (mounted)
+        setState(() {
+          _publicando = false;
+          tardandoMucho = false;
+        });
     }
   }
 
@@ -316,58 +388,85 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> with TardandoMuchoMix
     return Scaffold(
       backgroundColor: appBg,
       body: SafeArea(
-        child: Column(children: [
-          _appBar(),
-          _progressBar(),
-          Expanded(child: _body()),
-          _bottomBar(),
-        ]),
+        child: Column(
+          children: [
+            _appBar(),
+            _progressBar(),
+            Expanded(child: _body()),
+            _bottomBar(),
+          ],
+        ),
       ),
     );
   }
 
   Widget _appBar() => Padding(
     padding: const EdgeInsets.fromLTRB(8, 8, 20, 4),
-    child: Row(children: [
-      IconButton(
-        icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-                tooltip: 'Volver',
-        // Apagado mientras se publica: sin esto, se podía volver al paso de
-        // fotos (paso 0) y borrar/reemplazar la tarjeta de un animal que se
-        // está publicando en ese mismo instante de fondo — publicarUno()
-        // vuelve a leer nombreCtl/descCtl de ese draft DESPUÉS de un await
-        // (la normalización de fotos), y si el dispose() ya corrió en ese
-        // hueco, revienta con "used after being disposed". Hallazgo de
-        // auditoría de código.
-        onPressed: _publicando ? null : () {
-          if (_paso > 0) setState(() => _paso--);
-          else Navigator.pop(context);
-        },
-      ),
-      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('Subir lote',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: appInk)),
-        Text(
-          _paso == 0 ? 'Selecciona las fotos'
-              : _paso == 1 ? 'Datos comunes para todos'
-              : 'Revisa cada animal',
-          style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
-      ])),
-    ]),
+    child: Row(
+      children: [
+        IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+          tooltip: 'Volver',
+          // Apagado mientras se publica: sin esto, se podía volver al paso de
+          // fotos (paso 0) y borrar/reemplazar la tarjeta de un animal que se
+          // está publicando en ese mismo instante de fondo — publicarUno()
+          // vuelve a leer nombreCtl/descCtl de ese draft DESPUÉS de un await
+          // (la normalización de fotos), y si el dispose() ya corrió en ese
+          // hueco, revienta con "used after being disposed". Hallazgo de
+          // auditoría de código.
+          onPressed: _publicando
+              ? null
+              : () {
+                  if (_paso > 0)
+                    setState(() => _paso--);
+                  else
+                    Navigator.pop(context);
+                },
+        ),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Subir lote',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: appInk,
+                ),
+              ),
+              Text(
+                _paso == 0
+                    ? 'Selecciona las fotos'
+                    : _paso == 1
+                    ? 'Datos comunes para todos'
+                    : 'Revisa cada animal',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
   );
 
   Widget _progressBar() => Padding(
     padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-    child: Row(children: List.generate(3, (i) => Expanded(
-      child: Container(
-        height: 3,
-        margin: EdgeInsets.only(right: i < 2 ? 4 : 0),
-        decoration: BoxDecoration(
-          color: i <= _paso ? appTeal : Colors.grey.shade200,
-          borderRadius: BorderRadius.circular(2),
+    child: Row(
+      children: List.generate(
+        3,
+        (i) => Expanded(
+          child: Container(
+            height: 3,
+            margin: EdgeInsets.only(right: i < 2 ? 4 : 0),
+            decoration: BoxDecoration(
+              color: i <= _paso ? appTeal : Colors.grey.shade200,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
         ),
       ),
-    ))),
+    ),
   );
 
   Widget _body() => switch (_paso) {
@@ -386,46 +485,72 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> with TardandoMuchoMix
     final opcion = await showModalBottomSheet<String>(
       context: context,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (sheetCtx) => Padding(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(width: 36, height: 4,
-              decoration: BoxDecoration(color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2))),
-          const SizedBox(height: 16),
-          const Text('¿Qué quieres hacer?',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 16),
-          ListTile(
-            leading: Container(
-              width: 40, height: 40,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 36,
+              height: 4,
               decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              '¿Qué quieres hacer?',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            ListTile(
+              leading: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
                   color: appTeal.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10)),
-              child: const Icon(Icons.add_photo_alternate_outlined, color: appTeal),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.add_photo_alternate_outlined,
+                  color: appTeal,
+                ),
+              ),
+              title: const Text(
+                'Agregar más fotos',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              subtitle: const Text('Se suman a las que ya tienes'),
+              onTap: () => Navigator.pop(sheetCtx, 'agregar'),
             ),
-            title: const Text('Agregar más fotos',
-                style: TextStyle(fontWeight: FontWeight.w600)),
-            subtitle: const Text('Se suman a las que ya tienes'),
-            onTap: () => Navigator.pop(sheetCtx, 'agregar'),
-          ),
-          const Divider(),
-          ListTile(
-            leading: Container(
-              width: 40, height: 40,
-              decoration: BoxDecoration(
+            const Divider(),
+            ListTile(
+              leading: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
                   color: Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(10)),
-              child: Icon(Icons.refresh, color: Colors.red.shade400),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.refresh, color: Colors.red.shade400),
+              ),
+              title: Text(
+                'Reemplazar todo',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: Colors.red.shade400,
+                ),
+              ),
+              subtitle: const Text(
+                'Borra las fotos actuales y empieza de nuevo',
+              ),
+              onTap: () => Navigator.pop(sheetCtx, 'reemplazar'),
             ),
-            title: Text('Reemplazar todo',
-                style: TextStyle(fontWeight: FontWeight.w600,
-                    color: Colors.red.shade400)),
-            subtitle: const Text('Borra las fotos actuales y empieza de nuevo'),
-            onTap: () => Navigator.pop(sheetCtx, 'reemplazar'),
-          ),
-        ]),
+          ],
+        ),
       ),
     );
     if (opcion == null) return;
@@ -438,143 +563,243 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> with TardandoMuchoMix
 
   Widget _pasoFotos() => SingleChildScrollView(
     padding: const EdgeInsets.all(20),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      if (_animales.isEmpty)
-        GestureDetector(
-          onTap: _pickFotos,
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 32),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: appTeal.withValues(alpha: 0.4), width: 1.5),
-            ),
-            child: Column(children: [
-              Icon(Icons.add_photo_alternate_outlined, size: 52, color: appTeal.withValues(alpha: 0.7)),
-              const SizedBox(height: 12),
-              const Text('Toca para seleccionar fotos',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: appTeal)),
-              const SizedBox(height: 4),
-              Text('Selecciona varias a la vez: 1 foto = 1 animal',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
-            ]),
-          ),
-        ),
-      if (_animales.isNotEmpty) ...[
-        const SizedBox(height: 20),
-        Row(children: [
-          Text('${_animales.length} ${_animales.length == 1 ? "animal" : "animales"}',
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: appInk)),
-          const Spacer(),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_animales.isEmpty)
           GestureDetector(
-            onTap: _pickFotosConConfirmacion,
-            child: const Text('+ Agregar más',
-                style: TextStyle(fontSize: 13, color: appTeal, fontWeight: FontWeight.w600)),
-          ),
-        ]),
-        const SizedBox(height: 12),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 3, crossAxisSpacing: 8, mainAxisSpacing: 8),
-          itemCount: _animales.length,
-          itemBuilder: (_, i) => Stack(children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Image.file(File(_animales[i].foto1.path),
-                  width: double.infinity, height: double.infinity, fit: BoxFit.cover),
-            ),
-            Positioned(
-              top: 0, left: 0, right: 0, bottom: 0,
-              child: Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(10),
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter, end: Alignment.bottomCenter,
-                    colors: [Colors.transparent, Colors.black.withValues(alpha: 0.3)]),
+            onTap: _pickFotos,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 32),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: appTeal.withValues(alpha: 0.4),
+                  width: 1.5,
                 ),
               ),
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.add_photo_alternate_outlined,
+                    size: 52,
+                    color: appTeal.withValues(alpha: 0.7),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Toca para seleccionar fotos',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: appTeal,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Selecciona varias a la vez: 1 foto = 1 animal',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                  ),
+                ],
+              ),
             ),
-            Positioned(bottom: 4, left: 4,
-              child: Text('${i + 1}',
-                  style: const TextStyle(color: Colors.white, fontSize: 11,
-                      fontWeight: FontWeight.bold))),
-            Positioned(top: 4, right: 4,
-              child: GestureDetector(
-                // Ver el comentario del botón "atrás" en _appBar(): borrar
-                // un draft mientras se publica puede tirar abajo un
-                // publicarUno() en curso sobre ESE mismo índice.
-                onTap: _publicando
-                    ? null
-                    : () => setState(() { _animales[i].dispose(); _animales.removeAt(i); }),
-                child: Container(
-                  decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
-                  padding: const EdgeInsets.all(3),
-                  child: const Icon(Icons.close, size: 13, color: Colors.white),
+          ),
+        if (_animales.isNotEmpty) ...[
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Text(
+                '${_animales.length} ${_animales.length == 1 ? "animal" : "animales"}',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: appInk,
                 ),
-              )),
-          ]),
-        ),
+              ),
+              const Spacer(),
+              GestureDetector(
+                onTap: _pickFotosConConfirmacion,
+                child: const Text(
+                  '+ Agregar más',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: appTeal,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+            ),
+            itemCount: _animales.length,
+            itemBuilder: (_, i) => Stack(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Image.file(
+                    File(_animales[i].foto1.path),
+                    width: double.infinity,
+                    height: double.infinity,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(10),
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.transparent,
+                          Colors.black.withValues(alpha: 0.3),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  bottom: 4,
+                  left: 4,
+                  child: Text(
+                    '${i + 1}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 4,
+                  right: 4,
+                  child: GestureDetector(
+                    // Ver el comentario del botón "atrás" en _appBar(): borrar
+                    // un draft mientras se publica puede tirar abajo un
+                    // publicarUno() en curso sobre ESE mismo índice.
+                    onTap: _publicando
+                        ? null
+                        : () => setState(() {
+                            _animales[i].dispose();
+                            _animales.removeAt(i);
+                          }),
+                    child: Container(
+                      decoration: const BoxDecoration(
+                        color: Colors.black54,
+                        shape: BoxShape.circle,
+                      ),
+                      padding: const EdgeInsets.all(3),
+                      child: const Icon(
+                        Icons.close,
+                        size: 13,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ],
-    ]),
+    ),
   );
 
   // ── Paso 1: Datos comunes ─────────────────────────────────────────────────
 
   Widget _pasoComunes() => SingleChildScrollView(
     padding: const EdgeInsets.all(20),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: appTeal.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: appTeal.withValues(alpha: 0.25)),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: appTeal.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: appTeal.withValues(alpha: 0.25)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.info_outline, size: 16, color: appTeal),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Se aplican a los ${_animales.length} animales. Puedes editar cada uno después.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                ),
+              ),
+            ],
+          ),
         ),
-        child: Row(children: [
-          const Icon(Icons.info_outline, size: 16, color: appTeal),
-          const SizedBox(width: 8),
-          Expanded(child: Text(
-            'Se aplican a los ${_animales.length} animales. Puedes editar cada uno después.',
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-          )),
-        ]),
-      ),
-      const SizedBox(height: 24),
-      _label('ESPECIE'),
-      const SizedBox(height: 10),
-      _chips(['Perro', 'Gato', 'Otro'], _especie, (v) => setState(() => _especie = v), appTeal),
-      const SizedBox(height: 24),
-      _label('URGENCIA'),
-      const SizedBox(height: 10),
-      _chips(['Alta', 'Media', 'Baja'], _urgencia, (v) => setState(() => _urgencia = v),
-          _urgencia == 'Alta' ? const Color(0xFFD32F2F)
-              : _urgencia == 'Media' ? const Color(0xFFE65100) : appTeal),
-      const SizedBox(height: 24),
-      _label('CIUDAD'),
-      const SizedBox(height: 8),
-      Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey.shade200),
+        const SizedBox(height: 24),
+        _label('ESPECIE'),
+        const SizedBox(height: 10),
+        _chips(
+          ['Perro', 'Gato', 'Otro'],
+          _especie,
+          (v) => setState(() => _especie = v),
+          appTeal,
         ),
-        child: Row(children: [
-          const Icon(Icons.location_on, size: 16, color: appTeal),
-          const SizedBox(width: 8),
-          Text(_cargandoCiudad ? 'Cargando...' : (_ciudad.isNotEmpty ? _ciudad : 'Sin ciudad'),
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-          const Spacer(),
-          Icon(Icons.lock_outline, size: 14, color: Colors.grey.shade400),
-        ]),
-      ),
-      const SizedBox(height: 4),
-      Text('Tomada del perfil del albergue',
-          style: TextStyle(fontSize: 11, color: Colors.grey.shade400)),
-    ]),
+        const SizedBox(height: 24),
+        _label('URGENCIA'),
+        const SizedBox(height: 10),
+        _chips(
+          ['Alta', 'Media', 'Baja'],
+          _urgencia,
+          (v) => setState(() => _urgencia = v),
+          _urgencia == 'Alta'
+              ? const Color(0xFFD32F2F)
+              : _urgencia == 'Media'
+              ? const Color(0xFFE65100)
+              : appTeal,
+        ),
+        const SizedBox(height: 24),
+        _label('CIUDAD'),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          // TextoSinDesborde (widgets/texto_sin_desborde.dart): una ciudad larga empujaba el
+          // candado fuera de la tarjeta. El Spacer va DENTRO del `despues`
+          // para que el candado siga pegado a la derecha.
+          child: TextoSinDesborde(
+            texto: _cargandoCiudad
+                ? 'Cargando...'
+                : (_ciudad.isNotEmpty ? _ciudad : 'Sin ciudad'),
+            antes: const Icon(Icons.location_on, size: 16, color: appTeal),
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+            despues: Icon(
+              Icons.lock_outline,
+              size: 14,
+              color: Colors.grey.shade400,
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Tomada del perfil del albergue',
+          style: TextStyle(fontSize: 11, color: Colors.grey.shade400),
+        ),
+      ],
+    ),
   );
 
   // ── Paso 2: Individual ────────────────────────────────────────────────────
@@ -590,175 +815,286 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> with TardandoMuchoMix
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 6, offset: const Offset(0, 2))],
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          // Botón eliminar
-          Align(
-            alignment: Alignment.centerRight,
-            child: Tooltip(
-              message: 'Eliminar',
-              child: GestureDetector(
-                // Mismo motivo que el botón "atrás" de _appBar(): borrar
-                // un draft mientras se publica puede tirar abajo un
-                // publicarUno() en curso sobre ESE mismo índice.
-                onTap: _publicando
-                    ? null
-                    : () => setState(() { _animales[i].dispose(); _animales.removeAt(i); }),
-                child: Container(
-                  padding: const EdgeInsets.all(7),
-                  decoration: BoxDecoration(
-                    color: Colors.red.shade50,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.red.shade200),
-                  ),
-                  child: Icon(Icons.delete_outline, size: 15, color: Colors.red.shade400),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          // Fotos (principal + 2da)
-          Column(children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Image.file(File(a.foto1.path), width: 72, height: 72, fit: BoxFit.cover),
-            ),
-            const SizedBox(height: 6),
-            GestureDetector(
-              onTap: () => _pickSegundaFoto(i),
-              child: a.foto2 != null
-                ? Stack(children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: Image.file(File(a.foto2!.path),
-                          width: 72, height: 72, fit: BoxFit.cover),
-                    ),
-                    Positioned(top: 3, right: 3,
-                      child: GestureDetector(
-                        onTap: () => setState(() => a.foto2 = null),
-                        child: Container(
-                          decoration: const BoxDecoration(
-                              color: Colors.black54, shape: BoxShape.circle),
-                          padding: const EdgeInsets.all(2),
-                          child: const Icon(Icons.close, size: 12, color: Colors.white),
-                        ),
-                      )),
-                  ])
-                : Container(
-                    width: 72, height: 40,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Botón eliminar
+            Align(
+              alignment: Alignment.centerRight,
+              child: Tooltip(
+                message: 'Eliminar',
+                child: GestureDetector(
+                  // Mismo motivo que el botón "atrás" de _appBar(): borrar
+                  // un draft mientras se publica puede tirar abajo un
+                  // publicarUno() en curso sobre ESE mismo índice.
+                  onTap: _publicando
+                      ? null
+                      : () => setState(() {
+                          _animales[i].dispose();
+                          _animales.removeAt(i);
+                        }),
+                  child: Container(
+                    padding: const EdgeInsets.all(7),
                     decoration: BoxDecoration(
-                      color: appTeal.withValues(alpha: 0.07),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: appTeal.withValues(alpha: 0.3), width: 1.2),
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.red.shade200),
                     ),
-                    child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                      Icon(Icons.add_a_photo_outlined, size: 15,
-                          color: appTeal.withValues(alpha: 0.7)),
-                      const SizedBox(height: 2),
-                      Text('+2da foto',
-                          style: TextStyle(fontSize: 8, color: appTeal.withValues(alpha: 0.8))),
-                    ]),
+                    child: Icon(
+                      Icons.delete_outline,
+                      size: 15,
+                      color: Colors.red.shade400,
+                    ),
                   ),
-            ),
-          ]),
-          const SizedBox(width: 12),
-          // Nombre + resumen datos comunes
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Animal ${i + 1}',
-                style: TextStyle(fontSize: 11, color: Colors.grey.shade400,
-                    fontWeight: FontWeight.w600)),
-            const SizedBox(height: 6),
-            TextField(
-              controller: a.nombreCtl,
-              maxLength: 60,
-              decoration: InputDecoration(
-                hintText: 'Nombre (opcional)',
-                hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
-                filled: true,
-                fillColor: const Color(0xFFF7F7F7),
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
               ),
             ),
             const SizedBox(height: 8),
-            Wrap(spacing: 6, runSpacing: 4, children: [
-              _selectableMiniChip(
-                valor: a.especieOverride ?? _especie,
-                opciones: const ['Perro', 'Gato', 'Otro'],
-                color: appTeal,
-                onChanged: (v) => setState(() => a.especieOverride = v),
-              ),
-              _selectableMiniChip(
-                valor: a.urgenciaOverride ?? _urgencia,
-                opciones: const ['Alta', 'Media', 'Baja'],
-                color: (a.urgenciaOverride ?? _urgencia) == 'Alta'
-                    ? const Color(0xFFD32F2F)
-                    : (a.urgenciaOverride ?? _urgencia) == 'Media'
-                        ? const Color(0xFFE65100) : appTeal,
-                onChanged: (v) => setState(() => a.urgenciaOverride = v),
-              ),
-              if (_ciudad.isNotEmpty) _miniChip(_ciudad, Colors.grey.shade700),
-            ]),
-          ])),
-        ]),
-          const SizedBox(height: 10),
-          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            Text('Descripción (opcional)',
-                style: TextStyle(fontSize: 11, color: Colors.grey.shade700, fontWeight: FontWeight.w600)),
-            GestureDetector(
-              onTap: () {
-                final nombre = a.nombreCtl.text.trim().isNotEmpty
-                    ? a.nombreCtl.text.trim() : 'Animal ${i + 1}';
-                final plantilla =
-                    '$nombre fue encontrado/a [contá cómo o dónde lo/la encontraste]. '
-                    'Lo/la que lo/la hace único/a es [una costumbre, gesto o anécdota que lo/la describa]. '
-                    'Ya pasó por mucho. Ahora solo le falta alguien que decida quedarse. '
-                    '¿Serás vos?';
-                setState(() {
-                  a.descCtl.value = TextEditingValue(
-                    text: plantilla,
-                    selection: TextSelection.collapsed(offset: plantilla.length),
-                  );
-                });
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: appTeal.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: appTeal.withValues(alpha: 0.3)),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Fotos (principal + 2da)
+                Column(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Image.file(
+                        File(a.foto1.path),
+                        width: 72,
+                        height: 72,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    GestureDetector(
+                      onTap: () => _pickSegundaFoto(i),
+                      child: a.foto2 != null
+                          ? Stack(
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: Image.file(
+                                    File(a.foto2!.path),
+                                    width: 72,
+                                    height: 72,
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
+                                Positioned(
+                                  top: 3,
+                                  right: 3,
+                                  child: GestureDetector(
+                                    onTap: () => setState(() => a.foto2 = null),
+                                    child: Container(
+                                      decoration: const BoxDecoration(
+                                        color: Colors.black54,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      padding: const EdgeInsets.all(2),
+                                      child: const Icon(
+                                        Icons.close,
+                                        size: 12,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            )
+                          : Container(
+                              width: 72,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: appTeal.withValues(alpha: 0.07),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: appTeal.withValues(alpha: 0.3),
+                                  width: 1.2,
+                                ),
+                              ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.add_a_photo_outlined,
+                                    size: 15,
+                                    color: appTeal.withValues(alpha: 0.7),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '+2da foto',
+                                    style: TextStyle(
+                                      fontSize: 8,
+                                      color: appTeal.withValues(alpha: 0.8),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                    ),
+                  ],
                 ),
-                child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                  Text('✨', style: TextStyle(fontSize: 10)),
-                  SizedBox(width: 3),
-                  Text('Usar plantilla',
-                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: appTeal)),
-                ]),
+                const SizedBox(width: 12),
+                // Nombre + resumen datos comunes
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Animal ${i + 1}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.grey.shade400,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      TextField(
+                        controller: a.nombreCtl,
+                        maxLength: 30,
+                        decoration: InputDecoration(
+                          hintText: 'Nombre (opcional)',
+                          hintStyle: TextStyle(
+                            color: Colors.grey.shade400,
+                            fontSize: 13,
+                          ),
+                          filled: true,
+                          fillColor: const Color(0xFFF7F7F7),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide.none,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: [
+                          _selectableMiniChip(
+                            valor: a.especieOverride ?? _especie,
+                            opciones: const ['Perro', 'Gato', 'Otro'],
+                            color: appTeal,
+                            onChanged: (v) =>
+                                setState(() => a.especieOverride = v),
+                          ),
+                          _selectableMiniChip(
+                            valor: a.urgenciaOverride ?? _urgencia,
+                            opciones: const ['Alta', 'Media', 'Baja'],
+                            color: (a.urgenciaOverride ?? _urgencia) == 'Alta'
+                                ? const Color(0xFFD32F2F)
+                                : (a.urgenciaOverride ?? _urgencia) == 'Media'
+                                ? const Color(0xFFE65100)
+                                : appTeal,
+                            onChanged: (v) =>
+                                setState(() => a.urgenciaOverride = v),
+                          ),
+                          if (_ciudad.isNotEmpty)
+                            _miniChip(_ciudad, Colors.grey.shade700),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Descripción (opcional)',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.grey.shade700,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () {
+                    final nombre = a.nombreCtl.text.trim().isNotEmpty
+                        ? a.nombreCtl.text.trim()
+                        : 'Animal ${i + 1}';
+                    final plantilla =
+                        '$nombre fue encontrado/a [contá cómo o dónde lo/la encontraste]. '
+                        'Lo/la que lo/la hace único/a es [una costumbre, gesto o anécdota que lo/la describa]. '
+                        'Ya pasó por mucho. Ahora solo le falta alguien que decida quedarse. '
+                        '¿Serás vos?';
+                    setState(() {
+                      a.descCtl.value = TextEditingValue(
+                        text: plantilla,
+                        selection: TextSelection.collapsed(
+                          offset: plantilla.length,
+                        ),
+                      );
+                    });
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: appTeal.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: appTeal.withValues(alpha: 0.3)),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('✨', style: TextStyle(fontSize: 10)),
+                        SizedBox(width: 3),
+                        Text(
+                          'Usar plantilla',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: appTeal,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            TextField(
+              controller: a.descCtl,
+              maxLines: 3,
+              maxLength: 1000,
+              decoration: InputDecoration(
+                hintText:
+                    'Estado del animal, dónde fue encontrado, necesidades especiales...',
+                hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 12),
+                filled: true,
+                fillColor: const Color(0xFFF7F7F7),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
               ),
+              style: const TextStyle(fontSize: 13),
             ),
-          ]),
-          const SizedBox(height: 6),
-          TextField(
-            controller: a.descCtl,
-            maxLines: 3,
-            maxLength: 1000,
-            decoration: InputDecoration(
-              hintText: 'Estado del animal, dónde fue encontrado, necesidades especiales...',
-              hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 12),
-              filled: true,
-              fillColor: const Color(0xFFF7F7F7),
-              border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            ),
-            style: const TextStyle(fontSize: 13),
-          ),
-          ]),
-        );
+          ],
+        ),
+      );
     },
   );
 
@@ -773,29 +1109,64 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> with TardandoMuchoMix
           child: ElevatedButton(
             onPressed: _publicando ? null : _publicar,
             style: ElevatedButton.styleFrom(
-              backgroundColor: appDark, foregroundColor: Colors.white,
+              backgroundColor: appDark,
+              foregroundColor: Colors.white,
+              // Ver el mismo comentario en subir_rescate_screen.dart: sin
+              // esto, Material pinta el botón deshabilitado con sus propios
+              // colores grises de tema y el aviso de "tardando más de lo
+              // normal" quedaba casi ilegible encima. Hallazgo real de
+              // Eliza, en modo avión.
+              disabledBackgroundColor: appDark,
+              disabledForegroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
               elevation: 0,
             ),
             child: _publicando
-                ? Column(mainAxisSize: MainAxisSize.min, children: [
-                    Row(mainAxisSize: MainAxisSize.min, children: [
-                      const SizedBox(height: 20, width: 20,
-                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
-                      const SizedBox(width: 10),
-                      Text('Publicando $_procesados de ${_animales.length}...',
-                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white)),
-                    ]),
-                    if (tardandoMucho) ...[
-                      const SizedBox(height: 6),
-                      const Text('Esto está tardando más de lo normal. Revisá tu conexión',
+                ? Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            'Publicando $_procesados de ${_animales.length}...',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (tardandoMucho) ...[
+                        const SizedBox(height: 6),
+                        const Text(
+                          'Esto está tardando más de lo normal. Revisá tu conexión',
                           textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: 11, color: Colors.white70)),
+                          style: TextStyle(fontSize: 11, color: Colors.white70),
+                        ),
+                      ],
                     ],
-                  ])
-                : Text('Publicar ${_animales.length} animales 🐾',
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  )
+                : Text(
+                    'Publicar ${_animales.length} animales 🐾',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
           ),
         ),
       );
@@ -805,45 +1176,72 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> with TardandoMuchoMix
       child: SizedBox(
         width: double.infinity,
         child: ElevatedButton(
-          onPressed: _animales.isNotEmpty ? () => setState(() => _paso++) : null,
+          onPressed: _animales.isNotEmpty
+              ? () => setState(() => _paso++)
+              : null,
           style: ElevatedButton.styleFrom(
-            backgroundColor: appTeal, foregroundColor: Colors.white,
+            backgroundColor: appTeal,
+            foregroundColor: Colors.white,
             disabledBackgroundColor: Colors.grey.shade200,
             padding: const EdgeInsets.symmetric(vertical: 16),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
             elevation: 0,
           ),
           child: Text(
-            _paso == 0 ? 'Siguiente  →  Datos comunes' : 'Siguiente  →  Revisar animales',
-            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+            _paso == 0
+                ? 'Siguiente  →  Datos comunes'
+                : 'Siguiente  →  Revisar animales',
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+          ),
         ),
       ),
     );
   }
 
-  Widget _label(String t) => Text(t,
-      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
-          letterSpacing: 1.1, color: Colors.grey.shade700));
+  Widget _label(String t) => Text(
+    t,
+    style: TextStyle(
+      fontSize: 11,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 1.1,
+      color: Colors.grey.shade700,
+    ),
+  );
 
-  Widget _chips(List<String> opts, String sel, ValueChanged<String> fn, Color color) =>
-      Wrap(spacing: 8, runSpacing: 8, children: opts.map((o) {
-        final active = o == sel;
-        return GestureDetector(
-          onTap: () => fn(o),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-            decoration: BoxDecoration(
-              color: active ? color : Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: active ? color : Colors.grey.shade300),
-            ),
-            child: Text(o, style: TextStyle(
-                fontSize: 13, fontWeight: FontWeight.w600,
-                color: active ? Colors.white : Colors.grey.shade700)),
+  Widget _chips(
+    List<String> opts,
+    String sel,
+    ValueChanged<String> fn,
+    Color color,
+  ) => Wrap(
+    spacing: 8,
+    runSpacing: 8,
+    children: opts.map((o) {
+      final active = o == sel;
+      return GestureDetector(
+        onTap: () => fn(o),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+          decoration: BoxDecoration(
+            color: active ? color : Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: active ? color : Colors.grey.shade300),
           ),
-        );
-      }).toList());
+          child: Text(
+            o,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: active ? Colors.white : Colors.grey.shade700,
+            ),
+          ),
+        ),
+      );
+    }).toList(),
+  );
 
   Widget _miniChip(String label, Color color) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -852,8 +1250,10 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> with TardandoMuchoMix
       borderRadius: BorderRadius.circular(20),
       border: Border.all(color: color.withValues(alpha: 0.3)),
     ),
-    child: Text(label,
-        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: color)),
+    child: Text(
+      label,
+      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: color),
+    ),
   );
 
   Widget _selectableMiniChip({
@@ -867,32 +1267,55 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> with TardandoMuchoMix
         final picked = await showModalBottomSheet<String>(
           context: context,
           shape: const RoundedRectangleBorder(
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
           builder: (_) => Padding(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Container(width: 36, height: 4,
-                  decoration: BoxDecoration(color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(2))),
-              const SizedBox(height: 16),
-              Wrap(spacing: 8, runSpacing: 8, children: opciones.map((o) {
-                final active = o == valor;
-                return GestureDetector(
-                  onTap: () => Navigator.pop(context, o),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: active ? color : Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: active ? color : Colors.grey.shade300),
-                    ),
-                    child: Text(o, style: TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.w600,
-                        color: active ? Colors.white : Colors.grey.shade700)),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
                   ),
-                );
-              }).toList()),
-            ]),
+                ),
+                const SizedBox(height: 16),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: opciones.map((o) {
+                    final active = o == valor;
+                    return GestureDetector(
+                      onTap: () => Navigator.pop(context, o),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: active ? color : Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: active ? color : Colors.grey.shade300,
+                          ),
+                        ),
+                        child: Text(
+                          o,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: active ? Colors.white : Colors.grey.shade700,
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
           ),
         );
         if (picked != null) onChanged(picked);
@@ -904,11 +1327,21 @@ class _SubirLoteScreenState extends State<SubirLoteScreen> with TardandoMuchoMix
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: color.withValues(alpha: 0.4)),
         ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Text(valor, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: color)),
-          const SizedBox(width: 3),
-          Icon(Icons.expand_more, size: 11, color: color),
-        ]),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              valor,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
+            ),
+            const SizedBox(width: 3),
+            Icon(Icons.expand_more, size: 11, color: color),
+          ],
+        ),
       ),
     );
   }

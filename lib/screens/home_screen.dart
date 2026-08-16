@@ -2,23 +2,26 @@ import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:geocoding/geocoding.dart';
 import '../theme.dart';
+import '../domain/reglas_negocio.dart';
+import '../widgets/avatares.dart';
+import '../widgets/cambiar_estado_sheet.dart';
+import '../widgets/cambiar_rol_debug.dart';
+import '../widgets/fondo_decorativo.dart';
+import '../widgets/fotos.dart';
+import '../widgets/texto_sin_desborde.dart';
 import '../services/notificaciones_service.dart';
+import '../services/ubicacion_service.dart';
+import '../services/ubicacion_lifecycle.dart';
+import '../data/chats_repository.dart';
 import '../data/creator_role.dart';
 import '../data/rescates_repository.dart';
 import '../data/solicitudes_repository.dart';
-import 'subir_rescate_screen.dart';
-import 'solicitudes_rescatista_screen.dart';
-import 'adoptante_chats_screen.dart';
-import 'perfil_rescatista_screen.dart';
-import 'favoritos_screen.dart';
-import 'perfil_adoptante_screen.dart';
-import 'mis_rescates_screen.dart';
+import 'package:go_router/go_router.dart';
+import '../routing/app_router.dart';
+import 'solicitudes_rescatista_screen.dart'
+    show verificarVencimientos, verificarSeguimientoPostAdopcion, contactarPersonaEnProceso;
 import 'adoptante_feed_screen.dart';
-import 'aliados_screen.dart';
-import 'mis_solicitudes_screen.dart';
 import 'solicitudes_preview.dart';
 
 // ─── Home Screen ──────────────────────────────────────────────────────────────
@@ -29,11 +32,15 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen>
+    with WidgetsBindingObserver, ReintentoUbicacionAlVolver {
   bool? _isRescatista;
   List<String> _roles = [];
   int _selectedNav = 0;
   String _ciudad = '';
+  // Evita que dos detecciones corran encima (el reintento al volver a
+  // primer plano puede caer mientras la primera sigue en curso).
+  bool _detectandoCiudad = false;
   final _rescatesRepo = RescatesRepository();
   final _solicitudesRepo = SolicitudesRepository();
 
@@ -58,16 +65,21 @@ class _HomeScreenState extends State<HomeScreen> {
   );
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _misRescatesStream =
       _rescatesRepo.misRescates(uid: _uid, role: CreatorRole.rescatista);
-  late final Stream<QuerySnapshot> _chatsRescatistaStream = FirebaseFirestore
-      .instance
-      .collection('chats')
-      .where('rescatistaId', isEqualTo: _uid)
-      .snapshots();
-  late final Stream<QuerySnapshot> _chatsAdoptanteStream = FirebaseFirestore
-      .instance
-      .collection('chats')
-      .where('adoptanteId', isEqualTo: _uid)
-      .snapshots();
+  final _chatsRepo = ChatsRepository();
+  late final Stream<QuerySnapshot> _chatsRescatistaStream = _chatsRepo.mios(
+    uid: _uid,
+    esRescatista: true,
+  );
+  // Consultas que ESTA cuenta le mandó a un negocio aliado (acá `adoptanteId`
+  // soy yo, no `rescatistaId` — ver contarMensajesSinLeer en domain/reglas_negocio.dart).
+  // Sin esto, el badge de "mensajes sin leer" nunca contaba una respuesta a
+  // una consulta propia, aunque sí apareciera en la lista de Chats.
+  late final Stream<QuerySnapshot> _consultasEnviadasStream = _chatsRepo
+      .consultasEnviadas(uid: _uid);
+  late final Stream<QuerySnapshot> _chatsAdoptanteStream = _chatsRepo.mios(
+    uid: _uid,
+    esRescatista: false,
+  );
 
   static const _rolLabel = {
     'rescatista': 'Rescatista',
@@ -91,32 +103,40 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  Future<void> _detectarCiudad() async {
+  // El reintento al volver de segundo plano (GPS apagado → lo prenden sin
+  // cerrar la app → vuelven) vive en ReintentoUbicacionAlVolver — acá solo
+  // queda decirle qué mirar. Ver ese archivo para el hallazgo completo
+  // (real de Eliza: "en el rescatista no aparece absolutamente nada"
+  // después de prender el GPS sin reiniciar la app).
+  @override
+  bool get yaTieneUbicacion => _ciudad.isNotEmpty;
+  @override
+  bool get detectandoUbicacion => _detectandoCiudad;
+  @override
+  void reintentarSinPedirPermiso() => _detectarCiudad(pedirPermiso: false);
+
+  /// Pin de ciudad del saludo ("Hola, Eliza 📍 Córdoba"). Todo el detalle de
+  /// servicio/permiso/GPS/geocoding y sus reintentos vive en
+  /// UbicacionService — acá solo queda la decisión propia de esta pantalla:
+  /// `siAlcanza`, o sea que la última posición conocida es suficiente para
+  /// un pin a nivel ciudad y no vale la pena encender el GPS en cada
+  /// arranque (es el comportamiento que ya tenía con `pos ??=`).
+  ///
+  /// Ciudad vacía no es un caso de error acá: el pin simplemente no se
+  /// dibuja, sin avisos.
+  Future<void> _detectarCiudad({bool pedirPermiso = true}) async {
+    _detectandoCiudad = true;
     try {
-      var perm = await Geolocator.checkPermission();
-      if (perm == LocationPermission.denied) {
-        perm = await Geolocator.requestPermission();
-      }
-      if (perm == LocationPermission.denied ||
-          perm == LocationPermission.deniedForever)
-        return;
-
-      Position? pos = await Geolocator.getLastKnownPosition();
-      pos ??= await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.low,
-        ),
+      final resultado = await UbicacionService.actual(
+        conCiudad: true,
+        ultimaConocida: UsoUltimaConocida.siAlcanza,
+        pedirPermisoSiFalta: pedirPermiso,
       );
-
-      final marks = await placemarkFromCoordinates(pos.latitude, pos.longitude);
-      if (marks.isEmpty) return;
-      final p = marks.first;
-      final ciudad = p.locality?.isNotEmpty == true
-          ? p.locality!
-          : (p.administrativeArea ?? '');
-      if (!mounted || ciudad.isEmpty) return;
-      setState(() => _ciudad = ciudad);
-    } catch (_) {}
+      if (!mounted || resultado.ciudad.isEmpty) return;
+      setState(() => _ciudad = resultado.ciudad);
+    } finally {
+      _detectandoCiudad = false;
+    }
   }
 
   Future<void> _cargarRol() async {
@@ -128,14 +148,43 @@ class _HomeScreenState extends State<HomeScreen> {
         .get();
     if (!mounted) return;
     final roles = List<String>.from((doc.data()?['roles'] as List?) ?? []);
+    final ultimoRolActivo = doc.data()?['ultimoRolActivo'] as String?;
     setState(() {
       _roles = roles;
-      _isRescatista = roles.contains('rescatista');
+      // No pisa el rol activo si sigue siendo válido — antes esto siempre
+      // recalculaba _isRescatista = roles.contains('rescatista') sin
+      // importar cuál estaba activo, así que cualquier cuenta con doble
+      // rol (adoptante + rescatista) volvía a Rescatista cada vez que
+      // _cargarRol() corría — incluido después de entrar a Perfil estando
+      // en Adoptante y apretar atrás, porque esa pantalla también dispara
+      // el refresco. Hallazgo real de Eliza probando en el teléfono.
+      final rolActivoSigueValido = _isRescatista == true
+          ? roles.contains('rescatista')
+          : _isRescatista == false
+          ? roles.contains('adoptante')
+          : false;
+      if (!rolActivoSigueValido) {
+        // _isRescatista == null significa sesión nueva de verdad (recién
+        // hecho login, nunca se tocó el toggle todavía en esta corrida) —
+        // ahí SÍ vale usar el último rol que la persona eligió a mano,
+        // guardado en `ultimoRolActivo` (ver _rolToggle). Antes no había
+        // memoria de esto en ningún lado, así que cerrar sesión y volver a
+        // entrar con doble rol siempre caía en Rescatista sin importar qué
+        // se estuviera usando antes de salir — hallazgo real de Eliza.
+        // Si el rol guardado ya no es válido (se lo sacaron a la cuenta),
+        // se ignora y se cae al mismo criterio de siempre.
+        _isRescatista =
+            (_isRescatista == null &&
+                ultimoRolActivo == 'adoptante' &&
+                roles.contains('adoptante'))
+            ? false
+            : roles.contains('rescatista');
+      }
     });
   }
 
   // ── Debug: cambio rápido de rol (solo en builds de desarrollo) ─────────────
-  // El diálogo/escritura en sí viven en mostrarCambiarRolDebug (theme.dart,
+  // El diálogo/escritura en sí viven en mostrarCambiarRolDebug (widgets/cambiar_rol_debug.dart,
   // compartida entre 5 pantallas que antes cada una tenía su propia copia)
   // — acá solo se agrega lo propio de ESTA pantalla: releer el rol después,
   // porque a diferencia de las otras, home_screen.dart cachea
@@ -194,10 +243,24 @@ class _HomeScreenState extends State<HomeScreen> {
               (_isRescatista == false && rol != 'rescatista');
           final label = _rolLabel[rol] ?? rol;
           return GestureDetector(
-            onTap: () => setState(() {
-              _isRescatista = rol == 'rescatista';
-              _selectedNav = 0;
-            }),
+            onTap: () {
+              setState(() {
+                _isRescatista = rol == 'rescatista';
+                _selectedNav = 0;
+              });
+              // Best-effort, sin esperar ni avisar si falla — es solo para
+              // recordar el rol la PRÓXIMA vez que la persona inicie
+              // sesión (ver _cargarRol), no algo que deba trabar el toggle
+              // ni mostrar un error si no hay señal en ese instante.
+              final uid = FirebaseAuth.instance.currentUser?.uid;
+              if (uid != null) {
+                FirebaseFirestore.instance
+                    .collection('usuarios')
+                    .doc(uid)
+                    .set({'ultimoRolActivo': rol}, SetOptions(merge: true))
+                    .catchError((_) {});
+              }
+            },
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 180),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
@@ -228,35 +291,81 @@ class _HomeScreenState extends State<HomeScreen> {
         body: Center(child: CircularProgressIndicator(color: appTeal)),
       );
     }
-    return Scaffold(
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          Container(color: appBg),
-          const LeafOverlay(),
-          SafeArea(
-            child: _isRescatista!
-                ? _rescatistaView(context)
-                : _adoptanteView(context),
-          ),
-        ],
-      ),
-      floatingActionButton: kDebugMode
-          ? FloatingActionButton.small(
-              onPressed: _cambiarRolDebug,
-              backgroundColor: Colors.purple.shade100,
-              elevation: 4,
-              tooltip: 'Cambiar rol (debug)',
-              child: Icon(Icons.developer_mode, color: Colors.purple.shade700),
-            )
-          : null,
-      bottomNavigationBar: _bottomNav(),
+    // Único lugar que calcula "mensajes sin leer" del lado rescatista de
+    // esta cuenta — el panel (_statsRowDynamic) y el ícono de Chats de
+    // abajo (_bottomNav) reciben el mismo número ya calculado en vez de
+    // suscribirse cada uno por su cuenta a los mismos streams y llamar a
+    // contarMensajesSinLeer por separado. Hallazgo real de Eliza: con dos
+    // StreamBuilder independientes escuchando exactamente los mismos
+    // datos, uno podía recibir el snapshot nuevo de Firestore un frame
+    // antes que el otro (o quedarse esperando si alguno tiene un problema
+    // puntual) — el panel decía "2 mensajes sin leer" mientras el ícono de
+    // abajo no mostraba ningún número, y entrando a Chats no había nada
+    // pendiente. Con un solo cálculo, estructuralmente no pueden mostrar
+    // números distintos nunca más, sin importar qué tan compleja se ponga
+    // la lógica de conteo más adelante.
+    return StreamBuilder<QuerySnapshot>(
+      stream: _chatsRescatistaStream,
+      builder: (context, chatSnap) {
+        return StreamBuilder<QuerySnapshot>(
+          stream: _consultasEnviadasStream,
+          builder: (context, consultaSnap) {
+            final noLeidosRescatista = contarMensajesSinLeer(
+              recibidos: chatSnap.data?.docs,
+              consultasEnviadas: consultaSnap.data?.docs,
+              esAlbergue: false,
+              uid: _uid,
+            );
+            return Scaffold(
+              body: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Container(color: appBg),
+                  const LeafOverlay(),
+                  SafeArea(
+                    // IndexedStack en vez de un condicional: las dos vistas quedan
+                    // montadas siempre, así el toggle Adoptante/Rescatista no
+                    // destruye el State del feed al cambiar de lado. Antes cada
+                    // cambio de rol recreaba AdoptanteFeedScreen desde cero —
+                    // sus StreamBuilder (línea ~447) arrancaban en
+                    // ConnectionState.waiting otra vez y mostraban el spinner un
+                    // instante antes de que Firestore volviera a entregar los
+                    // datos, aunque fueran los mismos de hacía un segundo. Hallazgo
+                    // real: "entro a ver los adoptantes y parpadea antes de cargar
+                    // los animalitos" al volver de Negocios y tocar el toggle.
+                    child: IndexedStack(
+                      index: _isRescatista! ? 0 : 1,
+                      children: [
+                        _rescatistaView(context, noLeidosRescatista),
+                        _adoptanteView(context),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              floatingActionButton: kDebugMode
+                  ? FloatingActionButton.small(
+                      onPressed: _cambiarRolDebug,
+                      backgroundColor: Colors.purple.shade100,
+                      elevation: 4,
+                      tooltip: 'Cambiar rol (debug)',
+                      child: Icon(
+                        Icons.developer_mode,
+                        color: Colors.purple.shade700,
+                      ),
+                    )
+                  : null,
+              bottomNavigationBar: _bottomNav(noLeidosRescatista),
+            );
+          },
+        );
+      },
     );
   }
 
   // ── Vista Rescatista ──────────────────────────────────────────────────────
 
-  Widget _rescatistaView(BuildContext ctx) {
+  Widget _rescatistaView(BuildContext ctx, int noLeidosRescatista) {
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       child: Column(
@@ -293,20 +402,18 @@ class _HomeScreenState extends State<HomeScreen> {
           // solo (sin ciudad al lado) cuando el GPS estaba bloqueado o sin
           // detectar, quedando un pin "flotando" sin explicación.
           if (_ciudad.isNotEmpty)
-            Row(
-              children: [
-                const Icon(Icons.location_on, size: 14, color: appTeal),
-                const SizedBox(width: 2),
-                Text(
-                  _ciudad,
-                  style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
-                ),
-              ],
+            // TextoSinDesborde (widgets/texto_sin_desborde.dart): una ciudad larga que viene del
+            // geocoder empujaba el resto de la fila fuera de la pantalla.
+            TextoSinDesborde(
+              texto: _ciudad,
+              separacion: 2,
+              antes: const Icon(Icons.location_on, size: 14, color: appTeal),
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
             ),
           const SizedBox(height: 20),
           _label('ESTA SEMANA'),
           const SizedBox(height: 10),
-          _statsRowDynamic(),
+          _statsRowDynamic(noLeidosRescatista),
           const SizedBox(height: 16),
           _ctaCard(ctx),
           const SizedBox(height: 28),
@@ -314,12 +421,7 @@ class _HomeScreenState extends State<HomeScreen> {
             'ESPERAN RESPUESTA',
             'Solicitudes',
             'Ver todas',
-            onAction: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => const SolicitudesRescatistaScreen(),
-              ),
-            ),
+            onAction: () => context.push(AppRoutes.solicitudesRescatista),
           ),
           const SizedBox(height: 12),
           const SolicitudesPreview(role: CreatorRole.rescatista),
@@ -328,10 +430,7 @@ class _HomeScreenState extends State<HomeScreen> {
             'MIS ANIMALES',
             'Tus rescates activos',
             'Gestionar',
-            onAction: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const TodosLosRescatesScreen()),
-            ),
+            onAction: () => context.push(AppRoutes.misRescates),
           ),
           const SizedBox(height: 12),
           _misRescatesCarousel(),
@@ -400,7 +499,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             );
           }
-          final docs = snap.data?.docs ?? [];
+          final docs = [...snap.data?.docs ?? []];
           if (docs.isEmpty) {
             return Center(
               child: Text(
@@ -409,6 +508,22 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             );
           }
+          // En proceso de adopción y hogar de paso primero (necesitan
+          // atención activa), lo cerrado (adoptado/fallecido) al final —
+          // ver prioridadEstado() en domain/reglas_negocio.dart. Empate por fecha de
+          // publicación, más nuevo primero, para que el orden no salte
+          // solo porque Firestore devolvió los docs en otro orden.
+          docs.sort((a, b) {
+            final pa = prioridadEstado(a.data()['estadoAdopcion'] as String?);
+            final pb = prioridadEstado(b.data()['estadoAdopcion'] as String?);
+            if (pa != pb) return pa.compareTo(pb);
+            final ta = a.data()['creadoEn'] as Timestamp?;
+            final tb = b.data()['creadoEn'] as Timestamp?;
+            if (ta == null && tb == null) return 0;
+            if (ta == null) return 1;
+            if (tb == null) return -1;
+            return tb.compareTo(ta);
+          });
           return ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: docs.length,
@@ -682,76 +797,60 @@ class _HomeScreenState extends State<HomeScreen> {
     ),
   );
 
-  Widget _statsRowDynamic() {
+  Widget _statsRowDynamic(int noLeidosRescatista) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      key: const ValueKey('stats-solicitudes-pendientes'),
       stream: _solicitudesPendientesStream,
       builder: (context, snap) {
         final count = snap.data?.docs.length ?? 0;
-        return StreamBuilder<QuerySnapshot>(
-          stream: _chatsRescatistaStream,
-          builder: (context, chatSnap) {
-            final noLeidos = (chatSnap.data?.docs ?? []).where((doc) {
-              final d = doc.data() as Map<String, dynamic>;
-              if ((d['tipoSolicitud'] as String? ?? '') == 'consulta_aliado')
-                return false;
-              if ((d['creadoPor'] as String? ?? 'rescatista') == 'albergue')
-                return false;
-              return ((d['noLeidosRescatista'] as int?) ?? 0) > 0;
-            }).length;
-            return Row(
-              children: [
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const SolicitudesRescatistaScreen(),
-                      ),
-                    ),
-                    child: _stat(
-                      '$count',
-                      'Nuevas\nsolicitudes',
-                      const Color(0xFFF9DDD5),
-                      const Color(0xFFCC4422),
-                    ),
+        return Row(
+          children: [
+            Expanded(
+              child: GestureDetector(
+                onTap: () => context.push(AppRoutes.solicitudesRescatista),
+                child: _stat(
+                  '$count',
+                  'Nuevas\nsolicitudes',
+                  const Color(0xFFF9DDD5),
+                  const Color(0xFFCC4422),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: GestureDetector(
+                onTap: () => context.push(
+                  AppRoutes.adoptanteChats,
+                  extra: (
+                    esRescatista: true,
+                    soloConsultas: false,
+                    esAlbergue: false,
                   ),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            const AdoptanteChatsScreen(esRescatista: true),
-                      ),
-                    ),
-                    child: _stat(
-                      '$noLeidos',
-                      'Mensajes\nsin leer',
-                      const Color(0xFFD8EEFA),
-                      const Color(0xFF2070B0),
-                    ),
-                  ),
+                child: _stat(
+                  '$noLeidosRescatista',
+                  'Mensajes\nsin leer',
+                  const Color(0xFFD8EEFA),
+                  const Color(0xFF2070B0),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                    stream: _misRescatesStream,
-                    builder: (context, rescSnap) {
-                      final total = (rescSnap.data?.docs ?? []).length;
-                      return _stat(
-                        '$total',
-                        'Animales\nrescatados',
-                        Colors.white,
-                        appInk,
-                      );
-                    },
-                  ),
-                ),
-              ],
-            );
-          },
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                stream: _misRescatesStream,
+                builder: (context, rescSnap) {
+                  final total = (rescSnap.data?.docs ?? []).length;
+                  return _stat(
+                    '$total',
+                    'Animales\nrescatados',
+                    Colors.white,
+                    appInk,
+                  );
+                },
+              ),
+            ),
+          ],
         );
       },
     );
@@ -788,10 +887,7 @@ class _HomeScreenState extends State<HomeScreen> {
   );
 
   Widget _ctaCard(BuildContext ctx) => GestureDetector(
-    onTap: () => Navigator.push(
-      ctx,
-      MaterialPageRoute(builder: (_) => const SubirRescateScreen()),
-    ),
+    onTap: () => ctx.push(AppRoutes.subirRescate, extra: false),
     child: Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -841,7 +937,7 @@ class _HomeScreenState extends State<HomeScreen> {
     ),
   );
 
-  Widget _bottomNav() => Container(
+  Widget _bottomNav(int noLeidosRescatista) => Container(
     decoration: BoxDecoration(
       color: Colors.white,
       boxShadow: [
@@ -864,58 +960,48 @@ class _HomeScreenState extends State<HomeScreen> {
                 Icons.add_circle_outline,
                 'Subir',
                 1,
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const SubirRescateScreen()),
-                ),
+                onTap: () => context.push(AppRoutes.subirRescate, extra: false),
               ),
               _navTap(
                 Icons.notifications_outlined,
                 'Solicitudes',
                 2,
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const SolicitudesRescatistaScreen(),
+                onTap: () => context.push(AppRoutes.solicitudesRescatista),
+              ),
+              // Antes este badge era su propio StreamBuilder anidado,
+              // suscrito de nuevo a los mismos _chatsRescatistaStream /
+              // _consultasEnviadasStream que ya escuchaba build() más
+              // arriba para el panel — dos cálculos independientes de
+              // "mensajes sin leer" en la misma pantalla, con su propio
+              // riesgo de desincronizarse (frame de diferencia, filtro que
+              // cambia en uno y no en el otro). Ahora recibe el número ya
+              // calculado UNA sola vez en build() como parámetro — sin un
+              // segundo StreamBuilder acá, no hay dos cálculos que puedan
+              // divergir nunca más, ni un AsyncSnapshot propio que pueda
+              // quedarse con datos viejos al cambiar de rol (el bug real
+              // que tenían las ValueKey que este comentario reemplaza:
+              // "cambio rápido de rol y veo un número, pero no tengo
+              // ningún chat").
+              _navTapConBadge(
+                Icons.chat_bubble_outline,
+                'Chats',
+                noLeidosRescatista,
+                () => context.push(
+                  AppRoutes.adoptanteChats,
+                  extra: (
+                    esRescatista: true,
+                    soloConsultas: false,
+                    esAlbergue: false,
                   ),
                 ),
-              ),
-              StreamBuilder<QuerySnapshot>(
-                stream: _chatsRescatistaStream,
-                builder: (_, snap) {
-                  final unread = (snap.data?.docs ?? []).where((doc) {
-                    final d = doc.data() as Map<String, dynamic>;
-                    if ((d['tipoSolicitud'] as String? ?? '') ==
-                        'consulta_aliado')
-                      return false;
-                    if ((d['creadoPor'] as String? ?? 'rescatista') ==
-                        'albergue')
-                      return false;
-                    return ((d['noLeidosRescatista'] as int?) ?? 0) > 0;
-                  }).length;
-                  return _navTapConBadge(
-                    Icons.chat_bubble_outline,
-                    'Chats',
-                    unread,
-                    () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            const AdoptanteChatsScreen(esRescatista: true),
-                      ),
-                    ),
-                  );
-                },
               ),
               _navTap(
                 Icons.store_outlined,
                 'Negocios',
                 5,
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const AliadosScreen(esRescatista: true),
-                  ),
+                onTap: () => context.push(
+                  AppRoutes.aliados,
+                  extra: (esRescatista: true, esAlbergue: false),
                 ),
               ),
               // .then(_cargarRol): "Gestionar mis roles" vive en esta pantalla
@@ -929,12 +1015,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 Icons.person_outline,
                 'Perfil',
                 4,
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const PerfilRescatistaScreen(),
-                  ),
-                ).then((_) => _cargarRol()),
+                onTap: () => context
+                    .push(AppRoutes.perfilRescatista)
+                    .then((_) => _cargarRol()),
               ),
             ] else ...[
               _navItem(Icons.pets, 'Adoptar', 0),
@@ -942,44 +1025,50 @@ class _HomeScreenState extends State<HomeScreen> {
                 Icons.favorite_outline,
                 'Favoritos',
                 1,
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const FavoritosScreen()),
-                ),
+                onTap: () => context.push(AppRoutes.favoritos),
               ),
               _navTap(
                 Icons.assignment_outlined,
                 'Solicitudes',
                 2,
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const MisSolicitudesScreen(),
-                  ),
-                ),
+                onTap: () => context.push(AppRoutes.misSolicitudes),
               ),
               // Mismo orden que en Rescatista/Albergue/Aliado: Chats siempre va
               // después de Solicitudes, antes de Negocios/Perfil.
+              // Key propia — ver el comentario del badge de rescatista.
               StreamBuilder<QuerySnapshot>(
+                key: const ValueKey('badge-chats-adoptante'),
                 stream: _chatsAdoptanteStream,
                 builder: (_, snap) {
+                  // ChatsRepository.perteneceALaLista es la misma función
+                  // que decide qué chats muestra AdoptanteChatsScreen (sin
+                  // esRescatista) — antes este badge tenía su propia copia
+                  // a mano de esa regla de membresía (bug real, mismo
+                  // patrón que el badge de rescatista más abajo: excluía
+                  // TODA consulta a un negocio del conteo, sin importar con
+                  // qué sombrero se mandó, así que el ícono podía no
+                  // mostrar nada mientras la lista sí tenía una
+                  // conversación sin leer). Con la misma función acá, la
+                  // lista y el badge no pueden volver a divergir en esto.
                   final unread = (snap.data?.docs ?? []).where((doc) {
                     final d = doc.data() as Map<String, dynamic>;
-                    if ((d['tipoSolicitud'] as String? ?? '') ==
-                        'consulta_aliado')
-                      return false;
-                    return ((d['noLeidosAdoptante'] as int?) ?? 0) > 0;
+                    return ChatsRepository.perteneceALaLista(
+                          d,
+                          uid: _uid,
+                          esRescatista: false,
+                        ) &&
+                        ChatsRepository.noLeidosPara(
+                              d,
+                              uid: _uid,
+                              esRescatista: false,
+                            ) >
+                            0;
                   }).length;
                   return _navTapConBadge(
                     Icons.chat_bubble_outline,
                     'Chats',
                     unread,
-                    () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const AdoptanteChatsScreen(),
-                      ),
-                    ),
+                    () => context.push(AppRoutes.adoptanteChats),
                   );
                 },
               ),
@@ -987,11 +1076,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 Icons.store_outlined,
                 'Negocios',
                 3,
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const AliadosScreen(esRescatista: false),
-                  ),
+                onTap: () => context.push(
+                  AppRoutes.aliados,
+                  extra: (esRescatista: false, esAlbergue: false),
                 ),
               ),
               // .then(_cargarRol): mismo motivo que la rama de rescatista, más
@@ -1000,12 +1087,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 Icons.person_outline,
                 'Perfil',
                 4,
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const PerfilAdoptanteScreen(),
-                  ),
-                ).then((_) => _cargarRol()),
+                onTap: () => context
+                    .push(AppRoutes.perfilAdoptante, extra: _ciudad)
+                    .then((_) => _cargarRol()),
               ),
             ],
           ],
@@ -1103,7 +1187,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
 // ─── Avatar helper (global dentro del archivo) ───────────────────────────────
 
-// AvatarPersona (theme.dart), no un CircleAvatar armado a mano — antes,
+// AvatarPersona (widgets/avatares.dart), no un CircleAvatar armado a mano — antes,
 // si la foto de perfil de Google fallaba al cargar (sin señal, link
 // vencido), se veía un círculo de color vacío en vez de caer a la
 // inicial, justo en el avatar del encabezado del dashboard principal.

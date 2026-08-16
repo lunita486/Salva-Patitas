@@ -9,15 +9,15 @@ enum CreatorRole { rescatista, albergue }
 
 extension CreatorRoleValue on CreatorRole {
   String get firestoreValue => switch (this) {
-        CreatorRole.rescatista => 'rescatista',
-        CreatorRole.albergue => 'albergue',
-      };
+    CreatorRole.rescatista => 'rescatista',
+    CreatorRole.albergue => 'albergue',
+  };
 }
 
 /// Los documentos de `solicitudes` creados antes de que este campo
 /// existiera no tienen `creadoPor` — se tratan como 'rescatista' porque
 /// esa era la única variante posible en ese momento.
 CreatorRole creatorRoleFromFirestore(String? value) => switch (value) {
-      'albergue' => CreatorRole.albergue,
-      _ => CreatorRole.rescatista,
-    };
+  'albergue' => CreatorRole.albergue,
+  _ => CreatorRole.rescatista,
+};

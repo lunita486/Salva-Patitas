@@ -48,8 +48,9 @@ const _serverClientId =
 Future<void>? _gsiInicializando;
 Future<void> _asegurarGoogleSignInListo() async {
   try {
-    _gsiInicializando ??=
-        GoogleSignIn.instance.initialize(serverClientId: _serverClientId);
+    _gsiInicializando ??= GoogleSignIn.instance.initialize(
+      serverClientId: _serverClientId,
+    );
     await _gsiInicializando;
   } catch (_) {
     _gsiInicializando = null;
@@ -96,14 +97,13 @@ Future<ResultadoLogin> iniciarSesionGoogle() async {
   if (_authOcupado) return ResultadoLogin.ocupado;
   _marcarOcupado();
   try {
-    await _asegurarGoogleSignInListo()
-        .timeout(const Duration(seconds: 15));
+    await _asegurarGoogleSignInListo().timeout(const Duration(seconds: 15));
     // authenticate() muestra el selector de cuenta nativo y espera a que la
     // persona elija — por eso su timeout es más largo que los demás pasos,
     // que son solo de red.
-    final cuenta = await GoogleSignIn.instance
-        .authenticate()
-        .timeout(const Duration(seconds: 60));
+    final cuenta = await GoogleSignIn.instance.authenticate().timeout(
+      const Duration(seconds: 60),
+    );
     final credential = GoogleAuthProvider.credential(
       idToken: cuenta.authentication.idToken,
     );
@@ -121,12 +121,14 @@ Future<ResultadoLogin> iniciarSesionGoogle() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       try {
-        await UsuariosRepository().asegurarPerfilBase(
-          uid: user.uid,
-          nombre: user.displayName,
-          email: user.email,
-          foto: user.photoURL,
-        ).timeout(const Duration(seconds: 5));
+        await UsuariosRepository()
+            .asegurarPerfilBase(
+              uid: user.uid,
+              nombre: user.displayName,
+              email: user.email,
+              foto: user.photoURL,
+            )
+            .timeout(const Duration(seconds: 5));
       } catch (_) {}
     }
     _liberarOcupado();
