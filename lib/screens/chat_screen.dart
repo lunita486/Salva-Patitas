@@ -378,6 +378,14 @@ class _ChatScreenState extends State<ChatScreen> {
       AppRoutes.animalDetalle,
       extra: {
         ...d,
+        // `rescateId` es el NOMBRE del documento, no un campo adentro, así
+        // que `...d` no lo trae. Sin esta línea el mapa salía sin él, y
+        // volver al chat desde la ficha (ficha -> "Hacer una pregunta")
+        // caía en el esquema viejo de id por nombre: abría una
+        // conversación NUEVA en vez de reabrir esta misma, y creaba un
+        // chat sin nada contra lo cual anclarlo. Ver firestore.rules,
+        // chats.create.
+        'rescateId': rescateId,
         'nombre': (d['nombre'] as String?) ?? 'Sin nombre',
         'raza': (d['raza'] as String?) ?? 'Criolla',
         'ubicacion': (d['ubicacion'] as String?) ?? '',

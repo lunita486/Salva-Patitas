@@ -611,6 +611,19 @@ class ChatsRepository {
     String? fotoUrl,
     String? tipoSolicitud,
     bool avisoParaAmbosLados = false,
+    /// La solicitud que motiva este aviso, cuando la hay.
+    ///
+    /// Es el ANCLA del chat para las reglas de seguridad: un chat entre un
+    /// rescatista y un adoptante es legitimo si hay un animal real
+    /// (`rescateId`) o una solicitud real que los una. Sin ninguno de los
+    /// dos, la regla no puede distinguir este aviso de alguien que le
+    /// escribe a un desconocido, y por eso lo rechaza. Ver firestore.rules,
+    /// chats.create, rama (C).
+    ///
+    /// Solo hace falta en el camino sin `rescateId` (solicitudes viejas,
+    /// anteriores a que la regla lo volviera obligatorio). Con `rescateId`
+    /// el ancla ya es el animal.
+    String? solicitudId,
     /// El mensaje acompana un cambio de estado de la solicitud
     /// (aprobada/rechazada), que YA dispara su propia notificacion push
     /// desde onCambioEstadoSolicitud. Marcarlo asi hace que onNuevoMensaje
@@ -683,6 +696,8 @@ class ChatsRepository {
         escritoPorRescatista: true,
         camposChat: {
           if (existente == null) ...{
+            if (solicitudId != null && solicitudId.isNotEmpty)
+              'solicitudId': solicitudId,
             'adoptanteId': adoptanteId,
             'adoptanteNombre': adoptanteNombre,
             'animalNombre': animalNombre,

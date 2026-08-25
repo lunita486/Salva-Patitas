@@ -867,3 +867,206 @@ describe('chats', () => {
     },
   );
 });
+
+// ── chats.create — P0-1 de la auditoría del 2026-08-25 ─────────────────
+//
+// Esta era la regla MENOS probada de todas: la suite tenía casos de
+// `mensajes` (emisor falsificado, largo del texto) pero NINGUN caso
+// negativo de `chats.create`. Por eso el agujero sobrevivió — el caso
+// positivo lo ejercita la app todos los días, el negativo no lo prueba
+// nadie hasta que alguien lo usa.
+describe('chats — quién puede ABRIR una conversación (y contra quién)', () => {
+  // El ataque real, verificado explotable antes del arreglo: omitir
+  // `creadoPor` salteaba el anclaje entero, y onNuevoMensaje mandaba una
+  // push con título y cuerpo elegidos por quien atacaba.
+  it('un desconocido NO puede abrir un chat contra alguien sin relación, omitiendo creadoPor', async () => {
+    const db = como(OTRO);
+    await assertFails(setDoc(doc(db, 'chats', 'spam1'), {
+      rescatistaId: OTRO,
+      adoptanteId: ALBERGUE,
+      animalNombre: 'URGENTE: tu cuenta será suspendida',
+      ultimoMensaje: 'Entrá acá para no perderla',
+    }));
+  });
+
+  it('tampoco al revés (poniéndose de adoptante y a la víctima de rescatista)', async () => {
+    const db = como(OTRO);
+    await assertFails(setDoc(doc(db, 'chats', 'spam2'), {
+      rescatistaId: ALBERGUE,
+      adoptanteId: OTRO,
+      animalNombre: 'URGENTE',
+    }));
+  });
+
+  // La rama legada exige tieneRol sobre el DESTINATARIO. Sin el candado de
+  // `adoptanteId == uid()`, alcanzaba con auto-asignarse el rol (son
+  // auto-asignables) y ponerse de rescatista para elegir a cualquiera.
+  it('no alcanza con auto-asignarse el rol y ponerse del lado del rescatista', async () => {
+    await sembrar(async (db) => {
+      await setDoc(doc(db, 'usuarios', OTRO), { roles: ['adoptante', 'rescatista'] });
+    });
+    const db = como(OTRO);
+    await assertFails(setDoc(doc(db, 'chats', 'spam3'), {
+      rescatistaId: OTRO,
+      adoptanteId: ADOPTANTE,
+      rescateId: '',
+      creadoPor: 'rescatista',
+      animalNombre: 'lo que yo quiera',
+    }));
+  });
+
+  // Una consulta a un negocio se ancla en que el DESTINATARIO sea un
+  // aliado de verdad. Antes se miraba el rol de quien pregunta, que es el
+  // lado que controla quien ataca.
+  it('no se puede disfrazar de consulta_aliado para escribirle a quien no es aliado', async () => {
+    await sembrar(async (db) => {
+      await setDoc(doc(db, 'usuarios', OTRO), { roles: ['adoptante', 'rescatista'] });
+    });
+    const db = como(OTRO);
+    await assertFails(setDoc(doc(db, 'chats', 'spam4'), {
+      rescatistaId: ADOPTANTE,       // no es aliado
+      adoptanteId: OTRO,
+      tipoSolicitud: 'consulta_aliado',
+      creadoPor: 'rescatista',
+    }));
+  });
+
+  it('un chat de animal con rescateId inventado se rechaza', async () => {
+    const db = como(ADOPTANTE);
+    await assertFails(setDoc(doc(db, 'chats', 'spam5'), {
+      rescatistaId: ALBERGUE,
+      adoptanteId: ADOPTANTE,
+      rescateId: 'no_existe',
+      creadoPor: 'albergue',
+    }));
+  });
+
+  it('un chat de animal apuntando a un animal real pero con el dueño cambiado se rechaza', async () => {
+    const db = como(OTRO);
+    await assertFails(setDoc(doc(db, 'chats', 'spam6'), {
+      rescatistaId: OTRO,            // el dueño real es ALBERGUE
+      adoptanteId: ADOPTANTE,
+      rescateId: 'animal1',
+      creadoPor: 'albergue',
+    }));
+  });
+
+  // ── Los tres caminos LEGÍTIMOS: si alguno de estos se rompe, se rompió
+  // la app de verdad, no un ataque. ──
+  it('(A) un adoptante abre un chat sobre un animal real del albergue', async () => {
+    const db = como(ADOPTANTE);
+    await assertSucceeds(setDoc(doc(db, 'chats', 'animal1_' + ADOPTANTE), {
+      rescatistaId: ALBERGUE,
+      adoptanteId: ADOPTANTE,
+      rescateId: 'animal1',
+      creadoPor: 'albergue',
+      animalNombre: 'Firulais',
+    }));
+  });
+
+  it('(A) y el albergue dueño también puede abrirlo desde su lado', async () => {
+    const db = como(ALBERGUE);
+    await assertSucceeds(setDoc(doc(db, 'chats', 'animal1_' + ADOPTANTE), {
+      rescatistaId: ALBERGUE,
+      adoptanteId: ADOPTANTE,
+      rescateId: 'animal1',
+      creadoPor: 'albergue',
+    }));
+  });
+
+  // Este es el caso que se rompía si se exigía `creadoPor` a secas:
+  // asegurarChatNegocio NO lo escribe cuando quien pregunta es adoptante.
+  it('(B) un adoptante contacta a un negocio aliado SIN creadoPor', async () => {
+    const db = como(ADOPTANTE);
+    await assertSucceeds(setDoc(doc(db, 'chats', ALIADO + '_' + ADOPTANTE + '_negocio_general'), {
+      rescatistaId: ALIADO,
+      adoptanteId: ADOPTANTE,
+      tipoSolicitud: 'consulta_aliado',
+    }));
+  });
+
+  it('(B) un albergue contacta al mismo negocio, y ahí sí va creadoPor', async () => {
+    const db = como(ALBERGUE);
+    await assertSucceeds(setDoc(doc(db, 'chats', ALIADO + '_' + ALBERGUE + '_negocio_albergue'), {
+      rescatistaId: ALIADO,
+      adoptanteId: ALBERGUE,
+      tipoSolicitud: 'consulta_aliado',
+      creadoPor: 'albergue',
+    }));
+  });
+
+  // Caso real probado en teléfono el 2026-08-03: una cuenta que publicó un
+  // negocio y se escribe a sí misma tiene el mismo uid de los dos lados.
+  it('(B) un aliado que se consulta a sí mismo sigue pudiendo', async () => {
+    const db = como(ALIADO);
+    await assertSucceeds(setDoc(doc(db, 'chats', ALIADO + '_' + ALIADO + '_negocio_general'), {
+      rescatistaId: ALIADO,
+      adoptanteId: ALIADO,
+      tipoSolicitud: 'consulta_aliado',
+    }));
+  });
+
+  // (C) es el gemelo de (A) para cuando no hay animal contra el cual
+  // anclar: el aviso automatico de "tu solicitud fue rechazada" sobre una
+  // solicitud vieja sin rescateId. Lo crea el RESCATISTA, no el adoptante,
+  // asi que la condicion de (D) no le sirve.
+  it('(C) el rescatista puede crear el chat del aviso, anclado a la solicitud', async () => {
+    await sembrarSolicitudPendiente('sol_vieja', { rescateId: '' });
+    const db = como(ALBERGUE);
+    await assertSucceeds(setDoc(doc(db, 'chats', 'aviso1'), {
+      rescatistaId: ALBERGUE,
+      adoptanteId: ADOPTANTE,
+      solicitudId: 'sol_vieja',
+      creadoPor: 'albergue',
+      animalNombre: 'Firulais',
+    }));
+  });
+
+  it('(C) pero la solicitud tiene que unir a ESAS dos personas', async () => {
+    await sembrarSolicitudPendiente('sol_vieja', { rescateId: '' });
+    const db = como(ALBERGUE);
+    await assertFails(setDoc(doc(db, 'chats', 'aviso2'), {
+      rescatistaId: ALBERGUE,
+      adoptanteId: OTRO,            // no es el de la solicitud
+      solicitudId: 'sol_vieja',
+      creadoPor: 'albergue',
+    }));
+  });
+
+  it('(C) y tiene que existir de verdad', async () => {
+    const db = como(ALBERGUE);
+    await assertFails(setDoc(doc(db, 'chats', 'aviso3'), {
+      rescatistaId: ALBERGUE,
+      adoptanteId: ADOPTANTE,
+      solicitudId: 'no_existe',
+      creadoPor: 'albergue',
+    }));
+  });
+
+  // (D) es TRANSITORIA: solo para APKs viejos. Cuando se borre la rama,
+  // este test se borra y el de abajo se queda.
+  it('(D) el camino viejo sigue abierto para un APK sin actualizar', async () => {
+    const db = como(ADOPTANTE);
+    await assertSucceeds(setDoc(doc(db, 'chats', 'firulais_albergue'), {
+      rescatistaId: ALBERGUE,
+      adoptanteId: ADOPTANTE,
+      rescateId: '',
+      creadoPor: 'albergue',
+      animalNombre: 'Firulais',
+    }));
+  });
+
+  it('(D) pero solo lo puede crear el adoptante, nunca el otro lado', async () => {
+    await sembrar(async (db) => {
+      await setDoc(doc(db, 'usuarios', OTRO), { roles: ['adoptante', 'rescatista'] });
+    });
+    const db = como(OTRO);
+    await assertFails(setDoc(doc(db, 'chats', 'spam7'), {
+      rescatistaId: OTRO,
+      adoptanteId: ALBERGUE,
+      rescateId: '',
+      creadoPor: 'rescatista',
+      animalNombre: 'inventado',
+    }));
+  });
+});

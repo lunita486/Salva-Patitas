@@ -207,26 +207,107 @@ service cloud.firestore {
     match /chats/{chatId} {
       allow read: if signedIn() &&
         (resource.data.adoptanteId == uid() || resource.data.rescatistaId == uid());
+      //
+      // ── P0-1 (auditoría del 2026-08-25) ──────────────────────────────
+      // Esta regla decía, en resumen: "si `creadoPor` no viene, pasá".
+      // Ese `!('creadoPor' in request.resource.data) ||` se había puesto
+      // para tolerar los chats legados que no tienen el campo, pero
+      // tolerar el dato viejo es lo mismo que dejar omitirlo a propósito:
+      // bastaba con NO mandar el campo para saltearse el anclaje entero.
+      // Cualquier cuenta podía crear un chat contra CUALQUIER otro uid
+      // (los uids se cosechan listando `usuarios`, ver P0-2) y meterle un
+      // mensaje. onNuevoMensaje entonces le manda una push de verdad con
+      // el título sacado de `animalNombre` y el cuerpo del `texto` — los
+      // dos elegidos por quien ataca. Phishing con la credibilidad de la
+      // app. Verificado explotable contra el emulador.
+      //
+      // La forma correcta no es "exigir creadoPor" a secas: hay un caso
+      // legítimo que NO lo lleva (un adoptante que le escribe a un negocio
+      // aliado — ver asegurarChatNegocio, que solo escribe el campo cuando
+      // el contexto es rescatista/albergue). Exigirlo sin más rompía el
+      // botón "Contactar" de la pantalla de aliados.
+      //
+      // Así que ahora se enumeran las TRES formas legítimas, cada una con
+      // su propio anclaje, y todo lo que no encaje en una de ellas se
+      // rechaza. Ya no hay una rama que se saltee el anclaje.
       allow create: if signedIn() &&
         (request.resource.data.adoptanteId == uid() || request.resource.data.rescatistaId == uid()) &&
-        (!('creadoPor' in request.resource.data) ||
-          (request.resource.data.creadoPor in ['rescatista', 'albergue'] &&
-           (
-             (request.resource.data.get('rescateId', '') != '' &&
-              get(/databases/$(database)/documents/rescates/$(request.resource.data.rescateId)).data.rescatistaId == request.resource.data.rescatistaId &&
-              get(/databases/$(database)/documents/rescates/$(request.resource.data.rescateId)).data.creadoPor == request.resource.data.creadoPor)
-             ||
-             (request.resource.data.get('tipoSolicitud', '') == 'consulta_aliado' &&
-              tieneRol(request.resource.data.adoptanteId, request.resource.data.creadoPor))
-             ||
-             // Fallback legado, sin rescateId ni consulta_aliado (ver
-             // chat_screen.dart): no hay documento de rescate contra el
-             // cual anclar, así que se mantiene el chequeo de rol actual
-             // como antes.
-             (request.resource.data.get('rescateId', '') == '' &&
-              request.resource.data.get('tipoSolicitud', '') != 'consulta_aliado' &&
-              tieneRol(request.resource.data.rescatistaId, request.resource.data.creadoPor))
-           )));
+        (
+          // (A) Chat sobre un animal. Anclado al documento REAL del
+          // rescate: quien figura como rescatista tiene que ser su dueño
+          // de verdad, y con el mismo sombrero con el que lo publicó.
+          (request.resource.data.get('rescateId', '') != '' &&
+           request.resource.data.get('creadoPor', '') in ['rescatista', 'albergue'] &&
+           get(/databases/$(database)/documents/rescates/$(request.resource.data.rescateId)).data.rescatistaId == request.resource.data.rescatistaId &&
+           get(/databases/$(database)/documents/rescates/$(request.resource.data.rescateId)).data.creadoPor == request.resource.data.creadoPor)
+          ||
+          // (B) Consulta a un negocio aliado. Acá `rescatistaId` es el
+          // aliado y `adoptanteId` es quien pregunta, sin importar qué rol
+          // tenga en la vida real (es la convención del esquema).
+          //
+          // El anclaje es que el DESTINATARIO sea de verdad un negocio
+          // registrado. Antes se miraba el rol de `adoptanteId` (el que
+          // pregunta), que es justamente el lado que controla quien ataca:
+          // con el rol de rescatista puesto a mano (son auto-asignables) se
+          // podía elegir a cualquiera como `rescatistaId` y mandarle la
+          // push igual. Mirar el lado del destinatario es lo que cierra
+          // eso: solo se le puede escribir a quien publicó un negocio.
+          //
+          // Además `adoptanteId == uid()`: la consulta la abre quien
+          // pregunta, nunca un tercero. Cubre también el caso real de una
+          // cuenta que se consulta a sí misma (adoptanteId == rescatistaId
+          // == su propio uid), probado en teléfono el 2026-08-03.
+          (request.resource.data.get('tipoSolicitud', '') == 'consulta_aliado' &&
+           request.resource.data.adoptanteId == uid() &&
+           tieneRol(request.resource.data.rescatistaId, 'aliado') &&
+           (!('creadoPor' in request.resource.data) ||
+            request.resource.data.creadoPor in ['rescatista', 'albergue']))
+          ||
+          // (C) Anclado a una SOLICITUD real. Es el gemelo de (A) para el
+          // caso en que no hay animal contra el cual anclar: una solicitud
+          // vieja, de antes de que la regla de solicitudes.create volviera
+          // `rescateId` obligatorio.
+          //
+          // Un chat entre un rescatista y un adoptante es legítimo si los
+          // une un animal real O una solicitud real. Esta rama es la
+          // segunda mitad de esa frase, y es la que deja que el aviso
+          // automático de "tu solicitud fue rechazada" o "este animalito
+          // falleció" siga pudiendo CREAR el chat cuando el adoptante
+          // nunca lo abrió. Sin ella, ese aviso no llegaba nunca — que es
+          // el bug que avisarSobreAnimal ya había arreglado una vez.
+          //
+          // La solicitud tiene que unir exactamente a estas dos personas:
+          // no alcanza con que exista.
+          (request.resource.data.get('solicitudId', '') != '' &&
+           get(/databases/$(database)/documents/solicitudes/$(request.resource.data.solicitudId)).data.adoptanteId == request.resource.data.adoptanteId &&
+           get(/databases/$(database)/documents/solicitudes/$(request.resource.data.solicitudId)).data.rescatistaId == request.resource.data.rescatistaId)
+          ||
+          // (D) TRANSITORIA — se borra cuando la mayoría esté en APK91+.
+          //
+          // El único camino de la app que llegaba acá era una fuga de dato,
+          // no un caso legítimo: al abrir la ficha del animal DESDE un chat,
+          // chat_screen armaba el mapa con `...d` (los campos del rescate),
+          // y `rescateId` es el NOMBRE del documento, no un campo adentro,
+          // así que se perdía. Volver al chat desde esa ficha caía al
+          // esquema viejo de id por nombre y abría una conversación
+          // DUPLICADA, sin nada contra lo cual anclarla. Arreglado en
+          // APK91 (chat_screen.dart, `'rescateId': rescateId`).
+          //
+          // Se deja viva solo para no romperles el chat a quienes todavía
+          // tienen un APK viejo instalado. Es la última rama sin ancla que
+          // queda, y mientras exista sigue siendo posible abrirle un chat
+          // a una cuenta con rol de rescatista/albergue con un
+          // `animalNombre` inventado (que es el título de la push).
+          //
+          // Para borrarla: quitar este bloque y su test positivo
+          // "(D) el camino viejo sigue abierto...", y dejar el negativo.
+          (request.resource.data.get('rescateId', '') == '' &&
+           request.resource.data.get('solicitudId', '') == '' &&
+           request.resource.data.get('tipoSolicitud', '') != 'consulta_aliado' &&
+           request.resource.data.adoptanteId == uid() &&
+           request.resource.data.get('creadoPor', '') in ['rescatista', 'albergue'] &&
+           tieneRol(request.resource.data.rescatistaId, request.resource.data.creadoPor))
+        );
       allow update: if signedIn() &&
         request.resource.data.adoptanteId == resource.data.adoptanteId &&
         request.resource.data.rescatistaId == resource.data.rescatistaId &&

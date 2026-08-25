@@ -56,6 +56,7 @@ Future<bool> enviarMensajeChat(
   String? especie,
   bool avisoParaAmbosLados = false,
   bool avisoDeEstado = false,
+  String? solicitudId,
 }) async {
   final rescatistaId = FirebaseAuth.instance.currentUser?.uid ?? '';
   // UsuariosRepository().nombrePropioParaAnimal() decide entre nombre y
@@ -92,6 +93,7 @@ Future<bool> enviarMensajeChat(
     tipoSolicitud: tipoSolicitud,
     avisoParaAmbosLados: avisoParaAmbosLados,
     avisoDeEstado: avisoDeEstado,
+    solicitudId: solicitudId,
   );
 }
 
@@ -260,6 +262,7 @@ _aprobarSolicitudImpl(String docId, Map<String, dynamic> d) async {
       // La solicitud queda 'rechazada' en la misma operacion, y eso ya
       // dispara onCambioEstadoSolicitud. Ver avisoDeEstado.
       avisoDeEstado: true,
+      solicitudId: docId,
       fotoUrl: d['fotoUrl'] as String?,
       rescateId: rescateId,
       creadoPor: creadoPor,
@@ -309,6 +312,13 @@ _aprobarSolicitudImpl(String docId, Map<String, dynamic> d) async {
           rescateId: otra['rescateId'] as String? ?? rescateId,
           creadoPor: otra['creadoPor'] as String? ?? creadoPor,
           especie: otra['especie'] as String? ?? d['especie'] as String?,
+          // El ancla es la solicitud DE ESA persona, no la que se aprobo.
+          solicitudId: otra['id'] as String?,
+          // rechazarCompetidoras ya les puso estado 'rechazada', asi que
+          // onCambioEstadoSolicitud ya manda su push. Sin esto llegaban
+          // dos por el mismo hecho (se me habia pasado ayer al marcar los
+          // otros tres avisos).
+          avisoDeEstado: true,
         );
       }
     }
@@ -323,6 +333,7 @@ _aprobarSolicitudImpl(String docId, Map<String, dynamic> d) async {
       animalNombre,
       msg,
       avisoDeEstado: true,
+      solicitudId: docId,
       fotoUrl: d['fotoUrl'] as String?,
       adoptanteNombre: d['nombre'] as String?,
       tipoSolicitud: tipoSolicitud,
@@ -398,6 +409,7 @@ Future<bool> _rechazarSolicitudImpl(
       // Este es el aviso del rechazo propiamente dicho: la solicitud ya
       // quedo en 'rechazada' arriba. Ver avisoDeEstado.
       avisoDeEstado: true,
+      solicitudId: docId,
       fotoUrl: fotoUrl,
       adoptanteNombre: d['nombre'] as String?,
       rescateId: rescateId,
