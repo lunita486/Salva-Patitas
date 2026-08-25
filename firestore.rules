@@ -241,6 +241,30 @@ service cloud.firestore {
     // (quien contactó). No hay rescate contra el cual anclar, así que se
     // valida con tieneRol() sobre adoptanteId en vez de rescatistaId.
     match /chats/{chatId} {
+      // Un contador de "sin leer" solo puede moverse de dos formas: subir
+      // de a UNO (llegó un mensaje) o volver a CERO de manos de su propio
+      // dueño (lo abrió y lo leyó). Cualquier otro valor se rechaza.
+      //
+      // Antes la regla de update no los miraba, así que un participante
+      // podía dejarle a la contraparte un badge con el número que quisiera,
+      // permanente. Verificado explotable contra el emulador: 9999.
+      //
+      // Por qué así y no moviendo el contador a un trigger, que sería lo
+      // "correcto" de libro: el incremento viaja en el MISMO batch que el
+      // mensaje. Si la regla dejara de aceptarlo, todo APK ya instalado
+      // fallaría al enviar — no el contador, el mensaje entero. Habría que
+      // desplegar la app primero y la regla después, y vivir un tiempo con
+      // el contador subiendo dos veces. Esta forma cierra el agujero real
+      // (poner un número inventado) hoy mismo, sin romperle el chat a
+      // nadie: lo único que queda posible es sumar de a uno mandando
+      // mensajes de verdad, que se ven y ya están limitados por las otras
+      // reglas.
+      function contadorValido(campo, duenio) {
+        return request.resource.data.get(campo, 0) == resource.data.get(campo, 0)
+            || request.resource.data.get(campo, 0) == resource.data.get(campo, 0) + 1
+            || (duenio == uid() && request.resource.data.get(campo, 0) == 0);
+      }
+
       allow read: if signedIn() &&
         (resource.data.adoptanteId == uid() || resource.data.rescatistaId == uid());
       //
@@ -345,6 +369,8 @@ service cloud.firestore {
         request.resource.data.rescatistaId == resource.data.rescatistaId &&
         request.resource.data.get('creadoPor', null) == resource.data.get('creadoPor', null) &&
         request.resource.data.get('rescateId', null) == resource.data.get('rescateId', null) &&
+        contadorValido('noLeidosAdoptante', resource.data.adoptanteId) &&
+        contadorValido('noLeidosRescatista', resource.data.rescatistaId) &&
         (resource.data.adoptanteId == uid() || resource.data.rescatistaId == uid());
 
       match /mensajes/{mensajeId} {

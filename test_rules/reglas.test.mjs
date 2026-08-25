@@ -39,6 +39,7 @@ import {
   deleteField,
   writeBatch,
   serverTimestamp,
+  increment,
 } from 'firebase/firestore';
 
 const aca = dirname(fileURLToPath(import.meta.url));
@@ -1290,6 +1291,82 @@ describe('integridad del chat: lo que un participante NO puede reescribir', () =
       texto: 'hola',
       emisor: 'adoptante',
       creadoEn: serverTimestamp(),
+    }));
+  });
+});
+
+// ── contadores de "sin leer" — P2 de la auditoría del 25/8/2026 ─────────
+//
+// Un participante podía dejarle a la contraparte un badge con el número que
+// quisiera, permanente. Ahora un contador solo sube de a uno o vuelve a
+// cero de manos de su dueño.
+describe('contadores de "sin leer"', () => {
+  beforeEach(async () => {
+    await sembrar(async (db) => {
+      await setDoc(doc(db, 'chats', 'c1'), {
+        rescatistaId: ALBERGUE,
+        adoptanteId: ADOPTANTE,
+        creadoPor: 'albergue',
+        rescateId: 'animal1',
+        noLeidosAdoptante: 2,
+        noLeidosRescatista: 0,
+      });
+    });
+  });
+
+  it('NO se puede poner un número inventado en el contador del otro', async () => {
+    const db = como(ADOPTANTE);
+    await assertFails(updateDoc(doc(db, 'chats', 'c1'), {
+      noLeidosRescatista: 9999,
+    }));
+  });
+
+  it('tampoco de a poco: subir de a dos ya se rechaza', async () => {
+    const db = como(ADOPTANTE);
+    await assertFails(updateDoc(doc(db, 'chats', 'c1'), {
+      noLeidosRescatista: 2,
+    }));
+  });
+
+  // Poner en cero el contador AJENO también se cierra: haría que la
+  // contraparte perdiera de vista mensajes que no leyó.
+  it('no se puede poner en cero el contador ajeno', async () => {
+    const db = como(ALBERGUE);
+    await assertFails(updateDoc(doc(db, 'chats', 'c1'), {
+      noLeidosAdoptante: 0,
+    }));
+  });
+
+  // ── Y lo que la app hace todos los días, que NO se puede romper ──
+  it('mandar un mensaje sube el del otro en uno (FieldValue.increment)', async () => {
+    const db = como(ADOPTANTE);
+    await assertSucceeds(updateDoc(doc(db, 'chats', 'c1'), {
+      ultimoMensaje: 'hola',
+      noLeidosRescatista: increment(1),
+    }));
+  });
+
+  it('abrir el chat pone en cero el PROPIO (marcarLeido)', async () => {
+    const db = como(ADOPTANTE);
+    await assertSucceeds(updateDoc(doc(db, 'chats', 'c1'), {
+      noLeidosAdoptante: 0,
+    }));
+  });
+
+  // avisoParaAmbosLados: los avisos que dispara el paso del tiempo suben
+  // los DOS contadores, incluido el de quien escribe.
+  it('un aviso para ambos lados sube los dos en uno', async () => {
+    const db = como(ALBERGUE);
+    await assertSucceeds(updateDoc(doc(db, 'chats', 'c1'), {
+      noLeidosAdoptante: increment(1),
+      noLeidosRescatista: increment(1),
+    }));
+  });
+
+  it('no tocar los contadores sigue siendo válido', async () => {
+    const db = como(ADOPTANTE);
+    await assertSucceeds(updateDoc(doc(db, 'chats', 'c1'), {
+      ultimaHora: '14:05',
     }));
   });
 });
