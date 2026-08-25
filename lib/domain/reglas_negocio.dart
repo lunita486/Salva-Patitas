@@ -204,6 +204,21 @@ bool sePuedeAdoptar(String? estadoAdopcion) {
   return e == 'Rescatado' || e == 'Regresado' || e == 'Hogar de paso';
 }
 
+/// ¿Se le puede ofrecer hogar de paso a este animalito?
+///
+/// Se define SOBRE [sePuedeAdoptar] a propósito, no con una lista de
+/// estados propia: es "de los que todavía buscan hogar, los que no están
+/// ya en uno". Así, si mañana cambia qué estados siguen disponibles, esta
+/// regla lo hereda sola en vez de quedarse atrás.
+///
+/// El matiz que importa y que se leía mal escrito a mano: un animalito que
+/// YA está en hogar de paso sigue pudiendo adoptarse (justamente, quien lo
+/// tiene puede querer quedárselo), pero no tiene sentido ofrecerle otro
+/// hogar de paso encima. Por eso el panel de "¿cómo querés ayudar?" le
+/// muestra Adoptar y le esconde Ser hogar de paso, y no al revés.
+bool sePuedeSerHogarDePaso(String? estadoAdopcion) =>
+    sePuedeAdoptar(estadoAdopcion) && estadoAdopcion != 'Hogar de paso';
+
 /// Las coordenadas guardadas de un animal, o `null` si no tiene unas
 /// usables. Única fuente de "¿este documento tiene ubicación?".
 ///

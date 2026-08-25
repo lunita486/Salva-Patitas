@@ -1912,6 +1912,36 @@ class _MeInteresaSheet extends StatelessWidget {
     this.requiereExperiencia,
   });
 
+  /// Abre la pantalla de solicitud con [tipo] ('adopcion' u
+  /// 'hogar_de_paso').
+  ///
+  /// Los dos caminos mandan EXACTAMENTE los mismos datos del animal: es un
+  /// solo mapa y no uno por opción, para que no puedan volver a divergir.
+  /// Ya pasó una vez con las etiquetas de compatibilidad —faltaban acá, y
+  /// entonces compatibilidad.dart las completaba con sus valores por
+  /// defecto: el puntaje salía calculado contra un animal "Mediano" aunque
+  /// el de verdad fuera "Pequeño"— y no se notaba, porque un puntaje
+  /// equivocado se ve igual de convincente que uno correcto.
+  void _pedir(BuildContext context, String tipo) {
+    Navigator.pop(context);
+    context.push(
+      AppRoutes.solicitudAdopcion,
+      extra: {
+        'nombre': nombre, 'especie': especie, 'edad': edad,
+        'ubicacion': ubicacion, 'rescatista': rescatista,
+        'rescatistaId': rescatistaId, 'rescateId': rescateId,
+        'fotoUrl': fotoUrl,
+        'tipoSolicitud': tipo,
+        'creadoPor': creadoPor,
+        'tamano': tamano,
+        'energia': energia,
+        'okConNinos': okConNinos,
+        'okConMascotas': okConMascotas,
+        'requiereExperiencia': requiereExperiencia,
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -1941,39 +1971,41 @@ class _MeInteresaSheet extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 20),
-            if (estadoAdopcion != 'Hogar de paso') ...[
+            // Adoptar va PRIMERO y por eso existe: este panel pregunta
+            // "¿cómo querés ayudar?" y hasta ahora ofrecía dos de las tres
+            // formas, justo sin la principal. Para adoptar desde el feed
+            // había que entrar por "Ser hogar de paso" y recién en la
+            // pantalla siguiente cambiar el botón a "Adoptar", o salir del
+            // panel e ir por la ficha. Quien tocaba "Me interesa ayudar"
+            // con ganas de adoptar no encontraba la palabra en ningún lado.
+            //
+            // sePuedeAdoptar() decide si mostrarlo, la misma función que ya
+            // usan el feed, la ficha, favoritos, el perfil público del
+            // albergue y el repositorio al aprobar. No hay una lista de
+            // estados nueva acá: un animalito en "Hogar de paso" SÍ se
+            // puede adoptar (por eso la opción de abajo se esconde y esta
+            // no), y ese matiz vive en un solo lugar a propósito.
+            if (sePuedeAdoptar(estadoAdopcion)) ...[
+              _opcion(
+                context,
+                emoji: '🏠',
+                titulo: 'Adoptar',
+                subtitulo: 'Querés que sea parte de tu familia para siempre',
+                onTap: () => _pedir(context, 'adopcion'),
+              ),
+              const SizedBox(height: 10),
+            ],
+            // sePuedeSerHogarDePaso(), no una comparación a mano: está
+            // definida sobre sePuedeAdoptar() para que las dos opciones de
+            // arriba no puedan contradecirse entre sí.
+            if (sePuedeSerHogarDePaso(estadoAdopcion)) ...[
               _opcion(
                 context,
                 emoji: '🏡',
                 titulo: 'Ser hogar de paso',
                 subtitulo:
                     'Lo/la cuidás temporalmente mientras encuentra familia',
-                onTap: () {
-                  Navigator.pop(context);
-                  context.push(
-                    AppRoutes.solicitudAdopcion,
-                    extra: {
-                      'nombre': nombre, 'especie': especie, 'edad': edad,
-                      'ubicacion': ubicacion, 'rescatista': rescatista,
-                      'rescatistaId': rescatistaId, 'rescateId': rescateId,
-                      'fotoUrl': fotoUrl,
-                      'tipoSolicitud': 'hogar_de_paso',
-                      'creadoPor': creadoPor,
-                      // Etiquetas del animal para calcular compatibilidad (ver
-                      // solicitud_adopcion_screen.dart) — antes faltaban acá, así
-                      // que toda solicitud creada desde este sheet (incluida la
-                      // de "Adoptar", que también pasa por esta pantalla) guardaba
-                      // estos campos como null y compatibilidad.dart los
-                      // completaba con sus valores por defecto (ej. "Mediano"
-                      // aunque el animal fuera "Pequeño").
-                      'tamano': tamano,
-                      'energia': energia,
-                      'okConNinos': okConNinos,
-                      'okConMascotas': okConMascotas,
-                      'requiereExperiencia': requiereExperiencia,
-                    },
-                  );
-                },
+                onTap: () => _pedir(context, 'hogar_de_paso'),
               ),
               const SizedBox(height: 10),
             ],

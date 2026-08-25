@@ -733,4 +733,54 @@ void main() {
       });
     },
   );
+
+  group(
+    'sePuedeSerHogarDePaso() — el panel "¿cómo querés ayudar?" decidía esto '
+    'con una comparación escrita a mano, y ofrecía dos de las tres formas '
+    'de ayudar: faltaba justo Adoptar.',
+    () {
+      test('un animalito disponible admite las dos cosas', () {
+        for (final estado in ['Rescatado', 'Regresado', null]) {
+          expect(sePuedeAdoptar(estado), isTrue, reason: '$estado');
+          expect(sePuedeSerHogarDePaso(estado), isTrue, reason: '$estado');
+        }
+      });
+
+      // El matiz que se leía mal escrito a mano: quien ya lo tiene en hogar
+      // de paso puede querer quedárselo, así que Adoptar SÍ. Pero ofrecerle
+      // otro hogar de paso encima no tiene sentido.
+      test('ya en hogar de paso: se adopta, pero no se le da otro hogar', () {
+        expect(sePuedeAdoptar('Hogar de paso'), isTrue);
+        expect(sePuedeSerHogarDePaso('Hogar de paso'), isFalse);
+      });
+
+      // Lo que NO puede pasar: que el panel ofrezca hogar de paso sobre un
+      // animalito que ni siquiera está disponible. Se define SOBRE
+      // sePuedeAdoptar justamente para que esto sea imposible por
+      // construcción, no por acordarse.
+      test('si no se puede adoptar, tampoco se puede dar hogar de paso', () {
+        for (final estado in [
+          'En proceso de adopción',
+          'Adoptado',
+          'Fallecido',
+        ]) {
+          expect(sePuedeAdoptar(estado), isFalse, reason: '$estado');
+          expect(sePuedeSerHogarDePaso(estado), isFalse, reason: '$estado');
+        }
+      });
+
+      // Y la invariante entera, para que no haga falta acordarse de sumar
+      // el caso nuevo acá si mañana se agrega un estado.
+      test('nunca hay hogar de paso sin adopción posible', () {
+        for (final estado in [
+          'Rescatado', 'Regresado', 'Hogar de paso',
+          'En proceso de adopción', 'Adoptado', 'Fallecido', null, 'inventado',
+        ]) {
+          if (sePuedeSerHogarDePaso(estado)) {
+            expect(sePuedeAdoptar(estado), isTrue, reason: '$estado');
+          }
+        }
+      });
+    },
+  );
 }
