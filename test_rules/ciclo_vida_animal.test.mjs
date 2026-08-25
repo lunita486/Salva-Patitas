@@ -203,6 +203,7 @@ describe('Ciclo de vida completo de un animal', () => {
           animalNombre: 'Toby',
           texto: '¡Tu solicitud de adopción de Toby fue aprobada!',
           emisor: 'rescatista',
+          creadoEn: serverTimestamp(),
         }),
       );
 
@@ -225,6 +226,7 @@ describe('Ciclo de vida completo de un animal', () => {
           animalNombre: 'Luna',
           texto: 'Tu solicitud de hogar de paso para Luna no fue aceptada esta vez.',
           emisor: 'rescatista',
+          creadoEn: serverTimestamp(),
         }),
       );
 
@@ -268,6 +270,7 @@ describe('Ciclo de vida completo de un animal', () => {
         addDoc(collection(dbRescatista, 'chats', idChat('animalR', ADOPTANTE), 'mensajes'), {
           texto: 'El estado de Toby cambió a Fallecido.',
           emisor: 'rescatista',
+          creadoEn: serverTimestamp(),
           hora: '10:05',
           creadoEn: serverTimestamp(),
           escritoPorRescatista: true,
@@ -379,6 +382,7 @@ describe('Ciclo de vida completo de un animal', () => {
         addDoc(collection(dbAdoptante, 'chats', idChat('animalR', ADOPTANTE), 'mensajes'), {
           texto: 'mensaje falsificado',
           emisor: 'rescatista',
+          creadoEn: serverTimestamp(),
           hora: '10:00',
           creadoEn: serverTimestamp(),
         }),
@@ -388,6 +392,7 @@ describe('Ciclo de vida completo de un animal', () => {
         addDoc(collection(dbRescatista, 'chats', idChat('animalR', ADOPTANTE), 'mensajes'), {
           texto: 'mensaje falsificado',
           emisor: 'adoptante',
+          creadoEn: serverTimestamp(),
           hora: '10:00',
           creadoEn: serverTimestamp(),
         }),

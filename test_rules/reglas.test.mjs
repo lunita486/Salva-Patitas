@@ -38,6 +38,7 @@ import {
   limit,
   deleteField,
   writeBatch,
+  serverTimestamp,
 } from 'firebase/firestore';
 
 const aca = dirname(fileURLToPath(import.meta.url));
@@ -678,6 +679,7 @@ describe('chats', () => {
       await setDoc(doc(db, 'chats', 'chat1', 'mensajes', 'm1'), {
         texto: 'Hola',
         emisor: ADOPTANTE,
+        creadoEn: serverTimestamp(),
       });
     });
   });
@@ -697,6 +699,7 @@ describe('chats', () => {
       addDoc(collection(como(OTRO), 'chats', 'chat1', 'mensajes'), {
         texto: 'spam',
         emisor: OTRO,
+        creadoEn: serverTimestamp(),
       }),
     );
   });
@@ -719,12 +722,14 @@ describe('chats', () => {
       addDoc(collection(como(ADOPTANTE), 'chats', 'chat1', 'mensajes'), {
         texto: 'yo nunca dije esto',
         emisor: 'rescatista',
+        creadoEn: serverTimestamp(),
       }),
     );
     await assertFails(
       addDoc(collection(como(ALBERGUE), 'chats', 'chat1', 'mensajes'), {
         texto: 'yo tampoco dije esto',
         emisor: 'adoptante',
+        creadoEn: serverTimestamp(),
       }),
     );
   });
@@ -734,12 +739,14 @@ describe('chats', () => {
       addDoc(collection(como(ADOPTANTE), 'chats', 'chat1', 'mensajes'), {
         texto: 'hola, esto sí lo dije yo',
         emisor: 'adoptante',
+        creadoEn: serverTimestamp(),
       }),
     );
     await assertSucceeds(
       addDoc(collection(como(ALBERGUE), 'chats', 'chat1', 'mensajes'), {
         texto: 'y esto lo dije yo',
         emisor: 'rescatista',
+        creadoEn: serverTimestamp(),
       }),
     );
   });
@@ -752,6 +759,7 @@ describe('chats', () => {
       addDoc(collection(como(ADOPTANTE), 'chats', 'chat1', 'mensajes'), {
         texto: 'x'.repeat(2001),
         emisor: 'adoptante',
+        creadoEn: serverTimestamp(),
       }),
     );
   });
@@ -761,6 +769,7 @@ describe('chats', () => {
       addDoc(collection(como(ADOPTANTE), 'chats', 'chat1', 'mensajes'), {
         texto: 'x'.repeat(2000),
         emisor: 'adoptante',
+        creadoEn: serverTimestamp(),
       }),
     );
   });
@@ -788,12 +797,14 @@ describe('chats', () => {
       addDoc(collection(como(ALIADO), 'chats', 'chatSelf', 'mensajes'), {
         texto: 'hola, me pregunto algo a mí mismo',
         emisor: 'adoptante',
+        creadoEn: serverTimestamp(),
       }),
     );
     await assertFails(
       addDoc(collection(como(ALIADO), 'chats', 'chatSelf', 'mensajes'), {
         texto: 'esto no debería colarse',
         emisor: 'rescatista',
+        creadoEn: serverTimestamp(),
       }),
     );
   });
@@ -833,6 +844,7 @@ describe('chats', () => {
       batch.set(mensajeRef, {
         texto: 'Lamentamos informarte que Firulais falleció.',
         emisor: 'rescatista',
+        creadoEn: serverTimestamp(),
       });
       await assertFails(batch.commit());
     },
@@ -864,6 +876,7 @@ describe('chats', () => {
         addDoc(collection(db, 'chats', 'chatNuevo2', 'mensajes'), {
           texto: 'Lamentamos informarte que Firulais falleció.',
           emisor: 'rescatista',
+          creadoEn: serverTimestamp(),
         }),
       );
     },
@@ -1198,6 +1211,7 @@ describe('crear un chat y su primer mensaje', () => {
     batch.set(doc(collection(db, 'chats', 'nuevo1', 'mensajes')), {
       texto: 'Tu solicitud fue aprobada',
       emisor: 'rescatista',
+      creadoEn: serverTimestamp(),
     });
     await assertFails(batch.commit());
   });
@@ -1219,7 +1233,63 @@ describe('crear un chat y su primer mensaje', () => {
     batch.set(doc(collection(db, 'chats', 'nuevo2', 'mensajes')), {
       texto: 'Tu solicitud fue aprobada',
       emisor: 'rescatista',
+      creadoEn: serverTimestamp(),
     });
     await assertSucceeds(batch.commit());
+  });
+});
+
+// ── chats.update y mensajes.creadoEn — P2 de la auditoría del 25/8/2026 ──
+describe('integridad del chat: lo que un participante NO puede reescribir', () => {
+  beforeEach(async () => {
+    await sembrar(async (db) => {
+      await setDoc(doc(db, 'chats', 'c1'), {
+        rescatistaId: ALBERGUE,
+        adoptanteId: ADOPTANTE,
+        creadoPor: 'albergue',
+        rescateId: 'animal1',
+      });
+    });
+  });
+
+  it('no se puede reapuntar el chat a OTRO animal', async () => {
+    const db = como(ADOPTANTE);
+    await assertFails(updateDoc(doc(db, 'chats', 'c1'), {
+      rescateId: 'animal_de_otra_persona',
+    }));
+  });
+
+  it('lo que sí se puede seguir actualizando (vista previa) no se rompió', async () => {
+    const db = como(ADOPTANTE);
+    await assertSucceeds(updateDoc(doc(db, 'chats', 'c1'), {
+      ultimoMensaje: 'hola',
+      ultimaHora: '14:05',
+    }));
+  });
+
+  it('la fecha del mensaje la pone el servidor, no quien escribe', async () => {
+    const db = como(ADOPTANTE);
+    await assertFails(addDoc(collection(db, 'chats', 'c1', 'mensajes'), {
+      texto: 'mensaje del futuro',
+      emisor: 'adoptante',
+      creadoEn: new Date('2099-01-01'),
+    }));
+  });
+
+  it('tampoco vale omitirla', async () => {
+    const db = como(ADOPTANTE);
+    await assertFails(addDoc(collection(db, 'chats', 'c1', 'mensajes'), {
+      texto: 'sin fecha',
+      emisor: 'adoptante',
+    }));
+  });
+
+  it('con serverTimestamp, que es lo que manda la app, sí entra', async () => {
+    const db = como(ADOPTANTE);
+    await assertSucceeds(addDoc(collection(db, 'chats', 'c1', 'mensajes'), {
+      texto: 'hola',
+      emisor: 'adoptante',
+      creadoEn: serverTimestamp(),
+    }));
   });
 });

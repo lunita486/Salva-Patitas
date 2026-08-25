@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -182,6 +183,31 @@ Future<bool> cerrarSesion() async {
   } catch (_) {
     huboProblema = true;
   }
+  // La caché en disco de Firestore es POR PROYECTO, no por cuenta, y
+  // sobrevive al signOut. Sin esto, los documentos de quien acaba de salir
+  // se quedan guardados en el teléfono: quien entre después con otra cuenta
+  // los tiene ahí, y las consultas que caen a `Source.cache` (ver
+  // solicitudes_repository y rescates_repository) los pueden servir.
+  //
+  // Visto en vivo el 25/8/2026, y de la forma más contundente posible:
+  // apunté la app a una base VACÍA y la pantalla igual se llenó con datos
+  // de producción de una sesión anterior. Si el servidor no responde, la
+  // caché contesta por él.
+  //
+  // También hace falta para la promesa de borrado de cuenta que exige
+  // Google Play: eliminarCuenta limpia el servidor y no tocaba el
+  // dispositivo.
+  //
+  // Va DESPUÉS del signOut a propósito: clearPersistence() falla si hay
+  // listeners vivos, y cerrar sesión es justamente lo que los desmonta.
+  // Best-effort, como todo lo de acá: el costo de que falle es una caché
+  // sucia, y el de bloquear el cierre de sesión es dejar a alguien
+  // atrapada adentro de la app.
+  try {
+    await FirebaseFirestore.instance.clearPersistence().timeout(
+      const Duration(seconds: 5),
+    );
+  } catch (_) {}
   _liberarOcupado(conEspera: huboProblema);
   return true;
 }

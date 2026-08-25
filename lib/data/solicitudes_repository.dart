@@ -9,6 +9,16 @@ import 'firestore_resiliencia.dart';
 /// en vez de uno genérico, porque son dos relaciones distintas con la
 /// misma colección: el nombre del método ya dice qué relación es, así
 /// que no se puede llamar el equivocado por error.
+/// Ya existe una solicitud de esta persona por este animalito, en el
+/// estado [estado] ('pendiente' o 'aprobada').
+class YaAplicoException implements Exception {
+  const YaAplicoException(this.estado);
+  final String estado;
+
+  @override
+  String toString() => 'Ya existe una solicitud $estado por este animal';
+}
+
 class SolicitudesRepository {
   SolicitudesRepository({FirebaseFirestore? db})
     : _db = db ?? FirebaseFirestore.instance;
@@ -188,19 +198,45 @@ class SolicitudesRepository {
     return res.docs.first.data()['estado'] as String? ?? '';
   }
 
+  /// Lanza [YaAplicoException] si esta persona ya tiene una solicitud
+  /// pendiente o aprobada por este mismo animalito.
+  ///
+  /// El chequeo estaba SOLO en la pantalla, y solo al abrirla: una vez
+  /// dentro, nada volvía a mirarlo. Verificado usando la app el 25/8/2026,
+  /// quedaron dos solicitudes idénticas de la misma persona por el mismo
+  /// animalito. Un doble toque en "Enviar solicitud", volver atrás y entrar
+  /// de nuevo, o dos teléfonos, alcanzaban.
+  ///
+  /// No es una copia del chequeo de la pantalla: es [estadoExistente], la
+  /// misma función que ella usa. La diferencia es CUÁNDO se pregunta. El
+  /// aviso al abrir sigue existiendo porque es mejor decirlo antes de que
+  /// alguien llene el formulario entero; esto es la red que lo hace cumplir.
+  ///
+  /// Lo que esto NO es: una garantía contra dos escrituras exactamente
+  /// simultáneas. Para eso haría falta un id determinístico (uid+rescateId)
+  /// en vez de uno al azar, y eso cambia el esquema. Cierra el caso real
+  /// —la misma persona insistiendo— no la carrera teórica.
   Future<DocumentReference<Map<String, dynamic>>> crear({
     required String adoptanteUid,
     required String rescatistaId,
     required CreatorRole creadoPor,
     required Map<String, dynamic> datos,
-  }) => _col.add({
-    ...datos,
-    'adoptanteId': adoptanteUid,
-    'rescatistaId': rescatistaId,
-    'creadoPor': creadoPor.firestoreValue,
-    'estado': 'pendiente',
-    'creadoEn': FieldValue.serverTimestamp(),
-  });
+  }) async {
+    final yaTiene = await estadoExistente(
+      uid: adoptanteUid,
+      animalNombre: datos['animalNombre'] as String? ?? '',
+      rescateId: datos['rescateId'] as String?,
+    );
+    if (yaTiene != null) throw YaAplicoException(yaTiene);
+    return _col.add({
+      ...datos,
+      'adoptanteId': adoptanteUid,
+      'rescatistaId': rescatistaId,
+      'creadoPor': creadoPor.firestoreValue,
+      'estado': 'pendiente',
+      'creadoEn': FieldValue.serverTimestamp(),
+    });
+  }
 
   Future<void> cambiarEstado(String solicitudId, String estado) =>
       _col.doc(solicitudId).update({'estado': estado});

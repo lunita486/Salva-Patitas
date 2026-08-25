@@ -816,4 +816,83 @@ void main() {
       });
     });
   });
+
+  group(
+    'crear() no deja duplicar una solicitud — el chequeo estaba solo en la '
+    'pantalla, y solo al abrirla. Verificado usando la app: quedaron dos '
+    'solicitudes idénticas de la misma persona por el mismo animalito.',
+    () {
+      late FakeFirebaseFirestore db;
+      late SolicitudesRepository repo;
+
+      setUp(() {
+        db = FakeFirebaseFirestore();
+        repo = SolicitudesRepository(db: db);
+      });
+
+      Future<DocumentReference<Map<String, dynamic>>> pedir() => repo.crear(
+        adoptanteUid: 'ana',
+        rescatistaId: 'refugio',
+        creadoPor: CreatorRole.albergue,
+        datos: {'rescateId': 'r1', 'animalNombre': 'Pacolin'},
+      );
+
+      test('la primera pasa', () async {
+        await pedir();
+        expect((await db.collection('solicitudes').get()).docs, hasLength(1));
+      });
+
+      test('la segunda por el MISMO animalito se frena', () async {
+        await pedir();
+        await expectLater(pedir(), throwsA(isA<YaAplicoException>()));
+        expect(
+          (await db.collection('solicitudes').get()).docs,
+          hasLength(1),
+          reason: 'no se escribió una segunda',
+        );
+      });
+
+      test('y también si la primera ya fue aprobada', () async {
+        final ref = await pedir();
+        await ref.update({'estado': 'aprobada'});
+        await expectLater(pedir(), throwsA(isA<YaAplicoException>()));
+      });
+
+      // Lo que NO debe frenar: una solicitud RECHAZADA no bloquea volver a
+      // intentarlo. Si esto se rompiera, alguien a quien le dijeron que no
+      // una vez no podría volver a pedir nunca más.
+      test('una rechazada NO bloquea volver a pedir', () async {
+        final ref = await pedir();
+        await ref.update({'estado': 'rechazada'});
+        await expectLater(pedir(), completes);
+        expect((await db.collection('solicitudes').get()).docs, hasLength(2));
+      });
+
+      test('otro animalito distinto sí se puede pedir', () async {
+        await pedir();
+        await expectLater(
+          repo.crear(
+            adoptanteUid: 'ana',
+            rescatistaId: 'refugio',
+            creadoPor: CreatorRole.albergue,
+            datos: {'rescateId': 'r2', 'animalNombre': 'Firulais'},
+          ),
+          completes,
+        );
+      });
+
+      test('y otra persona por el mismo animalito también', () async {
+        await pedir();
+        await expectLater(
+          repo.crear(
+            adoptanteUid: 'otra',
+            rescatistaId: 'refugio',
+            creadoPor: CreatorRole.albergue,
+            datos: {'rescateId': 'r1', 'animalNombre': 'Pacolin'},
+          ),
+          completes,
+        );
+      });
+    },
+  );
 }

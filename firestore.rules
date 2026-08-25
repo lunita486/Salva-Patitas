@@ -333,10 +333,18 @@ service cloud.firestore {
           // dejar abierta una rama que no puede distinguir un caso
           // legítimo de un ataque: las dos escrituras son idénticas.
         );
+      // `rescateId` también queda fijo, igual que los otros tres. Faltaba,
+      // y con eso un participante podía reapuntar SU chat al animal de
+      // cualquier otra persona: la conversación pasaba a mostrar otro
+      // animalito para los dos lados, y las ediciones del dueño de ESE
+      // animal empezaban a propagarse a un chat ajeno (onRescateActualizado
+      // busca por este campo). No es fuga —los datos del animal son
+      // públicos— es corrupción. Verificado explotable contra el emulador.
       allow update: if signedIn() &&
         request.resource.data.adoptanteId == resource.data.adoptanteId &&
         request.resource.data.rescatistaId == resource.data.rescatistaId &&
         request.resource.data.get('creadoPor', null) == resource.data.get('creadoPor', null) &&
+        request.resource.data.get('rescateId', null) == resource.data.get('rescateId', null) &&
         (resource.data.adoptanteId == uid() || resource.data.rescatistaId == uid());
 
       match /mensajes/{mensajeId} {
@@ -380,7 +388,15 @@ service cloud.firestore {
               ? 'adoptante' : 'rescatista'
           ) &&
           request.resource.data.texto is string &&
-          request.resource.data.texto.size() <= 2000;
+          request.resource.data.texto.size() <= 2000 &&
+          // La fecha la pone el SERVIDOR, no quien escribe. La regla no la
+          // miraba: la app manda serverTimestamp, pero eso es convención
+          // del cliente, y quien escriba directo contra Firestore podía
+          // mandar cualquier fecha. Como la conversación se ordena por este
+          // campo, un mensaje con fecha del año 2099 (o del 1970) quedaba
+          // clavado arriba o abajo del hilo para siempre, para las dos
+          // partes. Verificado aceptado contra el emulador antes de esto.
+          request.resource.data.creadoEn == request.time;
       }
     }
 

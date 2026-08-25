@@ -185,6 +185,26 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
       });
       if (!mounted) return;
       setState(() => _step = 2);
+    } on YaAplicoException catch (e) {
+      // El repositorio frenó un duplicado. Puede pasar sin que sea culpa de
+      // nadie: dos toques seguidos en Enviar, o volver atrás y entrar de
+      // nuevo. Se muestra como información, no como error, y se refleja en
+      // la pantalla para que el botón deje de ofrecer lo que ya está hecho.
+      if (!mounted) return;
+      setState(() {
+        _yaAplico = true;
+        _estadoExistente = e.estado;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: msgAdvertencia,
+          content: Text(
+            e.estado == 'aprobada'
+                ? 'Tu solicitud por este animalito ya fue aprobada.'
+                : 'Ya tenés una solicitud pendiente por este animalito.',
+          ),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

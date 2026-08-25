@@ -24,6 +24,27 @@ Future<T> conReintento<T>(Future<T> Function() accion) async {
   }
 }
 
+/// **¿Este fallo de escritura significa que el dato se perdió?**
+///
+/// Casi siempre sí. Pero hay un caso en el que NO, y tratarlo como si sí
+/// duplica datos: el timeout.
+///
+/// Firestore en el teléfono guarda las escrituras en disco cuando no hay
+/// señal y las manda al reconectar. El `Future` no resuelve hasta que el
+/// servidor confirma, así que los `.timeout()` que la app pone encima
+/// LANZAN — pero no cancelan nada: la escritura sigue en la cola y va a
+/// llegar igual. `Future.timeout()` en Dart no puede cancelar la operación
+/// de abajo, solo dejar de esperarla.
+///
+/// El daño concreto era en el chat: sin señal, a los 15s saltaba "No se
+/// pudo enviar el mensaje. Intentá de nuevo.", el texto volvía al campo, y
+/// la persona hacía lo que el mensaje le pedía. Al volver la conexión
+/// llegaban los DOS. Justo en las condiciones donde más se usa la app.
+///
+/// Devuelve `true` cuando el dato se perdió de verdad y tiene sentido
+/// reintentar. `false` cuando solo se acabó la paciencia de la espera.
+bool sePerdioLaEscritura(Object error) => error is! TimeoutException;
+
 /// **Escritura rechazada por un token de sesión vencido.** Un
 /// `permission-denied` en una escritura de la que ya se sabe que la cuenta
 /// es dueña (la regla solo compara el uid, y la pantalla no habría ofrecido

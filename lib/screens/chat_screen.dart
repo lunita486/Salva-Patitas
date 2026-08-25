@@ -11,6 +11,7 @@ import '../widgets/fotos.dart';
 import '../widgets/texto_sin_desborde.dart';
 import '../data/chats_repository.dart';
 import '../data/creator_role.dart';
+import '../data/firestore_resiliencia.dart';
 import '../data/rescates_repository.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -320,6 +321,19 @@ class _ChatScreenState extends State<ChatScreen> {
           .catchError((_) {});
     } catch (e) {
       if (!mounted) return;
+      // Un timeout NO es un mensaje perdido: Firestore lo tiene guardado y
+      // lo manda al reconectar. Devolver el texto al campo y pedir que se
+      // reintente era lo que producía el mensaje duplicado — ver
+      // sePerdioLaEscritura() en data/firestore_resiliencia.dart.
+      if (!sePerdioLaEscritura(e)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            backgroundColor: msgAdvertencia,
+            content: Text('Sin conexión. Se enviará cuando vuelva.'),
+          ),
+        );
+        return;
+      }
       _msgCtl.text = trimmed;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

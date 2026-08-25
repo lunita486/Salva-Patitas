@@ -176,4 +176,27 @@ void main() {
       );
     });
   });
+
+  group(
+    'sePerdioLaEscritura() — el mensaje duplicado al recuperar la conexión',
+    () {
+      // Firestore guarda las escrituras sin señal y las manda al
+      // reconectar. El .timeout() que la app pone encima lanza, pero no
+      // cancela nada: el mensaje YA está en la cola. Tratarlo como perdido
+      // hacía que la app pidiera reintentar, y al volver la conexión
+      // llegaban los dos.
+      test('un timeout NO es una escritura perdida', () {
+        expect(sePerdioLaEscritura(TimeoutException('15s')), isFalse);
+      });
+
+      // Y el reverso, que importa igual: un permiso denegado o cualquier
+      // otro fallo sí perdió el dato. Si esto devolviera false, la app se
+      // quedaría callada tragándose mensajes que nunca se mandaron.
+      test('cualquier otro fallo SÍ lo es', () {
+        expect(sePerdioLaEscritura(Exception('permission-denied')), isTrue);
+        expect(sePerdioLaEscritura(StateError('roto')), isTrue);
+        expect(sePerdioLaEscritura('error suelto'), isTrue);
+      });
+    },
+  );
 }
