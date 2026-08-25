@@ -298,6 +298,42 @@ function enTandas(items, tamano = 500) {
   return tandas;
 }
 
+/**
+ * De todos los destinos, cuáles hay que ir a revisar en ESTA escritura.
+ *
+ * **El problema.** onPerfilActualizado recorría los cinco destinos siempre,
+ * aunque no hubiera nada que corregir. Y se dispara con CUALQUIER escritura
+ * sobre el perfil, incluido el sello de "última vez activa" que la app deja
+ * al abrirse y el token de notificaciones. O sea: cinco consultas a
+ * Firestore por cada apertura de la app, de cada persona, casi siempre para
+ * no escribir nada. Con 10 animalitos y 20 chats son ~30 documentos leídos
+ * cada vez, y Firestore cobra por documento leído.
+ *
+ * **La regla.** Un destino solo se revisa si al menos UNO de los campos que
+ * ese destino copia cambió de verdad en esta escritura. Un sello de
+ * actividad no cambia ninguno, así que no se revisa nada: cero consultas.
+ *
+ * **Lo que NO se pierde, y es lo importante.** El destino que sí se revisa
+ * sigue propagando TODOS sus valores deseados, no solo el que cambió (ver
+ * valoresDeseados). Ese es el par que repara copias corruptas y el que
+ * arregló el caso de Eliza: le cambió la FOTO a su negocio y el NOMBRE, que
+ * no había cambiado, seguía mostrando el del albergue. Ese caso sigue
+ * andando igual, porque la foto y el nombre son campos del MISMO destino:
+ * cambiar uno alcanza para que el destino se revise entero.
+ *
+ * **Lo que sí se pierde, dicho claro.** Antes, abrir la app reparaba
+ * cualquier copia corrupta aunque no se tocara el perfil. Ahora la
+ * reparación ocurre al GUARDAR el perfil. Es una red menos, pero era una
+ * red que costaba plata en cada apertura y que nadie pidió: la corrupción
+ * conocida ya se limpió una vez a mano, y lo que la evita hacia adelante son
+ * estos mismos triggers, no el barrido.
+ */
+function destinosQueHayQueRevisar({ antes, despues, destinos }) {
+  return destinos.filter(
+      (d) => cambiosAPropagar({ antes, despues, campos: d.campos }) !== null,
+  );
+}
+
 module.exports = {
   CAMPOS_ANIMAL_A_CHAT,
   CAMPOS_ANIMAL_A_SOLICITUD,
@@ -309,6 +345,7 @@ module.exports = {
   CAMPOS_A_BORRAR_EN_CHAT_DE_ANIMAL,
   CAMPOS_PERFIL_ALIADO_A_CHAT,
   cambiosAPropagar,
+  destinosQueHayQueRevisar,
   valoresDeseados,
   desactualizado,
   enTandas,

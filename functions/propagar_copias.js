@@ -15,6 +15,7 @@ const {
   CAMPOS_A_BORRAR_EN_CHAT_DE_ANIMAL,
   CAMPOS_PERFIL_ALIADO_A_CHAT,
   cambiosAPropagar,
+  destinosQueHayQueRevisar,
   valoresDeseados,
   desactualizado,
   enTandas,
@@ -192,7 +193,11 @@ exports.onPerfilActualizado = onDocumentUpdated(
     // deja fuera los documentos que ya están bien, así que un guardado que
     // no rompió nada (o un refresco de token que ni toca estos campos) no
     // escribe absolutamente nada.
-    for (const { campos, consulta, que, filtro, aBorrar = [] } of destinos) {
+    // Solo los destinos que de verdad tienen algo que revisar. Ver
+    // destinosQueHayQueRevisar: sin esto eran 5 consultas por cada apertura
+    // de la app, casi siempre para no escribir nada.
+    for (const { campos, consulta, que, filtro, aBorrar = [] } of
+      destinosQueHayQueRevisar({ antes, despues, destinos })) {
       const deseados = valoresDeseados({ despues, campos });
       if (deseados === null) continue;
       await aplicarATodos({

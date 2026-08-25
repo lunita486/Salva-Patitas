@@ -9,6 +9,7 @@ const {
   CAMPOS_A_BORRAR_EN_CHAT_DE_ANIMAL,
   CAMPOS_PERFIL_ALIADO_A_CHAT,
   cambiosAPropagar,
+  destinosQueHayQueRevisar,
   valoresDeseados,
   desactualizado,
   enTandas,
@@ -555,6 +556,115 @@ describe(
       assert.ok(!('ciudad' in CAMPOS_PERFIL_A_ANIMAL_RESCATISTA));
       assert.ok(!('latitud' in CAMPOS_PERFIL_A_ANIMAL_RESCATISTA));
       assert.strictEqual(CAMPOS_PERFIL_A_ANIMAL.ciudad, 'ubicacion');
+    });
+  },
+);
+
+describe(
+  'destinosQueHayQueRevisar — onPerfilActualizado recorria los CINCO ' +
+  'destinos en cada escritura del perfil, incluido el sello de "ultima vez ' +
+  'activa" que la app deja al abrirse: 5 consultas por apertura, de cada ' +
+  'persona, casi siempre para no escribir nada.',
+  () => {
+    // Los mapas REALES del trigger, no unos inventados: si manana alguien
+    // agrega un campo a alguno, estos tests lo ejercitan solo.
+    const DESTINOS = [
+      { nombre: 'animales de albergue', campos: CAMPOS_PERFIL_A_ANIMAL },
+      { nombre: 'animales de rescatista', campos: CAMPOS_PERFIL_A_ANIMAL_RESCATISTA },
+      { nombre: 'chats de albergue', campos: CAMPOS_PERFIL_A_CHAT },
+      { nombre: 'chats de negocio', campos: CAMPOS_PERFIL_ALIADO_A_CHAT },
+      { nombre: 'solicitudes', campos: CAMPOS_PERFIL_A_SOLICITUD },
+      { nombre: 'chats como adoptante', campos: CAMPOS_PERFIL_A_CHAT_ADOPTANTE },
+    ];
+
+    const revisar = (antes, despues) =>
+      destinosQueHayQueRevisar({ antes, despues, destinos: DESTINOS })
+          .map((d) => d.nombre);
+
+    // Un perfil completo: alguien que es albergue, aliado y adoptante.
+    const perfil = {
+      nombre: 'Eliza',
+      foto: 'https://x/eliza.jpg',
+      albergueNombre: 'La Perla',
+      aliadoNombre: 'Veterinaria 30',
+      aliadoFotoBase64: 'AAA',
+      fotoBase64: 'BBB',
+      ciudad: 'Santiago',
+      latitud: 19.45,
+      longitud: -70.69,
+      paisCodigo: 'DO',
+    };
+
+    // EL CASO QUE MOTIVA TODO ESTO.
+    test('abrir la app (solo ultimaVezActiva) no manda revisar NADA', () => {
+      assert.deepStrictEqual(
+          revisar(
+              { ...perfil, ultimaVezActiva: 1 },
+              { ...perfil, ultimaVezActiva: 2 },
+          ),
+          [],
+      );
+    });
+
+    test('guardar el token de notificaciones tampoco', () => {
+      assert.deepStrictEqual(
+          revisar({ ...perfil }, { ...perfil, fcmToken: 'tok' }),
+          [],
+      );
+    });
+
+    test('borrarlo al cerrar sesion tampoco', () => {
+      assert.deepStrictEqual(
+          revisar({ ...perfil, fcmToken: 'tok' }, { ...perfil }),
+          [],
+      );
+    });
+
+    // Y lo que SI tiene que seguir revisandose.
+    test('renombrar el albergue revisa sus animales y sus chats', () => {
+      const r = revisar(perfil, { ...perfil, albergueNombre: 'La Perla 2' });
+      assert.ok(r.includes('animales de albergue'), r);
+      assert.ok(r.includes('chats de albergue'), r);
+      assert.ok(!r.includes('chats de negocio'), 'el negocio no tiene nada que ver');
+    });
+
+    test('corregirse el nombre propio revisa el lado de adoptante y de rescatista', () => {
+      const r = revisar(perfil, { ...perfil, nombre: 'Eliza Garcia' });
+      assert.ok(r.includes('solicitudes'), r);
+      assert.ok(r.includes('chats como adoptante'), r);
+      assert.ok(r.includes('animales de rescatista'), r);
+    });
+
+    test('mudarse de ciudad revisa los animales del albergue', () => {
+      const r = revisar(perfil, { ...perfil, ciudad: 'Cordoba' });
+      assert.deepStrictEqual(r, ['animales de albergue']);
+    });
+
+    // EL CASO DE ELIZA, que es lo que NO se puede perder: cambio la FOTO de
+    // su negocio y el NOMBRE, que no habia cambiado, seguia mal. Como los
+    // dos son campos del MISMO destino, cambiar uno alcanza para que ese
+    // destino se revise entero y valoresDeseados repare los dos.
+    test('cambiar solo la foto del negocio igual manda a revisar sus chats', () => {
+      const r = revisar(perfil, { ...perfil, aliadoFotoBase64: 'CCC' });
+      assert.deepStrictEqual(r, ['chats de negocio']);
+    });
+
+    test('y ese destino sigue propagando TAMBIEN el nombre, no solo la foto', () => {
+      const deseados = valoresDeseados({
+        despues: { ...perfil, aliadoFotoBase64: 'CCC' },
+        campos: CAMPOS_PERFIL_ALIADO_A_CHAT,
+      });
+      assert.strictEqual(deseados.fotoBase64, 'CCC');
+      assert.strictEqual(deseados.rescatista, 'Veterinaria 30',
+          'si esto se rompe, vuelve el bug del nombre pegado');
+      assert.strictEqual(deseados.animalNombre, 'Veterinaria 30');
+    });
+
+    test('un perfil sin datos de albergue ni de negocio no revisa esos destinos', () => {
+      const soloAdoptante = { nombre: 'Ana' };
+      const r = revisar(soloAdoptante, { ...soloAdoptante, nombre: 'Ana Perez' });
+      assert.ok(!r.includes('animales de albergue'), r);
+      assert.ok(!r.includes('chats de negocio'), r);
     });
   },
 );
