@@ -277,6 +277,19 @@ class _ChatScreenState extends State<ChatScreen> {
     if (trimmed.isEmpty) return;
     _msgCtl.clear();
     try {
+      // Espera a que el documento del chat EXISTA antes de mandar nada.
+      //
+      // initState lo asegura (asegurarChatAnimal / asegurarChatLegado) pero
+      // no esperaba a que terminara: escribir rápido, apenas se abre la
+      // pantalla, podía mandar el mensaje antes. Y un mensaje sobre un chat
+      // que todavía no existe se rechaza — la regla de mensajes/create hace
+      // get() sobre el chat. Ver el comentario largo en
+      // ChatsRepository._escribirChatYMensaje: es el mismo silencio que
+      // dejaba sin avisar al adoptante, por una tercera puerta.
+      //
+      // _chatListo ya se traga sus propios errores, así que esperar acá no
+      // agrega un modo de falla nuevo.
+      await _chatListo;
       // registrarMensaje es dueño del orden (vista previa del chat primero,
       // mensaje después) y del set(merge:true) que crea el chat si el otro
       // lado nunca llegó a crearlo — ver su doc en chats_repository.dart

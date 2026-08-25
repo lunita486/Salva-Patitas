@@ -24,6 +24,14 @@
     // también hubiera andado — no es un problema del proyecto, es un
     // choque puntual con lo que ya estaba corriendo acá.
     "firestore": { "port": 8097 },
+    // Auth y Storage existen solo para el modo sandbox de la app (ver
+    // lib/data/sandbox.dart). Los tests de reglas no los usan.
+    //
+    // El de Auth es lo que hace posible entrar a la app sin una cuenta de
+    // Google real: contra el emulador, email+contraseña alcanza, y no hay
+    // ninguna credencial de verdad de por medio.
+    "auth": { "port": 9099 },
+    "storage": { "port": 9199 },
     "ui": { "enabled": false },
     "singleProjectMode": true
   }

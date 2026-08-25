@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../data/auth_helper.dart';
 import '../theme.dart';
 import '../widgets/fondo_decorativo.dart';
+import '../data/sandbox.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -19,6 +20,22 @@ class _LoginScreenState extends State<LoginScreen> {
   // operaciones apiladas) vive en auth_helper.dart — esta pantalla solo
   // traduce el desenlace a UI. Si el login sale bien no hay que navegar
   // nada: AuthWrapper (main.dart) reacciona solo al cambio de sesión.
+  /// Solo sandbox. Ver el bloque `if (enSandbox)` en build().
+  Future<void> _entrarSandbox(String email, String nombre) async {
+    setState(() => _cargando = true);
+    try {
+      await entrarEnSandbox(email: email, nombre: nombre);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Sandbox: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _cargando = false);
+    }
+  }
+
   Future<void> _loginGoogle() async {
     setState(() => _cargando = true);
     try {
@@ -173,6 +190,38 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                     ),
                   ),
+                  // Modo sandbox: cuatro cuentas de prueba, una por rol,
+                  // contra el emulador de Auth. No existe en un build de
+                  // release — `enSandbox` es una constante falsa ahí y todo
+                  // este bloque se elimina del binario. Ver sandbox.dart.
+                  if (enSandbox) ...[
+                    const SizedBox(height: 12),
+                    const Text(
+                      'SANDBOX (emuladores locales)',
+                      style: TextStyle(fontSize: 11, color: Colors.grey),
+                    ),
+                    Wrap(
+                      spacing: 6,
+                      alignment: WrapAlignment.center,
+                      children: [
+                        for (final c in const [
+                          ('ana@sandbox.test', 'Ana Adoptante'),
+                          ('rita@sandbox.test', 'Rita Rescatista'),
+                          ('perla@sandbox.test', 'Refugio La Perla'),
+                          ('vet@sandbox.test', 'Veterinaria 30'),
+                        ])
+                          OutlinedButton(
+                            onPressed: _cargando
+                                ? null
+                                : () => _entrarSandbox(c.$1, c.$2),
+                            child: Text(
+                              c.$2.split(' ').first,
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   GestureDetector(
                     onTap: () => launchUrl(

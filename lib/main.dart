@@ -22,6 +22,7 @@ import 'screens/aliado_perfil_screen.dart';
 import 'screens/aliado_home_screen.dart';
 import 'screens/home_screen.dart';
 import 'services/notificaciones_service.dart';
+import 'data/sandbox.dart';
 
 // Instancia única compartida por toda la app — Fase 2 (eventos propios como
 // "solicitud_enviada") la va a importar desde acá en vez de crear la suya.
@@ -43,6 +44,13 @@ void main() async {
   // mismo instante.
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  // Modo sandbox: redirige los SDK a los emuladores locales. Va ACÁ, pegado
+  // a initializeApp y antes de cualquier lectura — los SDK no aceptan que se
+  // les cambie el destino una vez que ya hablaron con el servidor. En un
+  // build de release `enSandbox` es una constante falsa y todo esto se
+  // elimina del binario (ver sandbox.dart).
+  if (enSandbox) await conectarEmuladores();
 
   // Los dos manejadores de acá cubren errores DISTINTOS: FlutterError.
   // onError es lo que Flutter dispara para errores durante el build/layout/

@@ -422,6 +422,17 @@ class ChatsRepository {
   /// `set(merge: true)` sobre el chat, no `update()`: así sirve aunque el
   /// chat todavía no exista (el otro lado nunca llegó a crearlo), en vez
   /// de fallar con "no encontrado".
+  /// Los campos del chat que son la VISTA PREVIA de la conversación, no su
+  /// identidad. Se listan aparte porque [_escribirChatYMensaje] tiene que
+  /// poder crear el chat sin ellos: ver ahí el porqué.
+  static const _camposDeVistaPrevia = {
+    'ultimoMensaje',
+    'ultimaHora',
+    'ultimoMensajeEn',
+    'noLeidosAdoptante',
+    'noLeidosRescatista',
+  };
+
   Future<void> _escribirChatYMensaje({
     required String chatId,
     required Map<String, dynamic> camposChat,
@@ -430,10 +441,52 @@ class ChatsRepository {
     required String hora,
     bool? escritoPorRescatista,
     bool avisoDeEstado = false,
+    /// El chat puede no existir todavía. Ver abajo: cambia el número de
+    /// escrituras, así que se pide explícito en vez de averiguarlo con un
+    /// `get()` que costaría una lectura en CADA mensaje.
+    bool crearChatPrimero = false,
     Duration timeout = const Duration(seconds: 15),
   }) async {
     final chatRef = _db.collection('chats').doc(chatId);
     final mensajeRef = chatRef.collection('mensajes').doc();
+
+    // El chat NUEVO no puede nacer dentro del mismo batch que su primer
+    // mensaje. La regla de `mensajes/create` hace un `get()` sobre el chat
+    // para comprobar que quien escribe es una de las dos partes, y ese
+    // `get()` NO ve las escrituras pendientes del propio batch: para la
+    // regla el chat todavía no existe, así que rechaza el mensaje y con él
+    // el batch entero.
+    //
+    // El resultado era el peor posible: silencio. Aprobar o rechazar una
+    // solicitud, o marcar un animalito como fallecido, no le llegaba NUNCA
+    // al adoptante si el chat no estaba abierto de antes. Es exactamente
+    // el bug que avisarSobreAnimal ya había arreglado una vez pasando a
+    // dos escrituras separadas, y que volvió cuando se juntaron nuevamente
+    // en un batch para arreglar OTRA cosa (el contador de no leídos
+    // fantasma). Los dos arreglos eran correctos por separado y se pisaron
+    // entre sí. Verificado en el emulador: el batch se rechaza igual con
+    // las reglas viejas y con las nuevas, así que no es cosa de un cambio
+    // reciente de reglas. Hay un test que ya avisaba de esto en
+    // test_rules/reglas.test.mjs.
+    //
+    // Por eso, cuando el chat es nuevo, primero se lo crea SOLO con su
+    // identidad (sin vista previa ni contadores) y recién después va el
+    // batch de siempre. Así se conservan las dos propiedades:
+    //
+    //  · el mensaje y la vista previa/contador siguen siendo atómicos entre
+    //    sí, que era el motivo del batch;
+    //  · y si esta primera escritura funciona pero el batch falla, lo que
+    //    queda es un chat vacío —recuperable, el próximo intento lo
+    //    completa— y NO un "sin leer" apuntando a un mensaje que no existe.
+    if (crearChatPrimero) {
+      await chatRef
+          .set({
+            for (final e in camposChat.entries)
+              if (!_camposDeVistaPrevia.contains(e.key)) e.key: e.value,
+          }, SetOptions(merge: true))
+          .timeout(timeout);
+    }
+
     final batch = _db.batch();
     batch.set(chatRef, camposChat, SetOptions(merge: true));
     batch.set(mensajeRef, {
@@ -482,6 +535,9 @@ class ChatsRepository {
     bool avisoDeEstado = false,
     Map<String, dynamic> camposChat = const {},
     String? hora,
+    /// Ver [_escribirChatYMensaje]. Lo saben los llamadores que acaban de
+    /// comprobar que el chat no existe.
+    bool crearChatPrimero = false,
   }) async {
     final h = hora ?? horaAhora();
     await _escribirChatYMensaje(
@@ -502,6 +558,7 @@ class ChatsRepository {
       hora: h,
       escritoPorRescatista: escritoPorRescatista,
       avisoDeEstado: avisoDeEstado,
+      crearChatPrimero: crearChatPrimero,
     );
   }
 
@@ -674,6 +731,9 @@ class ChatsRepository {
           texto: texto,
           emisor: emisor,
           hora: hora,
+          // Esta rama es, por definición, la del chat que todavía no
+          // existe. Ver _escribirChatYMensaje.
+          crearChatPrimero: true,
           avisoDeEstado: avisoDeEstado,
           // Estos avisos los manda siempre el rescatista/albergue. En una
           // autoconsulta `emisor` vale 'adoptante' por la regla, así que
@@ -690,6 +750,9 @@ class ChatsRepository {
         texto: texto,
         emisor: emisor,
         paraAdoptante: true,
+        // Si no se encontró un chat previo, este también nace acá. Mismo
+        // motivo que la rama de arriba.
+        crearChatPrimero: existente == null,
         avisoParaAmbosLados: avisoParaAmbosLados,
         avisoDeEstado: avisoDeEstado,
         hora: hora,

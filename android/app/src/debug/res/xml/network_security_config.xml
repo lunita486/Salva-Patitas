@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Permite HTTP SIN CIFRAR, y solo hacia 10.0.2.2.
+
+  Por qué hace falta: los emuladores de Firebase (Auth, Firestore, Storage)
+  hablan HTTP plano, y desde Android 9 el sistema bloquea todo el tráfico
+  sin cifrar por defecto. Sin esto, el modo sandbox de la app falla con
+  "Cleartext HTTP traffic to 10.0.2.2 not permitted" y ninguna petición
+  llega nunca al emulador — el síntoma es una pantalla de login que no
+  responde al tocar, sin ningún error visible.
+
+  10.0.2.2 es el alias que el emulador de Android reserva para "la máquina
+  que me hospeda". No es una dirección alcanzable desde internet.
+
+  Este archivo vive en los source sets `debug` y `profile` ÚNICAMENTE. La
+  variante `release` no lo incluye, así que un APK de producción sigue
+  rechazando todo el tráfico sin cifrar, como corresponde. Es el mismo
+  criterio que usa `enSandbox` en lib/data/sandbox.dart: que la seguridad
+  no dependa de acordarse de algo.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>

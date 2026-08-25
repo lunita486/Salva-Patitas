@@ -37,6 +37,7 @@ import {
   where,
   limit,
   deleteField,
+  writeBatch,
 } from 'firebase/firestore';
 
 const aca = dirname(fileURLToPath(import.meta.url));
@@ -1160,5 +1161,65 @@ describe('usuarios — leer UNO sí, listar TODOS no', () => {
   it('sin sesión no se lee nada', async () => {
     const db = sinSesion();
     await assertFails(getDoc(doc(db, 'usuarios', ALBERGUE)));
+  });
+});
+
+// ── El aviso automático sobre un chat que todavía no existe ────────────
+//
+// Bug real, encontrado usando la app: aprobar una solicitud de hogar de
+// paso dejaba al animalito en "Hogar de paso" pero al adoptante NO le
+// llegaba nada. Ni chat, ni mensaje. En silencio.
+//
+// La causa es la interacción entre dos arreglos correctos que se pisaron:
+// avisarSobreAnimal había pasado a dos escrituras separadas justamente
+// para que el chat existiera antes que su mensaje, y más tarde se volvieron
+// a juntar en un WriteBatch para arreglar el contador de "sin leer"
+// fantasma. La regla de mensajes/create hace get() sobre el chat y ese get
+// no ve lo pendiente del propio batch.
+//
+// Los dos tests de abajo son la forma vieja (rechazada) y la nueva.
+describe('crear un chat y su primer mensaje', () => {
+  const camposChat = () => ({
+    rescateId: 'animal1',
+    creadoPor: 'albergue',
+    rescatistaId: ALBERGUE,
+    adoptanteId: ADOPTANTE,
+    animalNombre: 'Firulais',
+  });
+
+  it('en UN SOLO batch se rechaza — la regla del mensaje no ve el chat pendiente', async () => {
+    const db = como(ALBERGUE);
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'chats', 'nuevo1'), {
+      ...camposChat(),
+      ultimoMensaje: 'Tu solicitud fue aprobada',
+      noLeidosAdoptante: 1,
+    });
+    batch.set(doc(collection(db, 'chats', 'nuevo1', 'mensajes')), {
+      texto: 'Tu solicitud fue aprobada',
+      emisor: 'rescatista',
+    });
+    await assertFails(batch.commit());
+  });
+
+  // Lo que hace ahora _escribirChatYMensaje con crearChatPrimero: primero
+  // el chat SOLO con su identidad, y después el batch de siempre.
+  it('creando primero el chat (sin vista previa) y después el batch, funciona', async () => {
+    const db = como(ALBERGUE);
+    // Paso 1: identidad nada más. Si el paso 2 fallara, lo que queda es un
+    // chat vacío, no un "sin leer" apuntando a un mensaje inexistente.
+    await assertSucceeds(setDoc(doc(db, 'chats', 'nuevo2'), camposChat(), { merge: true }));
+
+    // Paso 2: vista previa + contador + mensaje, atómicos entre sí.
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'chats', 'nuevo2'), {
+      ultimoMensaje: 'Tu solicitud fue aprobada',
+      noLeidosAdoptante: 1,
+    }, { merge: true });
+    batch.set(doc(collection(db, 'chats', 'nuevo2', 'mensajes')), {
+      texto: 'Tu solicitud fue aprobada',
+      emisor: 'rescatista',
+    });
+    await assertSucceeds(batch.commit());
   });
 });
