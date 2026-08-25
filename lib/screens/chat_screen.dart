@@ -201,33 +201,25 @@ class _ChatScreenState extends State<ChatScreen> {
         // Solo el adoptante crea/actualiza el doc del chat en este esquema
         // legado, porque es el único lado del que tenemos datos confiables.
         if (!widget.esRescatista) {
-          _chatListo = FirebaseFirestore.instance
-              .collection('chats')
-              .doc(_chatId)
-              .set({
-                'animalNombre': widget.animal['nombre'],
-                'rescateId': rescateId ?? '',
-                // Sin `rescateId` no hay animal contra el cual anclar este
-                // chat, así que el ancla es la solicitud. Las reglas
-                // rechazan un chat sin ninguna de las dos: era la última
-                // puerta por la que se le podía abrir conversación (y
-                // mandar una push con texto libre) a alguien con quien no
-                // hay ninguna relación. Ver firestore.rules, chats.create.
-                if ((widget.animal['solicitudId'] as String?)?.isNotEmpty ==
-                    true)
-                  'solicitudId': widget.animal['solicitudId'],
-                'creadoPor': widget.animal['creadoPor'] ?? 'rescatista',
-                'rescatista': widget.animal['rescatista'] ?? 'Rescatista',
-                'rescatistaId': widget.animal['rescatistaId'] ?? '',
-                'adoptanteId': propioUid,
-                'adoptanteNombre':
+          // ChatsRepository.asegurarChatLegado — antes esto era un `set()`
+          // escrito a mano acá, el único camino de la app que creaba un
+          // chat sin pasar por el repositorio. Ver su doc para el porqué.
+          _chatListo = _chatsRepo
+              .asegurarChatLegado(
+                chatId: _chatId,
+                adoptanteId: propioUid,
+                adoptanteNombre:
                     FirebaseAuth.instance.currentUser?.displayName ??
                     'Adoptante',
-                'especie': widget.animal['especie'] ?? 'Perro',
-                'fotoUrl': widget.animal['fotoUrl'],
-                'ultimoMensaje': '',
-                'creadoEn': FieldValue.serverTimestamp(),
-              }, SetOptions(merge: true))
+                rescatistaId: widget.animal['rescatistaId'] as String? ?? '',
+                rescatista:
+                    widget.animal['rescatista'] as String? ?? 'Rescatista',
+                creadoPor: widget.animal['creadoPor'] as String? ?? 'rescatista',
+                solicitudId: widget.animal['solicitudId'] as String?,
+                animalNombre: widget.animal['nombre'] as String?,
+                especie: widget.animal['especie'] as String?,
+                fotoUrl: widget.animal['fotoUrl'] as String?,
+              )
               .catchError((_) {});
         } else {
           _chatListo = Future.value();

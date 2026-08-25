@@ -770,6 +770,47 @@ class ChatsRepository {
     return chatId;
   }
 
+  /// Crea (o completa) el chat del esquema LEGADO: un animal sin
+  /// `rescateId`, cuyo id es `nombre_rescatista` en vez de determinístico.
+  ///
+  /// Vivía escrito a mano dentro de chat_screen.dart, que era el único
+  /// lugar de la app que creaba un chat sin pasar por acá. Esa copia hacía
+  /// lo mismo que [asegurarChatAnimal] pero con su propio criterio, y fue
+  /// justamente la que quedó sin ancla cuando se cerró chats.create: no
+  /// estaba cubierta por ningún test porque no había forma de llamarla sin
+  /// levantar la pantalla entera.
+  ///
+  /// [solicitudId] es el ANCLA. Sin `rescateId` no hay animal contra el
+  /// cual validar este chat, así que la solicitud es lo que prueba que
+  /// estas dos personas tienen relación de verdad. Las reglas rechazan un
+  /// chat que no traiga ninguna de las dos cosas.
+  Future<void> asegurarChatLegado({
+    required String chatId,
+    required String adoptanteId,
+    required String adoptanteNombre,
+    required String rescatistaId,
+    required String rescatista,
+    required String creadoPor,
+    String? solicitudId,
+    String? animalNombre,
+    String? especie,
+    String? fotoUrl,
+  }) => _db.collection('chats').doc(chatId).set({
+    'animalNombre': animalNombre,
+    'rescateId': '',
+    if (solicitudId != null && solicitudId.isNotEmpty)
+      'solicitudId': solicitudId,
+    'creadoPor': creadoPor,
+    'rescatista': rescatista,
+    'rescatistaId': rescatistaId,
+    'adoptanteId': adoptanteId,
+    'adoptanteNombre': adoptanteNombre,
+    'especie': especie ?? 'Perro',
+    'fotoUrl': fotoUrl,
+    'ultimoMensaje': '',
+    'creadoEn': FieldValue.serverTimestamp(),
+  }, SetOptions(merge: true));
+
   /// Id determinístico para un chat de consulta con un negocio aliado (no es
   /// sobre un animal puntual, así que usa un esquema separado). `contexto`
   /// distingue si la cuenta contactó como adoptante, rescatista o albergue —
