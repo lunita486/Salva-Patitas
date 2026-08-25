@@ -279,5 +279,176 @@ void main() {
         verifyNever(() => auth.currentUser);
       });
     });
+
+    group(
+      'nombrePropioParaAnimal() — la firma correcta en un aviso automático '
+      '(rechazar solicitud, avisar que un animal falleció) para una cuenta '
+      'que puede tener rol de rescatista Y de albergue a la vez',
+      () {
+        setUp(() async {
+          await firestore.collection('usuarios').doc('dual').set({
+            'nombre': 'Eliza Casas',
+            'albergueNombre': 'La Perla pruebas',
+          });
+        });
+
+        test(
+          'un animal de RESCATISTA usa el nombre propio, nunca el del '
+          'albergue de la misma cuenta — el bug real de Eliza: rechazó una '
+          'solicitud de un animal suyo como rescatista y el aviso le llegó '
+          'al adoptante firmado "La Perla pruebas"',
+          () async {
+            final nombre = await repo.nombrePropioParaAnimal(
+              uid: 'dual',
+              creadoPor: 'rescatista',
+            );
+            expect(nombre, 'Eliza Casas');
+          },
+        );
+
+        test(
+          'creadoPor null (dato legado) se trata igual que rescatista, no '
+          'como albergue — la mayoría de los animales son de rescatista',
+          () async {
+            final nombre = await repo.nombrePropioParaAnimal(
+              uid: 'dual',
+              creadoPor: null,
+            );
+            expect(nombre, 'Eliza Casas');
+          },
+        );
+
+        test('un animal de ALBERGUE sí usa el nombre del albergue', () async {
+          final nombre = await repo.nombrePropioParaAnimal(
+            uid: 'dual',
+            creadoPor: 'albergue',
+          );
+          expect(nombre, 'La Perla pruebas');
+        });
+
+        test(
+          'animal de albergue pero la cuenta no tiene albergueNombre '
+          'cargado: cae al nombre propio en vez de un string vacío',
+          () async {
+            await firestore.collection('usuarios').doc('solo-rescatista').set({
+              'nombre': 'Eliza Casas',
+            });
+            final nombre = await repo.nombrePropioParaAnimal(
+              uid: 'solo-rescatista',
+              creadoPor: 'albergue',
+            );
+            expect(nombre, 'Eliza Casas');
+          },
+        );
+
+        test(
+          'cuenta sin ningún nombre cargado: cae al displayName de Auth, y '
+          'si tampoco hay, a "Rescatista"',
+          () async {
+            await firestore.collection('usuarios').doc('vacio').set({});
+            final auth = MockFirebaseAuth();
+            final user = MockUser();
+            when(() => auth.currentUser).thenReturn(user);
+            when(() => user.displayName).thenReturn('Del Auth');
+            final repoConAuth = UsuariosRepository(
+              db: firestore,
+              auth: auth,
+            );
+
+            expect(
+              await repoConAuth.nombrePropioParaAnimal(
+                uid: 'vacio',
+                creadoPor: 'rescatista',
+              ),
+              'Del Auth',
+            );
+          },
+        );
+
+        test(
+          'el documento no existe (uid inválido): no explota, cae al '
+          'nombre de respaldo',
+          () async {
+            final auth = MockFirebaseAuth();
+            when(() => auth.currentUser).thenReturn(null);
+            final repoConAuth = UsuariosRepository(db: firestore, auth: auth);
+
+            final nombre = await repoConAuth.nombrePropioParaAnimal(
+              uid: 'no-existe',
+              creadoPor: 'rescatista',
+            );
+            expect(nombre, 'Rescatista');
+          },
+        );
+      },
+    );
   });
+
+  group(
+    'nombrePropioDesde() — la MISMA regla que nombrePropioParaAnimal pero '
+    'sin tocar la red, para las pantallas que ya tienen el perfil cargado '
+    '(publicar un animal, publicar en lote, contactar a un negocio). Las '
+    'tres tenían su propia copia escrita a mano ("si hay albergueNombre y '
+    'no está vacío, usalo"), que es justo la decisión que esta regla '
+    'centraliza — equivocarse acá fue el bug de "La Perla pruebas".',
+    () {
+      test('animal de albergue: usa el nombre del albergue', () {
+        expect(
+          UsuariosRepository.nombrePropioDesde(
+            datosUsuario: {'nombre': 'Eliza Casas', 'albergueNombre': 'La Perla'},
+            creadoPor: 'albergue',
+            nombreDeLaCuenta: 'Eliza Casas',
+          ),
+          'La Perla',
+        );
+      });
+
+      // El bug real que motivó centralizar esto.
+      test('animal de RESCATISTA: usa el nombre propio, aunque la cuenta '
+          'también tenga albergue', () {
+        expect(
+          UsuariosRepository.nombrePropioDesde(
+            datosUsuario: {'nombre': 'Eliza Casas', 'albergueNombre': 'La Perla'},
+            creadoPor: 'rescatista',
+            nombreDeLaCuenta: 'Eliza Casas',
+          ),
+          'Eliza Casas',
+        );
+      });
+
+      test('animal de albergue pero sin albergueNombre cargado: cae al '
+          'nombre propio, nunca a un texto vacío', () {
+        expect(
+          UsuariosRepository.nombrePropioDesde(
+            datosUsuario: {'nombre': 'Eliza Casas', 'albergueNombre': ''},
+            creadoPor: 'albergue',
+            nombreDeLaCuenta: 'Eliza Casas',
+          ),
+          'Eliza Casas',
+        );
+      });
+
+      test('sin perfil cargado todavía: cae al nombre de la cuenta', () {
+        expect(
+          UsuariosRepository.nombrePropioDesde(
+            datosUsuario: null,
+            creadoPor: 'albergue',
+            nombreDeLaCuenta: 'Eliza Casas',
+          ),
+          'Eliza Casas',
+        );
+      });
+
+      test('sin nada de nada: un respaldo legible, no un texto vacío', () {
+        expect(
+          UsuariosRepository.nombrePropioDesde(
+            datosUsuario: null,
+            creadoPor: null,
+            nombreDeLaCuenta: null,
+          ),
+          'Rescatista',
+        );
+      });
+    },
+  );
 }

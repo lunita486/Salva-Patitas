@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme.dart';
+import '../data/servicios_repository.dart';
+import '../widgets/resultado_guardado_snackbar.dart';
 import '../data/firestore_resiliencia.dart';
 
 class SubirServicioScreen extends StatefulWidget {
@@ -64,6 +65,15 @@ class _SubirServicioScreenState extends State<SubirServicioScreen> {
     if (!_completo) return;
     setState(() => _guardando = true);
     final uid = FirebaseAuth.instance.currentUser?.uid;
+    // Sin uid no se puede publicar: antes esto seguía igual y creaba el
+    // servicio con `aliadoId: null` — un documento huérfano que no
+    // aparecía en la lista de NINGÚN negocio (todas filtran por aliadoId)
+    // y que nadie podía borrar desde la app. Lo destapó el repositorio, que
+    // exige el id del dueño en vez de aceptar cualquier cosa.
+    if (uid == null || uid.isEmpty) {
+      setState(() => _guardando = false);
+      return;
+    }
     final payload = {
       'nombre': _nombreCtl.text.trim(),
       // Sin .replaceAll('.', '') acá a propósito — era código muerto: el
@@ -80,51 +90,21 @@ class _SubirServicioScreenState extends State<SubirServicioScreen> {
     // auditoría de código). De yapa, esta pantalla ni siquiera avisaba
     // "listo" al guardar bien.
     final resultado = await guardarConAviso(
+      // `activo: true` y `creadoEn` ya NO se escriben acá: son parte de qué
+      // significa "crear un servicio", no una decisión de esta pantalla —
+      // ver ServiciosRepository.crear().
       () => _esEdicion
-          ? FirebaseFirestore.instance
-                .collection('servicios')
-                .doc(widget.docId)
-                .update(payload)
-          : FirebaseFirestore.instance.collection('servicios').add({
-              ...payload,
-              'aliadoId': uid,
-              'activo': true,
-              'creadoEn': FieldValue.serverTimestamp(),
-            }),
+          ? ServiciosRepository().actualizar(widget.docId!, payload)
+          : ServiciosRepository().crear(aliadoId: uid, datos: payload),
     );
     if (!mounted) return;
     setState(() => _guardando = false);
-    switch (resultado) {
-      case ResultadoGuardado.confirmado:
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              _esEdicion ? 'Servicio actualizado' : 'Servicio publicado',
-            ),
-            backgroundColor: msgExito,
-          ),
-        );
-        Navigator.pop(context);
-      case ResultadoGuardado.siguePendiente:
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Esto está tardando. Se va a guardar solo apenas vuelva la señal.',
-            ),
-            backgroundColor: msgAdvertencia,
-          ),
-        );
-        Navigator.pop(context);
-      case ResultadoGuardado.fallo:
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'No se pudo guardar. Revisá tu conexión e intentá de nuevo.',
-            ),
-            backgroundColor: msgError,
-          ),
-        );
-    }
+    mostrarResultadoGuardado(
+      context,
+      resultado,
+      exito: _esEdicion ? 'Servicio actualizado' : 'Servicio publicado',
+    );
+    if (resultado != ResultadoGuardado.fallo) Navigator.pop(context);
   }
 
   @override
@@ -292,7 +272,7 @@ class _SubirServicioScreenState extends State<SubirServicioScreen> {
                   const SizedBox(height: 28),
 
                   // Nombre
-                  _label('Nombre del servicio'),
+                  _label('Nombre del servicio *'),
                   const SizedBox(height: 8),
                   _campo(
                     _nombreCtl,
@@ -302,13 +282,22 @@ class _SubirServicioScreenState extends State<SubirServicioScreen> {
                   const SizedBox(height: 20),
 
                   // Precio
-                  _label('Precio'),
+                  _label('Precio *'),
                   const SizedBox(height: 8),
                   TextFormField(
                     controller: _precioCtl,
                     onChanged: (_) => setState(() {}),
                     keyboardType: TextInputType.number,
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    // Mismo bug y mismo arreglo que la capacidad del
+                    // perfil de albergue (albergue_perfil_screen.dart): sin
+                    // tope de dígitos, un número gigante desborda
+                    // int.tryParse() en _completo (más abajo), que lo lee
+                    // como "precio 0" y deja el botón de publicar
+                    // deshabilitado para siempre sin ningún aviso. 9
+                    // dígitos (hasta 999.999.999) alcanza de sobra para
+                    // cualquier precio real, en cualquier moneda de la app.
+                    maxLength: 9,
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
@@ -333,6 +322,22 @@ class _SubirServicioScreenState extends State<SubirServicioScreen> {
                       ),
                     ),
                   ),
+                  // Por qué "Publicar servicio" está apagado, dicho en el
+                  // lugar donde se puede arreglar. _completo ya exigía
+                  // precio > 0 (un servicio a $0 se publicaba tal cual
+                  // antes), pero eso no se explicaba en ningún lado: el
+                  // botón simplemente no se encendía. Mismo agregado, y
+                  // por el mismo motivo, que el aviso de capacidad en
+                  // albergue_perfil_screen.dart. Pedido de Eliza.
+                  if (_precioCtl.text.trim().isNotEmpty &&
+                      (int.tryParse(_precioCtl.text.trim()) ?? 0) <= 0)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        'El precio tiene que ser mayor que 0 para poder publicar.',
+                        style: TextStyle(fontSize: 12, color: msgError),
+                      ),
+                    ),
                   const SizedBox(height: 20),
 
                   // Descripción
@@ -341,7 +346,12 @@ class _SubirServicioScreenState extends State<SubirServicioScreen> {
                   TextFormField(
                     controller: _descripcionCtl,
                     maxLines: 3,
-                    maxLength: 1000,
+                    // 300, no los 1000 de la descripción de un animal (ver
+                    // subir_rescate_screen.dart) — esa cuenta una historia
+                    // para generar empatía, esta es "qué incluye el
+                    // servicio": un par de oraciones alcanzan de sobra.
+                    // Pedido real de Eliza.
+                    maxLength: 300,
                     decoration: InputDecoration(
                       hintText: 'Contá qué incluye el servicio...',
                       hintStyle: TextStyle(

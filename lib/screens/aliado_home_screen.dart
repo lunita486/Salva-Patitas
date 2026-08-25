@@ -4,16 +4,19 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme.dart';
+import '../domain/reglas_negocio.dart';
 import '../widgets/avatares.dart';
 import '../widgets/cambiar_rol_debug.dart';
+import '../widgets/dialogo_cerrar_sesion.dart';
 import '../widgets/estado_error_feed.dart';
 import '../widgets/fondo_decorativo.dart';
-import '../widgets/fotos.dart';
+import '../widgets/resultado_guardado_snackbar.dart';
 import '../widgets/texto_sin_desborde.dart';
 import '../services/notificaciones_service.dart';
-import '../data/auth_helper.dart';
 import '../data/chats_repository.dart';
+import '../data/creator_role.dart';
 import '../data/firestore_resiliencia.dart';
+import '../data/servicios_repository.dart';
 import 'package:go_router/go_router.dart';
 import '../routing/app_router.dart';
 import 'eliminar_cuenta_dialog.dart';
@@ -44,10 +47,11 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
       .collection('usuarios')
       .doc(_uid)
       .snapshots();
-  late final Stream<QuerySnapshot> _serviciosStream = FirebaseFirestore.instance
-      .collection('servicios')
-      .where('aliadoId', isEqualTo: _uid)
-      .snapshots();
+  // ServiciosRepository.deAliado — TODOS los servicios, activos y
+  // apagados: esta es la lista propia del negocio, donde ver los apagados
+  // es el punto (están ahí para poder volver a encenderlos).
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _serviciosStream =
+      ServiciosRepository().deAliado(_uid);
   late final Stream<QuerySnapshot> _consultasStream = ChatsRepository()
       .consultasRecibidas(uid: _uid);
 
@@ -85,41 +89,6 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
   // — hallazgo de auditoría de código).
   Future<void> _cambiarRolDebug() => mostrarCambiarRolDebug(context);
 
-  Future<void> _cerrarSesion() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Cerrar sesión'),
-        content: const Text('¿Seguro que quieres cerrar sesión?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(
-              'Cerrar sesión',
-              style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
-      ),
-    );
-    if (ok == true) {
-      final cerro = await cerrarSesion();
-      if (!cerro && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            backgroundColor: msgError,
-            content: Text('Esperá unos segundos e intentá de nuevo.'),
-          ),
-        );
-      }
-    }
-  }
-
   // guardarConAviso, no un await directo suelto (lo que había acá antes,
   // sin try/catch ni aviso de ningún tipo): mismo bug encontrado y
   // arreglado ya 3 veces en otras pantallas de esta colección/app
@@ -130,30 +99,20 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
   // código.
   Future<void> _toggleActivo(String docId, bool actual) async {
     final resultado = await guardarConAviso(
-      () => FirebaseFirestore.instance
-          .collection('servicios')
-          .doc(docId)
-          .update({'activo': !actual}),
-    );
-    if (!mounted || resultado == ResultadoGuardado.confirmado) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: resultado == ResultadoGuardado.fallo
-            ? msgError
-            : msgAdvertencia,
-        content: Text(
-          resultado == ResultadoGuardado.fallo
-              ? 'No se pudo guardar. Revisá tu conexión e intentá de nuevo.'
-              : 'Esto está tardando. Se va a guardar solo apenas vuelva la señal.',
-        ),
+      () => ServiciosRepository().alternarActivo(
+        servicioId: docId,
+        activoAhora: actual,
       ),
     );
+    if (!mounted) return;
+    mostrarResultadoGuardado(context, resultado);
   }
 
   Future<void> _eliminarServicio(String docId) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Eliminar servicio'),
         content: const Text('¿Seguro que querés eliminar este servicio?'),
         actions: [
@@ -174,23 +133,14 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
     );
     if (ok != true || !context.mounted) return;
     final resultado = await guardarConAviso(
-      () => FirebaseFirestore.instance
-          .collection('servicios')
-          .doc(docId)
-          .delete(),
+      () => ServiciosRepository().eliminar(docId),
     );
-    if (!mounted || resultado == ResultadoGuardado.confirmado) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: resultado == ResultadoGuardado.fallo
-            ? msgError
-            : msgAdvertencia,
-        content: Text(
-          resultado == ResultadoGuardado.fallo
-              ? 'No se pudo eliminar. Revisá tu conexión e intentá de nuevo.'
-              : 'Esto está tardando. Se va a eliminar solo apenas vuelva la señal.',
-        ),
-      ),
+    if (!mounted) return;
+    mostrarResultadoGuardado(
+      context,
+      resultado,
+      pendiente: 'Esto está tardando. Se va a eliminar solo apenas vuelva la señal.',
+      fallo: 'No se pudo eliminar. Revisá tu conexión e intentá de nuevo.',
     );
   }
 
@@ -308,7 +258,13 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
       builder: (context, svcSnap) {
         final servicios = svcSnap.data?.docs ?? [];
         final activos = servicios
-            .where((d) => (d.data() as Map)['activo'] == true)
+            // servicioEstaActivo (domain/reglas_negocio.dart) — misma
+            // fuente que la lista de abajo, que usaba otro criterio.
+            .where(
+              (d) => servicioEstaActivo(
+                (d.data() as Map).cast<String, dynamic>(),
+              ),
+            )
             .length;
 
         // Sin vista previa (chat creado pero nunca escrito) no vale la
@@ -317,10 +273,30 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
         // MOSTRAR acá, no cuánto contar, así que si el conteo y esta lista
         // usaran el mismo filtro, un chat con mensajes sin leer pero sin
         // preview podía contarse arriba y no aparecer nunca acá abajo.
-        final chats = consultaDocs.where((d) {
-          final data = d.data() as Map<String, dynamic>;
-          return ((data['ultimoMensaje'] as String?) ?? '').isNotEmpty;
-        }).toList();
+        final chats =
+            consultaDocs.where((d) {
+                final data = d.data() as Map<String, dynamic>;
+                return ((data['ultimoMensaje'] as String?) ?? '').isNotEmpty;
+              }).toList()
+              // consultasRecibidas() no trae los docs ordenados (sin
+              // orderBy, para no depender de un índice compuesto) — sin
+              // este sort, `.take(3)` de más abajo se quedaba con lo que
+              // Firestore devolviera en cualquier orden, no con las 3
+              // conversaciones más nuevas. Mismo criterio que
+              // adoptante_chats_screen.dart._listaChats(). Hallazgo real de
+              // Eliza: mandó 3 consultas nuevas (como adoptante, rescatista
+              // y albergue) y "Conversaciones recientes" mostró solo 2,
+              // más una conversación vieja ya leída en el lugar de la
+              // tercera — el contador de arriba (que sí cuenta bien) decía
+              // 3, pero la lista no las mostraba a las 3.
+              ..sort((a, b) {
+                final ta = (a.data() as Map)['ultimoMensajeEn'] as Timestamp?;
+                final tb = (b.data() as Map)['ultimoMensajeEn'] as Timestamp?;
+                if (ta == null && tb == null) return 0;
+                if (ta == null) return 1;
+                if (tb == null) return -1;
+                return tb.compareTo(ta);
+              });
         {
           return SingleChildScrollView(
             padding: const EdgeInsets.only(bottom: 24),
@@ -356,32 +332,19 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                             ),
                           ],
                         ),
-                        child: Builder(
-                          builder: (_) {
-                            final fotoBytes = bytesFotoSegura(foto);
-                            return CircleAvatar(
-                              radius: 52,
-                              backgroundColor: Colors.white.withValues(
-                                alpha: 0.2,
-                              ),
-                              backgroundImage: fotoBytes != null
-                                  ? MemoryImage(fotoBytes)
-                                  : null,
-                              onBackgroundImageError: fotoBytes != null
-                                  ? (_, __) {}
-                                  : null,
-                              child: fotoBytes == null
-                                  ? Text(
-                                      iniciales,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 32,
-                                      ),
-                                    )
-                                  : null,
-                            );
-                          },
+                        // AvatarPersona (widgets/avatares.dart), no un
+                        // CircleAvatar armado a mano: con
+                        // onBackgroundImageError vacío, si la foto fallaba
+                        // al cargar quedaba un círculo vacío en vez de caer
+                        // a las iniciales. Hallazgo de auditoría de código.
+                        child: AvatarPersona(
+                          fotoBase64: foto,
+                          inicial: iniciales,
+                          radius: 52,
+                          backgroundColor: Colors.white.withValues(
+                            alpha: 0.2,
+                          ),
+                          textColor: Colors.white,
                         ),
                       ),
                       const SizedBox(height: 16),
@@ -557,18 +520,36 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                     final quien = d['adoptanteNombre'] as String? ?? 'Usuario';
                     final ultimo = d['ultimoMensaje'] as String? ?? '';
                     final hora = d['ultimaHora'] as String? ?? '';
-                    final noLeidos = (d['noLeidosRescatista'] as int?) ?? 0;
+                    // ChatsRepository.noLeidosPara, NO leer
+                    // `noLeidosRescatista` a mano — que es como estaba, y
+                    // dejaba a ESTA MISMA PANTALLA usando dos criterios
+                    // distintos para la misma pregunta: el contador de
+                    // arriba (chatsNuevos) ya usaba la función compartida.
+                    // La diferencia no es teórica: en una autoconsulta (el
+                    // aliado escribiéndose a sí mismo, que pasa probando
+                    // con una sola cuenta) la función mira el OTRO campo, y
+                    // la lectura cruda contaba mal. Es exactamente el bug
+                    // que la propia función documenta haber arreglado entre
+                    // el panel y la lista de chats.
+                    final noLeidos = ChatsRepository.noLeidosPara(
+                      d,
+                      uid: _uid,
+                      esRescatista: true,
+                      soloConsultas: true,
+                    );
                     final ini = quien.isNotEmpty ? quien[0].toUpperCase() : 'U';
                     // Con qué sombrero te escribió — sin esto, la misma
                     // persona contactándote como adoptante, rescatista y
                     // albergue aparece 3 veces con el mismo nombre y sin
                     // forma de distinguirlas.
-                    final creadoPorConsulta = d['creadoPor'] as String?;
-                    final rotulo = creadoPorConsulta == 'albergue'
-                        ? 'Albergue'
-                        : creadoPorConsulta == 'rescatista'
-                        ? 'Rescatista'
-                        : 'Adoptante';
+                    // rotuloDeQuienContacto (data/creator_role.dart) es la
+                    // única fuente de este rótulo — el encabezado del chat
+                    // abierto (chat_screen.dart) muestra ESTE MISMO dato
+                    // sobre la misma conversación, y antes cada uno tenía
+                    // su propia copia de la cadena de condiciones.
+                    final rotulo = rotuloDeQuienContacto(
+                      d['creadoPor'] as String?,
+                    );
                     return Container(
                       key: ValueKey(doc.id),
                       margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -920,12 +901,13 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                         final sNombre = d['nombre'] as String? ?? '';
                         final precio = d['precio'] as int? ?? 0;
                         final desc = d['descripcion'] as String? ?? '';
-                        final activo = d['activo'] as bool? ?? true;
+                        final activo = servicioEstaActivo(d);
                         final cat = d['categoria'] as String? ?? '';
                         final catColor = _catColor[cat] ?? appTeal;
                         final catEmoji = _catEmoji[cat] ?? '🐾';
 
                         return Container(
+                          key: ValueKey(doc.id),
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
                             color: Colors.white,
@@ -1141,30 +1123,12 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                       ),
                     ],
                   ),
-                  child: Builder(
-                    builder: (_) {
-                      final fotoBytes = bytesFotoSegura(foto);
-                      return CircleAvatar(
-                        radius: 52,
-                        backgroundColor: Colors.white.withValues(alpha: 0.2),
-                        backgroundImage: fotoBytes != null
-                            ? MemoryImage(fotoBytes)
-                            : null,
-                        onBackgroundImageError: fotoBytes != null
-                            ? (_, __) {}
-                            : null,
-                        child: fotoBytes == null
-                            ? Text(
-                                iniciales,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 32,
-                                ),
-                              )
-                            : null,
-                      );
-                    },
+                  child: AvatarPersona(
+                    fotoBase64: foto,
+                    inicial: iniciales,
+                    radius: 52,
+                    backgroundColor: Colors.white.withValues(alpha: 0.2),
+                    textColor: Colors.white,
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -1216,7 +1180,7 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
-                    onPressed: _cerrarSesion,
+                    onPressed: () => mostrarDialogoCerrarSesion(context),
                     icon: const Icon(Icons.logout, size: 18),
                     label: const Text('Cerrar sesión'),
                     style: OutlinedButton.styleFrom(
@@ -1233,7 +1197,10 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
-                    onPressed: () => mostrarEliminarCuentaDialog(context),
+                    onPressed: () => mostrarEliminarCuentaDialog(
+                      context,
+                      mostrarParrafoAdopciones: false,
+                    ),
                     icon: const Icon(Icons.delete_outline, size: 18),
                     label: const Text('Eliminar mi cuenta'),
                     style: OutlinedButton.styleFrom(

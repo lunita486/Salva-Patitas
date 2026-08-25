@@ -5,11 +5,14 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import '../theme.dart';
+import '../widgets/campos_perfil.dart';
 import '../domain/reglas_negocio.dart';
 import '../routing/app_router.dart';
+import '../widgets/avatares.dart';
 import '../widgets/estado_error_feed.dart';
-import '../widgets/fotos.dart';
 import '../data/chats_repository.dart';
+import '../data/servicios_repository.dart';
+import '../data/usuarios_repository.dart';
 
 // A nivel de archivo, no de la instancia — evita que un doble toque en
 // "Contactar" dispare dos llamadas en paralelo y empuje DOS ChatScreen a la
@@ -49,10 +52,11 @@ class _AliadoPublicoScreenState extends State<AliadoPublicoScreen> {
       .collection('usuarios')
       .doc(widget.aliadoId)
       .snapshots();
-  late final Stream<QuerySnapshot> _serviciosStream = FirebaseFirestore.instance
-      .collection('servicios')
-      .where('aliadoId', isEqualTo: widget.aliadoId)
-      .snapshots();
+  // ServiciosRepository.activosDeAliado — solo los ACTIVOS, que es lo que
+  // ve un cliente. El filtro de "activo" lo aplica el repositorio con
+  // servicioEstaActivo(), no una condición escrita acá.
+  late final Stream<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  _serviciosStream = ServiciosRepository().activosDeAliado(widget.aliadoId);
 
   static const _categoriaEmoji = {
     'Baño y peluquería': '🛁',
@@ -90,9 +94,16 @@ class _AliadoPublicoScreenState extends State<AliadoPublicoScreen> {
               .collection('usuarios')
               .doc(uid)
               .get();
-          final albergueNombre = userDoc.data()?['albergueNombre'] as String?;
-          if (albergueNombre != null && albergueNombre.isNotEmpty)
-            nombreContacto = albergueNombre;
+          // UsuariosRepository.nombrePropioDesde — misma regla compartida
+          // que usan publicar un animal y los avisos automáticos, en vez de
+          // la copia a mano que había acá. Solo se lee el perfil cuando de
+          // verdad hace falta (contactar COMO albergue): para los otros
+          // sombreros el nombre de la cuenta ya alcanza y no se toca la red.
+          nombreContacto = UsuariosRepository.nombrePropioDesde(
+            datosUsuario: userDoc.data(),
+            creadoPor: 'albergue',
+            nombreDeLaCuenta: nombreContacto,
+          );
         } catch (_) {}
       }
 
@@ -162,6 +173,12 @@ class _AliadoPublicoScreenState extends State<AliadoPublicoScreen> {
         final data = userSnap.data?.data() as Map<String, dynamic>? ?? {};
         final nombre = data['aliadoNombre'] as String? ?? 'Aliado';
         final tipo = data['aliadoTipo'] as String? ?? '';
+        // `aliadoCiudad` con respaldo en `ciudad` — ver el comentario en
+        // aliado_perfil_screen.dart: la ciudad del negocio se separó de la
+        // del albergue (una cuenta puede tener los dos roles), y los
+        // perfiles viejos todavía la tienen en el campo compartido.
+        final ciudad =
+            data['aliadoCiudad'] as String? ?? data['ciudad'] as String? ?? '';
         final telefono = data['aliadoTelefono'] as String? ?? '';
         final direccion = data['aliadoDireccion'] as String? ?? '';
         final email = data['aliadoEmail'] as String? ?? '';
@@ -176,7 +193,9 @@ class _AliadoPublicoScreenState extends State<AliadoPublicoScreen> {
 
         return Scaffold(
           backgroundColor: appBg,
-          body: StreamBuilder<QuerySnapshot>(
+          body: StreamBuilder<
+            List<QueryDocumentSnapshot<Map<String, dynamic>>>
+          >(
             stream: _serviciosStream,
             builder: (context, svcSnap) {
               // Sin esto, un error real se veía igual que "Sin servicios
@@ -185,9 +204,7 @@ class _AliadoPublicoScreenState extends State<AliadoPublicoScreen> {
               // widgets/estado_error_feed.dart), acá en el perfil público del aliado
               // (hallazgo de auditoría de código).
               if (svcSnap.hasError) return errorFeedState();
-              final servicios = (svcSnap.data?.docs ?? [])
-                  .where((d) => (d.data() as Map)['activo'] == true)
-                  .toList();
+              final servicios = svcSnap.data ?? const [];
 
               return CustomScrollView(
                 slivers: [
@@ -205,32 +222,14 @@ class _AliadoPublicoScreenState extends State<AliadoPublicoScreen> {
                       ),
                       child: Column(
                         children: [
-                          Builder(
-                            builder: (_) {
-                              final fotoBytes = bytesFotoSegura(foto);
-                              return CircleAvatar(
-                                radius: 44,
-                                backgroundColor: Colors.white.withValues(
-                                  alpha: 0.2,
-                                ),
-                                backgroundImage: fotoBytes != null
-                                    ? MemoryImage(fotoBytes)
-                                    : null,
-                                onBackgroundImageError: fotoBytes != null
-                                    ? (_, __) {}
-                                    : null,
-                                child: fotoBytes == null
-                                    ? Text(
-                                        iniciales,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 24,
-                                        ),
-                                      )
-                                    : null,
-                              );
-                            },
+                          AvatarPersona(
+                            fotoBase64: foto,
+                            inicial: iniciales,
+                            radius: 44,
+                            backgroundColor: Colors.white.withValues(
+                              alpha: 0.2,
+                            ),
+                            textColor: Colors.white,
                           ),
                           const SizedBox(height: 12),
                           Text(
@@ -305,7 +304,8 @@ class _AliadoPublicoScreenState extends State<AliadoPublicoScreen> {
                   SliverToBoxAdapter(child: const SizedBox.shrink()),
 
                   // Contacto (opcional)
-                  if (telefono.isNotEmpty ||
+                  if (ciudad.isNotEmpty ||
+                      telefono.isNotEmpty ||
                       direccion.isNotEmpty ||
                       email.isNotEmpty ||
                       sitioWeb.isNotEmpty)
@@ -315,20 +315,31 @@ class _AliadoPublicoScreenState extends State<AliadoPublicoScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            // La ciudad se geocodifica al guardar el perfil
+                            // (mismo campo con detección por GPS que usa
+                            // Albergue), pero esta pantalla nunca la
+                            // mostraba — se veía dirección/email/web, pero
+                            // nunca en qué ciudad está el negocio. Hallazgo
+                            // real de Eliza.
+                            if (ciudad.isNotEmpty)
+                              filaContacto(
+                                Icons.location_city_outlined,
+                                ciudad,
+                              ),
                             if (direccion.isNotEmpty)
-                              _filaContacto(
+                              filaContacto(
                                 Icons.location_on_outlined,
                                 direccion,
                               ),
                             if (email.isNotEmpty)
-                              _filaContacto(
+                              filaContacto(
                                 Icons.email_outlined,
                                 email,
                                 onTap: () =>
                                     launchUrl(Uri.parse('mailto:$email')),
                               ),
                             if (sitioWeb.isNotEmpty)
-                              _filaContacto(
+                              filaContacto(
                                 Icons.language_outlined,
                                 sitioWeb,
                                 onTap: () => launchUrl(
@@ -340,7 +351,8 @@ class _AliadoPublicoScreenState extends State<AliadoPublicoScreen> {
                               Padding(
                                 padding: EdgeInsets.only(
                                   top:
-                                      (direccion.isNotEmpty ||
+                                      (ciudad.isNotEmpty ||
+                                          direccion.isNotEmpty ||
                                           email.isNotEmpty ||
                                           sitioWeb.isNotEmpty)
                                       ? 4
@@ -421,7 +433,7 @@ class _AliadoPublicoScreenState extends State<AliadoPublicoScreen> {
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
                     sliver: SliverList(
                       delegate: SliverChildBuilderDelegate((_, i) {
-                        final d = servicios[i].data() as Map<String, dynamic>;
+                        final d = servicios[i].data();
                         final sNombre = d['nombre'] as String? ?? '';
                         final precio = d['precio'] as int? ?? 0;
                         final desc = d['descripcion'] as String? ?? '';
@@ -541,26 +553,4 @@ class _AliadoPublicoScreenState extends State<AliadoPublicoScreen> {
   /// tappable si se pasa [onTap] (email abre el cliente de correo, sitio
   /// web abre el navegador — dirección no tiene onTap, es solo texto).
   /// Mismo widget que albergue_publico_screen.dart.
-  Widget _filaContacto(IconData icono, String texto, {VoidCallback? onTap}) {
-    final fila = Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icono, size: 17, color: appTeal),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              texto,
-              style: TextStyle(
-                fontSize: 13.5,
-                color: onTap != null ? appTeal : appInk,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-    return onTap == null ? fila : GestureDetector(onTap: onTap, child: fila);
-  }
 }

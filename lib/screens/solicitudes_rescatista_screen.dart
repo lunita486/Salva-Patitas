@@ -15,6 +15,7 @@ import '../data/solicitudes_repository.dart';
 import '../data/rescates_repository.dart';
 import '../data/chats_repository.dart';
 import '../data/hogares_de_paso_repository.dart';
+import '../data/usuarios_repository.dart';
 
 // ── Funciones top-level reutilizables por home_screen y solicitudes_screen ──
 
@@ -31,6 +32,18 @@ import '../data/hogares_de_paso_repository.dart';
 /// que motivó consolidarlo. Acá solo queda resolver el nombre propio del
 /// rescatista/albergue (quién soy yo, no de qué animal se trata), que es
 /// una pregunta específica de esta pantalla.
+///
+/// [adoptanteNombre] es opcional: los 4 avisos automáticos que llaman a
+/// esto (vencimiento de hogar de paso, seguimiento post-adopción) no tienen
+/// ese dato a mano — solo el `adoptanteId` de `rescates/{id}`, ver
+/// [verificarVencimientos]/[verificarSeguimientoPostAdopcion]. Sin
+/// proveerlo, se busca `usuarios/{adoptanteId}.nombre`. Antes ninguno de
+/// los 4 lo pasaba y el default era el literal `'Adoptante'` — ese texto
+/// quedaba escrito para siempre como `adoptanteNombre` en el documento del
+/// chat (lo fija ChatsRepository.avisarSobreAnimal la PRIMERA vez que ese
+/// chat se crea), así que el encabezado mostraba "Adoptante" en vez del
+/// nombre real cada vez que alguien volvía a abrir esa conversación, no
+/// solo la vez del aviso. Hallazgo real de Eliza con "Henning Lange".
 Future<bool> enviarMensajeChat(
   String adoptanteId,
   String animalNombre,
@@ -42,29 +55,32 @@ Future<bool> enviarMensajeChat(
   String? creadoPor,
   String? especie,
   bool avisoParaAmbosLados = false,
+  bool avisoDeEstado = false,
 }) async {
   final rescatistaId = FirebaseAuth.instance.currentUser?.uid ?? '';
-  // try/catch propio acá: si esta lectura falla (sin señal), el mensaje
-  // igual se puede mandar con el nombre de respaldo — no depende de que
-  // ESTA consulta puntual ande, y `avisarSobreAnimal` ya tiene su propio
-  // try/catch para lo que sí es la escritura real.
-  var rescatistaNombre =
-      FirebaseAuth.instance.currentUser?.displayName ?? 'Rescatista';
-  try {
-    final userDoc = await FirebaseFirestore.instance
-        .collection('usuarios')
-        .doc(rescatistaId)
-        .get();
-    final userData = userDoc.data() ?? {};
-    if ((userData['albergueNombre'] as String?)?.isNotEmpty == true) {
-      rescatistaNombre = userData['albergueNombre'] as String;
-    } else if ((userData['nombre'] as String?)?.isNotEmpty == true) {
-      rescatistaNombre = userData['nombre'] as String;
-    }
-  } catch (_) {}
+  // UsuariosRepository().nombrePropioParaAnimal() decide entre nombre y
+  // albergueNombre mirando de qué animal es (creadoPor) — antes acá vivía
+  // una copia a mano que ignoraba ese dato y siempre prefería
+  // albergueNombre si existía, ver su doc para el hallazgo real que lo
+  // motivó (firmaba "La Perla pruebas" un rechazo de un animal que era de
+  // Eliza como rescatista).
+  final rescatistaNombre = await UsuariosRepository().nombrePropioParaAnimal(
+    uid: rescatistaId,
+    creadoPor: creadoPor,
+  );
+  var nombreAdoptanteReal = adoptanteNombre;
+  if (nombreAdoptanteReal == null || nombreAdoptanteReal.isEmpty) {
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('usuarios')
+          .doc(adoptanteId)
+          .get();
+      nombreAdoptanteReal = userDoc.data()?['nombre'] as String?;
+    } catch (_) {}
+  }
   return ChatsRepository().avisarSobreAnimal(
     adoptanteId: adoptanteId,
-    adoptanteNombre: adoptanteNombre ?? 'Adoptante',
+    adoptanteNombre: nombreAdoptanteReal ?? 'Adoptante',
     rescatistaId: rescatistaId,
     rescatista: rescatistaNombre,
     texto: texto,
@@ -75,6 +91,7 @@ Future<bool> enviarMensajeChat(
     fotoUrl: fotoUrl,
     tipoSolicitud: tipoSolicitud,
     avisoParaAmbosLados: avisoParaAmbosLados,
+    avisoDeEstado: avisoDeEstado,
   );
 }
 
@@ -130,7 +147,7 @@ _aprobarSolicitudImpl(String docId, Map<String, dynamic> d) async {
   final adoptanteId = d['adoptanteId'] as String? ?? '';
   final animalNombre = d['animalNombre'] as String? ?? '';
   final rescatistaId = d['rescatistaId'] as String? ?? '';
-  final creadoPor = d['creadoPor'] as String? ?? 'rescatista';
+  var creadoPor = d['creadoPor'] as String? ?? 'rescatista';
   final tipoSolicitud = d['tipoSolicitud'] as String? ?? 'adopcion';
   final nuevoEstado = tipoSolicitud == 'hogar_de_paso'
       ? 'Hogar de paso'
@@ -181,6 +198,32 @@ _aprobarSolicitudImpl(String docId, Map<String, dynamic> d) async {
     aprobada = true;
   }
 
+  // `creadoPor` de acá arriba viene de la SOLICITUD, congelado al momento
+  // en que se mandó — no del rescate en sí. Si el mapa del animal que armó
+  // esa solicitud no traía el campo (ej. venía de una lista que no lo
+  // seleccionaba), quedó guardado como 'rescatista' por defecto aunque el
+  // animal sea de un albergue. Re-leer acá el valor VIVO de
+  // rescates/{rescateId}.creadoPor importa por tres motivos, uno por cada
+  // camino que usa esta variable de acá para abajo: (1) las reglas de
+  // Firestore comparan CONTRA ESE VALOR VIVO al crear un chat nuevo
+  // (chats.create) — un desfasaje tumbaba en silencio CUALQUIER aviso por
+  // chat de esta función (aprobación, rechazo por perder la carrera),
+  // "Solicitud aprobada, pero no pudimos avisarle al adoptante por chat",
+  // hallazgo real de Eliza, reproducido varias veces; (2) el chequeo de
+  // más abajo (`creadoPor == 'albergue'`) decide si el adoptante entra a
+  // la red de hogares de paso — con el valor viejo, un albergue real
+  // podía quedar afuera sin ningún aviso; (3) si el animal ya no existe
+  // (`animalEliminado`), este `get()` simplemente no encuentra nada y
+  // `creadoPor` se queda con el valor de la solicitud — no hay peor caso
+  // posible ahí, ya no hay ningún rescate vivo contra el cual comparar.
+  if (rescateId.isNotEmpty) {
+    try {
+      final rescateDoc = await RescatesRepository().obtener(rescateId);
+      final valorVivo = rescateDoc.data()?['creadoPor'] as String?;
+      if (valorVivo != null && valorVivo.isNotEmpty) creadoPor = valorVivo;
+    } catch (_) {}
+  }
+
   if (aprobada) {
     FirebaseAnalytics.instance
         .logEvent(
@@ -214,6 +257,9 @@ _aprobarSolicitudImpl(String docId, Map<String, dynamic> d) async {
       adoptanteId,
       animalNombre,
       mensaje,
+      // La solicitud queda 'rechazada' en la misma operacion, y eso ya
+      // dispara onCambioEstadoSolicitud. Ver avisoDeEstado.
+      avisoDeEstado: true,
       fotoUrl: d['fotoUrl'] as String?,
       rescateId: rescateId,
       creadoPor: creadoPor,
@@ -227,7 +273,7 @@ _aprobarSolicitudImpl(String docId, Map<String, dynamic> d) async {
   }
 
   if (tipoSolicitud == 'hogar_de_paso' &&
-      creadoPor == 'albergue' &&
+      esCreadoPorAlbergue(creadoPor) &&
       adoptanteId.isNotEmpty) {
     // Red de hogares de paso — solo para albergues (decisión de producto).
     // Best-effort: el roster es una mejora secundaria, si falla no debe
@@ -276,6 +322,7 @@ _aprobarSolicitudImpl(String docId, Map<String, dynamic> d) async {
       adoptanteId,
       animalNombre,
       msg,
+      avisoDeEstado: true,
       fotoUrl: d['fotoUrl'] as String?,
       adoptanteNombre: d['nombre'] as String?,
       tipoSolicitud: tipoSolicitud,
@@ -331,14 +378,30 @@ Future<bool> _rechazarSolicitudImpl(
   final fotoUrl = d['fotoUrl'] as String?;
   final rescateId = d['rescateId'] as String? ?? '';
   if (adoptanteId.isNotEmpty && animalNombre.isNotEmpty) {
+    // Mismo motivo que _aprobarSolicitudImpl: `d['creadoPor']` viene
+    // congelado de la solicitud, no del rescate en sí — un desfasaje acá
+    // tumbaba en silencio el aviso de rechazo si el chat todavía no
+    // existía (las reglas de Firestore comparan contra el valor VIVO al
+    // crear uno nuevo).
+    var creadoPor = d['creadoPor'] as String?;
+    if (rescateId.isNotEmpty) {
+      try {
+        final rescateDoc = await RescatesRepository().obtener(rescateId);
+        final valorVivo = rescateDoc.data()?['creadoPor'] as String?;
+        if (valorVivo != null && valorVivo.isNotEmpty) creadoPor = valorVivo;
+      } catch (_) {}
+    }
     return enviarMensajeChat(
       adoptanteId,
       animalNombre,
       texto,
+      // Este es el aviso del rechazo propiamente dicho: la solicitud ya
+      // quedo en 'rechazada' arriba. Ver avisoDeEstado.
+      avisoDeEstado: true,
       fotoUrl: fotoUrl,
       adoptanteNombre: d['nombre'] as String?,
       rescateId: rescateId,
-      creadoPor: d['creadoPor'] as String?,
+      creadoPor: creadoPor,
       especie: d['especie'] as String?,
     );
   }
@@ -421,6 +484,57 @@ Future<void> contactarPersonaEnProceso(
   );
 }
 
+/// Reclama en exclusiva el derecho a mandar UN aviso automático puntual
+/// (identificado por [campoFlag] en `rescates/{id}`), para las 4 llamadas
+/// de [verificarVencimientos]/[verificarSeguimientoPostAdopcion]. Devuelve
+/// `true` solo si esta llamada ganó la carrera — el resto debe abortar sin
+/// mandar el mensaje.
+///
+/// Existe porque el chequeo de antes ("leer el flag, y si no está, mandar
+/// el mensaje") no era atómico: dos llamadas que leen el flag casi al
+/// mismo tiempo (ambas antes de que cualquiera de las dos llegue a
+/// escribirlo) ven las dos "todavía no avisado" y las dos mandan el
+/// mensaje — duplicado. Pasa de verdad: `initState` de home_screen.dart
+/// dispara esta verificación cada vez que se abre/vuelve a esa pantalla, y
+/// dos dispositivos con la misma cuenta (o simplemente reabrir la app dos
+/// veces seguido) alcanzan a superponerse. Una transacción de Firestore sí
+/// es atómica — la segunda llamada que intenta escribir el mismo doc
+/// espera a que la primera termine y ve el flag YA en `true`. Hallazgo
+/// real de Eliza: el seguimiento de "Toby Papito" le llegó dos veces,
+/// idéntico, con el mismo minuto.
+///
+/// El flag se escribe ACÁ (antes de mandar el mensaje), no después como
+/// antes — es lo que lo hace atómico. Si el envío mismo falla después,
+/// [revertirReclamoSiFallo] deja los datos igual que antes de reclamarlo,
+/// para que el próximo chequeo lo reintente — sin este paso, un tropiezo
+/// de red marcaría el aviso como mandado sin haberlo mandado de verdad
+/// (el bug real que encontró Eliza con "Sarita", que esta función no debe
+/// reintroducir).
+Future<bool> reclamarAviso(
+  DocumentReference<Map<String, dynamic>> ref,
+  String campoFlag,
+) {
+  // ref.firestore, no FirebaseFirestore.instance: la MISMA instancia que ya
+  // trae la referencia (real o, en un test, la fake) en vez de asumir el
+  // singleton global — necesario para poder probar esto contra
+  // FakeFirebaseFirestore, que sí soporta runTransaction().
+  return ref.firestore.runTransaction<bool>((tx) async {
+    final snap = await tx.get(ref);
+    if (snap.data()?[campoFlag] == true) return false;
+    tx.update(ref, {campoFlag: true});
+    return true;
+  });
+}
+
+/// Contraparte de [reclamarAviso] cuando el envío del mensaje falló de
+/// verdad después de reclamarlo — vuelve a dejar [campoFlag] como si nunca
+/// se hubiera reclamado, para que la próxima apertura de la app lo
+/// reintente en vez de darlo por avisado en falso.
+Future<void> revertirReclamoSiFallo(
+  DocumentReference<Map<String, dynamic>> ref,
+  String campoFlag,
+) => ref.update({campoFlag: false});
+
 /// Avisos automáticos de "el hogar de paso vence mañana / ya venció" — antes
 /// duplicado byte a byte entre home_screen.dart (rescatista) y
 /// albergue_home_screen.dart (hallazgo de auditoría de código). [role] y
@@ -434,7 +548,6 @@ Future<void> verificarVencimientos(
 }) async {
   if (uid.isEmpty) return;
   final ahora = DateTime.now();
-  final hoySinHora = DateTime(ahora.year, ahora.month, ahora.day);
   final snap = await RescatesRepository().misRescatesPorEstado(
     uid: uid,
     role: role,
@@ -466,19 +579,32 @@ Future<void> verificarVencimientos(
     // avisado como si alguien de verdad se hubiera enterado. Hallazgo de
     // auditoría de código.
     if (adoptanteId == null || adoptanteId.isEmpty) continue;
-    if (fechaFin.isAfter(ahora)) {
-      final finSinHora = DateTime(fechaFin.year, fechaFin.month, fechaFin.day);
-      final diasRestantes = finSinHora.difference(hoySinHora).inDays;
-      if (diasRestantes == 1 && d['avisoPrevioAvisado'] != true) {
+    // diasHastaVencimiento/hogarDePasoVencido (domain/reglas_negocio.dart)
+    // — única fuente. Acá se usaba `fechaFin.isAfter(ahora)`, CON hora: como
+    // la fecha de fin se guarda a medianoche, el día del vencimiento ya
+    // contaba como vencido desde las 00:00, mientras "Mis solicitudes"
+    // (que comparaba solo por fecha) le decía al adoptante "vence hoy".
+    final diasRestantes = diasHastaVencimiento(
+      fechaFin: fechaFin,
+      ahora: ahora,
+    );
+    if (!hogarDePasoVencido(fechaFin: fechaFin, ahora: ahora)) {
+      if (diasRestantes == 1 &&
+          d['avisoPrevioAvisado'] != true &&
+          await reclamarAviso(doc.reference, 'avisoPrevioAvisado')) {
         final msg =
             '📋 El período de hogar de paso de $nombre vence mañana. '
             'Coordiná con tiempo la devolución o el proceso de adopción definitivo. 🐾';
-        // Solo se marca "avisado" si el mensaje realmente se guardó — antes
-        // se marcaba igual aunque enviarMensajeChat() fallara, y ese aviso
-        // quedaba perdido para siempre (nunca se reintentaba en la próxima
-        // apertura de la app). El bug real que encontró Eliza probando con
-        // Sarita: el aviso figuraba como enviado pero el chat nunca tuvo
-        // el mensaje.
+        // Solo se cuenta como avisado si el mensaje realmente se guardó —
+        // antes se marcaba igual aunque enviarMensajeChat() fallara, y ese
+        // aviso quedaba perdido para siempre (nunca se reintentaba en la
+        // próxima apertura de la app). El bug real que encontró Eliza
+        // probando con Sarita: el aviso figuraba como enviado pero el chat
+        // nunca tuvo el mensaje. El flag ya quedó reclamado arriba
+        // (reclamarAviso, antes de mandar el mensaje — necesario para que
+        // dos llamadas superpuestas no manden las dos el mismo aviso); si
+        // el envío falla de verdad, se revierte para no dar por avisado
+        // algo que nunca llegó.
         final avisoOk = await enviarMensajeChat(
           adoptanteId,
           nombre,
@@ -492,13 +618,15 @@ Future<void> verificarVencimientos(
           avisoParaAmbosLados: true,
         );
         if (avisoOk) {
-          await doc.reference.update({'avisoPrevioAvisado': true});
           porVencer.add(nombre);
+        } else {
+          await revertirReclamoSiFallo(doc.reference, 'avisoPrevioAvisado');
         }
       }
       continue;
     }
     if (d['vencimientoAvisado'] == true) continue;
+    if (!await reclamarAviso(doc.reference, 'vencimientoAvisado')) continue;
     final msg =
         '📋 El período de hogar de paso de $nombre ha vencido. '
         'Por favor coordina la devolución o el proceso de adopción definitivo. 🐾';
@@ -514,8 +642,9 @@ Future<void> verificarVencimientos(
       avisoParaAmbosLados: true,
     );
     if (avisoOk) {
-      await doc.reference.update({'vencimientoAvisado': true});
       avisados.add(nombre);
+    } else {
+      await revertirReclamoSiFallo(doc.reference, 'vencimientoAvisado');
     }
   }
   if (!context.mounted) return;
@@ -580,7 +709,9 @@ Future<void> verificarSeguimientoPostAdopcion({
     // podía marcarse como avisado sin haber avisado a nadie). Hallazgo de
     // auditoría de código.
     if (adoptanteId == null || adoptanteId.isEmpty) continue;
-    if (dias >= 30 && d['seguimiento30Avisado'] != true) {
+    if (dias >= 30 &&
+        d['seguimiento30Avisado'] != true &&
+        await reclamarAviso(doc.reference, 'seguimiento30Avisado')) {
       final avisoOk = await enviarMensajeChat(
         adoptanteId,
         nombre,
@@ -594,12 +725,17 @@ Future<void> verificarSeguimientoPostAdopcion({
         avisoParaAmbosLados: true,
       );
       if (avisoOk) {
-        await doc.reference.update({
-          'seguimiento30Avisado': true,
-          'seguimiento7Avisado': true,
-        });
+        // El de 30 días ya reclamó/escribió su propio flag arriba
+        // (reclamarAviso) — acá solo falta el de 7, que este mismo aviso
+        // también cubre (no tiene sentido mandar el de 7 días más tarde
+        // si el de 30 ya avisó lo mismo y más).
+        await doc.reference.update({'seguimiento7Avisado': true});
+      } else {
+        await revertirReclamoSiFallo(doc.reference, 'seguimiento30Avisado');
       }
-    } else if (dias >= 7 && d['seguimiento7Avisado'] != true) {
+    } else if (dias >= 7 &&
+        d['seguimiento7Avisado'] != true &&
+        await reclamarAviso(doc.reference, 'seguimiento7Avisado')) {
       final avisoOk = await enviarMensajeChat(
         adoptanteId,
         nombre,
@@ -609,8 +745,8 @@ Future<void> verificarSeguimientoPostAdopcion({
         creadoPor: creadoPor,
         avisoParaAmbosLados: true,
       );
-      if (avisoOk) {
-        await doc.reference.update({'seguimiento7Avisado': true});
+      if (!avisoOk) {
+        await revertirReclamoSiFallo(doc.reference, 'seguimiento7Avisado');
       }
     }
   }
@@ -630,6 +766,13 @@ class _SolicitudesRescatistaScreenState
     extends State<SolicitudesRescatistaScreen> {
   final Set<String> _procesando = {};
   final _solicitudesRepo = SolicitudesRepository();
+  // `late final`, no armada dentro de build() — mismo patrón, y mismo
+  // arreglo, que mis_rescates_screen.dart y solicitudes_preview.dart.
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _solicitudesStream =
+      _solicitudesRepo.paraOwner(
+        uid: FirebaseAuth.instance.currentUser?.uid ?? '',
+        role: widget.esAlbergue ? CreatorRole.albergue : CreatorRole.rescatista,
+      );
 
   Future<void> _aprobar(String docId, Map<String, dynamic> d) async {
     if (_procesando.contains(docId)) return;
@@ -751,12 +894,7 @@ class _SolicitudesRescatistaScreenState
             const SizedBox(height: 4),
             Expanded(
               child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                stream: _solicitudesRepo.paraOwner(
-                  uid: FirebaseAuth.instance.currentUser?.uid ?? '',
-                  role: widget.esAlbergue
-                      ? CreatorRole.albergue
-                      : CreatorRole.rescatista,
-                ),
+                stream: _solicitudesStream,
                 builder: (context, snap) {
                   if (snap.connectionState == ConnectionState.waiting) {
                     return const Center(
@@ -801,7 +939,9 @@ class _SolicitudesRescatistaScreenState
                     separatorBuilder: (_, _) => const SizedBox(height: 10),
                     itemBuilder: (_, i) {
                       final d = docs[i].data();
-                      final animal = d['animalNombre'] as String? ?? 'Animal';
+                      final animal = nombreDeAnimal(
+                        d['animalNombre'] as String?,
+                      );
                       final nombre = d['nombre'] as String? ?? 'Adoptante';
                       final integrantes = d['integrantes'] as String? ?? '';
                       final vivienda = d['vivienda'] as String? ?? '';
@@ -831,9 +971,12 @@ class _SolicitudesRescatistaScreenState
                       final fechaFinTs = d['fechaFinHogar'] as Timestamp?;
                       final fechaInicio = fechaInicioTs?.toDate();
                       final fechaFin = fechaFinTs?.toDate();
+                      // +1: mismo criterio que solicitudes_preview.dart —
+                      // rango inclusivo de ambas puntas, para que elegir el
+                      // mismo día como inicio y fin muestre "1 día", no "0".
                       final diasHogar =
                           (fechaInicio != null && fechaFin != null)
-                          ? fechaFin.difference(fechaInicio).inDays
+                          ? fechaFin.difference(fechaInicio).inDays + 1
                           : null;
                       final score = calcularCompatibilidad(d);
                       final scoreColor = score >= 80
@@ -861,6 +1004,7 @@ class _SolicitudesRescatistaScreenState
                       ].join(' · ');
 
                       return Container(
+                        key: ValueKey(docs[i].id),
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
                           color: Colors.white,
@@ -892,6 +1036,8 @@ class _SolicitudesRescatistaScreenState
                                           url: fotoUrl,
                                           width: 64,
                                           height: 64,
+                                          // Miniatura de lista: sin fondo borroso, ver FotoAnimal.
+                                          fondoBorroso: false,
                                           fallback: Container(
                                             width: 64,
                                             height: 64,
@@ -1244,6 +1390,38 @@ class _SolicitudesRescatistaScreenState
                                         adoptanteId: adoptanteId,
                                         animalNombre: animal,
                                       ))?.id;
+                                  // `creadoPor` de acá abajo viene de la
+                                  // SOLICITUD, congelado al momento de
+                                  // mandarla — mismo problema (y mismo
+                                  // arreglo) que _aprobarSolicitudImpl/
+                                  // _rechazarSolicitudImpl de más arriba en
+                                  // este archivo. Aunque acá no cambia lo que
+                                  // ESTE botón muestra (el rescatista siempre
+                                  // ve "Adoptante"), ChatScreen hace merge al
+                                  // abrirse: un valor viejo acá pisaba de
+                                  // nuevo el `creadoPor` correcto del chat
+                                  // para quien lo mire después, del otro
+                                  // lado. Hallazgo real de Eliza: un animal
+                                  // de albergue mostraba "Rescatista" en el
+                                  // chat del adoptante, reportado hace meses
+                                  // y seguía pasando.
+                                  var creadoPorVivo =
+                                      d['creadoPor'] as String?;
+                                  if (rescateIdChat.isNotEmpty) {
+                                    try {
+                                      final rescateDoc =
+                                          await RescatesRepository().obtener(
+                                            rescateIdChat,
+                                          );
+                                      final creadoPorReal =
+                                          rescateDoc.data()?['creadoPor']
+                                              as String?;
+                                      if (creadoPorReal != null &&
+                                          creadoPorReal.isNotEmpty) {
+                                        creadoPorVivo = creadoPorReal;
+                                      }
+                                    } catch (_) {}
+                                  }
                                   if (!context.mounted) return;
                                   context.push(
                                     AppRoutes.chat,
@@ -1264,8 +1442,7 @@ class _SolicitudesRescatistaScreenState
                                                 .currentUser
                                                 ?.uid ??
                                             '',
-                                        'rescateId':
-                                            d['rescateId'] as String? ?? '',
+                                        'rescateId': rescateIdChat,
                                         'adoptanteId': adoptanteId,
                                         'adoptanteNombre':
                                             d['nombre'] as String? ??
@@ -1276,9 +1453,7 @@ class _SolicitudesRescatistaScreenState
                                         'tipoSolicitud':
                                             d['tipoSolicitud'] as String? ??
                                             'adopcion',
-                                        'creadoPor':
-                                            d['creadoPor'] as String? ??
-                                            'rescatista',
+                                        'creadoPor': creadoPorVivo,
                                         'edad': '',
                                         'ubicacion': '',
                                         'descripcion': '',

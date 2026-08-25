@@ -1,41 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:geocoding_platform_interface/geocoding_platform_interface.dart';
 import 'package:geolocator_platform_interface/geolocator_platform_interface.dart';
+import 'package:salva_patitas/services/ubicacion_service.dart';
 import 'package:salva_patitas/widgets/campo_ciudad.dart';
 
+import '../helpers/mock_nominatim.dart';
+
 Widget _envolver(Widget child) => MaterialApp(home: Scaffold(body: child));
-
-// Fakes del backend de geocoding/GPS para probar CampoCiudad sin red ni
-// hardware real (la lógica de GPS/geocoding en sí ya vive en
-// UbicacionService, con sus propios tests) — mismo patrón que
-// fake_cloud_firestore para Firestore. Extienden GeocodingPlatform/
-// GeolocatorPlatform (no las implementan) a propósito: el constructor de
-// la clase base ya registra el token interno que PlatformInterface exige,
-// así que un fake por `extends` queda válido sin ningún mixin extra.
-class _FakeGeocodingPlatform extends GeocodingPlatform {
-  _FakeGeocodingPlatform({
-    Future<List<Location>> Function(String)? locationFromAddress,
-    Future<List<Placemark>> Function(double, double)? placemarkFromCoordinates,
-  }) : _locationFromAddress = locationFromAddress,
-       _placemarkFromCoordinates = placemarkFromCoordinates;
-  final Future<List<Location>> Function(String)? _locationFromAddress;
-  final Future<List<Placemark>> Function(double, double)?
-  _placemarkFromCoordinates;
-
-  @override
-  Future<List<Location>> locationFromAddress(String address) =>
-      (_locationFromAddress ?? (_) async => <Location>[])(address);
-
-  @override
-  Future<List<Placemark>> placemarkFromCoordinates(
-    double latitude,
-    double longitude,
-  ) => (_placemarkFromCoordinates ?? (_, _) async => <Placemark>[])(
-    latitude,
-    longitude,
-  );
-}
 
 // Fake de GeolocatorPlatform — service/permission/posición configurables
 // por test, para simular cada rama de CampoCiudad._detectar() (GPS
@@ -115,7 +86,7 @@ void main() {
       await tester.tap(find.byIcon(Icons.my_location));
       await tester.pumpAndSettle();
 
-      expect(find.text('Activa el GPS en tu dispositivo'), findsOneWidget);
+      expect(find.text('Activá el GPS'), findsOneWidget);
       expect(ctl.text, isEmpty);
     });
 
@@ -152,7 +123,7 @@ void main() {
       await tester.tap(find.byIcon(Icons.my_location));
       await tester.pumpAndSettle();
 
-      expect(find.text('Permiso de ubicación bloqueado.'), findsOneWidget);
+      expect(find.text('Ubicación bloqueada.'), findsOneWidget);
     });
 
     testWidgets('camino feliz: detecta posición, la resuelve a ciudad y '
@@ -161,11 +132,8 @@ void main() {
       GeolocatorPlatform.instance = _FakeGeolocatorPlatform(
         posicion: _posicion(6.25184, -75.56359),
       );
-      GeocodingPlatform.instance = _FakeGeocodingPlatform(
-        placemarkFromCoordinates: (_, _) async => [
-          const Placemark(locality: 'Medellín'),
-        ],
-      );
+      final nominatim = MockNominatim()..configurarReversa(city: 'Medellín');
+      UbicacionService.httpClient = nominatim.client;
       final ctl = TextEditingController();
       String? ultimoOnChanged;
       await tester.pumpWidget(
@@ -189,12 +157,14 @@ void main() {
     testWidgets('posición detectada pero sin localidad identificable: avisa '
         'y deja el campo tal como estaba, para que la persona lo escriba a '
         'mano', (tester) async {
+      // (1, 1), no (0, 0): (0, 0) es "Null Island" y UbicacionService la
+      // descarta como si no hubiera posición (ver ubicacion_service_test.
+      // dart) — acá lo que se quiere simular es una posición VÁLIDA cuyo
+      // reverse geocoding no resolvió ninguna ciudad, dos cosas distintas.
       GeolocatorPlatform.instance = _FakeGeolocatorPlatform(
-        posicion: _posicion(0, 0),
+        posicion: _posicion(1, 1),
       );
-      GeocodingPlatform.instance = _FakeGeocodingPlatform(
-        placemarkFromCoordinates: (_, _) async => const [],
-      );
+      UbicacionService.httpClient = MockNominatim().client;
       final ctl = TextEditingController(text: 'lo que ya había');
       await tester.pumpWidget(
         _envolver(CampoCiudad(controller: ctl, hint: 'ciudad')),

@@ -20,18 +20,36 @@ import 'solicitudes_rescatista_screen.dart'
 /// porque nunca se construyó ahí. Se comparte acá para que ambos paneles se
 /// comporten igual y un arreglo futuro (como el de aprobar/rechazar) no
 /// tenga que aplicarse dos veces.
-class SolicitudesPreview extends StatelessWidget {
+class SolicitudesPreview extends StatefulWidget {
   final CreatorRole role;
   const SolicitudesPreview({super.key, required this.role});
+  @override
+  State<SolicitudesPreview> createState() => _SolicitudesPreviewState();
+}
+
+class _SolicitudesPreviewState extends State<SolicitudesPreview> {
+  // `late final`, no un `.snapshots()` armado dentro de build() — mismo
+  // patrón, y mismo síntoma, que el arreglo de mis_rescates_screen.dart:
+  // esta tarjeta vive en el panel principal (home_screen.dart), que se
+  // redibuja seguido por motivos que no tienen nada que ver con esta
+  // tarjeta (otros StreamBuilder del mismo panel emitiendo). Cada
+  // redibujado recreaba la consulta, y la nueva suscripción podía mostrar
+  // un instante de caché local vieja antes de que llegara el dato fresco
+  // — la foto/nombre del animal en "Para [animal]" quedaba pegada a la
+  // versión de cuando se mandó la solicitud. Hallazgo real de Eliza:
+  // cambió la foto de "Cosita" y la tarjeta de esta vista previa la
+  // siguió mostrando vieja (y con el nombre de otro animal, "Hermoso").
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _stream =
+      SolicitudesRepository().paraOwner(
+        uid: FirebaseAuth.instance.currentUser?.uid ?? '',
+        role: widget.role,
+        estado: 'pendiente',
+      );
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: SolicitudesRepository().paraOwner(
-        uid: FirebaseAuth.instance.currentUser?.uid ?? '',
-        role: role,
-        estado: 'pendiente',
-      ),
+      stream: _stream,
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator(color: appTeal));
@@ -74,15 +92,11 @@ class SolicitudesPreview extends StatelessWidget {
             // (se copiaba el nombre ya resuelto para mostrar, no el dato
             // real). Acá se trata igual que si no hubiera nombre, así no
             // sale "Para Sin nombre" (caso real reportado por Eliza).
-            final animalRaw = d['animalNombre'] as String?;
-            final animal =
-                (animalRaw == null ||
-                    animalRaw.isEmpty ||
-                    animalRaw == 'Sin nombre')
-                ? 'un animalito'
-                : animalRaw;
+            final animal = nombreDeAnimal(
+              d['animalNombre'] as String?,
+              enFrase: true,
+            );
             final nombre = d['nombre'] as String? ?? '';
-            final apellido = d['apellido'] as String? ?? '';
             final integrantes = d['integrantes'] as String? ?? '';
             final vivienda = d['vivienda'] as String? ?? '';
             final mascotas = (d['tieneMascotas'] as bool? ?? false)
@@ -91,8 +105,11 @@ class SolicitudesPreview extends StatelessWidget {
             final ninos = (d['tieneNinos'] as bool? ?? false)
                 ? 'con niños'
                 : 'sin niños';
+            // `apellido` no se escribe NUNCA en `solicitudes` — no existe
+            // el campo. Concatenarlo solo dejaba un espacio colgando al
+            // final de cada nombre.
             final nombreCompleto = nombre.isNotEmpty
-                ? '$nombre $apellido'
+                ? nombre
                 : 'Adoptante ${i + 1}';
             final detalle =
                 '$vivienda · $integrantes personas · $ninos · $mascotas';
@@ -130,6 +147,7 @@ class SolicitudesPreview extends StatelessWidget {
 }
 
 Widget _solicitudDetalle(
+
   String ini,
   Color col,
   String nombre,
@@ -144,8 +162,13 @@ Widget _solicitudDetalle(
   final adoptanteId = data?['adoptanteId'] as String?;
   final fechaInicio = (data?['fechaInicioHogar'] as Timestamp?)?.toDate();
   final fechaFin = (data?['fechaFinHogar'] as Timestamp?)?.toDate();
+  // +1: rango INCLUSIVO de ambas puntas — elegir el mismo día como inicio y
+  // fin significa "un día de hogar de paso", no cero. Con la resta sola
+  // (exclusiva, cuenta noches entre fechas) ese caso mostraba "0 días",
+  // que se lee como un error aunque la persona haya elegido bien. Hallazgo
+  // real de Eliza.
   final diasHogar = (fechaInicio != null && fechaFin != null)
-      ? fechaFin.difference(fechaInicio).inDays
+      ? fechaFin.difference(fechaInicio).inDays + 1
       : null;
   final fotoUrl = data?['fotoUrl'] as String?;
   final score = data != null ? calcularCompatibilidad(data) : -1;
@@ -234,11 +257,20 @@ Widget _solicitudDetalle(
                                 const SizedBox(height: 4),
                                 Row(
                                   children: [
-                                    Text(
-                                      'Para $animal',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.grey.shade700,
+                                    // Flexible + ellipsis: mismo motivo que
+                                    // la tarjeta de la vista previa — un
+                                    // nombre de animal largo no debe
+                                    // empujar el chip de al lado fuera del
+                                    // ancho disponible.
+                                    Flexible(
+                                      child: Text(
+                                        'Para $animal',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey.shade700,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
                                     ),
                                     const SizedBox(width: 8),
@@ -713,28 +745,49 @@ Widget _solicitudDetalle(
             const SizedBox(height: 12),
             Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFD8F0E4),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
-                        child: fotoUrl != null
-                            ? FotoUrl(
-                                url: fotoUrl,
-                                width: 32,
-                                height: 32,
-                                fit: BoxFit.cover,
-                                alignment: Alignment.topCenter,
-                                fallback: Container(
+                // Flexible (no Expanded): un nombre de animal corto sigue
+                // ocupando solo lo que necesita, pero uno largo se achica
+                // en vez de empujar el chip "Adopción"/"Hogar de paso" (el
+                // hermano de al lado) fuera del ancho de la tarjeta —
+                // hallazgo real de Eliza, "right overflow" con un nombre
+                // largo al pedir adopción.
+                Flexible(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFD8F0E4),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: fotoUrl != null
+                              ? FotoUrl(
+                                  url: fotoUrl,
+                                  width: 32,
+                                  height: 32,
+                                  fit: BoxFit.cover,
+                                  alignment: Alignment.topCenter,
+                                  fallback: Container(
+                                    width: 32,
+                                    height: 32,
+                                    decoration: BoxDecoration(
+                                      color: Colors.brown.shade300,
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: const Icon(
+                                      Icons.pets,
+                                      size: 18,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                )
+                              : Container(
                                   width: 32,
                                   height: 32,
                                   decoration: BoxDecoration(
@@ -747,30 +800,21 @@ Widget _solicitudDetalle(
                                     color: Colors.white,
                                   ),
                                 ),
-                              )
-                            : Container(
-                                width: 32,
-                                height: 32,
-                                decoration: BoxDecoration(
-                                  color: Colors.brown.shade300,
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: const Icon(
-                                  Icons.pets,
-                                  size: 18,
-                                  color: Colors.white,
-                                ),
-                              ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Para $animal',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            'Para $animal',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),

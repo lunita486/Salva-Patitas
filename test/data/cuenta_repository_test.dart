@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:salva_patitas/data/cuenta_repository.dart';
@@ -30,6 +33,43 @@ void main() {
     'desplegada la función eliminarCuenta (functions/eliminar_cuenta.js)',
     () {
       expect(CuentaRepository.region, 'europe-west1');
+    },
+  );
+
+  // Antes 120s — nadie se queda mirando un spinner sin ninguna señal de
+  // progreso durante dos minutos enteros; Eliza terminó cerrando la app a
+  // la fuerza (el borrado había terminado bien del lado del servidor de
+  // todos modos, pero no tenía forma de saberlo desde la pantalla). Este
+  // test es la alarma si alguien vuelve a subirlo sin querer.
+  test(
+    'eliminarCuenta() espera 30s por defecto antes de avisar que puede '
+    'seguir terminando de fondo, no los 2 minutos completos de antes — '
+    'fakeAsync() para no hacer esperar 30s reales a cada corrida del '
+    'suite',
+    () {
+      final functions = MockFirebaseFunctions();
+      final callable = MockHttpsCallable();
+      when(
+        () => functions.httpsCallable('eliminarCuenta'),
+      ).thenReturn(callable);
+      // Nunca responde: el único desenlace posible es que timeout() corte.
+      when(() => callable.call()).thenAnswer(
+        (_) => Completer<HttpsCallableResult<dynamic>>().future,
+      );
+      final repo = CuentaRepository(functions: functions);
+
+      fakeAsync((async) {
+        var lanzoTimeout = false;
+        repo.eliminarCuenta().catchError((e) {
+          lanzoTimeout = e is TimeoutException;
+        });
+
+        async.elapse(const Duration(seconds: 29));
+        expect(lanzoTimeout, isFalse); // todavía no, a los 29s no venció
+
+        async.elapse(const Duration(seconds: 2)); // cruza los 30s
+        expect(lanzoTimeout, isTrue);
+      });
     },
   );
 

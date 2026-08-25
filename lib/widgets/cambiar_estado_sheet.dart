@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../data/chats_repository.dart';
 import '../data/rescates_repository.dart';
 import '../data/solicitudes_repository.dart';
+import '../data/usuarios_repository.dart';
 import '../theme.dart';
 import 'pedir_motivo.dart';
 
@@ -109,28 +110,37 @@ class CambiarEstadoSheet extends StatelessWidget {
     }
     if (porAvisar.isEmpty) return true;
 
+    // `creadoPor` real del animal (rescatista/albergue) — sin esto, el
+    // aviso de abajo caía al default 'rescatista' de
+    // ChatsRepository.avisarSobreAnimal, aunque el animal fuera de un
+    // albergue. Si la persona a avisar todavía no tenía chat abierto (el
+    // caso más común: mandó la solicitud y nunca llegó a escribir), las
+    // reglas de Firestore rechazaban la creación de ese chat nuevo porque
+    // el `creadoPor` no coincidía con el del rescate — y el aviso de
+    // fallecimiento se perdía en silencio. Mismo hallazgo, mismo motivo,
+    // que el de solicitudes_rescatista_screen.dart:_aprobarSolicitudImpl.
+    // Hallazgo real de Eliza: "el usuario no se entera q falleció el
+    // animalito".
+    String? creadoPorReal;
+    try {
+      final rescateDoc = await RescatesRepository().obtener(docId);
+      creadoPorReal = rescateDoc.data()?['creadoPor'] as String?;
+    } catch (_) {}
+
     final texto =
         'Lamentamos informarte que $nombre falleció. '
         'Gracias por tu interés en darle un hogar. 🌈'
         '${nota.isNotEmpty ? '\n\n$nota' : ''}';
-    // Nombre propio del rescatista/albergue — solo hace falta si alguno de
-    // los avisos de abajo termina creando un chat nuevo. try/catch propio:
-    // si esta lectura falla, se sigue con un nombre de respaldo en vez de
-    // no avisarle a nadie por no poder resolver este dato secundario.
-    var miNombre =
-        FirebaseAuth.instance.currentUser?.displayName ?? 'Rescatista';
-    try {
-      final miDoc = await FirebaseFirestore.instance
-          .collection('usuarios')
-          .doc(miUid)
-          .get();
-      final d = miDoc.data() ?? {};
-      if ((d['albergueNombre'] as String?)?.isNotEmpty == true) {
-        miNombre = d['albergueNombre'] as String;
-      } else if ((d['nombre'] as String?)?.isNotEmpty == true) {
-        miNombre = d['nombre'] as String;
-      }
-    } catch (_) {}
+    // UsuariosRepository().nombrePropioParaAnimal() decide entre nombre y
+    // albergueNombre mirando de qué animal es (creadoPorReal, ya resuelto
+    // arriba) — antes acá vivía una copia a mano que ignoraba ese dato y
+    // siempre prefería albergueNombre si existía, mismo bug (y mismo
+    // arreglo) que enviarMensajeChat() en solicitudes_rescatista_screen.
+    // dart, ver el doc de nombrePropioParaAnimal() para el hallazgo real.
+    final miNombre = await UsuariosRepository().nombrePropioParaAnimal(
+      uid: miUid,
+      creadoPor: creadoPorReal,
+    );
 
     var todoOk = true;
     for (final entry in porAvisar.entries) {
@@ -142,6 +152,7 @@ class CambiarEstadoSheet extends StatelessWidget {
         texto: texto,
         rescateId: docId,
         animalNombre: nombre,
+        creadoPor: creadoPorReal,
       );
       if (!ok) todoOk = false;
     }

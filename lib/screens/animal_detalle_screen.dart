@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../routing/app_router.dart';
 import '../theme.dart';
+import '../domain/reglas_negocio.dart';
 import '../widgets/fotos.dart';
 
 class AnimalDetalleScreen extends StatefulWidget {
@@ -51,6 +52,14 @@ class _AnimalDetalleScreenState extends State<AnimalDetalleScreen> {
     final fotos = [?fotoUrl, ?fotoUrl2];
     final estadoAdopcion = animal['estadoAdopcion'] as String? ?? '';
     final enHogar = estadoAdopcion == 'Hogar de paso';
+    // sePuedeAdoptar (domain/reglas_negocio.dart) — la misma regla que el
+    // feed, Favoritos, el perfil público del albergue y la aprobación.
+    // Esta ficha NO miraba el estado: ofrecía "Solicitar adopción" para
+    // cualquier animal, incluso uno ya adoptado o fallecido. Se llega acá
+    // desde el perfil público de un albergue y desde "Mis solicitudes"
+    // (que abre la ficha a propósito sin importar el estado, para poder
+    // volver a ver las fotos), así que el botón quedaba accesible igual.
+    final puedeAdoptarse = sePuedeAdoptar(estadoAdopcion);
     // En horizontal el alto de pantalla completo puede ser menor a 380 —
     // header + foto + botones fijos ya no entran y el Expanded del scroll
     // se queda sin espacio.
@@ -376,14 +385,20 @@ class _AnimalDetalleScreenState extends State<AnimalDetalleScreen> {
                   Expanded(
                     flex: 2,
                     child: GestureDetector(
-                      onTap: () =>
-                          context.push(AppRoutes.solicitudAdopcion, extra: animal),
+                      onTap: puedeAdoptarse
+                          ? () => context.push(
+                              AppRoutes.solicitudAdopcion,
+                              extra: animal,
+                            )
+                          : null,
                       child: Container(
                         padding: EdgeInsets.symmetric(
                           vertical: enHogar ? 8 : 14,
                         ),
                         decoration: BoxDecoration(
-                          color: appOrange,
+                          color: puedeAdoptarse
+                              ? appOrange
+                              : Colors.grey.shade400,
                           borderRadius: BorderRadius.circular(30),
                         ),
                         child: Column(
@@ -398,9 +413,13 @@ class _AnimalDetalleScreenState extends State<AnimalDetalleScreen> {
                                   color: Colors.white,
                                 ),
                                 const SizedBox(width: 8),
-                                const Text(
-                                  'Solicitar adopción',
-                                  style: TextStyle(
+                                Text(
+                                  puedeAdoptarse
+                                      ? 'Solicitar adopción'
+                                      : estadoAdopcion == 'Fallecido'
+                                      ? 'Ya no está con nosotros'
+                                      : 'Ya no está disponible',
+                                  style: const TextStyle(
                                     fontSize: 15,
                                     fontWeight: FontWeight.w600,
                                     color: Colors.white,

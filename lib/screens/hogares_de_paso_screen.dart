@@ -8,6 +8,7 @@ import '../widgets/avatares.dart';
 import '../widgets/campo_pais_telefono.dart';
 import '../widgets/estado_error_feed.dart';
 import '../widgets/fondo_decorativo.dart';
+import '../widgets/resultado_guardado_snackbar.dart';
 import '../data/hogares_de_paso_repository.dart';
 import '../data/firestore_resiliencia.dart';
 
@@ -160,33 +161,7 @@ class _HogaresDePasoScreenState extends State<HogaresDePasoScreen> {
       ),
     );
     if (!mounted) return;
-    switch (r) {
-      case ResultadoGuardado.confirmado:
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Contacto actualizado'),
-            backgroundColor: msgExito,
-          ),
-        );
-      case ResultadoGuardado.siguePendiente:
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Esto está tardando. Se va a guardar solo apenas vuelva la señal.',
-            ),
-            backgroundColor: msgAdvertencia,
-          ),
-        );
-      case ResultadoGuardado.fallo:
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'No se pudo guardar. Revisá tu conexión e intentá de nuevo.',
-            ),
-            backgroundColor: msgError,
-          ),
-        );
-    }
+    mostrarResultadoGuardado(context, r, exito: 'Contacto actualizado');
   }
 
   Future<void> _eliminar(String docId, String nombre) async {
@@ -351,6 +326,7 @@ class _HogaresDePasoScreenState extends State<HogaresDePasoScreen> {
                           final linkWhatsapp = whatsappUrl(telefono);
 
                           return Container(
+                            key: ValueKey(docId),
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
                               color: Colors.white,
@@ -731,6 +707,14 @@ class _EditarContactoSheetState extends State<_EditarContactoSheet> {
   late final _notasCtl = TextEditingController(text: widget.notasIniciales);
   late final _emailCtl = TextEditingController(text: widget.emailInicial);
 
+  // Mismo motivo que _AgregarHogarSheet._valido: el email es el único dato
+  // que distingue a dos personas reales con el mismo nombre para
+  // buscarDuplicado() — esta hoja lo dejaba editable a "opcional" y sin
+  // ninguna validación, así que un contacto agregado con email obligatorio
+  // se podía editar para quedar SIN email, perdiendo esa protección en
+  // silencio. Hallazgo de auditoría de código.
+  bool get _valido => _emailCtl.text.trim().isNotEmpty;
+
   @override
   void dispose() {
     _telefonoCtl.dispose();
@@ -784,17 +768,20 @@ class _EditarContactoSheetState extends State<_EditarContactoSheet> {
             TextField(
               controller: _emailCtl,
               keyboardType: TextInputType.emailAddress,
-              decoration: _dec('Email (opcional)'),
+              onChanged: (_) => setState(() {}),
+              decoration: _dec('Email *'),
             ),
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: () => Navigator.pop(context, {
-                  'telefono': _telefonoCtl.text.trim(),
-                  'notas': _notasCtl.text.trim(),
-                  'email': _emailCtl.text.trim(),
-                }),
+                onPressed: _valido
+                    ? () => Navigator.pop(context, {
+                        'telefono': _telefonoCtl.text.trim(),
+                        'notas': _notasCtl.text.trim(),
+                        'email': _emailCtl.text.trim(),
+                      })
+                    : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: appTeal,
                   foregroundColor: Colors.white,

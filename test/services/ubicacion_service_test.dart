@@ -1,15 +1,16 @@
 import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:geocoding_platform_interface/geocoding_platform_interface.dart';
+import 'package:http/testing.dart' as http_testing;
 import 'package:geolocator_platform_interface/geolocator_platform_interface.dart';
 import 'package:salva_patitas/services/ubicacion_service.dart';
 
+import '../helpers/mock_nominatim.dart';
+
 // Mismo patrón que test/theme_test.dart: se reemplaza el backend de
-// plataforma de geolocator/geocoding por un fake, así se puede probar cada
-// rama (GPS apagado, permiso bloqueado, tropiezo transitorio del GPS,
-// geocoding caído) sin hardware ni red reales. Extienden la clase base (no
-// la implementan) porque su constructor registra el token que
-// PlatformInterface exige.
+// plataforma de geolocator por un fake, así se puede probar cada rama (GPS
+// apagado, permiso bloqueado, tropiezo transitorio del GPS) sin hardware
+// real. Extiende la clase base (no la implementa) porque su constructor
+// registra el token que PlatformInterface exige.
 class _FakeGeolocator extends GeolocatorPlatform {
   _FakeGeolocator({this.posicion});
 
@@ -78,33 +79,6 @@ class _FakeGeolocator extends GeolocatorPlatform {
   }
 }
 
-class _FakeGeocoding extends GeocodingPlatform {
-  List<Placemark> marcas = const [];
-  List<Location> ubicaciones = const [];
-  bool falla = false;
-  Object? errorAlBuscarDireccion;
-  bool nuncaResponde = false;
-
-  @override
-  Future<List<Location>> locationFromAddress(String address) {
-    if (nuncaResponde) return Completer<List<Location>>().future;
-    if (errorAlBuscarDireccion != null) throw errorAlBuscarDireccion!;
-    return Future.value(ubicaciones);
-  }
-
-  @override
-  Future<List<Placemark>> placemarkFromCoordinates(
-    double lat,
-    double lng,
-  ) async {
-    if (falla) throw Exception('geocoding caído (simulado)');
-    return marcas;
-  }
-}
-
-Location _ubicacion(double lat, double lng) =>
-    Location(latitude: lat, longitude: lng, timestamp: DateTime.now());
-
 Position _posicion(double lat, double lng) => Position(
   latitude: lat,
   longitude: lng,
@@ -120,13 +94,13 @@ Position _posicion(double lat, double lng) => Position(
 
 void main() {
   late _FakeGeolocator geo;
-  late _FakeGeocoding geocoding;
+  late MockNominatim nominatim;
 
   setUp(() {
     geo = _FakeGeolocator(posicion: _posicion(-31.4, -64.2));
-    geocoding = _FakeGeocoding();
+    nominatim = MockNominatim();
     GeolocatorPlatform.instance = geo;
-    GeocodingPlatform.instance = geocoding;
+    UbicacionService.httpClient = nominatim.client;
   });
 
   group('UbicacionService.actual() — permisos y servicio del sistema', () {
@@ -233,6 +207,41 @@ void main() {
       expect(r.ok, true);
       expect(r.posicion!.latitude, 10);
     });
+
+    test(
+      'una posición (0, 0) — "Null Island", lo que devuelve el GPS cuando no '
+      'tiene una lectura real (o el emulador sin ubicación configurada) — se '
+      'trata como si no hubiera posición, no se acepta como si fuera real. '
+      'Hallazgo real de Eliza: un animal con "Ubicación" vacía en el '
+      'formulario mostraba "Se encuentra a 8875.1 km de ti" en el feed — las '
+      'coordenadas (0, 0) SÍ se habían guardado, sin ciudad porque no hay '
+      'nada que geocodificar en medio del océano',
+      () async {
+        geo.posicion = _posicion(0, 0);
+
+        final r = await UbicacionService.actual();
+
+        expect(r.ok, false);
+        expect(r.fallo, FalloUbicacion.sinRespuesta);
+      },
+    );
+
+    test(
+      '(0, 0) con una última posición conocida real disponible: se usa esa '
+      'en vez de descartar todo — mismo criterio que un GPS que tira '
+      'excepción, (0, 0) no es un caso especial que se salte el respaldo',
+      () async {
+        geo.posicion = _posicion(0, 0);
+        geo.ultimaConocida = _posicion(10, 20);
+
+        final r = await UbicacionService.actual(
+          ultimaConocida: UsoUltimaConocida.comoAnticipo,
+        );
+
+        expect(r.ok, true);
+        expect(r.posicion!.latitude, 10);
+      },
+    );
   });
 
   group('UbicacionService.actual() — los 3 usos de la última posición conocida', () {
@@ -310,9 +319,7 @@ void main() {
       'no se saltea el geocoding por haber usado el atajo',
       () async {
         geo.ultimaConocida = _posicion(10, 20);
-        geocoding.marcas = [
-          const Placemark(locality: 'Rosario', isoCountryCode: 'AR'),
-        ];
+        nominatim.configurarReversa(city: 'Rosario', countryCode: 'AR');
 
         final r = await UbicacionService.actual(
           ultimaConocida: UsoUltimaConocida.siAlcanza,
@@ -331,19 +338,18 @@ void main() {
       'feed, para ordenar por distancia) no debería pagar una llamada de red de '
       'más',
       () async {
-        geocoding.falla = true; // si lo llamara, este test explotaría
+        nominatim.fallaReversa = true; // si lo llamara, este test explotaría
 
         final r = await UbicacionService.actual();
 
         expect(r.ok, true);
         expect(r.ciudad, '');
+        expect(nominatim.vecesReversa, 0);
       },
     );
 
     test('conCiudad devuelve ciudad y código de país', () async {
-      geocoding.marcas = [
-        const Placemark(locality: 'Córdoba', isoCountryCode: 'AR'),
-      ];
+      nominatim.configurarReversa(city: 'Córdoba', countryCode: 'AR');
 
       final r = await UbicacionService.actual(conCiudad: true);
 
@@ -354,7 +360,7 @@ void main() {
     test('si el geocoding falla, las COORDENADAS siguen siendo válidas — se '
         'devuelve ok con ciudad vacía, no un error: el pin no se dibuja pero la '
         'distancia sí se puede calcular', () async {
-      geocoding.falla = true;
+      nominatim.fallaReversa = true;
 
       final r = await UbicacionService.actual(conCiudad: true);
 
@@ -367,7 +373,7 @@ void main() {
       'si el geocoding no encuentra ningún lugar, mismo criterio: ok con ciudad '
       'vacía',
       () async {
-        geocoding.marcas = [];
+        nominatim.direccionReversa = null;
 
         final r = await UbicacionService.actual(conCiudad: true);
 
@@ -387,22 +393,23 @@ void main() {
     test(
       'devuelve coordenadas y país cuando el servicio encuentra el lugar',
       () async {
-        geocoding.ubicaciones = [_ubicacion(6.25184, -75.56359)];
-        geocoding.marcas = [
-          const Placemark(
-            locality: 'Medellín',
-            administrativeArea: 'Antioquia',
-            isoCountryCode: 'CO',
+        nominatim.resultadosBusqueda = [
+          MockNominatim.candidato(
+            lat: 6.25184,
+            lon: -75.56359,
+            city: 'Medellín',
+            state: 'Antioquia',
+            countryCode: 'CO',
           ),
         ];
 
         final r = await UbicacionService.desdeTexto('Medellín');
 
-        expect(r!.lat, 6.25184);
-        expect(r.lng, -75.56359);
-        expect(r.paisCodigo, 'CO');
-        expect(r.ciudadResuelta, 'Medellín');
-        expect(r.regionResuelta, 'Antioquia');
+        expect(r!.first.lat, 6.25184);
+        expect(r.first.lng, -75.56359);
+        expect(r.first.paisCodigo, 'CO');
+        expect(r.first.ciudadResuelta, 'Medellín');
+        expect(r.first.regionResuelta, 'Antioquia');
       },
     );
 
@@ -413,19 +420,20 @@ void main() {
         'el geocoder eligió la ciudad equivocada. Pregunta real de Eliza: '
         '"qué pasa si dos rescatistas... están en ciudades que tienen el '
         'mismo nombre"', () async {
-      geocoding.ubicaciones = [_ubicacion(9.9, -75.2)];
-      geocoding.marcas = [
-        const Placemark(
-          locality: 'San José',
-          administrativeArea: 'Córdoba',
-          isoCountryCode: 'CO',
+      nominatim.resultadosBusqueda = [
+        MockNominatim.candidato(
+          lat: 9.9,
+          lon: -75.2,
+          city: 'San José',
+          state: 'Córdoba',
+          countryCode: 'CO',
         ),
       ];
 
       final r = await UbicacionService.desdeTexto('San José');
 
-      expect(r!.ciudadResuelta, 'San José');
-      expect(r.regionResuelta, 'Córdoba');
+      expect(r!.first.ciudadResuelta, 'San José');
+      expect(r.first.regionResuelta, 'Córdoba');
       // Otra "San José" real, en OTRO departamento del mismo país, daría el
       // mismo ciudadResuelta pero una regionResuelta distinta — es esa
       // diferencia la que el diálogo puede mostrar.
@@ -436,19 +444,19 @@ void main() {
       'administrativeArea (zona rural, sin locality) — mostrar la misma '
       'región dos veces en el diálogo de confirmación no aportaría nada',
       () async {
-        geocoding.ubicaciones = [_ubicacion(1.0, 2.0)];
-        geocoding.marcas = [
-          const Placemark(
-            locality: '',
-            administrativeArea: 'Córdoba',
-            isoCountryCode: 'AR',
+        nominatim.resultadosBusqueda = [
+          MockNominatim.candidato(
+            lat: 1.0,
+            lon: 2.0,
+            state: 'Córdoba',
+            countryCode: 'AR',
           ),
         ];
 
         final r = await UbicacionService.desdeTexto('zona rural de Córdoba');
 
-        expect(r!.ciudadResuelta, 'Córdoba'); // cayó a administrativeArea
-        expect(r.regionResuelta, ''); // no se repite
+        expect(r!.first.ciudadResuelta, 'Córdoba'); // cayó a administrativeArea
+        expect(r.first.regionResuelta, ''); // no se repite
       },
     );
 
@@ -458,57 +466,79 @@ void main() {
         'para que el llamador pueda mostrárselo a la persona y que sea ella '
         'quien note el error. Caso real de Eliza: escribió "Nedellin" y '
         'quedó guardado a 9077km de Medellín', () async {
-      geocoding.ubicaciones = [
-        _ubicacion(55.0, 40.0),
-      ]; // en otra parte del mundo
-      geocoding.marcas = [
-        const Placemark(locality: 'Nedelino', isoCountryCode: 'RU'),
+      nominatim.resultadosBusqueda = [
+        MockNominatim.candidato(
+          lat: 55.0,
+          lon: 40.0, // en otra parte del mundo
+          city: 'Nedelino',
+          countryCode: 'RU',
+        ),
       ];
 
       final r = await UbicacionService.desdeTexto('Nedellin');
 
       // Las coordenadas SÍ son las que el servicio devolvió — desdeTexto no
       // puede saber que están mal, esa es justamente la limitación real.
-      expect(r!.lat, 55.0);
+      expect(r!.first.lat, 55.0);
       // Pero el nombre resuelto es distinto de lo que se escribió: es la
       // señal que el llamador necesita para mostrar la confirmación.
-      expect(r.ciudadResuelta, 'Nedelino');
-      expect(r.ciudadResuelta, isNot('Nedellin'));
+      expect(r.first.ciudadResuelta, 'Nedelino');
+      expect(r.first.ciudadResuelta, isNot('Nedellin'));
     });
 
-    test('da null (no una excepción) cuando el servicio no encuentra nada — el '
-        'caso real de escribir "verduras" en el campo de ciudad', () async {
-      geocoding.errorAlBuscarDireccion = const NoResultFoundException();
+    test('da null (no una excepción) cuando el servicio responde con una '
+        'lista vacía — el caso real de escribir "verduras" en el campo de '
+        'ciudad', () async {
+      nominatim.resultadosBusqueda = [];
 
       expect(await UbicacionService.desdeTexto('verduras'), isNull);
     });
 
     test(
-      'también da null si el servicio responde con una lista vacía en vez de '
-      'lanzar NoResultFoundException — no todos los backends de geocoding se '
-      'comportan igual ante "no encontrado"',
+      'también da null si todos los candidatos que devolvió el servicio '
+      'vienen sin ningún nombre usable — una lista para elegir con '
+      'opciones en blanco no le sirve a nadie',
       () async {
-        geocoding.ubicaciones = [];
+        nominatim.resultadosBusqueda = [
+          MockNominatim.candidato(lat: 1, lon: 1, countryCode: 'CO'),
+        ];
 
-        expect(await UbicacionService.desdeTexto('verduras'), isNull);
+        expect(await UbicacionService.desdeTexto('???'), isNull);
       },
     );
 
-    test('CUALQUIER OTRA excepción (sin señal, servicio caído) se propaga tal '
-        'cual, no se confunde con "no es un lugar real" — el llamador necesita '
-        'distinguir los dos casos para no bloquear un guardado por un problema '
-        'de conexión', () async {
-      geocoding.errorAlBuscarDireccion = Exception('sin señal');
+    test('CUALQUIER excepción real (sin señal, servicio caído, el servidor '
+        'respondiendo mal DOS veces seguidas — la de después del reintento) '
+        'se propaga tal cual, no se confunde con "no es un lugar real" — el '
+        'llamador necesita distinguir los dos casos para no bloquear un '
+        'guardado por un problema de conexión', () async {
+      nominatim.errorAlBuscar = Exception('sin señal');
 
       await expectLater(
         UbicacionService.desdeTexto('Medellín'),
         throwsA(isA<Exception>()),
       );
+      expect(
+        nominatim.vecesBusqueda,
+        2,
+        reason: 'se reintentó una vez antes de rendirse',
+      );
+    });
+
+    test('si el servidor responde con un código de error (ej. Nominatim '
+        'caído o limitando pedidos), también se trata como una falla real, '
+        'no como "no encontrado"', () async {
+      nominatim.statusBusqueda = 503;
+
+      await expectLater(
+        UbicacionService.desdeTexto('Medellín'),
+        throwsA(isA<FalloDeGeocoding>()),
+      );
     });
 
     test('si el servicio nunca responde, corta con TimeoutException en vez de '
         'dejar el guardado esperando para siempre', () async {
-      geocoding.nuncaResponde = true;
+      nominatim.nuncaResponde = true;
 
       await expectLater(
         UbicacionService.desdeTexto(
@@ -520,18 +550,149 @@ void main() {
     });
 
     test(
-      'si falla SOLO la búsqueda del país, las coordenadas se devuelven igual '
-      'con paisCodigo vacío — el país es un extra, la distancia depende de las '
-      'coordenadas y esas ya se resolvieron bien',
+      'un tropiezo transitorio de la búsqueda se reintenta UNA vez y sale '
+      'bien — antes esto solo pasaba con el reverse geocoding del país, no '
+      'con la búsqueda en sí; ahora los dos viajan en el mismo pedido, así '
+      'que el mismo reintento cubre las dos cosas a la vez',
       () async {
-        geocoding.ubicaciones = [_ubicacion(6.25, -75.56)];
-        geocoding.falla = true; // falla el reverse geocoding del país
+        var primerIntento = true;
+        nominatim.resultadosBusqueda = [
+          MockNominatim.candidato(
+            lat: -31.4,
+            lon: -64.18,
+            city: 'Córdoba',
+            countryCode: 'AR',
+          ),
+        ];
+        // El primer pedido tira, el reintento (mismo mock, misma lista ya
+        // cargada) sale bien — se simula la falla forzando el mock a
+        // lanzar en la primera llamada solamente.
+        final clienteOriginal = nominatim.client;
+        UbicacionService.httpClient = http_testing.MockClient((request) async {
+          if (primerIntento) {
+            primerIntento = false;
+            throw Exception('tropiezo transitorio');
+          }
+          final resp = await clienteOriginal.get(request.url);
+          return resp;
+        });
 
-        final r = await UbicacionService.desdeTexto('Medellín');
+        final r = await UbicacionService.desdeTexto('Córdoba, Argentina');
 
-        expect(r!.lat, 6.25);
-        expect(r.paisCodigo, '');
-        expect(r.ciudadResuelta, '');
+        expect(r!.first.paisCodigo, 'AR');
+        expect(r.first.ciudadResuelta, 'Córdoba');
+      },
+    );
+
+    test(
+      'un texto ambiguo trae varios candidatos, no solo el primero — antes '
+      'se descartaban en silencio los otros 4 que Android ya devolvía para '
+      'este mismo pedido, así que si el primero resultaba ser un lugar real '
+      'pero equivocado, la persona quedaba sin forma de llegar al que sí '
+      'buscaba: escribir el mismo texto de nuevo siempre daba el mismo '
+      'primero. Hallazgo real de Eliza en su teléfono (no el emulador): '
+      '"medellin antioquia" resolvía siempre a "los olivos", un barrio '
+      'real de Medellín',
+      () async {
+        nominatim.resultadosBusqueda = [
+          MockNominatim.candidato(
+            lat: 6.20,
+            lon: -75.58,
+            city: 'Los Olivos',
+            state: 'Antioquia',
+            countryCode: 'CO',
+          ), // el primero, equivocado
+          MockNominatim.candidato(
+            lat: 6.25,
+            lon: -75.56,
+            city: 'Medellín',
+            state: 'Antioquia',
+            countryCode: 'CO',
+          ), // Medellín centro — el que se busca
+        ];
+
+        final r = await UbicacionService.desdeTexto('medellin antioquia');
+
+        expect(r!.length, 2);
+        expect(r[0].ciudadResuelta, 'Los Olivos');
+        expect(r[1].ciudadResuelta, 'Medellín');
+      },
+    );
+
+    test(
+      'se aprovechan hasta 5 candidatos — esta lista ES la única salida '
+      'cuando el primer candidato está mal (no hay opción de escribir la '
+      'ciudad a mano, ver confirmar_ciudad_resuelta.dart), así que '
+      'recortarla de más deja a la persona sin opciones. Un sexto '
+      'candidato (que Nominatim no debería mandar, se le pide limit=5, '
+      'pero por las dudas) se ignora del lado del cliente también.',
+      () async {
+        nominatim.resultadosBusqueda = List.generate(
+          6,
+          (i) => MockNominatim.candidato(
+            lat: (i + 1).toDouble(),
+            lon: (i + 1).toDouble(),
+            city: 'Ciudad${i + 1}',
+            countryCode: 'CO',
+          ),
+        );
+
+        final r = await UbicacionService.desdeTexto('texto ambiguo');
+
+        expect(r!.length, 5);
+        expect(r.last.ciudadResuelta, 'Ciudad5');
+      },
+    );
+
+    test(
+      'dos candidatos que resuelven a la misma ciudad y país no se '
+      'muestran duplicados en la lista — no aportan nada mostrados dos '
+      'veces',
+      () async {
+        nominatim.resultadosBusqueda = [
+          MockNominatim.candidato(
+            lat: 6.20,
+            lon: -75.58,
+            city: 'Medellín',
+            countryCode: 'CO',
+          ),
+          MockNominatim.candidato(
+            lat: 6.21,
+            lon: -75.59, // coordenada distinta, misma ciudad
+            city: 'Medellín',
+            countryCode: 'CO',
+          ),
+        ];
+
+        final r = await UbicacionService.desdeTexto('medellin');
+
+        expect(r!.length, 1);
+      },
+    );
+
+    test(
+      'un candidato sin ningún nombre usable se salta, sin importar en qué '
+      'posición de la lista venga — solo quedan los candidatos que de '
+      'verdad se le pueden mostrar a la persona para elegir',
+      () async {
+        nominatim.resultadosBusqueda = [
+          MockNominatim.candidato(
+            lat: 6.20,
+            lon: -75.58,
+            city: 'Medellín',
+            countryCode: 'CO',
+          ),
+          MockNominatim.candidato(
+            lat: 9.9,
+            lon: -75.2,
+            countryCode: 'CO',
+          ), // sin city/state/town: no se puede describir
+        ];
+
+        final r = await UbicacionService.desdeTexto('medellin');
+
+        expect(r!.length, 1);
+        expect(r.first.ciudadResuelta, 'Medellín');
       },
     );
   });
@@ -539,12 +700,10 @@ void main() {
   group('UbicacionService.ciudadDe()', () {
     test('usa locality (la ciudad propiamente dicha) cuando viene', () {
       expect(
-        UbicacionService.ciudadDe(
-          const Placemark(
-            locality: 'Schiffdorf',
-            administrativeArea: 'Baja Sajonia',
-          ),
-        ),
+        UbicacionService.ciudadDe((
+          locality: 'Schiffdorf',
+          administrativeArea: 'Baja Sajonia',
+        )),
         'Schiffdorf',
       );
     });
@@ -554,9 +713,10 @@ void main() {
       'zonas rurales y en países donde el geocoder no devuelve localidad',
       () {
         expect(
-          UbicacionService.ciudadDe(
-            const Placemark(locality: '', administrativeArea: 'Córdoba'),
-          ),
+          UbicacionService.ciudadDe((
+            locality: '',
+            administrativeArea: 'Córdoba',
+          )),
           'Córdoba',
         );
       },
@@ -566,7 +726,10 @@ void main() {
       'string vacío (nunca null) si no hay ninguno de los dos — el llamador solo '
       'chequea isEmpty para decidir si dibuja el pin',
       () {
-        expect(UbicacionService.ciudadDe(const Placemark()), '');
+        expect(
+          UbicacionService.ciudadDe((locality: '', administrativeArea: '')),
+          '',
+        );
       },
     );
   });
@@ -646,4 +809,38 @@ void main() {
       },
     );
   });
+
+  group(
+    'ResultadoUbicacion.sinNombre — el GPS anduvo pero nadie le supo poner '
+    'nombre al punto. Las tres pantallas que piden ubicación lo resolvían '
+    'distinto; una dejaba ciudad, coordenadas y país en 3 lugares distintos.',
+    () {
+      test('con coordenadas y ciudad: no es sinNombre', () {
+        const r = ResultadoUbicacion.ok(
+          posicion: null,
+          ciudad: 'Santiago de los Caballeros',
+          paisCodigo: 'DO',
+        );
+        expect(r.sinNombre, isFalse);
+      });
+
+      test('con coordenadas pero sin ciudad: sinNombre', () {
+        const r = ResultadoUbicacion.ok(posicion: null);
+        expect(r.sinNombre, isTrue);
+      });
+
+      // sinNombre describe un ÉXITO parcial. Un fallo entero ya tiene su
+      // propio camino (el switch sobre FalloUbicacion) y no debe caer acá
+      // también, o se avisaría dos veces por lo mismo.
+      test('un fallo de GPS NO es sinNombre', () {
+        for (final f in FalloUbicacion.values) {
+          expect(
+            ResultadoUbicacion.fallo(f).sinNombre,
+            isFalse,
+            reason: '$f ya se avisa por su propia rama',
+          );
+        }
+      });
+    },
+  );
 }

@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../data/chats_repository.dart';
+import '../data/creator_role.dart';
 
 // ─── Fecha ────────────────────────────────────────────────────────────────────
 // El mismo arreglo de meses abreviados en español se copiaba, con leves
@@ -76,6 +77,54 @@ String sitioWebUrl(String sitioWeb) {
       : 'https://$limpio';
 }
 
+/// Chequeo básico de FORMA de un email — no confirma que exista de
+/// verdad (nada del lado del cliente puede), solo que tenga la pinta
+/// mínima de uno (`algo@algo.algo`). Usado para bloquear el guardado del
+/// perfil de Aliado, mismo criterio que ya tiene la ciudad geocodificada
+/// del mismo perfil: un dato opcional puede quedar vacío, pero si se
+/// escribe algo, tiene que tener forma real. Hallazgo real de Eliza:
+/// "sjejdj" se guardaba igual que un email de verdad.
+final RegExp _formaDeEmail = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
+bool esEmailValido(String email) => _formaDeEmail.hasMatch(email.trim());
+
+/// Mismo criterio que [esEmailValido], para "Página web". [sitioWebUrl]
+/// ya sabe abrir cualquier texto con o sin esquema, pero "se puede armar
+/// una URL con esto" no es lo mismo que "esto es un dominio real" — hace
+/// falta al menos un punto con texto real a los dos lados. Hallazgo real
+/// de Eliza: "sjejdj" también pasaba acá, sin ningún aviso.
+final RegExp _formaDeSitioWeb = RegExp(
+  r'^(https?:\/\/)?[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?'
+  r'(\.[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)+(\/.*)?$',
+);
+/// El último segmento (después del último punto, y antes de un posible
+/// `/algo`) tiene que ser solo letras — ningún dominio de primer nivel
+/// real (.com, .org, .co, .net...) lleva números. Sin esto, "www.
+/// veterinariola30" pasaba: SÍ tiene forma de dominio (palabra.palabra),
+/// pero "la30" no es un TLD que pueda existir. No hace falta una lista de
+/// TLDs válidos (se desactualizaría sola) — esta única regla ya descarta
+/// el error más común: escribir el nombre del negocio pegado al final en
+/// vez de agregar el ".com". Hallazgo real de Eliza probando el perfil
+/// del aliado.
+final RegExp _tldSoloLetras = RegExp(r'\.([a-zA-Z]+)(?:\/.*)?$');
+bool esSitioWebValido(String sitioWeb) {
+  final texto = sitioWeb.trim();
+  if (!_formaDeSitioWeb.hasMatch(texto)) return false;
+  final tld = _tldSoloLetras.firstMatch(texto)?.group(1);
+  return tld != null && tld.length >= 2;
+}
+
+/// Mensajes de aviso para [esEmailValido]/[esSitioWebValido], compartidos
+/// entre aliado_perfil_screen.dart y albergue_perfil_screen.dart — antes
+/// cada pantalla tenía su propia copia del texto, con guion largo y en
+/// segunda persona imperativa ("Eso no tiene forma de email — dejalo
+/// vacío..."), que sonaba a regaño. Pedido real de Eliza: sin guion largo,
+/// tono más amable. Una sola versión evita que las dos pantallas vuelvan
+/// a decir cosas distintas para el mismo aviso.
+const avisoEmailInvalido =
+    'Ese texto no parece un email. Podés dejarlo vacío o escribir uno real.';
+const avisoSitioWebInvalido =
+    'Ese texto no parece una página web. Podés dejarlo vacío o escribir una real.';
+
 // ─── Umbral de "animal estancado" ────────────────────────────────────────────
 // Cuántos días sin encontrar hogar antes de mostrar el aviso naranja en
 // mis_rescates_screen.dart. Configurable por cada rescatista/albergue desde
@@ -128,6 +177,113 @@ bool cuentaComoEnCuidado(String? estadoAdopcion) {
   final e = estadoAdopcion ?? 'Rescatado';
   return e == 'Rescatado' || e == 'Regresado';
 }
+
+/// ¿Este animal todavía se puede adoptar? Única fuente de esta pregunta.
+///
+/// Existe porque el feed de adopción y Favoritos la contestaban DISTINTO
+/// para el mismo animal, cada uno con su propia lista de estados escrita a
+/// mano:
+///
+///   feed      → disponible si el estado es null, 'Rescatado', 'Regresado'
+///               o 'Hogar de paso'
+///   favoritos → NO disponible si es 'En proceso de adopción', 'Adoptado',
+///               'Hogar de paso' o 'Fallecido'
+///
+/// Se contradecían justo en **'Hogar de paso'**: el mismo animal aparecía
+/// como adoptable en el feed y como "ya no está disponible" en Favoritos.
+/// Gana el criterio del feed, que es el que decide qué se puede pedir de
+/// verdad: un animal en hogar de paso SÍ se puede adoptar (el hogar de
+/// paso es temporal, justamente mientras espera adopción definitiva) —
+/// mismo criterio que ya usa `cuentaComoEnCuidado` al no contarlo como
+/// capacidad ocupada.
+///
+/// Un estado ausente es un animal recién publicado ('Rescatado'), así que
+/// también está disponible.
+bool sePuedeAdoptar(String? estadoAdopcion) {
+  final e = estadoAdopcion ?? 'Rescatado';
+  return e == 'Rescatado' || e == 'Regresado' || e == 'Hogar de paso';
+}
+
+/// Las coordenadas guardadas de un animal, o `null` si no tiene unas
+/// usables. Única fuente de "¿este documento tiene ubicación?".
+///
+/// Hace DOS cosas que el feed no hacía, y las dos le costaron caro:
+///
+/// 1. **Descarta (0, 0).** "Null Island" no es una ubicación real: es lo
+///    que devuelve Android cuando el GPS todavía no tiene lectura. El
+///    servicio de ubicación ya la rechaza AL GUARDAR (ver
+///    `UbicacionService._valida`, con el mismo hallazgo documentado), pero
+///    los animales guardados antes de ese arreglo siguen teniéndola, y el
+///    feed las trataba como coordenadas buenas: mostraba "Se encuentra a
+///    8875.1 km de ti" y ordenaba por esa distancia inventada. El guard
+///    estaba puesto solo del lado de la escritura; del lado de la lectura
+///    nunca se tapó.
+///
+/// 2. **Lee `num`, no `double`.** El feed usaba `as double?` mientras el
+///    resto de la app usa `(as num?)?.toDouble()`. Un valor guardado como
+///    entero (tocado a mano en la consola, o escrito por el trigger del
+///    servidor, que serializa los enteros de JS como `integerValue`) hacía
+///    reventar el cast — y como el orden por distancia corre adentro del
+///    builder de la lista, esa excepción no rompía una tarjeta: se llevaba
+///    puesta la pestaña Adoptar entera, en cada redibujado.
+({double lat, double lng})? coordenadasDe(Map<String, dynamic> datos) {
+  final lat = (datos['latitud'] as num?)?.toDouble();
+  final lng = (datos['longitud'] as num?)?.toDouble();
+  if (lat == null || lng == null) return null;
+  if (lat == 0 && lng == 0) return null;
+  return (lat: lat, lng: lng);
+}
+
+/// Cuántos días faltan para que venza un hogar de paso: 0 = vence HOY,
+/// negativo = ya venció. Única fuente de esta cuenta.
+///
+/// Compara solo la FECHA, sin la hora, y eso es justamente el punto. El
+/// panel del rescatista usaba `fechaFin.isAfter(ahora)` —con hora—, y como
+/// la fecha de fin se guarda a medianoche, el día del vencimiento ya
+/// contaba como vencido desde las 00:00. "Mis solicitudes" (del lado del
+/// adoptante) comparaba solo por fecha, así que el mismo día decía "vence
+/// hoy".
+///
+/// Resultado real: el día exacto de fin, al adoptante le aparecía
+/// "⚠️ El período vence hoy" mientras al rescatista la app ya le había
+/// mandado por chat "El período de hogar de paso ha vencido, por favor
+/// coordina la devolución". Gana el criterio por fecha: un hogar de paso
+/// que termina hoy no está vencido hasta que hoy termine.
+int diasHastaVencimiento({required DateTime fechaFin, required DateTime ahora}) {
+  final fin = DateTime(fechaFin.year, fechaFin.month, fechaFin.day);
+  final hoy = DateTime(ahora.year, ahora.month, ahora.day);
+  return fin.difference(hoy).inDays;
+}
+
+/// ¿El período de hogar de paso YA venció? Ver [diasHastaVencimiento] para
+/// el porqué de comparar solo la fecha.
+bool hogarDePasoVencido({
+  required DateTime fechaFin,
+  required DateTime ahora,
+}) => diasHastaVencimiento(fechaFin: fechaFin, ahora: ahora) < 0;
+
+/// ¿Este servicio de un negocio aliado está activo (visible para quien
+/// busca)? Única fuente de esta pregunta.
+///
+/// Existe porque se contestaba de DOS formas distintas, y la diferencia
+/// era invisible hasta que aparecía un servicio sin el campo:
+///
+///   perfil público del aliado y contador "Servicios activos"
+///                        → `activo == true`   (ausente = INACTIVO)
+///   lista propia del aliado, con su interruptor
+///                        → `activo ?? true`   (ausente = ACTIVO)
+///
+/// O sea: un servicio sin el campo (los creados antes de que existiera) se
+/// le mostraba a su dueño como activo, con el interruptor encendido, pero
+/// no aparecía en su perfil público ni contaba en su propio panel. Un
+/// servicio invisible para los clientes sin que el negocio tuviera forma
+/// de notarlo.
+///
+/// Gana `?? true`: un servicio que se publicó y nunca se apagó a propósito
+/// está activo — apagarlo es una acción explícita del interruptor, y hoy
+/// `subir_servicio_screen.dart` siempre escribe `activo: true` al crear.
+bool servicioEstaActivo(Map<String, dynamic> servicio) =>
+    servicio['activo'] as bool? ?? true;
 
 /// ¿Este animal está "estancado" — esperando desde hace [umbral] días o
 /// más, todavía sin resolución? Única fuente de esta regla, antes copiada
@@ -217,7 +373,9 @@ int contarMensajesSinLeer({
     if ((d['tipoSolicitud'] as String? ?? '') == 'consulta_aliado')
       return false;
     final creadoPor = d['creadoPor'] as String? ?? 'rescatista';
-    return (esAlbergue ? creadoPor == 'albergue' : creadoPor != 'albergue') &&
+    return (esAlbergue
+            ? esCreadoPorAlbergue(creadoPor)
+            : !esCreadoPorAlbergue(creadoPor)) &&
         ChatsRepository.noLeidosPara(d, uid: uid, esRescatista: true) > 0;
   }).length;
 
@@ -229,4 +387,35 @@ int contarMensajesSinLeer({
   }).length;
 
   return deRecibidos + deEnviados;
+}
+
+/// Lo que se guarda cuando un animal no tiene nombre puesto.
+///
+/// No debería existir como DATO — es un texto de pantalla — pero se coló a
+/// la base: alguna pantalla copió a `solicitudes` el nombre ya resuelto
+/// para mostrar en vez del dato real, y quedó escrito así para siempre en
+/// las solicitudes de ese momento. Por eso [nombreDeAnimal] lo trata como
+/// ausencia de nombre en vez de como un nombre: sin eso salía "Para Sin
+/// nombre" (reportado por Eliza).
+const _placeholderNombreAnimal = 'Sin nombre';
+
+/// El nombre de un animal, listo para mostrar.
+///
+/// La misma pregunta se respondía en 7 lugares con 4 respuestas distintas
+/// —'Sin nombre', 'Animal', 'un animalito', y la cadena vacía— y dos de
+/// ellas convivían en la MISMA pantalla (mis_solicitudes_screen), así que
+/// un animal sin nombre se llamaba distinto en el encabezado y en la lista
+/// de abajo.
+///
+/// [enFrase] elige entre las dos formas que sí son legítimamente distintas:
+/// un título de tarjeta se rotula "Sin nombre", pero dentro de una oración
+/// eso da "Para Sin nombre", que no se lee como español. La decisión de
+/// cuál usar sigue siendo de quien llama; lo que ya no se decide de nuevo
+/// cada vez es QUÉ texto es cada una y qué cuenta como "no tiene nombre".
+String nombreDeAnimal(String? nombre, {bool enFrase = false}) {
+  final limpio = nombre?.trim() ?? '';
+  if (limpio.isEmpty || limpio == _placeholderNombreAnimal) {
+    return enFrase ? 'un animalito' : _placeholderNombreAnimal;
+  }
+  return limpio;
 }

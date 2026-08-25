@@ -145,6 +145,13 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
           if (_tipoSolicitud == 'hogar_de_paso' && _fechaFin != null)
             'fechaFinHogar': Timestamp.fromDate(_fechaFin!),
           'fotoUrl': widget.animal['fotoUrl'],
+          // `especie` se LEÍA en 6 lugares y no se escribía en ninguno —
+          // era el único camino de creación de esta colección, así que el
+          // campo no existía nunca. Consecuencia: el chat que nace de
+          // aprobar o rechazar esta solicitud se creaba sin especie, y la
+          // lista de chats del adoptante cae al default 'Perro' — un gato
+          // aparecía con 🐶 en la conversación sobre él mismo.
+          'especie': widget.animal['especie'],
           // etiquetas del animal para calcular compatibilidad
           'animalEnergia': widget.animal['energia'],
           'animalTamano': widget.animal['tamano'],

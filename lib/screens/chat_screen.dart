@@ -10,6 +10,7 @@ import '../widgets/avatares.dart';
 import '../widgets/fotos.dart';
 import '../widgets/texto_sin_desborde.dart';
 import '../data/chats_repository.dart';
+import '../data/creator_role.dart';
 import '../data/rescates_repository.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -56,6 +57,37 @@ class _ChatScreenState extends State<ChatScreen> {
   // Ver el detalle completo (chat de animal vs. consulta a un negocio,
   // y quién mira cada uno) en los comentarios de _cargarFotoContraparte.
   late final Future<(String?, String?)> _fotoContraparte;
+
+  // La insignia de estado del animal ("Adoptado", "Hogar de paso"...) del
+  // encabezado. `late final`, no armada dentro de build(): esta pantalla se
+  // redibuja con CADA mensaje nuevo (el stream de mensajes emite), y un
+  // `.snapshots()` creado en build() es un objeto nuevo cada vez — el
+  // StreamBuilder se desuscribe y se resuscribe, y la insignia parpadea o
+  // muestra un instante de caché vieja. Mismo patrón, y mismo arreglo, que
+  // el resto de las pantallas de esta sesión (mis_rescates, solicitudes,
+  // el carrusel del panel...). Los dos datos salen de `widget.animal`, que
+  // no cambia mientras el chat está abierto, así que se resuelven una sola
+  // vez acá.
+  //
+  // Con rescateId se busca el documento exacto; sin él (chats viejos) se
+  // cae a buscar por nombre + dueño, que puede confundirse si hay dos
+  // animales con el mismo nombre bajo la misma cuenta en distinto rol.
+  late final String _rescateIdAnimal =
+      widget.animal['rescateId'] as String? ?? '';
+  late final String _rescatistaIdAnimal =
+      widget.animal['rescatistaId'] as String? ?? '';
+  late final Stream<DocumentSnapshot<Map<String, dynamic>>>?
+  _estadoAnimalPorId = _rescateIdAnimal.isEmpty
+      ? null
+      : RescatesRepository().porId(_rescateIdAnimal);
+  late final Stream<QuerySnapshot<Map<String, dynamic>>>?
+  _estadoAnimalPorNombre =
+      (_rescateIdAnimal.isNotEmpty || _rescatistaIdAnimal.isEmpty)
+      ? null
+      : RescatesRepository().porNombreYDueno(
+          rescatistaId: _rescatistaIdAnimal,
+          nombre: widget.animal['nombre'] as String? ?? '',
+        );
 
   Future<(String?, String?)> _cargarFotoContraparte() async {
     final esConsulta = (widget.animal['tipoSolicitud'] as String? ?? '')
@@ -491,11 +523,19 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     final nombre = widget.animal['nombre'] as String;
     final edad = (widget.animal['edad'] as String?) ?? '';
-    // El chat puede ser sobre un animal (fotoUrl, en Storage) o una consulta
-    // a un negocio aliado (fotoBase64, el logo propio del aliado — fuera de
-    // alcance de esta migración). Se revisan los dos, el que haya presente.
-    final fotoUrl = widget.animal['fotoUrl'] as String?;
-    final fotoBase64 = widget.animal['fotoBase64'] as String?;
+    // Qué foto va en la tarjeta de arriba la decide el TIPO de chat, no
+    // "cuál de los dos campos está presente" — mismo criterio, y mismo
+    // motivo, que en adoptante_chats_screen.dart (ver el comentario largo
+    // ahí): un `fotoBase64` colado en un chat de animal no debe poder
+    // tapar la foto del animalito.
+    final esConsultaDeNegocio =
+        (widget.animal['tipoSolicitud'] as String? ?? '') == 'consulta_aliado';
+    final fotoUrl = esConsultaDeNegocio
+        ? null
+        : widget.animal['fotoUrl'] as String?;
+    final fotoBase64 = esConsultaDeNegocio
+        ? widget.animal['fotoBase64'] as String?
+        : null;
     final rescatista = (widget.animal['rescatista'] as String?) ?? 'Rescatista';
     final emoji = widget.animal['especie'] == 'Gato' ? '🐱' : '🐶';
     // El encabezado muestra a la CONTRAPARTE: el rescatista chatea con el
@@ -504,8 +544,9 @@ class _ChatScreenState extends State<ChatScreen> {
     // si hablara consigo mismo.
     final esConsulta = (widget.animal['tipoSolicitud'] as String? ?? '')
         .startsWith('consulta');
-    final esAlbergue =
-        (widget.animal['creadoPor'] as String? ?? '') == 'albergue';
+    final esAlbergue = esCreadoPorAlbergue(
+      widget.animal['creadoPor'] as String?,
+    );
     final contraparte = widget.esRescatista
         ? (widget.animal['adoptanteNombre'] as String? ?? 'Adoptante')
         : rescatista;
@@ -519,11 +560,11 @@ class _ChatScreenState extends State<ChatScreen> {
     final creadoPor = widget.animal['creadoPor'] as String? ?? '';
     final rotuloContraparte = esConsulta
         ? (widget.esRescatista
-              ? (creadoPor == 'albergue'
-                    ? 'Albergue'
-                    : creadoPor == 'rescatista'
-                    ? 'Rescatista'
-                    : 'Adoptante')
+              // rotuloDeQuienContacto (data/creator_role.dart) es la única
+              // fuente de este rótulo — antes esta misma cadena de
+              // condiciones vivía copiada acá Y en aliado_home_screen.dart,
+              // las dos pantallas donde el aliado ve la MISMA conversación.
+              ? rotuloDeQuienContacto(creadoPor)
               : 'Negocio aliado')
         : widget.esRescatista
         ? 'Adoptante'
@@ -702,12 +743,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                   'adopcion';
                               if (tipo.startsWith('consulta'))
                                 return const SizedBox.shrink();
-                              final rescatistaId =
-                                  widget.animal['rescatistaId'] as String? ??
-                                  '';
-                              final rescateId =
-                                  widget.animal['rescateId'] as String? ?? '';
-                              if (rescatistaId.isEmpty)
+                              if (_rescatistaIdAnimal.isEmpty)
                                 return _estadoBadgeTipo(tipo);
 
                               Widget badgeFor(String? estadoReal) {
@@ -732,15 +768,14 @@ class _ChatScreenState extends State<ChatScreen> {
                                 return _estadoBadgeTipo(tipo);
                               }
 
-                              // Con rescateId se busca el documento exacto (sin ambigüedad
-                              // posible); sin él, se cae al buscar por nombre + rescatistaId
-                              // como antes (puede confundirse si hay 2 animales con el
-                              // mismo nombre bajo la misma cuenta en distinto rol).
-                              if (rescateId.isNotEmpty) {
+                              // Los dos streams se arman una sola vez en el
+                              // State (ver _estadoAnimalPorId/_PorNombre) —
+                              // acá solo se elige cuál corresponde.
+                              if (_estadoAnimalPorId != null) {
                                 return StreamBuilder<
                                   DocumentSnapshot<Map<String, dynamic>>
                                 >(
-                                  stream: RescatesRepository().porId(rescateId),
+                                  stream: _estadoAnimalPorId,
                                   builder: (_, snap) => badgeFor(
                                     snap.data?.data()?['estadoAdopcion']
                                         as String?,
@@ -748,10 +783,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                 );
                               }
                               return StreamBuilder<QuerySnapshot>(
-                                stream: RescatesRepository().porNombreYDueno(
-                                  rescatistaId: rescatistaId,
-                                  nombre: nombre,
-                                ),
+                                stream: _estadoAnimalPorNombre,
                                 builder: (_, snap) {
                                   final docs = snap.data?.docs ?? [];
                                   final estadoReal = docs.isNotEmpty

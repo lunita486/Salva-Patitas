@@ -481,10 +481,22 @@ class _HomeScreenState extends State<HomeScreen>
     return SizedBox(
       height: 245,
       child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: _rescatesRepo.misRescates(
-          uid: FirebaseAuth.instance.currentUser?.uid ?? '',
-          role: CreatorRole.rescatista,
-        ),
+        // Ya existía _misRescatesStream (late final, arriba) para esta
+        // MISMA consulta — esta pantalla la usa en el contador de
+        // "Animales rescatados" de _statsRowDynamic(). Este carrusel tenía
+        // su PROPIA copia armada inline en build(), así que cada rebuild
+        // (por ejemplo, al aprobar una solicitud, que dispara varios
+        // StreamBuilder hermanos) se desuscribía y resuscribía a una NUEVA
+        // consulta — la key por docId (ver más abajo) evitaba que se
+        // reciclaran tarjetas de OTRO animal, pero no evitaba el parpadeo
+        // de la resuscripción en sí: un instante de caché local antes de
+        // que llegara el snapshot fresco del servidor. Mismo patrón, y
+        // mismo arreglo, que ya se hizo hoy en mis_rescates_screen.dart,
+        // solicitudes_preview.dart y solicitudes_rescatista_screen.dart —
+        // se había quedado afuera de esa limpieza porque esta consulta en
+        // particular vivía duplicada en vez de compartida. Hallazgo real
+        // de Eliza: aprobó una adopción y "Tus rescates activos" parpadeó.
+        stream: _misRescatesStream,
         builder: (context, snap) {
           if (snap.connectionState == ConnectionState.waiting) {
             return const Center(
@@ -540,6 +552,16 @@ class _HomeScreenState extends State<HomeScreen>
               return _animalCard(
                 nombre,
                 especie,
+                // Sin esto, aprobar/rechazar una solicitud (o cualquier
+                // otro cambio que mueva a este animal de posición en la
+                // lista, ya ordenada por prioridadEstado) hacía que
+                // Flutter reutilizara por POSICIÓN el elemento visual de
+                // otro animal para este lugar — la foto vieja se veía un
+                // instante antes de que la nueva terminara de cargar, un
+                // parpadeo. Con la key por docId, Flutter sabe que es un
+                // animal distinto y arma la tarjeta de cero en vez de
+                // reciclar la de al lado. Hallazgo real de Eliza.
+                key: ValueKey(docId),
                 estado: estadoAdopcion,
                 emoji: especie == 'Gato' ? '🐱' : '🐶',
                 fotoUrl: fotoUrl,
@@ -589,6 +611,7 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _animalCard(
     String nombre,
     String especie, {
+    Key? key,
     String emoji = '🐾',
     String estado = 'En adopción',
     String? fotoUrl,
@@ -597,6 +620,7 @@ class _HomeScreenState extends State<HomeScreen>
   }) {
     final color = cicloColor(estado);
     return Container(
+      key: key,
       width: 150,
       decoration: BoxDecoration(
         color: Colors.white,

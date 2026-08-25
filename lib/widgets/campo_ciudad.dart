@@ -3,6 +3,7 @@ import 'package:geolocator/geolocator.dart';
 
 import '../services/ubicacion_service.dart';
 import '../theme.dart';
+import 'aviso_ubicacion.dart';
 
 // ─── Ciudad ─────────────────────────────────────────────────────────────────
 // Los 3 lugares de la app donde una ubicación se escribe a mano en vez de
@@ -45,14 +46,12 @@ class CampoCiudad extends StatefulWidget {
   final TextEditingController controller;
   final String hint;
   final int? maxLength;
-  final bool autofocus;
   final void Function(String)? onChanged;
   const CampoCiudad({
     super.key,
     required this.controller,
     required this.hint,
     this.maxLength,
-    this.autofocus = false,
     this.onChanged,
   });
   @override
@@ -81,29 +80,14 @@ class _CampoCiudadState extends State<CampoCiudad> {
     super.dispose();
   }
 
-  void _avisar(
-    String mensaje, {
-    Future<bool> Function()? accionAjustes,
-    String? etiquetaAccion,
-  }) {
+  // Limpia cualquier aviso de un intento anterior antes de mostrar el de
+  // este — sin esto, reintentar varias veces apilaba un SnackBar atrás de
+  // otro. `mounted` acá (no dentro de un helper compartido): esta State
+  // sigue siendo la única dueña de saber si todavía está en pantalla.
+  void _avisar(String mensaje, {Future<bool> Function()? accionAjustes}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).clearSnackBars();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(mensaje),
-        backgroundColor: msgError,
-        duration: const Duration(seconds: 8),
-        action: accionAjustes == null
-            ? null
-            : SnackBarAction(
-                label: etiquetaAccion ?? 'Abrir Ajustes',
-                textColor: Colors.white,
-                onPressed: () {
-                  accionAjustes();
-                },
-              ),
-      ),
-    );
+    avisarErrorUbicacion(context, mensaje, accionAjustes: accionAjustes);
   }
 
   /// El GPS y sus reintentos los resuelve UbicacionService; lo único que
@@ -125,12 +109,12 @@ class _CampoCiudadState extends State<CampoCiudad> {
         switch (resultado.fallo!) {
           case FalloUbicacion.servicioApagado:
             _avisar(
-              'Activa el GPS en tu dispositivo',
+              mensajeGpsApagado,
               accionAjustes: Geolocator.openLocationSettings,
             );
           case FalloUbicacion.permisoBloqueado:
             _avisar(
-              'Permiso de ubicación bloqueado.',
+              mensajePermisoBloqueado,
               accionAjustes: Geolocator.openAppSettings,
             );
           case FalloUbicacion.permisoDenegado:
@@ -147,8 +131,8 @@ class _CampoCiudadState extends State<CampoCiudad> {
       }
       // Hubo coordenadas pero el geocoding no las supo traducir a un nombre
       // — distinto de no tener ubicación, y con su propio mensaje.
-      if (resultado.ciudad.isEmpty) {
-        _avisar('No pudimos identificar tu ciudad. Podés escribirla a mano.');
+      if (resultado.sinNombre) {
+        _avisar(avisoCiudadSinNombre);
         return;
       }
       if (!mounted) return;
@@ -162,7 +146,6 @@ class _CampoCiudadState extends State<CampoCiudad> {
   @override
   Widget build(BuildContext context) => TextField(
     controller: widget.controller,
-    autofocus: widget.autofocus,
     maxLength: widget.maxLength,
     onChanged: widget.onChanged,
     decoration: InputDecoration(

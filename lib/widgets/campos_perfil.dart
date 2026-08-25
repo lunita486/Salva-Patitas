@@ -62,3 +62,38 @@ Widget perfilCampo(
     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
   ),
 );
+
+/// Una fila de contacto (teléfono, dirección, email, web) de los perfiles
+/// PÚBLICOS de albergue y de negocio aliado: ícono + texto, y opcionalmente
+/// tocable (para abrir WhatsApp, el mail o el sitio).
+///
+/// Estaba duplicada byte a byte en albergue_publico_screen.dart y
+/// aliado_publico_screen.dart. No estaba mal en ninguna de las dos — ese es
+/// justamente el riesgo: dos copias idénticas envejecen distinto, y el
+/// primer arreglo que se aplique en una y no en la otra deja las dos
+/// pantallas mostrando el mismo tipo de dato con estilos o comportamientos
+/// diferentes, sin que nadie lo note hasta verlas una al lado de la otra
+/// (que es exactamente cómo Eliza encontró la divergencia anterior entre
+/// estas dos mismas pantallas, ver perfilLabel arriba).
+Widget filaContacto(IconData icono, String texto, {VoidCallback? onTap}) {
+  final fila = Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icono, size: 17, color: appTeal),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            texto,
+            style: TextStyle(
+              fontSize: 13.5,
+              color: onTap != null ? appTeal : appInk,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+  return onTap == null ? fila : GestureDetector(onTap: onTap, child: fila);
+}

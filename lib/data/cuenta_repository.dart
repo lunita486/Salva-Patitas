@@ -43,8 +43,21 @@ class CuentaRepository {
   /// original, mismo motivo que en `RescateFotosRepository`/
   /// `ChatsRepository`), solo deja de esperar. Si vence, la pantalla debe
   /// avisar que puede seguir terminando de fondo, no que "falló".
+  ///
+  /// Antes eran 120s — técnicamente "más corto que 300", pero nadie se
+  /// queda mirando un spinner sin ninguna señal de progreso durante dos
+  /// minutos enteros: Eliza terminó cerrando la app a la fuerza (el
+  /// borrado había terminado bien del lado del servidor de todos modos,
+  /// pero la persona no tenía forma de saberlo). 30s sigue siendo tiempo
+  /// de sobra para que la enorme mayoría de los borrados normales
+  /// terminen bien DENTRO del timeout (nunca muestran el aviso de
+  /// "tardando"); para la cuenta rara con muchísimos chats que sí tarda
+  /// más, la persona ve antes el aviso de que puede seguir esperando
+  /// tranquila en vez de whatsapp de que la app se colgó. Hallazgo real
+  /// de Eliza: "me tocó cerrar la app e ingresar nuevamente... el usuario
+  /// no tendría por qué salir e ingresar de nuevo".
   Future<void> eliminarCuenta({
-    Duration timeout = const Duration(seconds: 120),
+    Duration timeout = const Duration(seconds: 30),
   }) async {
     try {
       await _functions.httpsCallable('eliminarCuenta').call().timeout(timeout);

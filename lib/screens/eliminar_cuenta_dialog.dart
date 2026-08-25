@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../data/auth_helper.dart';
 import '../data/cuenta_repository.dart';
+import '../data/servicios_repository.dart';
 
 /// Punto de entrada único del flujo de "Eliminar mi cuenta" — mismo
 /// criterio que `mostrarCambiarRolDebug` (widgets/cambiar_rol_debug.dart): una sola función
@@ -15,19 +17,71 @@ import '../data/cuenta_repository.dart';
 /// se puede deshacer y borra datos personales de verdad — el mismo criterio
 /// que usan apps como GitHub para borrar un repositorio. Un solo toque es
 /// poco para algo de esta escala.
-Future<void> mostrarEliminarCuentaDialog(BuildContext context) async {
+///
+/// [mostrarParrafoAdopciones]: el párrafo de "si tenés una adopción o un
+/// hogar de paso ya aprobado..." — cada pantalla que llama a esto decide si
+/// le aplica a SU rol (`true` en adoptante/rescatista/albergue, `false` en
+/// aliado). No se decide mirando los roles guardados de la cuenta: una
+/// versión anterior sí lo hacía (para que una cuenta con doble rol, ej.
+/// rescatista + aliado, siguiera viendo el párrafo aunque entrara desde el
+/// lado del negocio), pero es más simple pensarlo por PANTALLA — este
+/// diálogo habla de lo que se pierde EN ESE ROL, sin importar qué otros
+/// roles tenga la cuenta. Pedido explícito de Eliza probando el perfil de
+/// Aliado: "el mensaje para el aliado debería solo decir el tema del
+/// aliado, no mencionar el tema de la adopción".
+Future<void> mostrarEliminarCuentaDialog(
+  BuildContext context, {
+  bool mostrarParrafoAdopciones = true,
+}) async {
+  // Solo informa, no bloquea — pedido explícito de Eliza: no tiene sentido
+  // obligar a borrar servicios a mano antes de poder irse, si de cualquier
+  // forma se van a borrar solos como parte de eliminarCuenta (ver
+  // functions/eliminar_cuenta.js, borra todo `servicios` con
+  // aliadoId==uid). Esto es SOLO para que la persona sepa qué se pierde
+  // antes de confirmar, mismo criterio que el párrafo de adopciones/hogares
+  // de paso de acá abajo. best-effort: si esta consulta falla (sin señal),
+  // se sigue sin el aviso extra en vez de trabar el diálogo entero por un
+  // dato secundario.
+  // Mismo criterio que mostrarParrafoAdopciones (ver doc de arriba): esto
+  // habla de lo que se pierde EN ESE ROL, así que solo tiene sentido
+  // consultarlo desde la pantalla de Aliado — y como mostrarParrafoAdopciones
+  // ya es false únicamente para esa pantalla, se deriva de ahí en vez de
+  // agregar un parámetro aparte. Antes se consultaba SIEMPRE, sin mirar
+  // desde qué pantalla se abrió el diálogo: una cuenta con doble rol (ej.
+  // adoptante + aliado, algo común probando la app) veía este párrafo de
+  // "servicios activos" también al eliminar desde el lado de Adoptante,
+  // donde no aplica para nada. Hallazgo real de Eliza.
+  final esPantallaAliado = !mostrarParrafoAdopciones;
+  var tieneServiciosActivos = false;
+  if (esPantallaAliado) {
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid != null) {
+        // ServiciosRepository.tieneServiciosActivos — antes acá vivía un
+        // `.where('activo', isEqualTo: true).limit(1)` armado a mano, que
+        // era el criterio MÁS estricto de los cuatro que había en la app:
+        // al filtrar dentro de la consulta, Firestore descarta los
+        // servicios sin ese campo antes de que el código los vea. O sea
+        // que a alguien con servicios encendidos en su propia lista, este
+        // aviso le decía que no tenía ninguno activo y lo dejaba borrar la
+        // cuenta igual. Ver el doc de ServiciosRepository.
+        tieneServiciosActivos = await ServiciosRepository()
+            .tieneServiciosActivos(uid);
+      }
+    } catch (_) {}
+  }
+  if (!context.mounted) return;
+
   final continuar = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       title: const Text('Eliminar mi cuenta'),
-      content: const Text(
+      content: Text(
         'Esto borra tu perfil y tus datos de la app de forma permanente. '
-        'No se puede deshacer.\n\n'
-        'Si tenés una adopción o un hogar de paso ya aprobado, ese registro '
-        'se conserva (sin tu nombre ni tus datos) porque el rescatista o '
-        'albergue necesita mantener la prueba de que el animal encontró '
-        'hogar.',
+        'No se puede deshacer.'
+        '${mostrarParrafoAdopciones ? '\n\nSi tenés una adopción o un hogar de paso ya aprobado, ese registro se conserva (sin tu nombre ni tus datos) porque el rescatista o albergue necesita mantener la prueba de que el animal encontró hogar.' : ''}'
+        '${tieneServiciosActivos ? '\n\nTenés servicios activos publicados. Se van a eliminar junto con tu cuenta, y cualquier conversación abierta con quien te haya consultado va a quedar sin tu información.' : ''}',
       ),
       actions: [
         TextButton(

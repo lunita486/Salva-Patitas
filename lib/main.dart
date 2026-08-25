@@ -44,6 +44,45 @@ void main() async {
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
+  // Los dos manejadores de acá cubren errores DISTINTOS: FlutterError.
+  // onError es lo que Flutter dispara para errores durante el build/layout/
+  // paint de un widget (ej. un RenderBox roto); PlatformDispatcher.instance.
+  // onError es la puerta de errores async fuera de ese ciclo (un Future que
+  // rompe sin que nadie lo esperara — incluida la inicialización de abajo,
+  // que ya no se espera). Sin los dos, la mitad de los crashes reales
+  // seguiría sin llegar nunca a Crashlytics. Se instalan ANTES de runApp()
+  // a propósito, aunque ya no dependen de setCrashlyticsCollectionEnabled()
+  // (más abajo) para funcionar — el SDK encola los reportes igual mientras
+  // esa llamada todavía está en vuelo.
+  FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+  PlatformDispatcher.instance.onError = (error, stack) {
+    FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+    return true;
+  };
+
+  // App Check, Crashlytics y notificaciones YA NO bloquean el primer frame.
+  // Antes los tres se esperaban acá, antes de runApp() — y el peor caso
+  // (NotificacionesService pidiendo permiso de notificaciones) dejaba a la
+  // persona mirando el splash nativo hasta que tocara "Permitir"/"No
+  // permitir" en el diálogo del sistema, en la primerísima apertura de la
+  // app. Ninguno de los tres hace falta para dibujar el login/feed —
+  // corren en paralelo mientras la persona ya está viendo la app. Hallazgo
+  // real de Eliza: "tarda un poco en entrar" al abrir por primera vez tras
+  // instalar. Medido con el APK60 real (`adb shell am start -W`): 8.85s
+  // hasta el diálogo de permiso en la instalación nueva, 4s en arranques
+  // en frío posteriores — ambos por encima del umbral de 5s que Android
+  // Vitals marca como mal comportamiento.
+  unawaited(_inicializarEnSegundoPlano());
+
+  runApp(const PatitasApp());
+}
+
+/// Ver el comentario en `main()`. Nada acá adentro puede demorar el primer
+/// frame: no se espera este Future antes de `runApp()`. Un error acá cae en
+/// `PlatformDispatcher.instance.onError` (ya instalado arriba) salvo
+/// notificaciones, que además atrapa el suyo propio — nada de esto debería
+/// poder impedir que la app arranque.
+Future<void> _inicializarEnSegundoPlano() async {
   // Play Integrity solo existe para builds firmados/distribuidos de verdad
   // (Play Store o instalación directa de un APK release) — en debug (el
   // emulador, `flutter run`) no hay forma de que pase esa verificación, así
@@ -66,31 +105,16 @@ void main() async {
   await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(
     !kDebugMode,
   );
-  // Los dos manejadores de arriba cubren errores DISTINTOS: FlutterError.
-  // onError es lo que Flutter dispara para errores durante el build/layout/
-  // paint de un widget (ej. un RenderBox roto); PlatformDispatcher.instance.
-  // onError es la puerta de errores async fuera de ese ciclo (un Future que
-  // rompe sin que nadie lo esperara). Sin los dos, la mitad de los crashes
-  // reales seguiría sin llegar nunca a Crashlytics.
-  FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
-  PlatformDispatcher.instance.onError = (error, stack) {
-    FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
-    return true;
-  };
 
-  // NotificacionesService.inicializar() ya se protege sola por dentro (cada
-  // paso atrapa su propio error — ver ese archivo), pero runApp() de acá
-  // abajo es lo único que de verdad importa: sin ESTE try/catch también,
-  // cualquier cosa nueva que se agregue ahí en el futuro y se olvide de
-  // atrapar su error deja a la persona en una pantalla en blanco para
-  // siempre, sin haberse construido ni el login. Nada relacionado con
-  // notificaciones debería poder impedir que la app arranque.
+  // Ya se protege sola por dentro (cada paso atrapa su propio error — ver
+  // ese archivo); este try/catch es la segunda red, para que algo nuevo
+  // que se agregue ahí en el futuro y se olvide de atrapar su error no
+  // rompa esta cadena a mitad de camino.
   try {
     await NotificacionesService.inicializar();
   } catch (e) {
     debugPrint('No se pudo inicializar notificaciones: $e');
   }
-  runApp(const PatitasApp());
 }
 
 class PatitasApp extends StatelessWidget {
@@ -329,6 +353,18 @@ class _AuthWrapperState extends State<AuthWrapper> {
               // manda al onboarding, que completa el perfil con merge
               // (no pisa lo que ya haya).
               case PantallaPerfil.seleccionRol:
+                // Mismo motivo que el chequeo de "!exists" de más arriba:
+                // el PRIMER snapshot después de reinstalar la app (caché
+                // local recién vaciada) puede llegar desde caché sin
+                // `roles` todavía, un instante antes de que el snapshot
+                // real del servidor lo corrija con el perfil completo —
+                // sin este chequeo, una cuenta YA registrada (con rol)
+                // veía un flash de la pantalla de selección de rol antes
+                // de entrar a la app de verdad. Hallazgo real de Eliza:
+                // pasaba solo la primera vez después de reinstalar.
+                if (userSnap.data!.metadata.isFromCache) {
+                  return _CargaConSalida(onReintentar: _reintentar);
+                }
                 return SeleccionRolScreen(user: snap.data!);
               case PantallaPerfil.alberguePerfil:
                 return const AlberguePerfilScreen();

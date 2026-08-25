@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../services/ubicacion_service.dart' show CandidatoUbicacion;
 import 'firestore_resiliencia.dart';
 
 /// Centraliza las escrituras del campo `roles` en `usuarios/{uid}`
@@ -46,16 +47,178 @@ class UsuariosRepository {
   /// real de Eliza: "todos los cargados desde albergues no muestran la
   /// distancia".
   ///
-  /// Se escribe con merge y solo estos dos campos: es una reparación de
-  /// fondo, nunca debe pisar nada más de lo que la persona tenga guardado.
+  /// Se escribe con merge y solo los campos de la ubicación: es una
+  /// reparación de fondo, nunca debe pisar nada más de lo que la persona
+  /// tenga guardado.
+  ///
+  /// [paisCodigo] va JUNTO con las coordenadas, no aparte: los tres datos
+  /// (ciudad, coordenadas, país) describen un solo lugar y tienen que
+  /// viajar juntos — es el invariante que cuida confirmar_ciudad_resuelta.
+  /// dart, y romperlo fue el bug de "cordoba verduras 🇪🇸".
+  ///
+  /// Antes esta función recibía y escribía SOLO las coordenadas, aunque
+  /// quien la llama ya tenía el país en la mano (lo acababa de resolver en
+  /// la misma operación). El resultado era una reparación a medias: el
+  /// perfil quedaba con ciudad + coordenadas pero sin país, así que todos
+  /// los animales que ese albergue publicara después salían sin bandera —
+  /// hasta que alguien volviera a guardar el perfil a mano.
+  ///
+  /// Se omite si viene vacío en vez de escribir `''`: un país vacío es
+  /// justamente la señal que usa el perfil para saber que le falta ese
+  /// dato y volver a resolverlo.
   Future<void> completarCoordenadas({
     required String uid,
     required double latitud,
     required double longitud,
+    String paisCodigo = '',
   }) => _db.collection('usuarios').doc(uid).set({
     'latitud': latitud,
     'longitud': longitud,
+    if (paisCodigo.isNotEmpty) 'paisCodigo': paisCodigo,
   }, SetOptions(merge: true));
+
+  /// La ubicación del perfil de un albergue, lista para que sus animales
+  /// la hereden: ciudad, coordenadas y país.
+  ///
+  /// Incluye la RED DE SEGURIDAD para los perfiles viejos: si tienen ciudad
+  /// pero no coordenadas (se crearon antes de que guardar la ciudad exigiera
+  /// geocodificarla), acá se resuelven una vez y se guardan de vuelta en el
+  /// perfil, así el arreglo es permanente y nadie tiene que ir a editar su
+  /// perfil a mano.
+  ///
+  /// Existe compartida porque esa red de seguridad estaba SOLO en el alta
+  /// individual (`subir_rescate_screen.dart`). La pantalla de publicar en
+  /// LOTE leía los mismos campos pero sin repararlos, así que el mismo
+  /// albergue, con el mismo perfil, terminaba con animales distintos según
+  /// por dónde los publicara: los de a uno reparaban el perfil y salían con
+  /// distancia y bandera, los del lote salían sin nada — y como el lote no
+  /// reparaba, seguían saliendo así siempre.
+  ///
+  /// Silenciosa a propósito: si el geocodificador falla (sin señal, o una
+  /// ciudad vieja que ya no resuelve) devuelve lo que haya sin coordenadas
+  /// en vez de tirar. Publicar nunca debe trabarse por un dato que es un
+  /// extra.
+  Future<
+    ({String ciudad, double? latitud, double? longitud, String paisCodigo})
+  >
+  ubicacionDeAlbergue({
+    required String uid,
+    required Future<List<CandidatoUbicacion>?> Function(String) geocodificar,
+  }) async {
+    final data = (await _db.collection('usuarios').doc(uid).get()).data();
+    final ciudad = (data?['ciudad'] as String?) ?? '';
+    var lat = (data?['latitud'] as num?)?.toDouble();
+    var lng = (data?['longitud'] as num?)?.toDouble();
+    var pais = (data?['paisCodigo'] as String?) ?? '';
+
+    if (lat == null && ciudad.isNotEmpty) {
+      try {
+        // Se queda con el primer candidato, sin diálogo: acá no hay a
+        // quién preguntarle cuál es el correcto (esto corre solo, al abrir
+        // la pantalla de publicar).
+        final candidatos = await geocodificar(ciudad);
+        if (candidatos != null && candidatos.isNotEmpty) {
+          final resuelta = candidatos.first;
+          lat = resuelta.lat;
+          lng = resuelta.lng;
+          if (resuelta.paisCodigo.isNotEmpty) pais = resuelta.paisCodigo;
+          await completarCoordenadas(
+            uid: uid,
+            latitud: resuelta.lat,
+            longitud: resuelta.lng,
+            paisCodigo: resuelta.paisCodigo,
+          );
+        }
+      } catch (_) {
+        // Se devuelve lo que haya: sin coordenadas, ese animal queda sin
+        // distancia, igual que antes de esta reparación.
+      }
+    }
+    return (ciudad: ciudad, latitud: lat, longitud: lng, paisCodigo: pais);
+  }
+
+  /// La REGLA pura de [nombrePropioParaAnimal], sin tocar la red: dado el
+  /// contenido de `usuarios/{uid}` que quien llama ya tenga en la mano,
+  /// cuál es el nombre con el que corresponde firmar.
+  ///
+  /// Existe separada porque tres pantallas (publicar un animal, publicar en
+  /// lote, y contactar a un negocio) YA leen ese documento para otra cosa
+  /// —la ciudad, la foto— y tenían cada una su propia copia de esta regla
+  /// escrita a mano: "si hay albergueNombre y no está vacío, usalo". Eran
+  /// tres copias de la decisión que [nombrePropioParaAnimal] ya centraliza,
+  /// y que existe porque equivocarse acá fue un bug real (un rechazo de un
+  /// animal de rescatista firmado "La Perla pruebas", el albergue de la
+  /// misma cuenta).
+  ///
+  /// Usarlas la versión con red habría agregado una SEGUNDA lectura del
+  /// mismo documento en cada una. Con la regla separada, hay una sola
+  /// fuente y ninguna lectura de más.
+  static String nombrePropioDesde({
+    required Map<String, dynamic>? datosUsuario,
+    required String? creadoPor,
+    required String? nombreDeLaCuenta,
+  }) {
+    final data = datosUsuario ?? const <String, dynamic>{};
+    final albergueNombre = data['albergueNombre'] as String?;
+    final nombre = data['nombre'] as String?;
+    if (creadoPor == 'albergue' && (albergueNombre?.isNotEmpty ?? false)) {
+      return albergueNombre!;
+    }
+    if (nombre?.isNotEmpty ?? false) return nombre!;
+    if (albergueNombre?.isNotEmpty ?? false) return albergueNombre!;
+    return (nombreDeLaCuenta?.isNotEmpty ?? false)
+        ? nombreDeLaCuenta!
+        : 'Rescatista';
+  }
+
+  /// El nombre propio (de quien está logueado) que corresponde firmarle a
+  /// un aviso automático sobre UN animal puntual — "Eliza Casas" si ese
+  /// animal es de rescatista, "La Perla" si es de albergue.
+  ///
+  /// Existe porque una cuenta puede tener las dos identidades a la vez
+  /// (`nombre` Y `albergueNombre` en el mismo doc de `usuarios`), y dos
+  /// copias de esta lógica (rechazar una solicitud, avisar que un animal
+  /// falleció) preferían `albergueNombre` SIEMPRE que existiera, sin mirar
+  /// de qué animal se trataba — un rescatista que también tiene rol de
+  /// albergue veía sus propios mensajes automáticos de un animal SUYO
+  /// (rescatista) firmados con el nombre del albergue. Hallazgo real de
+  /// Eliza: rechazó una solicitud de "Gato coco loco" (suyo, como
+  /// rescatista, "Eliza Casas") y el chat le llegó al adoptante firmado
+  /// "La Perla pruebas" — el albergue de esa misma cuenta.
+  ///
+  /// [creadoPor] es del ANIMAL en cuestión ('albergue' o cualquier otra
+  /// cosa se trata como rescatista), no del rol activo en la pantalla que
+  /// llama a esto — son cosas distintas, quien mira Aprobar/Rechazar puede
+  /// tener el toggle de rol en cualquier lado.
+  Future<String> nombrePropioParaAnimal({
+    required String uid,
+    required String? creadoPor,
+  }) async {
+    // `_auth.currentUser` recién se toca si de verdad hace falta (más
+    // abajo) — evaluarlo siempre, aunque el camino feliz de Firestore
+    // nunca lo necesite, rompía cualquier test que no pasara un auth
+    // mockeado (FirebaseAuth.instance exige Firebase.initializeApp()).
+    Map<String, dynamic>? datos;
+    try {
+      datos = (await _db.collection('usuarios').doc(uid).get()).data();
+    } catch (_) {
+      // datos queda null: se cae al mismo respaldo que "no había ningún
+      // nombre cargado".
+    }
+    // `nombreDeLaCuenta: null` primero, y recién se mira `_auth` si el
+    // resultado quedó en el respaldo — mantiene la evaluación perezosa que
+    // ya tenía esta función (ver el comentario de arriba): tocar
+    // `_auth.currentUser` en el camino feliz rompe cualquier test que no
+    // pase un auth mockeado, porque FirebaseAuth.instance exige un
+    // Firebase.initializeApp() que `flutter test` no corre.
+    final resuelto = nombrePropioDesde(
+      datosUsuario: datos,
+      creadoPor: creadoPor,
+      nombreDeLaCuenta: null,
+    );
+    if (resuelto != 'Rescatista') return resuelto;
+    return _auth.currentUser?.displayName ?? 'Rescatista';
+  }
 
   Future<void> actualizarRoles(String uid, List<String> roles) {
     if (!roles.every(rolesValidos.contains)) {

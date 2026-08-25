@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 import '../theme.dart';
 import 'fotos.dart';
@@ -48,10 +49,16 @@ class _AvatarPersonaState extends State<AvatarPersona> {
   @override
   Widget build(BuildContext context) {
     final fotoBytes = bytesFotoSegura(widget.fotoBase64);
+    // CachedNetworkImageProvider, no NetworkImage: este widget se usa en
+    // el encabezado del chat, tarjetas de solicitud y filas de la lista de
+    // conversaciones — mismo motivo que FotoUrl en fotos.dart, NetworkImage
+    // solo cachea en RAM y vuelve a descargar todo en cada apertura de la
+    // app. Hallazgo real de Eliza: "cuando abro chats... las imágenes se
+    // demoran en cargar".
     final ImageProvider? foto = fotoBytes != null
         ? MemoryImage(fotoBytes)
         : widget.fotoUrl != null
-        ? NetworkImage(widget.fotoUrl!)
+        ? CachedNetworkImageProvider(widget.fotoUrl!)
         : null;
     final mostrarFoto = foto != null && !_falloCarga;
     final size = widget.radius * 2;

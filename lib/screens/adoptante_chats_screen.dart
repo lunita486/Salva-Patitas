@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import '../data/chats_repository.dart';
 import '../data/solicitudes_repository.dart';
@@ -10,6 +11,7 @@ import '../widgets/avatares.dart';
 import '../widgets/estado_error_feed.dart';
 import '../widgets/fondo_decorativo.dart';
 import '../widgets/fotos.dart';
+import '../domain/reglas_negocio.dart';
 
 class AdoptanteChatsScreen extends StatefulWidget {
   final bool esRescatista;
@@ -166,15 +168,22 @@ class _AdoptanteChatsScreenState extends State<AdoptanteChatsScreen> {
             if (tb == null) return -1;
             return tb.compareTo(ta);
           });
-    // Backfill de fotoUrl para chats de animal creados antes de
-    // que se guardara (o antes de la migración a Storage — las
-    // solicitudes viejas guardaban fotoBase64, así que además
-    // se salta si ya tiene cualquiera de los dos campos). Los
-    // chats de consulta a un aliado no tienen solicitud
-    // asociada, así que este backfill nunca les aplica.
+    // Backfill de fotoUrl para chats de animal creados antes de que se
+    // guardara. Se salta explícitamente los de consulta a un aliado (no
+    // tienen solicitud asociada de dónde sacarla) y los que ya tienen
+    // fotoUrl.
+    //
+    // Antes también se saltaba cualquier chat con `fotoBase64` presente,
+    // pensando que eso significaba "es un chat de negocio" — mismo
+    // criterio frágil que se acaba de sacar más abajo, y con la misma
+    // consecuencia: un chat de animal con un fotoBase64 colado quedaba
+    // excluido de este backfill, o sea sin recuperar nunca la foto real
+    // del animalito. El tipo de chat es el dato correcto para decidir
+    // esto, no qué campo esté presente.
     for (final doc in docs) {
       final dd = doc.data() as Map<String, dynamic>;
-      if (dd['fotoUrl'] != null || dd['fotoBase64'] != null) continue;
+      if ((dd['tipoSolicitud'] as String?) == 'consulta_aliado') continue;
+      if (dd['fotoUrl'] != null) continue;
       final nombre = dd['animalNombre'] as String? ?? '';
       final adoptanteId = dd['adoptanteId'] as String? ?? '';
       if (nombre.isEmpty || adoptanteId.isEmpty) continue;
@@ -228,7 +237,7 @@ class _AdoptanteChatsScreenState extends State<AdoptanteChatsScreen> {
       itemCount: docs.length,
       itemBuilder: (_, i) {
         final d = docs[i].data() as Map<String, dynamic>;
-        final animalNombre = d['animalNombre'] as String? ?? 'Animal';
+        final animalNombre = nombreDeAnimal(d['animalNombre'] as String?);
         final rescatista = d['rescatista'] as String? ?? 'Rescatista';
         final tipoSolicitud = d['tipoSolicitud'] as String? ?? 'adopcion';
         // Para un chat de ANIMAL, la query de arriba ya garantiza de qué
@@ -256,11 +265,25 @@ class _AdoptanteChatsScreenState extends State<AdoptanteChatsScreen> {
         final ultimoMensaje = d['ultimoMensaje'] as String? ?? '';
         final ultimaHora = d['ultimaHora'] as String? ?? '';
         final especie = d['especie'] as String? ?? 'Perro';
-        // Un chat de animal tiene fotoUrl (Storage); uno de
-        // consulta a un aliado tiene fotoBase64 (su logo,
-        // fuera de esta migración) — se revisan los dos.
-        final fotoUrl = d['fotoUrl'] as String?;
-        final fotoBase64 = d['fotoBase64'] as String?;
+        // QUÉ foto va en el círculo grande lo decide el TIPO de chat, no
+        // "cuál de los dos campos está presente" (que es como estaba
+        // antes: se miraba fotoBase64 y, si no había, fotoUrl).
+        //
+        // La diferencia importa: un chat de animal que por lo que sea
+        // tenga un `fotoBase64` colado — pasó de verdad, lo escribía por
+        // error una versión anterior del trigger del servidor — mostraba
+        // ESE logo TAPANDO la foto del animalito, porque el campo estaba
+        // presente y ganaba. Decidiéndolo por tipoSolicitud, un dato de
+        // más en el campo que no corresponde simplemente se ignora, y la
+        // pantalla no puede volver a romperse por eso. Hallazgo real de
+        // Eliza: cambió la foto del albergue y en la lista de chats veía
+        // ese logo donde iba el animal, pero al ENTRAR al chat se veía
+        // bien (el encabezado lee el perfil en vivo, sin esta copia).
+        final esConsultaAliado = tipoSolicitud == 'consulta_aliado';
+        final fotoUrl = esConsultaAliado ? null : d['fotoUrl'] as String?;
+        final fotoBase64 = esConsultaAliado
+            ? d['fotoBase64'] as String?
+            : null;
         final noLeidos = ChatsRepository.noLeidosPara(
           d,
           uid: uid,
@@ -289,10 +312,16 @@ class _AdoptanteChatsScreenState extends State<AdoptanteChatsScreen> {
             avatarColors[nombreMostrar.length % avatarColors.length];
 
         final fotoBytes = bytesFotoSegura(fotoBase64);
+        // CachedNetworkImageProvider, no NetworkImage: mismo motivo que
+        // FotoUrl en fotos.dart — NetworkImage solo cachea en el
+        // ImageCache en RAM, así que esta lista volvía a descargar todas
+        // las fotos de perfil en cada apertura de la app. Esta pantalla
+        // (Chats) había quedado afuera de ese arreglo. Hallazgo real de
+        // Eliza: "cuando abro chats... las imágenes se demoran en cargar".
         final ImageProvider? fotoProvider = fotoBytes != null
             ? MemoryImage(fotoBytes)
             : fotoUrl != null
-            ? NetworkImage(fotoUrl)
+            ? CachedNetworkImageProvider(fotoUrl)
             : null;
         // Un negocio aliado sin logo no es un animal — antes caía en el
         // mismo emoji 🐶/🐱 que un chat de animal sin foto, que no tiene

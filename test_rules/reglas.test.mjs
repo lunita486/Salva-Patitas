@@ -271,6 +271,55 @@ describe('solicitudes — aprobar / rechazar', () => {
   });
 });
 
+describe('solicitudes — las copias del animal (fotoUrl/animalNombre) son intocables desde el cliente', () => {
+  // Estas copias las mantiene al día el trigger onRescateActualizado
+  // (functions/propagar_copias.js), que corre con permisos de admin y no
+  // pasa por estas reglas. Ningún cliente necesita escribirlas, así que
+  // nadie puede — ni el dueño del animal, ni el adoptante.
+  //
+  // Hubo una rama de la regla que sí se lo permitía al dueño, agregada
+  // cuando la sincronización se intentaba desde la app. Al mudarla al
+  // servidor esa rama quedó sin ningún llamador, y una regla que permite
+  // algo que nadie usa es superficie de ataque regalada: se quitó. Estos
+  // tests son los que avisan si alguien la vuelve a abrir sin querer.
+  it('ni el rescatista dueño del animal puede escribir fotoUrl/animalNombre', async () => {
+    await sembrarSolicitudPendiente();
+    await assertFails(
+      updateDoc(doc(como(ALBERGUE), 'solicitudes', 'sol1'), {
+        fotoUrl: 'https://ejemplo.com/nueva.jpg',
+        animalNombre: 'Otro nombre',
+      }),
+    );
+  });
+
+  it('tampoco el adoptante', async () => {
+    await sembrarSolicitudPendiente();
+    await assertFails(
+      updateDoc(doc(como(ADOPTANTE), 'solicitudes', 'sol1'), {
+        animalNombre: 'Otro nombre',
+      }),
+    );
+  });
+
+  it('ni un tercero ajeno', async () => {
+    await sembrarSolicitudPendiente();
+    await assertFails(
+      updateDoc(doc(como(OTRO), 'solicitudes', 'sol1'), {
+        fotoUrl: 'https://ejemplo.com/nueva.jpg',
+      }),
+    );
+  });
+
+  // Lo que el dueño SÍ tiene que poder seguir haciendo, para que los tests
+  // de arriba no pasen por el motivo equivocado (una regla rota del todo).
+  it('pero el dueño sigue pudiendo aprobar/rechazar, que es lo suyo', async () => {
+    await sembrarSolicitudPendiente();
+    await assertSucceeds(
+      updateDoc(doc(como(ALBERGUE), 'solicitudes', 'sol1'), { estado: 'aprobada' }),
+    );
+  });
+});
+
 describe('solicitudes — acuerdo de adopción', () => {
   it('el adoptante puede aceptar el acuerdo si su solicitud ya está aprobada', async () => {
     await sembrarSolicitudPendiente('sol3', { estado: 'aprobada' });
@@ -331,6 +380,10 @@ describe('formas de consulta que hacen los repositorios', () => {
         adoptanteId: ADOPTANTE, rescatistaId: ALBERGUE, rescateId: 'animal1',
         estado: 'aprobada',
       });
+      await setDoc(doc(db, 'chats', 'chat_a'), {
+        adoptanteId: ADOPTANTE, rescatistaId: ALBERGUE, rescateId: 'animal1',
+        creadoPor: 'albergue', rescatista: 'Nombre viejo',
+      });
     });
   });
 
@@ -388,6 +441,7 @@ describe('formas de consulta que hacen los repositorios', () => {
       )),
     );
   });
+
 });
 
 describe('rescates', () => {
@@ -741,4 +795,75 @@ describe('chats', () => {
       }),
     );
   });
+
+  // ── El caso real de "no pudimos avisarle al adoptante" ─────────────────
+  // La regla de mensajes.create hace `get(chats/$(chatId))` para saber si
+  // quien escribe es adoptanteId o rescatistaId de ESE chat. Firestore
+  // evalúa cada escritura de un batch/transacción contra el estado YA
+  // COMMITEADO, no contra las otras escrituras del MISMO batch — así que
+  // un chat que se crea en el mismo batch que su primer mensaje no existe
+  // todavía para ese get(), y la regla entera se cae con un error de
+  // evaluación (deniega TODO el batch). Ninguna prueba de este archivo
+  // probó nunca ese caso — todas las de arriba pre-siembran el chat con
+  // `sembrar()` antes de escribir el mensaje. Hallazgo real de Eliza: "Sin
+  // nombre" (perro), marcado Fallecido, con una solicitud pendiente nunca
+  // charlada — "el estado se guardó, pero no pudimos avisarle al
+  // adoptante".
+  it(
+    'crear el chat Y su primer mensaje en el MISMO batch se RECHAZA — es ' +
+      'justo el patrón que ChatsRepository.avisarSobreAnimal usaba antes ' +
+      'para un chat que nunca existió, y por esto se cambió a dos pasos ' +
+      'separados (ver el test de abajo). Si este test alguna vez empieza ' +
+      'a pasar, revisá si cambiaron las reglas de mensajes.create antes ' +
+      'de volver a juntar esto en un batch',
+    async () => {
+      const { writeBatch } = await import('firebase/firestore');
+      const db = como(ALBERGUE);
+      const batch = writeBatch(db);
+      const chatRef = doc(db, 'chats', 'chatNuevo');
+      const mensajeRef = doc(collection(db, 'chats', 'chatNuevo', 'mensajes'));
+      batch.set(chatRef, {
+        adoptanteId: OTRO,
+        rescatistaId: ALBERGUE,
+        rescateId: 'animal1',
+        creadoPor: 'albergue',
+      });
+      batch.set(mensajeRef, {
+        texto: 'Lamentamos informarte que Firulais falleció.',
+        emisor: 'rescatista',
+      });
+      await assertFails(batch.commit());
+    },
+  );
+
+  // El arreglo real: DOS escrituras separadas (asegurarChatAnimal primero,
+  // registrarMensaje después, mismo patrón que chat_screen.dart ya usaba)
+  // en vez del batch único de arriba. Para cuando se manda el mensaje, el
+  // chat ya es un documento COMMITEADO de verdad, así que el get() de la
+  // regla lo encuentra sin problema.
+  it(
+    'crear el chat como una escritura propia, y DESPUÉS su primer mensaje ' +
+      'como otra — el arreglo real de avisarSobreAnimal — sí funciona',
+    async () => {
+      const db = como(ALBERGUE);
+      await assertSucceeds(
+        setDoc(
+          doc(db, 'chats', 'chatNuevo2'),
+          {
+            adoptanteId: OTRO,
+            rescatistaId: ALBERGUE,
+            rescateId: 'animal1',
+            creadoPor: 'albergue',
+          },
+          { merge: true },
+        ),
+      );
+      await assertSucceeds(
+        addDoc(collection(db, 'chats', 'chatNuevo2', 'mensajes'), {
+          texto: 'Lamentamos informarte que Firulais falleció.',
+          emisor: 'rescatista',
+        }),
+      );
+    },
+  );
 });

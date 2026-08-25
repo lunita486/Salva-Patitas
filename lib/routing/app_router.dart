@@ -23,7 +23,6 @@ import '../screens/subir_lote_screen.dart';
 import '../screens/subir_rescate_screen.dart';
 import '../screens/subir_servicio_screen.dart';
 import '../screens/tipo_animal_screen.dart';
-import '../screens/ubicacion_alcance_screen.dart';
 import '../screens/visor_foto_completa.dart';
 
 // Tabla de rutas — antes cada pantalla llamaba a
@@ -79,7 +78,6 @@ class AppRoutes {
   static const subirRescate = '/subir-rescate';
   static const subirServicio = '/subir-servicio';
   static const tipoAnimal = '/tipo-animal';
-  static const ubicacionAlcance = '/ubicacion-alcance';
   static const visorFoto = '/visor-foto';
 }
 
@@ -244,10 +242,6 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: AppRoutes.tipoAnimal,
       builder: (context, state) => const TipoAnimalScreen(),
-    ),
-    GoRoute(
-      path: AppRoutes.ubicacionAlcance,
-      builder: (context, state) => const UbicacionAlcanceScreen(),
     ),
     GoRoute(
       path: AppRoutes.visorFoto,

@@ -1,5 +1,6 @@
 import 'dart:async';
-import 'package:geocoding/geocoding.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
 // conReintento vive en data/firestore_resiliencia.dart por su origen (fallas
 // transitorias de Firestore), pero la función en sí es genérica: "reintentá
@@ -7,6 +8,21 @@ import 'package:geolocator/geolocator.dart';
 // la política — que haya UNA sola definición de "cuánto se reintenta" es
 // justamente el punto de este archivo.
 import '../data/firestore_resiliencia.dart' show conReintento;
+
+/// Un lugar candidato para un texto escrito a mano — `desdeTexto()` puede
+/// devolver más de uno cuando el texto es ambiguo, ver el comentario ahí.
+typedef CandidatoUbicacion = ({
+  double lat,
+  double lng,
+  String paisCodigo,
+  String ciudadResuelta,
+  String regionResuelta,
+});
+
+/// Localidad/provincia ya normalizadas desde la respuesta de Nominatim —
+/// reemplaza al `Placemark` de `package:geocoding` (que ya no se usa). Los
+/// mismos 2 campos que [UbicacionService.ciudadDe] necesita.
+typedef DireccionResuelta = ({String locality, String administrativeArea});
 
 /// Por qué no se pudo obtener la ubicación. Cada motivo tiene una acción
 /// distinta del lado de la UI (abrir los ajustes del sistema vs. los de la
@@ -72,9 +88,32 @@ class ResultadoUbicacion {
   final FalloUbicacion? fallo;
 
   bool get ok => fallo == null;
+
+  /// Hubo coordenadas, pero el geocoding inverso no las supo traducir a un
+  /// nombre de ciudad.
+  ///
+  /// Vale la pena tener nombre propio porque este caso se resolvía de tres
+  /// formas distintas en las tres pantallas que piden ubicación, y una de
+  /// las tres estaba mal de una manera que no se ve en pantalla:
+  /// editar_rescate se quedaba con el texto de ciudad VIEJO (un lugar real,
+  /// distinto), movía las coordenadas al lugar nuevo, y dejaba el país
+  /// vacío. Tres campos describiendo tres lugares, con el tilde en verde
+  /// porque solo miraba que hubiera latitud.
+  ///
+  /// La regla, ahora una sola: ciudad, coordenadas y país salen del mismo
+  /// punto o no se toca ninguno. Sin nombre no hay nada que mostrarle a
+  /// quien lo lea, y unas coordenadas que contradicen el texto son peores
+  /// que no tener coordenadas.
+  bool get sinNombre => ok && ciudad.isEmpty;
 }
 
-/// Única puerta de entrada a GPS + geocoding inverso de toda la app.
+/// El aviso de [ResultadoUbicacion.sinNombre]. Es un fallo distinto de "no
+/// pude ubicarte" y por eso tiene su propio texto: el GPS anduvo, lo que
+/// no se pudo fue ponerle nombre, y la salida es escribirla a mano.
+const avisoCiudadSinNombre =
+    'No pudimos identificar tu ciudad. Podés escribirla a mano.';
+
+/// Única puerta de entrada a GPS + geocoding de toda la app.
 ///
 /// **Por qué existe:** esta misma secuencia (chequear servicio → pedir
 /// permiso → obtener posición → traducirla a nombre de ciudad) estaba
@@ -101,6 +140,24 @@ class ResultadoUbicacion {
 /// mientras que el pin de ciudad del perfil simplemente no se dibuja. Meter
 /// el SnackBar acá adentro habría forzado un `BuildContext` en el servicio
 /// y con él toda la familia de bugs de "aviso pegado sobre otra pantalla".
+///
+/// **El geocoding (texto ↔ coordenadas) habla con Nominatim (OpenStreetMap),
+/// no con el geocodificador que trae Android.** El de Android devuelve
+/// resultados pobres o directamente equivocados para textos en
+/// Latinoamérica bastante seguido — el caso real que lo cambió: "medellin
+/// antioquia" (con provincia y todo) resolvía SIEMPRE a "Los Olivos, un
+/// barrio real de Medellín, sin que la ciudad de verdad apareciera nunca
+/// entre los candidatos, ni agregando más texto. No era un bug de esta
+/// app (la lista de candidatos funcionaba bien) sino de la fuente de datos
+/// por debajo. Nominatim es gratis, no pide clave ni tarjeta, y tiene mejor
+/// cobertura de la región — a cambio, pide como máximo 1 pedido por
+/// segundo y un User-Agent que identifique la app (ver `_headers`), reglas
+/// que este archivo ya respeta por diseño: cada operación pública hace UN
+/// solo pedido HTTP (antes hacían falta hasta 6 para una sola búsqueda:
+/// una por el texto y una más por cada candidato para resolver su nombre —
+/// Nominatim devuelve el nombre resuelto en la MISMA respuesta de la
+/// búsqueda, `addressdetails=1`, así que ese viaje de más ya no hace
+/// falta).
 class UbicacionService {
   /// El pedido de permiso que está en curso ahora mismo, si hay alguno.
   ///
@@ -213,7 +270,7 @@ class UbicacionService {
     Position? aproximada;
     if (ultimaConocida != UsoUltimaConocida.ninguno) {
       try {
-        aproximada = await Geolocator.getLastKnownPosition();
+        aproximada = _valida(await Geolocator.getLastKnownPosition());
         if (aproximada != null &&
             ultimaConocida == UsoUltimaConocida.comoAnticipo) {
           onAproximada?.call(aproximada);
@@ -234,25 +291,49 @@ class UbicacionService {
       // instante, recién saliendo de un edificio) dejaba el pin vacío la
       // visita entera. Antes solo el geocoding de más abajo se reintentaba,
       // aunque el GPS es el paso que más falla de los dos.
-      posicion = await conReintento<Position>(
-        () => Geolocator.getCurrentPosition(
-          locationSettings: LocationSettings(
-            accuracy: precision,
-            timeLimit: limite,
+      posicion = _valida(
+        await conReintento<Position>(
+          () => Geolocator.getCurrentPosition(
+            locationSettings: LocationSettings(
+              accuracy: precision,
+              timeLimit: limite,
+            ),
           ),
         ),
       );
     } catch (_) {
-      // Si ya había una aproximada, sirve: es peor no mostrar nada que
-      // mostrar una posición de hace un rato.
-      posicion = aproximada;
+      posicion = null;
     }
+    // Sin posición actual usable (excepción, O una lectura real pero
+    // "Null Island") y ya había una aproximada: sirve, es peor no mostrar
+    // nada que mostrar una posición de hace un rato. `??=` a propósito,
+    // no un `if` adentro del catch de arriba — así cubre las DOS formas
+    // de quedarse sin posición actual con el mismo camino, en vez de que
+    // el caso (0, 0) se saltee el respaldo por no haber tirado excepción.
+    posicion ??= aproximada;
     if (posicion == null) {
       return const ResultadoUbicacion.fallo(FalloUbicacion.sinRespuesta);
     }
 
     return _conCiudadSiHaceFalta(posicion, conCiudad);
   }
+
+  /// (0, 0) — "Null Island" — no es una coordenada real para un animal
+  /// rescatado en ningún lugar donde se usa esta app: es lo que Android
+  /// devuelve cuando el GPS todavía no tiene una lectura de verdad (o el
+  /// emulador sin una ubicación configurada, pero también pasa en
+  /// dispositivos reales con un tropiezo del chip GPS). Aceptarla como
+  /// posición válida guarda coordenadas que después no se pueden
+  /// geocodificar (no hay ninguna ciudad en medio del océano) — el
+  /// nombre de la ciudad queda vacío, pero las coordenadas SÍ se
+  /// guardan, y el feed termina mostrando una distancia absurda sin
+  /// ningún nombre de lugar al lado. Se trata igual que "no hubo
+  /// posición": mejor ninguna ubicación que una a miles de km de la
+  /// real. Hallazgo real de Eliza: un animal con "Ubicación" vacía en
+  /// el formulario de editar mostraba "Se encuentra a 8875.1 km de ti"
+  /// en el feed del adoptante.
+  static Position? _valida(Position? p) =>
+      (p != null && (p.latitude != 0 || p.longitude != 0)) ? p : null;
 
   /// Paso 4 — nombre de ciudad + país, si el llamador los pidió. Una falla
   /// acá NO invalida las coordenadas: se devuelve ok igual, con ciudad
@@ -267,15 +348,14 @@ class UbicacionService {
       // Reintenta UNA vez, igual que el GPS: el geocoding inverso es una
       // llamada de red aparte, con su propio punto de falla (típico al
       // salir de modo avión, con el GPS andando perfecto).
-      final marcas = await conReintento<List<Placemark>>(
-        () => placemarkFromCoordinates(coords.latitude, coords.longitude),
+      final direccion = await conReintento<Map<String, dynamic>?>(
+        () => _reverseGeocode(coords.latitude, coords.longitude),
       );
-      if (marcas.isEmpty) return ResultadoUbicacion.ok(posicion: coords);
-      final marca = marcas.first;
+      if (direccion == null) return ResultadoUbicacion.ok(posicion: coords);
       return ResultadoUbicacion.ok(
         posicion: coords,
-        ciudad: ciudadDe(marca),
-        paisCodigo: marca.isoCountryCode ?? '',
+        ciudad: ciudadDe(_direccionDe(direccion)),
+        paisCodigo: _paisCodigoDe(direccion),
       );
     } catch (_) {
       return ResultadoUbicacion.ok(posicion: coords);
@@ -323,66 +403,148 @@ class UbicacionService {
   /// alcanzaría a delatar que el geocoder eligió el lugar equivocado —
   /// pregunta real de Eliza. Con la provincia/estado a la vista, dos
   /// ciudades homónimas en regiones distintas SÍ se distinguen.
-  static Future<
-    ({
-      double lat,
-      double lng,
-      String paisCodigo,
-      String ciudadResuelta,
-      String regionResuelta,
-    })?
-  >
-  desdeTexto(
+  ///
+  /// Devuelve una LISTA, no un único candidato: un texto ambiguo puede
+  /// resolver a varios lugares reales distintos, y mostrar solo el primero
+  /// dejaba a la persona sin forma de llegar al que sí buscaba si ese
+  /// primero estaba mal — escribir el mismo texto de nuevo siempre daba el
+  /// mismo primero. Hasta 5 candidatos, deduplicados por nombre+país más
+  /// abajo.
+  static Future<List<CandidatoUbicacion>?> desdeTexto(
     String lugar, {
     Duration timeout = const Duration(seconds: 10),
   }) async {
-    List<Location> resultados;
-    try {
-      resultados = await locationFromAddress(lugar).timeout(timeout);
-    } on NoResultFoundException {
-      return null;
-    }
+    final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
+      'q': lugar,
+      'format': 'jsonv2',
+      'addressdetails': '1',
+      'limit': '5',
+      'accept-language': 'es',
+    });
+    List<dynamic> resultados;
+    // Reintenta UNA vez, mismo criterio que el resto de este archivo: un
+    // tropiezo transitorio de red no debería obligar a retipear la ciudad
+    // desde cero.
+    resultados = await conReintento<List<dynamic>>(
+      () => _pedirLista(uri, timeout),
+    );
     if (resultados.isEmpty) return null;
 
-    final lat = resultados.first.latitude;
-    final lng = resultados.first.longitude;
-    var paisCodigo = '';
-    var ciudadResuelta = '';
-    var regionResuelta = '';
-    // Best-effort a propósito: lat/lng (lo que de verdad importa, ya
-    // resuelto arriba) no depende de este reverse geocoding — es solo el
-    // dato extra para el diálogo de confirmación. Si falla, se guarda
-    // igual con los 3 campos de texto vacíos en vez de perder la
-    // ubicación por un problema de un servicio secundario.
-    try {
-      final marcas = await placemarkFromCoordinates(lat, lng).timeout(timeout);
-      if (marcas.isNotEmpty) {
-        final marca = marcas.first;
-        paisCodigo = marca.isoCountryCode ?? '';
-        ciudadResuelta = ciudadDe(marca);
-        // Solo tiene sentido como dato ADICIONAL cuando ciudadResuelta vino
-        // de `locality` — si ciudadDe() ya cayó a administrativeArea (zona
-        // rural, sin locality), mostrarlo de nuevo acá sería repetir el
-        // mismo texto dos veces.
-        if (marca.locality?.isNotEmpty == true) {
-          regionResuelta = marca.administrativeArea ?? '';
-        }
-      }
-    } catch (_) {}
+    final candidatos = <CandidatoUbicacion>[];
+    for (final item in resultados) {
+      if (candidatos.length >= 5) break;
+      final mapa = item as Map<String, dynamic>;
+      final lat = double.tryParse(mapa['lat'] as String? ?? '');
+      final lng = double.tryParse(mapa['lon'] as String? ?? '');
+      if (lat == null || lng == null) continue;
+      final address = mapa['address'] as Map<String, dynamic>? ?? const {};
+      final direccion = _direccionDe(address);
+      final ciudadResuelta = ciudadDe(direccion);
+      // Un candidato sin nombre resuelto no sirve para elegir en la lista.
+      if (ciudadResuelta.isEmpty) continue;
+      final paisCodigo = _paisCodigoDe(address);
+      // Solo tiene sentido como dato ADICIONAL cuando el nombre vino de una
+      // localidad de verdad — si ciudadDe() ya cayó a la provincia (zona
+      // rural, sin ciudad propiamente dicha), mostrarla nuevamente acá
+      // repetiría el mismo texto dos veces.
+      final regionResuelta = direccion.locality.isNotEmpty
+          ? direccion.administrativeArea
+          : '';
+      final yaEsta = candidatos.any(
+        (c) => c.ciudadResuelta == ciudadResuelta && c.paisCodigo == paisCodigo,
+      );
+      if (yaEsta) continue;
+      candidatos.add((
+        lat: lat,
+        lng: lng,
+        paisCodigo: paisCodigo,
+        ciudadResuelta: ciudadResuelta,
+        regionResuelta: regionResuelta,
+      ));
+    }
+    return candidatos.isEmpty ? null : candidatos;
+  }
+
+  /// `Nominatim` (OpenStreetMap) pide como máximo 1 pedido por segundo y un
+  /// User-Agent que identifique la app — no una clave ni una tarjeta, es
+  /// gratis. https://operations.osmfoundation.org/policies/nominatim/
+  static const _headers = {
+    'User-Agent': 'SalvaPatitasApp/1.0 (+https://lunita486.github.io/Salva-Patitas/)',
+  };
+
+  /// El cliente HTTP real, salvo en los tests — `@visibleForTesting` porque
+  /// es la única puerta para inyectar un `MockClient` sin cambiar la firma
+  /// pública de ninguna función de esta clase (las 7 pantallas que la usan
+  /// no se enteran del cambio).
+  static http.Client httpClient = http.Client();
+
+  static Future<List<dynamic>> _pedirLista(Uri uri, Duration timeout) async {
+    final respuesta = await httpClient.get(uri, headers: _headers).timeout(timeout);
+    if (respuesta.statusCode != 200) {
+      throw FalloDeGeocoding('Nominatim respondió ${respuesta.statusCode}');
+    }
+    return jsonDecode(respuesta.body) as List<dynamic>;
+  }
+
+  /// Coordenadas → dirección. `null` si Nominatim no resolvió nada para ese
+  /// punto (rarísimo, en medio del mar); cualquier excepción real se
+  /// propaga tal cual, mismo criterio que [desdeTexto].
+  static Future<Map<String, dynamic>?> _reverseGeocode(
+    double lat,
+    double lng, {
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
+    final uri = Uri.https('nominatim.openstreetmap.org', '/reverse', {
+      'lat': '$lat',
+      'lon': '$lng',
+      'format': 'jsonv2',
+      'addressdetails': '1',
+      'accept-language': 'es',
+    });
+    final respuesta = await httpClient.get(uri, headers: _headers).timeout(timeout);
+    if (respuesta.statusCode != 200) {
+      throw FalloDeGeocoding('Nominatim respondió ${respuesta.statusCode}');
+    }
+    final cuerpo = jsonDecode(respuesta.body) as Map<String, dynamic>;
+    final address = cuerpo['address'];
+    if (address == null) return null;
+    return address as Map<String, dynamic>;
+  }
+
+  /// Localidad de un `address` de Nominatim — no tiene un único campo
+  /// "ciudad" como el geocodificador viejo (`locality`): según qué tan
+  /// urbano sea el lugar, el dato viene en `city`, `town`, `village` o
+  /// `municipality`. Se prueban en ese orden, el primero que aparezca.
+  static DireccionResuelta _direccionDe(Map<String, dynamic> address) {
+    final localidad =
+        address['city'] as String? ??
+        address['town'] as String? ??
+        address['village'] as String? ??
+        address['municipality'] as String? ??
+        '';
     return (
-      lat: lat,
-      lng: lng,
-      paisCodigo: paisCodigo,
-      ciudadResuelta: ciudadResuelta,
-      regionResuelta: regionResuelta,
+      locality: localidad,
+      administrativeArea: address['state'] as String? ?? '',
     );
   }
+
+  static String _paisCodigoDe(Map<String, dynamic> address) =>
+      (address['country_code'] as String?)?.toUpperCase() ?? '';
 
   /// `locality` (la ciudad propiamente dicha) y, si viene vacía,
   /// `administrativeArea` (la provincia/estado) — pasa de verdad en zonas
   /// rurales y en algunos países donde el geocoder no devuelve localidad.
   /// Estaba escrito idéntico en las 7 copias.
-  static String ciudadDe(Placemark marca) => marca.locality?.isNotEmpty == true
-      ? marca.locality!
-      : (marca.administrativeArea ?? '');
+  static String ciudadDe(DireccionResuelta marca) =>
+      marca.locality.isNotEmpty ? marca.locality : marca.administrativeArea;
+}
+
+/// Falla real del servidor de geocoding (código de estado inesperado) — no
+/// es lo mismo que "no encontró nada" (eso es una lista/objeto vacío, no
+/// una excepción). Ver el comentario de [UbicacionService.desdeTexto].
+class FalloDeGeocoding implements Exception {
+  const FalloDeGeocoding(this.mensaje);
+  final String mensaje;
+  @override
+  String toString() => mensaje;
 }

@@ -26,7 +26,11 @@ import '../data/foto_normalizador.dart';
 /// Lo que NO hace, a propósito: decidir dónde guardar el resultado — cada
 /// pantalla lo maneja distinto (guardarlo en el estado local para
 /// confirmarlo después, o escribirlo directo a Firestore).
-Future<String?> elegirFotoPerfil({int maxWidth = 512, int quality = 80}) async {
+/// Los tres llamadores usaban el default; el parámetro solo daba lugar a
+/// que divergieran.
+const _calidadPerfil = 80;
+
+Future<String?> elegirFotoPerfil({int maxWidth = 512}) async {
   final picked = await ImagePicker().pickImage(
     source: ImageSource.gallery,
     maxWidth: maxWidth.toDouble(),
@@ -41,7 +45,7 @@ Future<String?> elegirFotoPerfil({int maxWidth = 512, int quality = 80}) async {
     final bytes = await normalizarFoto(
       picked.path,
       maxWidth: maxWidth,
-      quality: quality,
+      quality: _calidadPerfil,
     );
     return base64Encode(bytes);
   } catch (_) {

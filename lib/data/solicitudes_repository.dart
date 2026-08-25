@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../domain/reglas_negocio.dart';
 import 'creator_role.dart';
 import 'firestore_resiliencia.dart';
 
@@ -345,6 +346,33 @@ class SolicitudesRepository {
               'Este animalito ya no está disponible en la plataforma.',
         });
         return (aprobada: false, animalEliminado: true);
+      }
+
+      // El ESTADO del animal, no solo si alguien lo reclamó. Antes acá
+      // solo se miraba `adoptanteIdEnProceso`, y marcar un animal como
+      // 'Fallecido' (o volverlo a 'Rescatado'/'Regresado') BORRA ese campo
+      // a propósito — ver RescatesRepository.cambiarEstadoAdopcion. O sea
+      // que un animal muerto quedaba "libre" para esta validación: las
+      // solicitudes que tenía pendientes seguían mostrando el botón
+      // Aprobar, y tocarlo aprobaba de verdad — al adoptante le llegaba
+      // "✅ ¡Tu solicitud de adopción fue aprobada!" (y el compromiso de
+      // adopción) por un animal que acababa de recibir el aviso de que
+      // había fallecido. De paso, la aprobación le pisaba el estado con
+      // 'En proceso de adopción' y el animal volvía a figurar como vivo.
+      //
+      // sePuedeAdoptar (domain/reglas_negocio.dart) es la MISMA regla que
+      // usan el feed y Favoritos para decidir qué se puede pedir; acá cierra
+      // el círculo del lado de quien aprueba, que es el único punto que no
+      // se puede esquivar.
+      final estadoAnimal = rescateSnap.data()?['estadoAdopcion'] as String?;
+      if (!sePuedeAdoptar(estadoAnimal)) {
+        tx.update(solicitudRef, {
+          'estado': 'rechazada',
+          'motivoRechazo': estadoAnimal == 'Fallecido'
+              ? 'Este animalito ya no está con nosotros.'
+              : 'Este animalito ya no está disponible para adopción.',
+        });
+        return (aprobada: false, animalEliminado: false);
       }
 
       final yaClaimadoPor =

@@ -502,6 +502,29 @@ void main() {
       expect(doc['estadoAdopcion'], 'Adoptado');
     });
 
+    test(
+      'actualizar() que NO toca fotoUrl ni nombre no dispara ninguna '
+      'sincronización sobre las solicitudes',
+      () async {
+        final ref = await repo.crear(
+          uid: 'user-16',
+          role: CreatorRole.rescatista,
+          datos: {'nombre': 'Toby'},
+        );
+        await firestore.collection('solicitudes').add({
+          'rescateId': ref.id,
+          'fotoUrl': 'https://vieja.jpg',
+          'estado': 'pendiente',
+        });
+
+        await repo.actualizar(ref.id, {'estadoAdopcion': 'Adoptado'});
+        await Future.delayed(const Duration(milliseconds: 10));
+
+        final sol = await firestore.collection('solicitudes').get();
+        expect(sol.docs.first['fotoUrl'], 'https://vieja.jpg');
+      },
+    );
+
     test('existeNombre() si el servidor falla (canal reconectando tras modo '
         'avión) cae a la copia LOCAL y responde con lo que el teléfono ya '
         'sabe — sin esto, la excepción escapaba de _publicar() en las dos '
@@ -1415,6 +1438,102 @@ void main() {
       );
     });
 
+    group(
+      'porIdsSinTope() — lo mismo que porIds() pero sin el tope de 30 de '
+      'whereIn. Hallazgo real de Eliza: con 62 favoritos guardados, uno de '
+      'los que quedaba fuera de los primeros 30 nunca reflejó un cambio de '
+      'nombre, aunque el mismo cambio SÍ se veía en el feed',
+      () {
+        test('con 30 ids o menos se comporta igual que porIds() — un solo '
+            'pedido, sin partir nada', () async {
+          final ref1 = await firestore.collection('rescates').add({
+            'nombre': 'Uno',
+          });
+          final ref2 = await firestore.collection('rescates').add({
+            'nombre': 'Dos',
+          });
+
+          final docs = await repo.porIdsSinTope([ref1.id, ref2.id]).first;
+
+          expect(docs.map((d) => d['nombre']).toSet(), {'Uno', 'Dos'});
+        });
+
+        test(
+          'con MÁS de 30 ids, trae TODOS — no solo los primeros 30. Esto es '
+          'justo lo que porIds() no podía hacer (el límite de whereIn de '
+          'Firestore es real), y es la causa del bug de Eliza',
+          () async {
+            final ids = <String>[];
+            for (var i = 0; i < 35; i++) {
+              final ref = await firestore.collection('rescates').add({
+                'nombre': 'Animal $i',
+              });
+              ids.add(ref.id);
+            }
+
+            final docs = await repo.porIdsSinTope(ids).first;
+
+            expect(docs.length, 35);
+            expect(
+              docs.map((d) => d.id).toSet(),
+              ids.toSet(),
+              reason: 'ni uno solo de los 35 debería faltar',
+            );
+          },
+        );
+
+        test(
+          'un cambio en un documento de la SEGUNDA tanda (más allá del '
+          'primer 30) se sigue viendo en vivo, no solo en la primera '
+          'lectura — es lo que le pasaba a Eliza: el nombre nuevo nunca '
+          'llegaba a Favoritos para los que quedaban afuera del primer lote',
+          () async {
+            final ids = <String>[];
+            DocumentReference<Map<String, dynamic>>? refDeLaSegundaTanda;
+            for (var i = 0; i < 32; i++) {
+              final ref = await firestore.collection('rescates').add({
+                'nombre': 'Animal $i',
+              });
+              ids.add(ref.id);
+              if (i == 31) refDeLaSegundaTanda = ref;
+            }
+
+            final eventos = <List<QueryDocumentSnapshot<Map<String, dynamic>>>>[];
+            final sub = repo.porIdsSinTope(ids).listen(eventos.add);
+            await Future<void>.delayed(const Duration(milliseconds: 50));
+
+            await refDeLaSegundaTanda!.update({'nombre': 'Animal 31 (renombrado)'});
+            await Future<void>.delayed(const Duration(milliseconds: 50));
+            await sub.cancel();
+
+            final ultimo = eventos.last;
+            expect(
+              ultimo.firstWhere((d) => d.id == refDeLaSegundaTanda!.id)['nombre'],
+              'Animal 31 (renombrado)',
+            );
+          },
+        );
+
+        test('lista vacía no rompe nada', () async {
+          final docs = await repo.porIdsSinTope([]).first;
+          expect(docs, isEmpty);
+        });
+
+        test('un id que no existe simplemente no aparece, no rompe nada', () async {
+          final ref1 = await firestore.collection('rescates').add({
+            'nombre': 'Real',
+          });
+
+          final docs = await repo
+              .porIdsSinTope([ref1.id, 'este-id-no-existe'])
+              .first;
+
+          expect(docs.length, 1);
+          expect(docs.first['nombre'], 'Real');
+        });
+      },
+    );
+
     group('publicarConFotos() — crea el rescate y sube su(s) foto(s), con '
         'rollback completo si algo obligatorio falla', () {
       setUpAll(() {
@@ -1446,7 +1565,7 @@ void main() {
             .get();
         expect(doc.exists, true);
         expect(doc['nombre'], 'Toby');
-        expect(doc['fotoUrl'], 'https://fake.storage/foto1.jpg');
+        expect(doc['fotoUrl'], startsWith('https://fake.storage/foto1.jpg'));
         expect(doc.data()!.containsKey('fotoUrl2'), false);
       });
 
@@ -1459,7 +1578,7 @@ void main() {
           );
           final repoConFotos = RescatesRepository(
             db: firestore,
-            fotosRepo: RescateFotosRepository(storage: mocks.storage),
+              fotosRepo: RescateFotosRepository(storage: mocks.storage),
           );
 
           final resultado = await repoConFotos.publicarConFotos(
@@ -1477,8 +1596,11 @@ void main() {
               .collection('rescates')
               .doc(resultado.rescateId)
               .get();
-          expect(doc['fotoUrl'], 'https://fake.storage/foto1.jpg');
-          expect(doc['fotoUrl2'], 'https://fake.storage/foto2.jpg');
+          expect(doc['fotoUrl'], startsWith('https://fake.storage/foto1.jpg'));
+          expect(
+            doc['fotoUrl2'],
+            startsWith('https://fake.storage/foto2.jpg'),
+          );
         },
       );
 
@@ -1544,7 +1666,7 @@ void main() {
           reason:
               'a diferencia de la foto obligatoria, esta falla NO debe deshacer la publicación',
         );
-        expect(doc['fotoUrl'], 'https://fake.storage/foto1.jpg');
+        expect(doc['fotoUrl'], startsWith('https://fake.storage/foto1.jpg'));
         expect(doc.data()!.containsKey('fotoUrl2'), false);
       });
 
@@ -1716,7 +1838,7 @@ void main() {
         urlExistente2: url2,
       );
 
-      expect(r.fotoUrl, 'https://fake.storage/foto1.jpg');
+      expect(r.fotoUrl, startsWith('https://fake.storage/foto1.jpg'));
       expect(r.fotoUrl2, url2);
       verify(() => mocks.ref1.putData(any(), any())).called(1);
       verifyNever(() => mocks.ref2.delete());
@@ -1759,7 +1881,7 @@ void main() {
       );
 
       // El archivo se movió: fotoUrl ahora apunta a foto1.jpg, no a foto2.
-      expect(r.fotoUrl, 'https://fake.storage/foto1.jpg');
+      expect(r.fotoUrl, startsWith('https://fake.storage/foto1.jpg'));
       expect(r.fotoUrl2, isNull);
       verify(() => mocks.ref2.getData(any())).called(1);
       verify(() => mocks.ref1.putData(any(), any())).called(1);
@@ -1782,8 +1904,8 @@ void main() {
         urlExistente2: null,
       );
 
-      expect(r.fotoUrl, 'https://fake.storage/foto1.jpg');
-      expect(r.fotoUrl2, 'https://fake.storage/foto2.jpg');
+      expect(r.fotoUrl, startsWith('https://fake.storage/foto1.jpg'));
+      expect(r.fotoUrl2, startsWith('https://fake.storage/foto2.jpg'));
       verifyInOrder([
         () => mocks.ref2.getData(any()), // moverFoto descarga el origen
         () => mocks.ref2.delete(), // moverFoto borra el origen
@@ -1823,7 +1945,7 @@ void main() {
         urlExistente2: null,
       );
 
-      expect(r.fotoUrl, 'https://fake.storage/foto1.jpg');
+      expect(r.fotoUrl, startsWith('https://fake.storage/foto1.jpg'));
       expect(r.fotoUrl2, isNull);
       verify(() => mocks.ref2.delete()).called(1);
       // No hubo promoción: había foto nueva para el slot 1.

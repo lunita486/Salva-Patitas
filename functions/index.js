@@ -14,6 +14,23 @@ exports.eliminarCuenta = require('./eliminar_cuenta').eliminarCuenta;
 // Endpoint público para la vidriera de animales de la landing (docs/index.html).
 exports.landingAnimales = require('./landing_animales').landingAnimales;
 
+// Aviso diario de "hogar de paso vence mañana/ya venció" — antes solo lo
+// disparaba el cliente al abrir el panel del rescatista/albergue, así que
+// dependía de que esa cuenta abriera la app justo ese día (ver el
+// comentario completo en avisos_vencimiento.js).
+exports.avisarVencimientosHogarDePaso =
+  require('./avisos_vencimiento').avisarVencimientosHogarDePaso;
+
+// Mantienen al día las copias del nombre/foto del animal (en solicitudes y
+// chats) y de la ubicación/nombre/logo del albergue (en sus animales y sus
+// chats). Antes esto lo hacía solo la app, en segundo plano y sin avisar
+// si fallaba — y falló de cuatro formas distintas, todas en silencio. Ver
+// el comentario largo en propagar_copias_logica.js.
+exports.onRescateActualizado =
+  require('./propagar_copias').onRescateActualizado;
+exports.onPerfilActualizado =
+  require('./propagar_copias').onPerfilActualizado;
+
 // Tokens que FCM reporta como muertos (app desinstalada, token vencido/rotado).
 // Sin esto, un usuario que desinstaló la app acumula intentos de envío fallidos
 // para siempre y el token nunca se limpia.
@@ -134,6 +151,15 @@ exports.onNuevoMensaje = onDocumentCreated(
     const remitenteId = emisor === 'adoptante' ? chat.adoptanteId : chat.rescatistaId;
     if (recipientId === remitenteId) return;
 
+    // Los avisos que acompanan un cambio de estado de la solicitud
+    // (aprobada / rechazada) ya tienen su propia push, la de
+    // onCambioEstadoSolicitud, que ademas dice mejor lo que paso: "Tu
+    // solicitud fue aprobada" contra el generico "Mensaje sobre Pacolin".
+    // Sin este guard llegaban las DOS por un solo hecho, con textos
+    // distintos, y la segunda no aportaba nada. El mensaje se escribe y se
+    // ve en el chat igual que siempre; lo unico que se saltea es la push.
+    if (data.avisoDeEstado === true) return;
+
     const animal = chat.animalNombre || 'Animal';
     await notificar(recipientId, `Mensaje sobre ${animal}`, data.texto || '', 'notif_mensajes');
   }
@@ -148,11 +174,22 @@ exports.onNuevaSolicitud = onDocumentCreated(
     const rescatistaId = sol.rescatistaId;
     if (!rescatistaId) return;
 
-    const tipo = sol.tipoSolicitud === 'hogar_de_paso' ? 'hogar de paso' : 'adopción';
+    // El TIPO manda en el título Y en el cuerpo. Antes el título lo
+    // respetaba ("Nueva solicitud de hogar de paso") pero el cuerpo decía
+    // "quiere adoptar a X" fijo, así que una misma notificación se
+    // contradecía sola: el albergue leía "hogar de paso" arriba y
+    // "adoptar" abajo, y la app (que sí ramifica bien) le mostraba otra
+    // cosa al abrirla.
+    const esHogar = sol.tipoSolicitud === 'hogar_de_paso';
+    const tipo = esHogar ? 'hogar de paso' : 'adopción';
+    const quien = sol.nombre || 'Alguien';
+    const animal = sol.animalNombre || 'tu animal';
     await notificar(
       rescatistaId,
       `Nueva solicitud de ${tipo}`,
-      `${sol.nombre || 'Alguien'} quiere adoptar a ${sol.animalNombre || 'tu animal'}`,
+      esHogar
+        ? `${quien} se ofrece como hogar de paso para ${animal}`
+        : `${quien} quiere adoptar a ${animal}`,
       'notif_solicitudes'
     );
   }

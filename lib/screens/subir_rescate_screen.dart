@@ -10,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import '../routing/app_router.dart';
 import '../theme.dart';
 import '../widgets/chips_seleccionables.dart';
+import '../widgets/aviso_ubicacion.dart';
 import '../widgets/confirmar_ciudad_resuelta.dart';
 import '../widgets/elegir_foto_animal.dart';
 import '../widgets/tardando_mucho_mixin.dart';
@@ -107,6 +108,14 @@ class _SubirRescateScreenState extends State<SubirRescateScreen>
   // sí (por GPS o por el geocodificador en _publicar()) — ver ese comentario
   // para el porqué completo. Mismo patrón que editar_rescate_screen.dart.
   bool _ubicacionTocadaAMano = false;
+  // El texto que estaba en el campo la última vez que quedó sincronizado
+  // con _latitud/_longitud (arranca vacío: acá no hay un "original" fijo
+  // como en editar_rescate_screen.dart, el animal todavía no existe). Es a
+  // donde se vuelve si la persona cancela la confirmación de una ciudad
+  // nueva en _publicar() — revertir al texto Y no tocar las coordenadas
+  // las deja consistentes entre sí, en vez de vaciar el campo y dejar
+  // coordenadas de otro lugar colgadas.
+  String _lugarSincronizado = '';
 
   @override
   void initState() {
@@ -137,72 +146,26 @@ class _SubirRescateScreenState extends State<SubirRescateScreen>
   Future<void> _cargarCiudadAlbergue() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    final doc = await FirebaseFirestore.instance
-        .collection('usuarios')
-        .doc(uid)
-        .get();
-    final data = doc.data();
-    final ciudad = (data?['ciudad'] as String?) ?? '';
+    // UsuariosRepository.ubicacionDeAlbergue: la lectura del perfil Y la
+    // red de seguridad que repara los perfiles viejos sin coordenadas.
+    // Vive compartida porque la pantalla de publicar en LOTE necesita
+    // exactamente lo mismo y antes solo leía, sin reparar — ver el doc de
+    // esa función.
+    final ubi = await UsuariosRepository().ubicacionDeAlbergue(
+      uid: uid,
+      geocodificar: UbicacionService.desdeTexto,
+    );
     if (!mounted) return;
     setState(() {
-      if (ciudad.isNotEmpty) _lugarCtl.text = ciudad;
-      // Reusa las coordenadas del perfil del albergue (ver
-      // albergue_perfil_screen.dart) — sin esto, un animal publicado por
-      // un albergue nunca tenía latitud/longitud, así que "a X km de ti"
-      // no podía calcularse para NINGÚN animal suyo. Hallazgo real de
-      // Eliza: notó que le pasaba a todos los albergues, no a uno solo.
-      _latitud = (data?['latitud'] as num?)?.toDouble();
-      _longitud = (data?['longitud'] as num?)?.toDouble();
+      if (ubi.ciudad.isNotEmpty) _lugarCtl.text = ubi.ciudad;
+      _latitud = ubi.latitud;
+      _longitud = ubi.longitud;
+      if (ubi.paisCodigo.isNotEmpty) _paisCodigo = ubi.paisCodigo;
+      // El orden importa: escribir el texto prende _ubicacionTocadaAMano,
+      // así que el reset va DESPUÉS.
       _ubicacionTocadaAMano = false;
+      _lugarSincronizado = _lugarCtl.text;
     });
-    // Red de seguridad para los albergues que YA existen: su perfil se creó
-    // antes de que guardar la ciudad exigiera geocodificarla, así que tiene
-    // ciudad pero no coordenadas — y sin coordenadas en el perfil, ninguno
-    // de sus animales puede mostrar distancia. Acá se resuelven una vez y
-    // se guardan de vuelta en el perfil, así el arreglo es permanente y no
-    // hay que pedirle a nadie que vaya a editar su perfil a mano.
-    //
-    // Silencioso a propósito: si falla (sin señal, o una ciudad vieja que
-    // ya no geocodifica), publicar sigue funcionando igual, solo que ese
-    // animal queda sin distancia — exactamente como está hoy. Nunca debe
-    // trabar la publicación por un dato que es un extra.
-    if (_latitud != null || ciudad.isEmpty) return;
-    try {
-      final resuelta = await UbicacionService.desdeTexto(ciudad);
-      if (resuelta == null || !mounted) return;
-      setState(() {
-        _latitud = resuelta.lat;
-        _longitud = resuelta.lng;
-        if (resuelta.paisCodigo.isNotEmpty) _paisCodigo = resuelta.paisCodigo;
-      });
-      await UsuariosRepository().completarCoordenadas(
-        uid: uid,
-        latitud: resuelta.lat,
-        longitud: resuelta.lng,
-      );
-    } catch (_) {}
-  }
-
-  /// Aviso con botón que lleva derecho al ajuste que hace falta —
-  /// "Habilítalo en Ajustes" a secas no dice QUÉ tocar ni A DÓNDE ir.
-  /// `marcarVolviendoDeAjustes()` (ReintentoUbicacionTrasAjustes) es lo que
-  /// habilita el reintento automático al volver.
-  void _avisarConAjustes(String mensaje, Future<bool> Function() abrirAjustes) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(mensaje),
-        backgroundColor: msgError,
-        action: SnackBarAction(
-          label: 'Abrir Ajustes',
-          textColor: Colors.white,
-          onPressed: () {
-            marcarVolviendoDeAjustes();
-            abrirAjustes();
-          },
-        ),
-        duration: const Duration(seconds: 8),
-      ),
-    );
   }
 
   /// GPS-first: un rescate se publica desde donde está el animal, así que
@@ -238,30 +201,39 @@ class _SubirRescateScreenState extends State<SubirRescateScreen>
           // El GPS del sistema apagado no es lo mismo que el permiso de la
           // app: lleva a los ajustes de ubicación del teléfono, no a los de
           // la app.
-          _avisarConAjustes(
-            'Activa el GPS en tu dispositivo',
-            Geolocator.openLocationSettings,
+          avisarErrorUbicacion(
+            context,
+            mensajeGpsApagado,
+            accionAjustes: Geolocator.openLocationSettings,
+            antesDeAbrirAjustes: marcarVolviendoDeAjustes,
           );
         case FalloUbicacion.permisoBloqueado:
-          _avisarConAjustes(
-            'Permiso de ubicación bloqueado.',
-            Geolocator.openAppSettings,
+          avisarErrorUbicacion(
+            context,
+            mensajePermisoBloqueado,
+            accionAjustes: Geolocator.openAppSettings,
+            antesDeAbrirAjustes: marcarVolviendoDeAjustes,
           );
         case FalloUbicacion.permisoDenegado:
           // Acaba de decir que no: se le puede volver a preguntar tocando
           // el campo otra vez, no hace falta un aviso rojo.
           break;
         case FalloUbicacion.sinRespuesta:
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'No se pudo detectar tu ubicación. Podés tocar para '
-                'reintentar, o publicar igual sin ubicación exacta.',
-              ),
-              backgroundColor: msgError,
-            ),
+          avisarErrorUbicacion(
+            context,
+            'No se pudo detectar tu ubicación. Podés tocar para '
+            'reintentar, o publicar igual sin ubicación exacta.',
           );
       }
+      return;
+    }
+
+    // Misma regla que en editar: sin nombre no se toca nada. Acá el daño
+    // era menor (el campo suele estar vacío al publicar) pero la conducta
+    // era una tercera distinta — borraba el texto en silencio y dejaba
+    // coordenadas sin ciudad. Ver ResultadoUbicacion.sinNombre.
+    if (resultado.sinNombre) {
+      avisarErrorUbicacion(context, avisoCiudadSinNombre);
       return;
     }
 
@@ -275,6 +247,7 @@ class _SubirRescateScreenState extends State<SubirRescateScreen>
       _lugarCtl.text = resultado.ciudad;
       _ubicacionTocadaAMano = false;
       _paisCodigo = resultado.paisCodigo;
+      _lugarSincronizado = _lugarCtl.text;
     });
   }
 
@@ -394,56 +367,50 @@ class _SubirRescateScreenState extends State<SubirRescateScreen>
     // editar_rescate_screen.dart, albergue_perfil_screen.dart y
     // aliado_perfil_screen.dart.
     if (_ubicacionTocadaAMano && _lugarCtl.text.trim().isNotEmpty) {
-      String? errorUbicacion;
-      try {
-        // null y excepción significan cosas distintas (ver desdeTexto): lo
-        // primero es "eso no existe como lugar" y bloquea con un mensaje
-        // puntual; lo segundo es "no se pudo verificar", que bloquea con
-        // otro texto para no confundir un problema de señal con un dato
-        // inventado.
-        final resultado = await UbicacionService.desdeTexto(
-          _lugarCtl.text.trim(),
-        );
-        if (resultado == null) {
-          errorUbicacion =
-              'No encontramos ese lugar. Revisá cómo lo escribiste.';
-        } else {
-          // Un texto mal escrito puede coincidir con OTRO lugar real del
-          // mundo (no da null) — hallazgo real de Eliza escribiendo
-          // "Nedellin" y quedando guardado a 9077km de Medellín.
-          if (!mounted) return;
-          final confirmo = await confirmarCiudadResuelta(
-            context,
-            escribiste: _lugarCtl.text.trim(),
-            resuelta: resultado.ciudadResuelta,
-            paisCodigo: resultado.paisCodigo,
-            region: resultado.regionResuelta,
-          );
-          if (!confirmo) {
-            if (!mounted) return;
-            setState(() => _publicando = false);
-            return;
-          }
-          _latitud = resultado.lat;
-          _longitud = resultado.lng;
-          _ubicacionTocadaAMano = false;
-          // Vacío si el país no se pudo resolver: se conserva el que ya
-          // hubiera en vez de pisarlo con nada.
-          if (resultado.paisCodigo.isNotEmpty)
-            _paisCodigo = resultado.paisCodigo;
-        }
-      } catch (_) {
-        errorUbicacion =
-            'No pudimos verificar esa ubicación. Revisá tu conexión e intentá de nuevo.';
-      }
-      if (errorUbicacion != null) {
-        if (!mounted) return;
-        setState(() => _publicando = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(errorUbicacion), backgroundColor: msgError),
-        );
+      // Misma función compartida que las otras 3 pantallas que piden una
+      // ciudad — ver el comentario de resolverCiudadEscrita(). Antes acá
+      // vivía una copia a mano de esta secuencia.
+      final elegida = await resolverCiudadEscrita(
+        context,
+        _lugarCtl.text.trim(),
+      );
+      // null = canceló ("No, corregir"), o no se pudo verificar
+      // (resolverCiudadEscrita ya explicó por qué). Ninguno de los dos debe
+      // dejar a la persona TRABADA sin forma de publicar nada — se vuelve
+      // al último texto que había quedado sincronizado con
+      // _latitud/_longitud (vacío si nunca hubo ninguno), dejando las
+      // coordenadas SIN tocar, y se corta ACÁ sin publicar todavía. Antes
+      // seguía derecho a publicar con lo que ya había — mismo bug que
+      // editar_rescate_screen.dart: tocar "No, corregir" (que suena a
+      // "dejame corregir eso") terminaba publicando y sacando de la
+      // pantalla igual, sin darte la chance de reintentar la ciudad.
+      // Hallazgo real de Eliza en editar, mismo camino compartido acá. Si
+      // de verdad no querés resolver la ciudad, un segundo toque de
+      // "Publicar" sin volver a tocar ese campo publica igual (el texto ya
+      // quedó revertido a uno válido) — se sigue pudiendo salir del paso
+      // sin quedar en bucle, solo que ya no de forma silenciosa en el
+      // mismo toque.
+      if (elegida == null) {
+        _lugarCtl.text = _lugarSincronizado;
+        _ubicacionTocadaAMano = false;
+        if (mounted) setState(() => _publicando = false);
         return;
+      } else {
+        // Los tres datos del MISMO candidato, siempre — ver el invariante
+        // en confirmar_ciudad_resuelta.dart. El nombre es el que resolvió
+        // el geocodificador, nunca el texto tecleado: si alguien escribió
+        // "Córdoba, Argentina" para desambiguar de Córdoba, España, se
+        // guarda "Córdoba" y el país sale de la bandera 🇦🇷, no repetido en
+        // el texto. El orden importa: `_lugarCtl.text` antes de
+        // `_ubicacionTocadaAMano = false`, para no reactivar el listener
+        // que lo prendería de nuevo.
+        _latitud = elegida.lat;
+        _longitud = elegida.lng;
+        _lugarCtl.text = elegida.ciudadResuelta;
+        _paisCodigo = elegida.paisCodigo;
+        _lugarSincronizado = _lugarCtl.text;
       }
+      _ubicacionTocadaAMano = false;
     }
     // La ubicación ya no bloquea la publicación — antes, si el GPS fallaba
     // o tardaba (señal débil, permiso recién concedido, lo que sea), el
@@ -499,30 +466,63 @@ class _SubirRescateScreenState extends State<SubirRescateScreen>
     iniciarTimerTardando(const Duration(seconds: 6));
 
     try {
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      // Se dispara ACÁ, antes de esperar las fotos — es una lectura
+      // independiente (el nombre/logo del albergue no depende en nada de
+      // las fotos del animal), así que no hay motivo para esperarla recién
+      // después de que las fotos terminen de normalizarse. Antes corría en
+      // serie, sumando una ida y vuelta completa a Firestore ARRIBA del
+      // tiempo que ya tardan las fotos — el tramo que más se notaba
+      // publicando como albergue. Hallazgo real de Eliza: "guardar
+      // animalitos se estaba demorando muchísimo".
+      // Se lee el perfil SIEMPRE, no solo publicando como albergue.
+      // Antes la rama de rescatista se quedaba con el displayName de
+      // Google, mientras que los avisos por chat sobre ese MISMO animal
+      // usaban nombrePropioDesde (que prefiere `usuarios.nombre`). Quien
+      // se corrigio el nombre en la app publicaba con un nombre y
+      // conversaba con otro, sobre el mismo animalito.
+      final userDocFuture = FirebaseFirestore.instance
+          .collection('usuarios')
+          .doc(uid)
+          .get();
+
       // Las dos fotos se normalizan en paralelo — normalizarFoto() corre
       // en su propio isolate (compute()), así que esto sí es paralelismo
-      // real, no solo dos await seguidos en el mismo hilo.
+      // real, no solo dos await seguidos en el mismo hilo. Corre AL MISMO
+      // TIEMPO que userDocFuture de arriba, no después.
       final normalizadas = await Future.wait([
         normalizarFoto(_fotos[0].path),
         if (_fotos.length > 1) normalizarFoto(_fotos[1].path),
       ]);
 
-      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-      var nombrePublicador =
+      final nombreDeLaCuenta =
           FirebaseAuth.instance.currentUser?.displayName ?? 'Rescatista';
       String? fotoPublicadorBase64;
       String? fotoPublicadorUrl;
+      // Para cuando llegamos acá, userDocFuture ya viene corriendo desde
+      // antes de las fotos — este await casi nunca espera de verdad.
+      final userDoc = await userDocFuture;
+      // UsuariosRepository.nombrePropioDesde — misma regla que usan los
+      // avisos automáticos, en vez de la copia a mano que había acá
+      // ("si hay albergueNombre y no está vacío, usalo"). La versión
+      // `Desde` no vuelve a leer el documento: aprovecha el que esta
+      // pantalla YA tiene cargado. Con `creadoPor` puesto segun el rol con
+      // el que se publica, resuelve las dos ramas sin ramificar acá.
+      final nombrePublicador = UsuariosRepository.nombrePropioDesde(
+        datosUsuario: userDoc.data(),
+        creadoPor: widget.esAlbergue ? 'albergue' : 'rescatista',
+        nombreDeLaCuenta: nombreDeLaCuenta,
+      );
       if (widget.esAlbergue) {
-        final userDoc = await FirebaseFirestore.instance
-            .collection('usuarios')
-            .doc(uid)
-            .get();
-        final albergueNombre = userDoc.data()?['albergueNombre'] as String?;
-        if (albergueNombre != null && albergueNombre.isNotEmpty)
-          nombrePublicador = albergueNombre;
         fotoPublicadorBase64 = userDoc.data()?['fotoBase64'] as String?;
       } else {
-        fotoPublicadorUrl = FirebaseAuth.instance.currentUser?.photoURL;
+        // `usuarios.foto` es la copia que main.dart mantiene al día contra
+        // el photoURL de Google; leerla de acá (y no de FirebaseAuth) hace
+        // que el trigger pueda refrescar esta misma copia después, porque
+        // las dos miran el mismo campo. Ver CAMPOS_PERFIL_A_ANIMAL_RESCATISTA.
+        fotoPublicadorUrl =
+            userDoc.data()?['foto'] as String? ??
+            FirebaseAuth.instance.currentUser?.photoURL;
       }
 
       // "Crear doc sin fotos → subir en paralelo → vincular", con rollback
@@ -853,11 +853,21 @@ class _SubirRescateScreenState extends State<SubirRescateScreen>
                         ),
                         GestureDetector(
                           onTap: () {
-                            final nombre = _nombreCtl.text.trim().isNotEmpty
-                                ? _nombreCtl.text.trim()
-                                : '[Nombre]';
-                            final plantilla =
-                                '$nombre fue encontrado/a [contá cómo o dónde lo/la encontraste]. '
+                            // Sin el nombre acá adentro a propósito — ya se
+                            // muestra arriba, en su propio campo. Antes
+                            // esta plantilla lo repetía como texto plano
+                            // ("Hermoso fue encontrado/a..."), así que
+                            // renombrar el animal después dejaba ese nombre
+                            // viejo pegado en medio del párrafo para
+                            // siempre — el mismo tipo de copia congelada
+                            // que costó un día entero arreglar en otros
+                            // lugares de la app. Sin el nombre acá, no hay
+                            // nada que pueda quedar desactualizado. Pedido
+                            // real de Eliza viendo "Hermoso" en la
+                            // descripción de un animal que ya se llamaba
+                            // "lino".
+                            const plantilla =
+                                'Fue encontrado/a [contá cómo o dónde lo/la encontraste]. '
                                 'Lo/la que lo/la hace único/a es [una costumbre, gesto o anécdota que lo/la describa]. '
                                 'Ya pasó por mucho. Ahora solo le falta alguien que decida quedarse. '
                                 '¿Serás vos?';

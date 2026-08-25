@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'creator_role.dart';
 import 'solicitudes_repository.dart';
+import 'favoritos_repository.dart';
 import 'firestore_resiliencia.dart';
 import 'rescate_fotos_repository.dart';
 
@@ -363,9 +365,16 @@ class RescatesRepository {
     return destino;
   }
 
-  Future<void> actualizar(String rescateId, Map<String, dynamic> cambios) {
+  /// Las copias del nombre/foto de este animal que viven en `solicitudes`
+  /// y `chats` NO se tocan desde acá: las mantiene al día el trigger
+  /// `onRescateActualizado` (functions/propagar_copias.js). Antes esto
+  /// disparaba dos sincronizaciones "best-effort" en segundo plano que
+  /// fallaban en silencio de cuatro formas distintas — ver el comentario
+  /// largo en functions/propagar_copias_logica.js para el porqué de la
+  /// mudanza al servidor.
+  Future<void> actualizar(String rescateId, Map<String, dynamic> cambios) async {
     final nombre = cambios['nombre'] as String?;
-    return _col.doc(rescateId).update({
+    await _col.doc(rescateId).update({
       ...cambios,
       // Mismo motivo que en crear(): si esta actualización toca el nombre,
       // mantiene nombreBusqueda sincronizado — sin esto, editar el nombre de
@@ -483,11 +492,8 @@ class RescatesRepository {
       // favoritos podía estirar eliminar() hasta el timeout del llamador
       // y convertir un borrado que YA salió bien en el mensaje de "está
       // tardando" — un error fantasma por culpa de la limpieza secundaria.
-      final favoritos = await _db
-          .collection('favoritos')
-          .where('rescateId', isEqualTo: rescateId)
-          .where('rescatistaId', isEqualTo: uid)
-          .get()
+      final favoritos = await FavoritosRepository(db: _db)
+          .deRescate(rescateId: rescateId, rescatistaId: uid)
           .timeout(const Duration(seconds: 5));
       if (favoritos.docs.isEmpty) return;
       final batch = _db.batch();
@@ -648,9 +654,89 @@ class RescatesRepository {
   /// porque suele necesitar saber CUÁLES ids terminaron consultados de
   /// verdad, para no confundir "no vino en la respuesta" con "nunca se
   /// preguntó por él" (ej. para detectar favoritos huérfanos).
+  ///
+  /// Con más de 30 ids, usar [porIdsSinTope] en vez de recortar acá: ese
+  /// recorte silencioso es justo el bug real que tenía Favoritos (ver su
+  /// doc).
   Stream<QuerySnapshot<Map<String, dynamic>>> porIds(List<String> ids) {
     if (ids.isEmpty) return const Stream.empty();
     return _col.where(FieldPath.documentId, whereIn: ids).snapshots();
+  }
+
+  /// Lo mismo que [porIds], pero sin el tope de 30 de `whereIn` — parte
+  /// [ids] en tandas de 30 y combina sus streams en una sola lista que se
+  /// actualiza cuando CUALQUIER tanda tiene novedades.
+  ///
+  /// Existe porque recortar a los primeros 30 (lo que hacía Favoritos, del
+  /// lado del llamador) no es "mostrar de menos": el resto queda pegado
+  /// para siempre en la copia vieja que el favorito guardó al crearse, sin
+  /// ninguna forma de enterarse de un cambio de nombre/foto/ciudad más
+  /// tarde — ni siquiera recargando la pantalla. Hallazgo real de Eliza:
+  /// con 62 favoritos, uno de los que quedaba fuera de los primeros 30
+  /// nunca reflejó un cambio de nombre, aunque el mismo cambio SÍ se veía
+  /// en el feed y en "Mis animales".
+  ///
+  /// Devuelve la lista de documentos directamente (no un `QuerySnapshot`,
+  /// que es intrínseco de UNA consulta) — con varias tandas combinadas ya
+  /// no hay un único `QuerySnapshot` que las represente a todas.
+  Stream<List<QueryDocumentSnapshot<Map<String, dynamic>>>> porIdsSinTope(
+    List<String> ids,
+  ) {
+    if (ids.isEmpty) return Stream.value(const []);
+    final tandas = <List<String>>[
+      for (var i = 0; i < ids.length; i += 30)
+        ids.sublist(i, i + 30 > ids.length ? ids.length : i + 30),
+    ];
+    if (tandas.length == 1) {
+      return _col
+          .where(FieldPath.documentId, whereIn: tandas.single)
+          .snapshots()
+          .map((s) => s.docs);
+    }
+    // Combine-latest a mano: cada tanda es su propio listener en vivo: la
+    // lista combinada se vuelve a emitir cada vez que CUALQUIERA de las
+    // tandas tiene una novedad, con el último valor conocido de las demás
+    // (no hace falta esperar a que las N respondan de nuevo a la vez).
+    final ultimaPorTanda =
+        List<List<QueryDocumentSnapshot<Map<String, dynamic>>>?>.filled(
+          tandas.length,
+          null,
+        );
+    final subs = <StreamSubscription<dynamic>>[];
+    late final StreamController<
+      List<QueryDocumentSnapshot<Map<String, dynamic>>>
+    >
+    controller;
+    controller = StreamController.broadcast(
+      onListen: () {
+        for (var i = 0; i < tandas.length; i++) {
+          final idx = i;
+          subs.add(
+            _col
+                .where(FieldPath.documentId, whereIn: tandas[idx])
+                .snapshots()
+                .listen(
+                  (snap) {
+                    ultimaPorTanda[idx] = snap.docs;
+                    if (ultimaPorTanda.every((t) => t != null)) {
+                      controller.add(
+                        ultimaPorTanda.expand((t) => t!).toList(),
+                      );
+                    }
+                  },
+                  onError: controller.addError,
+                ),
+          );
+        }
+      },
+      onCancel: () async {
+        for (final s in subs) {
+          await s.cancel();
+        }
+        subs.clear();
+      },
+    );
+    return controller.stream;
   }
 
   /// Crea un rescate y sube su(s) foto(s): "doc sin fotos → subir en

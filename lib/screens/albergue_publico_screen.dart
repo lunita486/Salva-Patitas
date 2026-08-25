@@ -3,8 +3,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme.dart';
+import '../widgets/campos_perfil.dart';
 import '../domain/reglas_negocio.dart';
 import '../routing/app_router.dart';
+import '../widgets/avatares.dart';
 import '../widgets/estado_error_feed.dart';
 import '../widgets/fotos.dart';
 import '../data/creator_role.dart';
@@ -46,6 +48,7 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
             'Albergue';
         final tipo = data['albergueTipo'] as String? ?? '';
         final capacidad = (data['capacidadTotal'] as int?) ?? 0;
+        final ciudad = data['ciudad'] as String? ?? '';
         final telefono = data['albergueTelefono'] as String? ?? '';
         final direccion = data['albergueDireccion'] as String? ?? '';
         final email = data['albergueEmail'] as String? ?? '';
@@ -76,13 +79,22 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
             // (hallazgo de auditoría de código).
             if (rSnap.hasError) return errorFeedState();
             final all = rSnap.data?.docs ?? [];
+            // sePuedeAdoptar (domain/reglas_negocio.dart) — la MISMA regla
+            // que usan el feed y Favoritos. Acá vivía una lista escrita a
+            // mano que difería en 'En proceso de adopción': ese animal ya
+            // NO aparecía en el feed pero sí en el perfil público del
+            // albergue, con el botón "Solicitar adopción" activo. Quien lo
+            // pedía completaba el formulario entero para que después la
+            // aprobación se lo autorrechazara con "ya tiene un proceso con
+            // otro adoptante".
             final disponibles =
-                all.where((d) {
-                  final e =
-                      (d.data() as Map)['estadoAdopcion'] as String? ??
-                      'Rescatado';
-                  return e != 'Adoptado' && e != 'Fallecido';
-                }).toList()..sort((a, b) {
+                all
+                    .where(
+                      (d) => sePuedeAdoptar(
+                        (d.data() as Map)['estadoAdopcion'] as String?,
+                      ),
+                    )
+                    .toList()..sort((a, b) {
                   final ta = ((a.data() as Map)['creadoEn'] as Timestamp?);
                   final tb = ((b.data() as Map)['creadoEn'] as Timestamp?);
                   if (ta == null || tb == null) return 0;
@@ -97,96 +109,100 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
               body: CustomScrollView(
                 slivers: [
                   // ── Header ──────────────────────────────────────────────────
+                  // Un solo Container con la decoración, que envuelve
+                  // directo al contenido — NO un Stack con un fondo de
+                  // alto FIJO (230) por debajo de un SafeArea/Column con
+                  // alto libre, como estaba antes. Con alto fijo, un
+                  // nombre de albergue largo (el campo permite hasta 50
+                  // caracteres) envolvía a 2 o 3 líneas y el Column
+                  // terminaba midiendo más que esos 230 — el verde de
+                  // fondo se cortaba ahí, pero el texto seguía
+                  // dibujándose más abajo, superpuesto con la sección
+                  // blanca de estadísticas que arranca después en el
+                  // CustomScrollView. Así SÍ se ajusta solo al contenido
+                  // real, sin importar cuántas líneas ocupe el nombre —
+                  // mismo patrón que ya usaba bien aliado_publico_screen.
+                  // dart, que nunca tuvo este problema. Hallazgo real de
+                  // Eliza con "Diga mire y vea.. venga axa por su mascota
+                  // y sea f...".
                   SliverToBoxAdapter(
-                    child: Stack(
-                      children: [
-                        Container(
-                          height: 230,
-                          decoration: const BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [Color(0xFF0A5C40), appTeal],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                          ),
+                    child: Container(
+                      width: double.infinity,
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Color(0xFF0A5C40), appTeal],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
                         ),
-                        SafeArea(
-                          child: Column(
-                            children: [
-                              Padding(
-                                padding: const EdgeInsets.only(left: 4, top: 4),
-                                child: Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: IconButton(
-                                    icon: const Icon(
-                                      Icons.arrow_back_ios_new,
-                                      color: Colors.white,
-                                      size: 20,
-                                    ),
-                                    tooltip: 'Volver',
-                                    onPressed: () => Navigator.pop(context),
+                      ),
+                      child: SafeArea(
+                        bottom: false,
+                        child: Column(
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.only(left: 4, top: 4),
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: IconButton(
+                                  icon: const Icon(
+                                    Icons.arrow_back_ios_new,
+                                    color: Colors.white,
+                                    size: 20,
                                   ),
+                                  tooltip: 'Volver',
+                                  onPressed: () => Navigator.pop(context),
                                 ),
                               ),
-                              Container(
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: Colors.white.withValues(alpha: 0.5),
-                                    width: 3,
-                                  ),
-                                ),
-                                child: Builder(
-                                  builder: (_) {
-                                    final fotoBytes = bytesFotoSegura(foto64);
-                                    return CircleAvatar(
-                                      radius: 42,
-                                      backgroundColor: Colors.white.withValues(
-                                        alpha: 0.2,
-                                      ),
-                                      backgroundImage: fotoBytes != null
-                                          ? MemoryImage(fotoBytes)
-                                          : null,
-                                      onBackgroundImageError: fotoBytes != null
-                                          ? (_, __) {}
-                                          : null,
-                                      child: fotoBytes == null
-                                          ? Text(
-                                              iniciales,
-                                              style: const TextStyle(
-                                                fontSize: 26,
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.white,
-                                              ),
-                                            )
-                                          : null,
-                                    );
-                                  },
+                            ),
+                            Container(
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.5),
+                                  width: 3,
                                 ),
                               ),
-                              const SizedBox(height: 10),
-                              Text(
+                              child: AvatarPersona(
+                                fotoBase64: foto64,
+                                inicial: iniciales,
+                                radius: 42,
+                                backgroundColor: Colors.white.withValues(
+                                  alpha: 0.2,
+                                ),
+                                textColor: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 24,
+                              ),
+                              child: Text(
                                 nombre,
+                                textAlign: TextAlign.center,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
                                   fontSize: 21,
                                   fontWeight: FontWeight.bold,
                                   color: Colors.white,
                                 ),
                               ),
-                              if (tipo.isNotEmpty) ...[
-                                const SizedBox(height: 3),
-                                Text(
-                                  tipo,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: Colors.white.withValues(alpha: 0.78),
-                                  ),
+                            ),
+                            if (tipo.isNotEmpty) ...[
+                              const SizedBox(height: 3),
+                              Text(
+                                tipo,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.white.withValues(alpha: 0.78),
                                 ),
-                              ],
+                              ),
                             ],
-                          ),
+                            const SizedBox(height: 16),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
 
@@ -221,7 +237,8 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
                   ),
 
                   // ── Contacto (opcional) ─────────────────────────────────────
-                  if (telefono.isNotEmpty ||
+                  if (ciudad.isNotEmpty ||
+                      telefono.isNotEmpty ||
                       direccion.isNotEmpty ||
                       email.isNotEmpty ||
                       sitioWeb.isNotEmpty)
@@ -231,20 +248,30 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            // La ciudad se geocodifica al guardar el perfil,
+                            // pero esta pantalla nunca la mostraba — mismo
+                            // hallazgo real de Eliza que en el perfil
+                            // público del Aliado (aliado_publico_screen.
+                            // dart), arreglado igual acá.
+                            if (ciudad.isNotEmpty)
+                              filaContacto(
+                                Icons.location_city_outlined,
+                                ciudad,
+                              ),
                             if (direccion.isNotEmpty)
-                              _filaContacto(
+                              filaContacto(
                                 Icons.location_on_outlined,
                                 direccion,
                               ),
                             if (email.isNotEmpty)
-                              _filaContacto(
+                              filaContacto(
                                 Icons.email_outlined,
                                 email,
                                 onTap: () =>
                                     launchUrl(Uri.parse('mailto:$email')),
                               ),
                             if (sitioWeb.isNotEmpty)
-                              _filaContacto(
+                              filaContacto(
                                 Icons.language_outlined,
                                 sitioWeb,
                                 onTap: () => launchUrl(
@@ -256,7 +283,8 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
                               Padding(
                                 padding: EdgeInsets.only(
                                   top:
-                                      (direccion.isNotEmpty ||
+                                      (ciudad.isNotEmpty ||
+                                          direccion.isNotEmpty ||
                                           email.isNotEmpty ||
                                           sitioWeb.isNotEmpty)
                                       ? 4
@@ -382,28 +410,6 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
   /// Una línea de contacto (dirección/email/sitio web): ícono + texto,
   /// tappable si se pasa [onTap] (email abre el cliente de correo, sitio
   /// web abre el navegador — dirección no tiene onTap, es solo texto).
-  Widget _filaContacto(IconData icono, String texto, {VoidCallback? onTap}) {
-    final fila = Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icono, size: 17, color: appTeal),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              texto,
-              style: TextStyle(
-                fontSize: 13.5,
-                color: onTap != null ? appTeal : appInk,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-    return onTap == null ? fila : GestureDetector(onTap: onTap, child: fila);
-  }
 
   Widget _statChip(String valor, String label, Color color) => Expanded(
     child: Container(

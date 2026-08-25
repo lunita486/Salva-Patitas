@@ -11,8 +11,25 @@ import '../data/chats_repository.dart';
 import '../data/rescates_repository.dart';
 import '../data/solicitudes_repository.dart';
 
-class MisSolicitudesScreen extends StatelessWidget {
+class MisSolicitudesScreen extends StatefulWidget {
   const MisSolicitudesScreen({super.key});
+  @override
+  State<MisSolicitudesScreen> createState() => _MisSolicitudesScreenState();
+}
+
+class _MisSolicitudesScreenState extends State<MisSolicitudesScreen> {
+  // `late final`, no una consulta armada dentro de build() — que es como
+  // estaba, y es el mismo patrón que causó el parpadeo y los datos viejos
+  // en el resto de las pantallas de esta sesión (mis_rescates, la vista
+  // previa de solicitudes, el carrusel del panel, la insignia del chat).
+  // Cada redibujado creaba una consulta NUEVA, el StreamBuilder se
+  // desuscribía de la anterior y se resuscribía, y esa resuscripción puede
+  // mostrar un instante de caché local vieja antes de que llegue el dato
+  // fresco del servidor. El uid no cambia mientras esta pantalla está
+  // abierta, así que se resuelve una sola vez.
+  late final String _uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _misSolicitudesStream =
+      SolicitudesRepository().misSolicitudes(_uid);
 
   // "Registro del acuerdo de adopción", versión simple: sin firma dibujada
   // ni PDF — un texto genérico de compromiso que el adoptante lee y acepta,
@@ -97,9 +114,7 @@ class MisSolicitudesScreen extends StatelessWidget {
       return;
     }
     final d = doc.data()!;
-    final nombre = (d['nombre'] as String?)?.isNotEmpty == true
-        ? d['nombre'] as String
-        : 'Sin nombre';
+    final nombre = nombreDeAnimal(d['nombre'] as String?);
     final animalMap = {
       'nombre': nombre,
       'especie': d['especie'] ?? 'Perro',
@@ -137,7 +152,6 @@ class MisSolicitudesScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     return Scaffold(
       backgroundColor: appBg,
       body: SafeArea(
@@ -171,7 +185,7 @@ class MisSolicitudesScreen extends StatelessWidget {
                 // SolicitudesRepository.misSolicitudes (no una consulta armada
                 // a mano acá) — regla del proyecto: `solicitudes` siempre pasa
                 // por lib/data/, ver ARCHITECTURE.md.
-                stream: SolicitudesRepository().misSolicitudes(uid),
+                stream: _misSolicitudesStream,
                 builder: (context, snap) {
                   if (snap.connectionState == ConnectionState.waiting) {
                     return const Center(
@@ -229,7 +243,11 @@ class MisSolicitudesScreen extends StatelessWidget {
                     separatorBuilder: (_, _) => const SizedBox(height: 10),
                     itemBuilder: (_, i) {
                       final d = docs[i].data() as Map<String, dynamic>;
-                      final animal = d['animalNombre'] as String? ?? 'Animal';
+                      // Antes esta lista decía 'Animal' y el encabezado
+                      // de la misma pantalla decía 'Sin nombre'.
+                      final animal = nombreDeAnimal(
+                        d['animalNombre'] as String?,
+                      );
                       final estado = d['estado'] as String? ?? 'pendiente';
                       final motivo = d['motivoRechazo'] as String?;
                       final ts = d['creadoEn'] as Timestamp?;
@@ -243,16 +261,13 @@ class MisSolicitudesScreen extends StatelessWidget {
                       final fechaFin = fechaFinTs?.toDate();
                       final fechaInicio = fechaInicioTs?.toDate();
                       final hoy = DateTime.now();
+                      // diasHastaVencimiento (domain/reglas_negocio.dart) —
+                      // única fuente. El panel del rescatista contestaba
+                      // esta MISMA pregunta con hora incluida, así que el
+                      // día del vencimiento acá decía "vence hoy" y allá ya
+                      // había mandado "ha vencido".
                       final diasRestantes = fechaFin != null
-                          ? DateTime(
-                                  fechaFin.year,
-                                  fechaFin.month,
-                                  fechaFin.day,
-                                )
-                                .difference(
-                                  DateTime(hoy.year, hoy.month, hoy.day),
-                                )
-                                .inDays
+                          ? diasHastaVencimiento(fechaFin: fechaFin, ahora: hoy)
                           : null;
 
                       final estadoColor = estado == 'aprobada'
@@ -267,6 +282,7 @@ class MisSolicitudesScreen extends StatelessWidget {
                           : '⏳  Pendiente';
 
                       return Container(
+                        key: ValueKey(docs[i].id),
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
                           color: Colors.white,
@@ -296,6 +312,8 @@ class MisSolicitudesScreen extends StatelessWidget {
                                         url: fotoUrl,
                                         width: 56,
                                         height: 56,
+                                        // Miniatura de lista: sin fondo borroso, ver FotoAnimal.
+                                        fondoBorroso: false,
                                         fallback: Container(
                                           width: 56,
                                           height: 56,
@@ -336,6 +354,49 @@ class MisSolicitudesScreen extends StatelessWidget {
                                       color: appInk,
                                     ),
                                   ),
+                                  // El nombre del rescatista/albergue dueño
+                                  // del animal nunca se guardó en el
+                                  // documento de la solicitud (nadie lo
+                                  // escribió al crearla, y el trigger del
+                                  // servidor que sincroniza animalNombre/
+                                  // fotoUrl tampoco lo cubre — no es un
+                                  // campo de ESTA colección). Se lee en
+                                  // vivo del animal en vez de agregar otra
+                                  // copia más: justo el tipo de dato
+                                  // denormalizado que se pasó buena parte
+                                  // de esta sesión reparando. Hallazgo
+                                  // real de Eliza: "en Solicitudes tampoco
+                                  // se ve el nombre del albergue" —ni
+                                  // antes ni después de renombrarlo,
+                                  // porque nunca se mostraba nada ahí.
+                                  if ((d['rescateId'] as String?)
+                                          ?.isNotEmpty ==
+                                      true)
+                                    FutureBuilder<DocumentSnapshot>(
+                                      future: RescatesRepository().obtener(
+                                        d['rescateId'] as String,
+                                      ),
+                                      builder: (context, animalSnap) {
+                                        final rd =
+                                            animalSnap.data?.data()
+                                                as Map<String, dynamic>?;
+                                        final rescatista =
+                                            rd?['rescatistaNombre']
+                                                as String?;
+                                        if (rescatista == null ||
+                                            rescatista.isEmpty) {
+                                          return const SizedBox.shrink();
+                                        }
+                                        return Text(
+                                          rescatista,
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.grey.shade600,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        );
+                                      },
+                                    ),
                                   const SizedBox(height: 2),
                                   Text(
                                     tipo == 'hogar_de_paso'
@@ -536,26 +597,65 @@ class MisSolicitudesScreen extends StatelessWidget {
                                                       animalNombre: animal,
                                                     ))
                                                 ?.id;
+                                        // `creadoPor`/rescatista de acá arriba
+                                        // vienen de la SOLICITUD, congelados al
+                                        // momento de mandarla — mismo problema
+                                        // (y mismo arreglo) que
+                                        // _aprobarSolicitudImpl/
+                                        // _rechazarSolicitudImpl en
+                                        // solicitudes_rescatista_screen.dart.
+                                        // Sin esto, abrir el chat desde acá
+                                        // podía volver a pisar con el valor
+                                        // viejo un chat que ya tenía el dato
+                                        // correcto: ChatScreen hace merge al
+                                        // abrirse, así que este botón no solo
+                                        // mostraba mal la etiqueta, la
+                                        // corrompía de nuevo para todo el
+                                        // mundo. Hallazgo real de Eliza: un
+                                        // animal de albergue mostraba
+                                        // "Rescatista" en el chat, reportado
+                                        // hace meses y seguía pasando.
+                                        var creadoPorVivo =
+                                            d['creadoPor'] as String?;
+                                        var rescatistaVivo =
+                                            d['rescatistaNombre'] as String? ??
+                                            d['rescatista'] as String?;
+                                        if (rescateIdChat.isNotEmpty) {
+                                          try {
+                                            final rescateDoc =
+                                                await RescatesRepository()
+                                                    .obtener(rescateIdChat);
+                                            final rd = rescateDoc.data();
+                                            final creadoPorReal =
+                                                rd?['creadoPor'] as String?;
+                                            if (creadoPorReal != null &&
+                                                creadoPorReal.isNotEmpty) {
+                                              creadoPorVivo = creadoPorReal;
+                                            }
+                                            final rescatistaReal =
+                                                rd?['rescatistaNombre']
+                                                    as String?;
+                                            if (rescatistaReal != null &&
+                                                rescatistaReal.isNotEmpty) {
+                                              rescatistaVivo = rescatistaReal;
+                                            }
+                                          } catch (_) {}
+                                        }
                                         if (!context.mounted) return;
                                         final animalMap = {
                                           'nombre': animal,
                                           'rescatista':
-                                              d['rescatistaNombre']
-                                                  as String? ??
-                                              d['rescatista'] as String? ??
-                                              'Rescatista',
+                                              rescatistaVivo ?? 'Rescatista',
                                           'rescatistaId':
                                               d['rescatistaId'] as String? ??
                                               '',
-                                          'rescateId':
-                                              d['rescateId'] as String? ?? '',
+                                          'rescateId': rescateIdChat,
                                           'especie':
                                               d['especie'] as String? ??
                                               'Perro',
                                           'fotoUrl': fotoUrl,
                                           'tipoSolicitud': tipo,
-                                          'creadoPor':
-                                              d['creadoPor'] as String?,
+                                          'creadoPor': creadoPorVivo,
                                           'edad': '',
                                           'ubicacion': '',
                                           'descripcion': '',

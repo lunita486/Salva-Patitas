@@ -97,7 +97,24 @@ class RescateFotosRepository {
         throw TimeoutException('Se agotó el tiempo subiendo la foto.');
       },
     );
-    return ref.getDownloadURL();
+    final url = await ref.getDownloadURL();
+    // Cache-busting: al reemplazar una foto, `putData` sube al MISMO path
+    // (rescates/{id}/foto{slot}.jpg) y Storage conserva el mismo token de
+    // descarga que ya tenía el archivo — la URL queda IDÉNTICA a la de
+    // antes de reemplazarla. CachedNetworkImage (y cualquier caché HTTP)
+    // usa la URL completa como clave: sin esto, el teléfono seguía
+    // sirviendo la foto VIEJA de su caché para siempre, sin volver a
+    // pedirla nunca — ni esperando, ni saliendo y reentrando. El parámetro
+    // extra no rompe la descarga (Storage solo valida `alt=media` y
+    // `token`, ignora el resto), solo fuerza una clave de caché nueva en
+    // cada subida. Hallazgo real de Eliza: "Naranjita Lange", reemplazando
+    // la foto tocándola directamente sin quitarla primero.
+    // Microsegundos, no milisegundos: dos subidas separadas por muy poco
+    // tiempo (ej. en una prueba automatizada, sin la demora real de red de
+    // un dispositivo) pueden caer en el mismo milisegundo y anular el
+    // cache-busting — con microsegundos esa colisión es prácticamente
+    // imposible.
+    return '$url&v=${DateTime.now().microsecondsSinceEpoch}';
   }
 
   /// Mueve la foto de [deSlot] a [aSlot] (descarga los bytes, los re-sube

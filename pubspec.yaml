@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.2+61
+version: 1.0.2+89
 
 environment:
   sdk: ^3.11.5
@@ -45,7 +45,12 @@ dependencies:
   # spinner infinito. Ver lib/data/auth_helper.dart.
   google_sign_in: ^7.2.0
   geolocator: ^13.0.1
-  geocoding: ^3.0.0
+  # Para hablarle directo a Nominatim (OpenStreetMap) en ubicacion_service.dart
+  # — reemplaza al geocodificador del propio Android (`geocoding`, que en
+  # Latinoamérica devuelve resultados poco confiables o incompletos para
+  # textos ambiguos: "medellin antioquia" resolvía siempre a un barrio, sin
+  # que la ciudad de verdad apareciera nunca entre los candidatos).
+  http: ^1.2.0
   share_plus: ^10.1.4
   image: ^4.5.0
   firebase_messaging: ^15.2.5
@@ -56,6 +61,13 @@ dependencies:
   firebase_crashlytics: ^4.3.10
   firebase_app_check: ^0.3.2+5
   go_router: ^17.5.0
+  # Guarda las fotos ya descargadas en disco (no solo en memoria mientras la
+  # app está abierta) — antes cada Image.network dependía únicamente del
+  # ImageCache en RAM de Flutter, así que CADA apertura de la app volvía a
+  # descargar todas las fotos desde cero, aunque fueran las mismas de
+  # siempre. Hallazgo real de Eliza: Adoptar tardando demasiado en cargar
+  # fotos, en sus 2 teléfonos, con la app recién abierta.
+  cached_network_image: ^3.4.1
 
 dev_dependencies:
   flutter_test:
@@ -65,12 +77,12 @@ dev_dependencies:
   fake_cloud_firestore: ^3.1.0
   firebase_storage_mocks: ^0.7.0
   mocktail: ^1.0.4
-  # Para testear geocodificarCiudad() y CampoCiudad (theme.dart) sin red ni
-  # GPS reales, con un GeocodingPlatform/GeolocatorPlatform falsos — mismo
-  # patrón que fake_cloud_firestore para Firestore. Antes eran solo
-  # dependencias transitivas (vía geocoding/geolocator); directas acá
-  # porque test/theme_test.dart las importa explícitamente.
-  geocoding_platform_interface: ^3.2.0
+  # Para testear UbicacionService/CampoCiudad sin GPS real, con un
+  # GeolocatorPlatform falso — mismo patrón que fake_cloud_firestore para
+  # Firestore. Antes era solo dependencia transitiva (vía geolocator);
+  # directa acá porque varios test files la importan explícitamente. El
+  # geocoding en sí ya no pasa por ningún plugin de plataforma (ver
+  # test/helpers/mock_nominatim.dart) — habla HTTP directo con Nominatim.
   geolocator_platform_interface: ^4.2.6
   # Mismo motivo, para elegirFotoAnimal() (theme.dart): probar que una
   # cámara que falla se avisa en vez de quedar en silencio — el bug que

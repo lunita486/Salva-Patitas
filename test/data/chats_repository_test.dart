@@ -896,16 +896,6 @@ void main() {
         },
       );
     });
-  });
-
-  group('ChatsRepository — consultas (antes escritas a mano en 7 pantallas)', () {
-    late FakeFirebaseFirestore firestore;
-    late ChatsRepository repo;
-
-    setUp(() {
-      firestore = FakeFirebaseFirestore();
-      repo = ChatsRepository(db: firestore);
-    });
 
     Future<void> sembrar(String id, Map<String, dynamic> datos) =>
         firestore.collection('chats').doc(id).set(datos);
@@ -1427,6 +1417,54 @@ void main() {
     setUp(() {
       firestore = FakeFirebaseFirestore();
       repo = ChatsRepository(db: firestore);
+    });
+
+    // Aprobar o rechazar hacía DOS cosas que notifican: cambiaba el
+    // estado de la solicitud (onCambioEstadoSolicitud → push) y escribía
+    // el mensaje del aviso (onNuevoMensaje → otra push). Llegaban las dos,
+    // con textos distintos, por un solo hecho. La marca deja que el
+    // servidor se saltee la segunda.
+    test('avisoDeEstado marca el mensaje para que el servidor no mande la '
+        'push repetida', () async {
+      await repo.avisarSobreAnimal(
+        adoptanteId: 'ana',
+        adoptanteNombre: 'Ana',
+        rescatistaId: 'refugio1',
+        rescatista: 'Refugio Uno',
+        texto: '✅ ¡Tu solicitud de adopción fue aprobada!',
+        rescateId: 'r1',
+        animalNombre: 'Rocky',
+        avisoDeEstado: true,
+      );
+
+      final msgs = await firestore
+          .collection('chats')
+          .doc('r1_ana')
+          .collection('mensajes')
+          .get();
+      expect(msgs.docs.single.data()['avisoDeEstado'], isTrue);
+    });
+
+    // Un mensaje normal NO lleva la marca: si la llevara, el servidor
+    // dejaría de avisar de los mensajes de verdad — el bug opuesto, y
+    // mucho peor que una notificación de más.
+    test('un mensaje común NO queda marcado', () async {
+      await repo.avisarSobreAnimal(
+        adoptanteId: 'ana',
+        adoptanteNombre: 'Ana',
+        rescatistaId: 'refugio1',
+        rescatista: 'Refugio Uno',
+        texto: '¿Cómo se está adaptando Rocky?',
+        rescateId: 'r1',
+        animalNombre: 'Rocky',
+      );
+
+      final msgs = await firestore
+          .collection('chats')
+          .doc('r1_ana')
+          .collection('mensajes')
+          .get();
+      expect(msgs.docs.single.data().containsKey('avisoDeEstado'), isFalse);
     });
 
     test('sin chat previo: LO CREA y deja el mensaje adentro — el caso real '

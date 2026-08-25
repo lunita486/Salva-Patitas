@@ -11,7 +11,8 @@ import 'package:salva_patitas/widgets/elegir_foto_perfil.dart';
 // porque normalizarFoto() decodifica de verdad — no hay forma de probar
 // esto con un path falso).
 class _FakeImagePicker extends ImagePickerPlatform {
-  _FakeImagePicker({this.devuelve});
+  // Sin parámetros en el constructor — ver la nota en
+  // elegir_foto_animal_test.dart.
   XFile? devuelve;
   ImageSource? fuenteUsada;
 

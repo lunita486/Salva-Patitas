@@ -5,6 +5,7 @@ import 'package:share_plus/share_plus.dart';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import '../theme.dart';
+import '../widgets/campo_pais_telefono.dart' show banderaPais;
 
 // Extraído de adoptante_feed_screen.dart (que llegó a 1642 líneas mezclando
 // varias responsabilidades) — este grupo (tarjeta + render + share) es
@@ -15,6 +16,19 @@ import '../theme.dart';
 // usa el default del plugin (10MB) en vez de un tamaño elegido a propósito
 // para lo que puede llegar a pesar una foto de animal.
 const _maxBytesFoto = 15 * 1024 * 1024;
+
+// Cuánto se espera la foto antes de compartir solo el texto.
+//
+// `getData()` no trae timeout propio: con señal mala se quedaba esperando
+// para siempre y el botón de compartir parecía muerto — sin spinner, sin
+// error, sin hoja de compartir. Nunca aparecía nada. Los dos pasos de
+// después (precache + captura de la tarjeta) ya se rendían a los 5s cada
+// uno; el único que no tenía límite era justo el que depende de la red.
+//
+// 15s y no 5: bajar una foto de hasta 15 MB tarda de verdad, y rendirse
+// antes de tiempo cambia un botón colgado por una tarjeta que no sale
+// nunca. Pasado el plazo se comparte igual, solo que sin imagen.
+const _esperaMaximaFoto = Duration(seconds: 15);
 
 // Tarjeta cuadrada (1080x1080) tipo post de Instagram, generada a partir de la
 // foto del animal para que compartir se vea como una publicación de marca en
@@ -291,13 +305,23 @@ Future<void> compartirAnimal({
   required String ubicacion,
   required List<String> tags,
   String? fotoUrl,
+  String? paisCodigo,
 }) async {
   final emoji = especie == 'Gato' ? '🐱' : '🐶';
   final tagsTexto = tags.isNotEmpty ? tags.map((t) => '✅ $t').join('  ') : '';
+  // La bandera al lado de la ciudad, mismo motivo que en la tarjeta del
+  // feed (ver banderaPais): "Córdoba" sola no dice si es la de Argentina o
+  // la de España, y esto se comparte fuera de la app, sin el contexto del
+  // resto de la pantalla para desambiguar. Pregunta real de Eliza sobre
+  // este mismo texto.
+  final bandera = banderaPais(paisCodigo);
+  final ubicacionConPais = bandera.isNotEmpty
+      ? '$ubicacion $bandera'
+      : ubicacion;
   final texto =
       '$emoji *$nombre* necesita un hogar!\n'
       '${[if (especie.isNotEmpty) especie, if (edad.isNotEmpty) edad].join(' · ')}\n'
-      '📍 $ubicacion\n'
+      '📍 $ubicacionConPais\n'
       '${tagsTexto.isNotEmpty ? '$tagsTexto\n' : ''}'
       '\n¡Ayúdalo a encontrar familia descargando *Salva Patitas* 💚\n'
       'https://play.google.com/store/apps/details?id=com.salvapatitas.app';
@@ -310,7 +334,8 @@ Future<void> compartirAnimal({
     try {
       fotoBytes = await FirebaseStorage.instance
           .refFromURL(fotoUrl)
-          .getData(_maxBytesFoto);
+          .getData(_maxBytesFoto)
+          .timeout(_esperaMaximaFoto);
     } catch (_) {}
   }
   if (fotoBytes != null) {

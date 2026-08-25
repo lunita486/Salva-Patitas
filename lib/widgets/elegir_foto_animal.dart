@@ -26,6 +26,14 @@ import '../theme.dart';
 /// todavía hay lugar para otra foto. Eso depende del estado propio de cada
 /// pantalla (una lista en publicar, dos slots en editar), así que se queda
 /// del lado del llamador.
+/// Los parámetros del picker, en un solo lugar.
+///
+/// Estaban repetidos en cada llamada y ya habían divergido en la calidad
+/// (90 acá, 80 en subir_lote_screen). Ver el comentario de arriba sobre
+/// por qué 90 y no 80.
+const _calidadFoto = 90;
+const _ladoMaximoFoto = 1000.0;
+
 Future<XFile?> elegirFotoAnimal(BuildContext context) async {
   final fuente = await showModalBottomSheet<ImageSource>(
     context: context,
@@ -65,9 +73,9 @@ Future<XFile?> elegirFotoAnimal(BuildContext context) async {
   try {
     return await ImagePicker().pickImage(
       source: fuente,
-      imageQuality: 90,
-      maxWidth: 1000,
-      maxHeight: 1000,
+      imageQuality: _calidadFoto,
+      maxWidth: _ladoMaximoFoto,
+      maxHeight: _ladoMaximoFoto,
     );
   } catch (_) {
     // Cámara no disponible / permiso denegado / emulador sin cámara. La
@@ -82,5 +90,32 @@ Future<XFile?> elegirFotoAnimal(BuildContext context) async {
       );
     }
     return null;
+  }
+}
+
+/// Varias fotos de la galería de una sola vez, para la carga por lote.
+///
+/// Hermana de [elegirFotoAnimal]: no muestra la hoja de cámara/galería
+/// porque `pickMultiImage` es galería por definición, pero comparte los
+/// parámetros del picker y el mismo manejo de errores. Vivía suelta dentro
+/// de subir_lote_screen.dart con la calidad en 80 y sin try/catch — si el
+/// picker fallaba, tocar "Agregar fotos" no hacía nada y no avisaba nada.
+Future<List<XFile>> elegirVariasFotosAnimal(BuildContext context) async {
+  try {
+    return await ImagePicker().pickMultiImage(
+      imageQuality: _calidadFoto,
+      maxWidth: _ladoMaximoFoto,
+      maxHeight: _ladoMaximoFoto,
+    );
+  } catch (_) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo abrir la galería'),
+          backgroundColor: msgAdvertencia,
+        ),
+      );
+    }
+    return const [];
   }
 }

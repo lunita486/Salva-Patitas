@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:async';
 import 'package:geolocator/geolocator.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import '../theme.dart';
+import '../domain/reglas_negocio.dart';
 import '../widgets/avatares.dart';
 import '../widgets/campo_pais_telefono.dart';
 import '../widgets/especie_chip.dart';
 import '../widgets/estado_error_feed.dart';
 import '../widgets/fotos.dart';
 import '../domain/compatibilidad.dart';
+import '../data/creator_role.dart';
+import '../data/favoritos_repository.dart';
 import '../data/rescates_repository.dart';
 import '../data/preferencias_repository.dart';
 import '../data/firestore_resiliencia.dart';
@@ -49,10 +53,8 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
   // el próximo". Mismo bug ya encontrado y arreglado para el feed
   // principal en esta misma pantalla, nunca replicado acá para favoritos.
   late final String _uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-  late final Stream<QuerySnapshot> _favoritosStream = FirebaseFirestore.instance
-      .collection('favoritos')
-      .where('adoptanteId', isEqualTo: _uid)
-      .snapshots();
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _favoritosStream =
+      FavoritosRepository().mios(_uid);
   // Paginación del feed (ver RescatesRepository.feedPublico): arranca en
   // una tanda y va creciendo de a `feedPageSize` a medida que la persona
   // se acerca al final de lo ya cargado — ver _pedirMasAnimalesSiHaceFalta.
@@ -94,15 +96,31 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
       UsuariosRepository().aliados();
 
   /// Descarga por adelantado la 2da foto (y siguientes) de la tarjeta
-  /// visible — Image.network no empieza a pedir una foto hasta que su
-  /// widget realmente se construye, y la foto 2 vive detrás de un
+  /// visible — el widget que las muestra de verdad (FotoUrl, en
+  /// fotos.dart) no empieza a pedir una foto hasta que su widget
+  /// realmente se construye, y la foto 2 vive detrás de un
   /// ValueListenableBuilder que solo la construye cuando la persona ya
   /// deslizó para verla. El resultado era un salto/demora visible justo
   /// al deslizar (el bug real que reportó Eliza: "la segunda foto se
   /// demora en cargar"). Precargando apenas se muestra el animal, para
-  /// cuando desliza la foto ya está lista en el caché de imágenes de
-  /// Flutter — la foto 1 no necesita esto porque Image.network ya la pide
-  /// sola al construirse (es la que se ve de entrada).
+  /// cuando desliza la foto ya está lista — la foto 1 no necesita esto
+  /// porque FotoUrl ya la pide sola al construirse (es la que se ve de
+  /// entrada).
+  ///
+  /// `CachedNetworkImageProvider`, no `NetworkImage`: son dos tipos de
+  /// `ImageProvider` distintos, con distinta clave de caché — precargar
+  /// con uno no evita que el otro vuelva a pedir la foto por red. Como
+  /// FotoUrl arma su `CachedNetworkImage` con `CachedNetworkImageProvider`
+  /// por debajo, esta precarga con `NetworkImage` nunca llegaba a servir
+  /// al widget que de verdad se dibuja: cada segunda foto se descargaba
+  /// DOS veces (acá y de nuevo al deslizar), sin ningún ahorro real.
+  /// Con `CachedNetworkImageProvider` las dos pasan por el mismo
+  /// `flutter_cache_manager`, así que el archivo ya queda en el disco del
+  /// teléfono para cuando FotoUrl lo pida de verdad — no hace falta que
+  /// las dos coincidan en tamaño exacto de decodificado, solo que la
+  /// descarga por red no se repita. Hallazgo de auditoría de código:
+  /// esta pantalla se quedó afuera de la migración a caché en disco que
+  /// ya tienen las demás.
   void _precacharUrls(Iterable<String> urls) {
     for (final url in urls) {
       if (_fotosPrecacheadas.add(url))
@@ -113,7 +131,11 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
         // fatal — main.dart conecta FlutterError.onError a Crashlytics, y
         // precacheImage() reporta ahí cualquier falla si no le pasás su
         // propio onError. Hallazgo real en producción, APK61.
-        precacheImage(NetworkImage(url), context, onError: (_, _) {});
+        precacheImage(
+          CachedNetworkImageProvider(url),
+          context,
+          onError: (_, _) {},
+        );
     }
   }
 
@@ -397,9 +419,14 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
   }
 
   String _distancia(Map<String, dynamic> animal) {
-    final lat = animal['latitud'] as double?;
-    final lng = animal['longitud'] as double?;
-    if (lat == null || lng == null || _userPosition == null) return '';
+    // coordenadasDe (domain/reglas_negocio.dart) — descarta (0,0) y lee
+    // `num` en vez de `double`. Ver su doc: acá se mostraban distancias
+    // inventadas para animales con coordenadas basura, y un entero
+    // guardado podía tirar abajo la pestaña entera.
+    final coords = coordenadasDe(animal);
+    if (coords == null || _userPosition == null) return '';
+    final lat = coords.lat;
+    final lng = coords.lng;
     final metros = Geolocator.distanceBetween(
       _userPosition!.latitude,
       _userPosition!.longitude,
@@ -413,25 +440,28 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
   Future<void> _guardarFavorito(Map<String, dynamic> animal) async {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     final rescateId = animal['rescateId'] as String? ?? '';
-    final docId = rescateId.isNotEmpty
-        ? '${uid}_$rescateId'
-        : '${uid}_${(animal['nombre'] as String? ?? '').toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_')}';
-    await FirebaseFirestore.instance.collection('favoritos').doc(docId).set({
-      'adoptanteId': uid,
-      'animalNombre': animal['nombre'],
-      'especie': animal['especie'],
-      'edad': animal['edad'],
-      'ubicacion': animal['ubicacion'],
-      'descripcion': animal['descripcion'],
-      'tags': animal['tags'],
-      'rescatista': animal['rescatista'],
-      'rescatistaId': animal['rescatistaId'] ?? '',
-      'rescateId': animal['rescateId'] ?? '',
-      'genero': animal['genero'] ?? '',
-      'fotoUrl': animal['fotoUrl'],
-      'creadoPor': animal['creadoPor'] ?? 'rescatista',
-      'creadoEn': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    // El id lo arma FavoritosRepository.idDe(), no esta pantalla: la regla
+    // tiene que ser IDÉNTICA al guardar y al borrar, o se borra un
+    // documento distinto del que se guardó.
+    await FavoritosRepository().guardar(
+      uid: uid,
+      rescateId: rescateId,
+      animalNombre: animal['nombre'] as String? ?? '',
+      datos: {
+        'animalNombre': animal['nombre'],
+        'especie': animal['especie'],
+        'edad': animal['edad'],
+        'ubicacion': animal['ubicacion'],
+        'descripcion': animal['descripcion'],
+        'tags': animal['tags'],
+        'rescatista': animal['rescatista'],
+        'rescatistaId': animal['rescatistaId'] ?? '',
+        'rescateId': animal['rescateId'] ?? '',
+        'genero': animal['genero'] ?? '',
+        'fotoUrl': animal['fotoUrl'],
+        'creadoPor': animal['creadoPor'] ?? 'rescatista',
+      },
+    );
     FirebaseAnalytics.instance
         .logEvent(
           name: 'favorito_agregado',
@@ -524,11 +554,11 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                   _favoritosRecientes.contains(doc.id))
                 return false;
               final d = doc.data() as Map<String, dynamic>;
-              final estado = d['estadoAdopcion'] as String?;
-              return estado == null ||
-                  estado == 'Rescatado' ||
-                  estado == 'Regresado' ||
-                  estado == 'Hogar de paso';
+              // sePuedeAdoptar (domain/reglas_negocio.dart) — única fuente
+              // de esta pregunta. Antes esta lista de estados vivía escrita
+              // a mano acá, y Favoritos tenía la SUYA, que se contradecía
+              // con esta en 'Hogar de paso'.
+              return sePuedeAdoptar(d['estadoAdopcion'] as String?);
             }).toList();
             final firestoreDocs =
                 disponibles.where((doc) {
@@ -570,7 +600,6 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                   'raza': d['raza'] ?? 'Criolla',
                   'tamano': d['tamano'] ?? 'Mediano',
                   'ubicacion': d['ubicacion'] ?? '',
-                  'distancia': '~',
                   'descripcion': d['descripcion'] ?? '',
                   'tags': <String>[
                     if (d['okConNinos'] == true) 'Amigable con niños',
@@ -608,12 +637,22 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
             // Ordenar por distancia si hay posición disponible
             if (_userPosition != null) {
               animals.sort((a, b) {
-                final latA = a['latitud'] as double?;
-                final lngA = a['longitud'] as double?;
-                final latB = b['latitud'] as double?;
-                final lngB = b['longitud'] as double?;
-                if (latA == null || lngA == null) return 1;
-                if (latB == null || lngB == null) return -1;
+                // Misma fuente que _distancia — sin esto, un animal con
+                // (0,0) se ordenaba por una distancia falsa.
+                final ca = coordenadasDe(a);
+                final cb = coordenadasDe(b);
+                // Los dos sin ubicación: EMPATE (0), no `1`. Antes los dos
+                // casos devolvían 1, así que el comparador se contradecía
+                // a sí mismo (comparar A con B y B con A daba lo mismo) y
+                // el orden entre animales sin ubicación cambiaba solo entre
+                // redibujados.
+                if (ca == null && cb == null) return 0;
+                if (ca == null) return 1;
+                if (cb == null) return -1;
+                final latA = ca.lat;
+                final lngA = ca.lng;
+                final latB = cb.lat;
+                final lngB = cb.lng;
                 final dA = Geolocator.distanceBetween(
                   _userPosition!.latitude,
                   _userPosition!.longitude,
@@ -650,63 +689,6 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
 
             final animal = animals[_idx];
             _precacharSiguienteAnimal(animals, _idx);
-
-            // Detectar si el más cercano CON ubicación conocida está lejos
-            // (>500 km). Usa el mismo `_userPosition` que ya usa `_distancia()`
-            // para el texto de cada tarjeta — antes esto esperaba a una
-            // bandera "posición precisa" aparte que se ponía en true recién
-            // si el segundo pedido de GPS (más lento, ver _obtenerPosicion)
-            // llegaba a tiempo; si fallaba o tardaba, el catch la tragaba en
-            // silencio y esa bandera quedaba en false para siempre en la
-            // sesión — el aviso nunca se mostraba, aunque la distancia sí se
-            // calculara bien y se viera en cada tarjeta. Con la misma
-            // posición para las dos cosas, dejan de contradecirse.
-            bool sinAnimalesCerca = false;
-            if (_userPosition != null && animals.isNotEmpty) {
-              // Si algún animal de la lista no tiene latitud/longitud
-              // guardada (la ubicación es opcional al publicar, ver
-              // subir_rescate_screen.dart), no hay forma de saber si está
-              // cerca o lejos — podría estar al lado tuyo. Esos animales se
-              // van al final de la lista (ver el sort de arriba), así que
-              // sin este chequeo el aviso terminaba comparando contra el
-              // más cercano CON ubicación conocida y podía decir "no hay
-              // animales cerca" aunque hubiera uno sin ubicación guardada
-              // literalmente al lado. Hallazgo real de Eliza: animalitos
-              // suyos cargados como rescatista, cerca de ella, pero el
-              // aviso igual decía que no había nada cerca.
-              final hayAnimalesSinUbicacion = animals.any(
-                (a) =>
-                    (a['latitud'] as double?) == null ||
-                    (a['longitud'] as double?) == null,
-              );
-              if (!hayAnimalesSinUbicacion) {
-                final lat = animals[0]['latitud'] as double?;
-                final lng = animals[0]['longitud'] as double?;
-                if (lat != null && lng != null) {
-                  final metros = Geolocator.distanceBetween(
-                    _userPosition!.latitude,
-                    _userPosition!.longitude,
-                    lat,
-                    lng,
-                  );
-                  sinAnimalesCerca = metros > 500000;
-                }
-              }
-            }
-            // El aviso se calcula sobre `animals`, que ya está filtrado por
-            // especie — con el chip "Gatos" activo, "no hay animales cerca"
-            // podía leerse como que no hay NADA cerca (ni perros ni gatos),
-            // cuando en realidad solo el gato más cercano está lejos y sí
-            // podía haber perros cerca. El texto ahora nombra la especie del
-            // filtro activo para no sonar más general de lo que es. Hallazgo
-            // real de Eliza: "es mentira, ese animalito está lejos pero sí
-            // existen animales cerca".
-            final etiquetaCerca = switch (_prefEspecie) {
-              'Perro' => 'perros',
-              'Gato' => 'gatos',
-              'Otro' => 'otros animales',
-              _ => 'animales',
-            };
 
             final distancia = _distancia(animal);
             return Column(
@@ -769,44 +751,6 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                               ),
                             ),
                           ),
-                        if (sinAnimalesCerca)
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                            child: Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 10,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFFFF8F0),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: const Color(
-                                    0xFFE65100,
-                                  ).withValues(alpha: 0.3),
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  const Text(
-                                    '📍',
-                                    style: TextStyle(fontSize: 14),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      'No hay $etiquetaCerca cerca de ti. Mostrando todos los disponibles.',
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        color: Color(0xFF8B4513),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
                         Padding(
                           padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                           child: _buildCard(
@@ -842,10 +786,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                         appInk,
                         46,
                         () {
-                          context.push(
-                            AppRoutes.animalDetalle,
-                            extra: animal,
-                          );
+                          context.push(AppRoutes.animalDetalle, extra: animal);
                         },
                         'Ver más detalles de ${animal['nombre']}',
                       ),
@@ -1078,32 +1019,12 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Builder(
-                            builder: (_) {
-                              final fotoBytes = bytesFotoSegura(foto);
-                              return CircleAvatar(
-                                radius: 26,
-                                backgroundColor: appTeal.withValues(
-                                  alpha: 0.12,
-                                ),
-                                backgroundImage: fotoBytes != null
-                                    ? MemoryImage(fotoBytes)
-                                    : null,
-                                onBackgroundImageError: fotoBytes != null
-                                    ? (_, __) {}
-                                    : null,
-                                child: fotoBytes == null
-                                    ? Text(
-                                        ini,
-                                        style: const TextStyle(
-                                          color: appTeal,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 18,
-                                        ),
-                                      )
-                                    : null,
-                              );
-                            },
+                          AvatarPersona(
+                            fotoBase64: foto,
+                            inicial: ini,
+                            radius: 26,
+                            backgroundColor: appTeal.withValues(alpha: 0.12),
+                            textColor: appTeal,
                           ),
                           const SizedBox(height: 8),
                           Text(
@@ -1422,7 +1343,20 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        if (ubicacion.isNotEmpty || distancia.isNotEmpty)
+                        // Este pin es "dónde está", no "qué tan lejos" — no
+                        // se le mezcla la distancia (esa ya tiene su propio
+                        // texto aparte, "Se encuentra a X km de ti"). Antes
+                        // cuando faltaba la ciudad cambiaba a mostrar la
+                        // distancia acá mismo ("8875.1 km"), que se leía
+                        // como si fuera el lugar — eso ya se sacó. La
+                        // bandera SOLA (sin ciudad) también se sacó
+                        // después: mostraba un país sin ningún lugar
+                        // concreto adentro ("🇨🇴" a secas no es una
+                        // ubicación útil), así que sin ciudad no se
+                        // muestra el pin en absoluto. Pedido real de Eliza
+                        // viendo a "Naranjita Lange" (sin ciudad guardada)
+                        // con la bandera de Colombia sola en el feed.
+                        if (ubicacion.isNotEmpty)
                           Flexible(
                             child: Container(
                               padding: const EdgeInsets.symmetric(
@@ -1444,18 +1378,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                                   const SizedBox(width: 3),
                                   Flexible(
                                     child: Text(
-                                      ubicacion.isNotEmpty
-                                          // La bandera del país al lado de
-                                          // la ciudad: "Córdoba" sola no
-                                          // distingue Argentina de España, y
-                                          // una ciudad mal geocodificada se
-                                          // notaba solo por una distancia
-                                          // rara. Vacía si el animal no
-                                          // tiene país guardado (dato
-                                          // legado), y ahí se ve igual que
-                                          // antes.
-                                          ? '$ubicacion${bandera.isEmpty ? '' : ' $bandera'}'
-                                          : distancia,
+                                      ubicacion,
                                       overflow: TextOverflow.ellipsis,
                                       maxLines: 1,
                                       style: const TextStyle(
@@ -1464,6 +1387,26 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                                       ),
                                     ),
                                   ),
+                                  if (bandera.isNotEmpty)
+                                    const SizedBox(width: 3),
+                                  // La bandera del país al lado de la
+                                  // ciudad: "Córdoba" sola no distingue
+                                  // Argentina de España, y una ciudad mal
+                                  // geocodificada se notaba solo por una
+                                  // distancia rara. Separada del texto de
+                                  // la ciudad a propósito, en vez de
+                                  // concatenada en el mismo Text — así el
+                                  // "..." de una ciudad larga ("San
+                                  // Cristóbal de las Casas") recorta SOLO
+                                  // el nombre, sin comerse la bandera con
+                                  // él. Hallazgo real de Eliza: "San
+                                  // Cristóbal de ..." sin ninguna bandera
+                                  // visible.
+                                  if (bandera.isNotEmpty)
+                                    Text(
+                                      bandera,
+                                      style: const TextStyle(fontSize: 11),
+                                    ),
                                 ],
                               ),
                             ),
@@ -1589,10 +1532,21 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                   Positioned(
                     bottom: 14,
                     left: 16,
+                    // `right` es lo que faltaba: sin él, este Positioned no
+                    // tiene ningún ancho acotado (el Column mide lo que su
+                    // contenido pida, sin límite), así que un nombre largo
+                    // desbordaba derecho hacia afuera de la foto en vez de
+                    // achicarse o cortarse — ni maxLines ni overflow hacen
+                    // nada sin un ancho contra el cual medirse. Hallazgo
+                    // real de Eliza: "Luna Maria blablablabla, Senior" se
+                    // salía de la tarjeta, tapado por el borde de la foto.
+                    right: 16,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         RichText(
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
                           text: TextSpan(
                             style: const TextStyle(
                               fontSize: 26,
@@ -1613,6 +1567,8 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                         ),
                         Text(
                           '$raza · $tamano',
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
                           style: const TextStyle(
                             fontSize: 13,
                             color: Colors.white70,
@@ -1710,7 +1666,8 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                     Expanded(
                       child: GestureDetector(
                         onTap:
-                            (creadoPor == 'albergue' && rescatistaId.isNotEmpty)
+                            (esCreadoPorAlbergue(creadoPor) &&
+                                rescatistaId.isNotEmpty)
                             ? () {
                                 FirebaseAnalytics.instance
                                     .logEvent(
@@ -1742,7 +1699,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    creadoPor == 'albergue'
+                                    esCreadoPorAlbergue(creadoPor)
                                         ? 'Albergue'
                                         : 'Rescatista',
                                     style: const TextStyle(
@@ -1764,7 +1721,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                                           ),
                                         ),
                                       ),
-                                      if (creadoPor == 'albergue') ...[
+                                      if (esCreadoPorAlbergue(creadoPor)) ...[
                                         const SizedBox(width: 4),
                                         const Icon(
                                           Icons.chevron_right,
@@ -1797,6 +1754,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                           ubicacion: ubicacion,
                           tags: tags,
                           fotoUrl: fotoUrl,
+                          paisCodigo: a['paisCodigo'] as String?,
                         ),
                         child: Container(
                           padding: const EdgeInsets.all(8),

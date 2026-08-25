@@ -78,8 +78,20 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
               ),
               SettingsSwitchTile(
                 icon: Icons.assignment_outlined,
-                label: 'Actualizaciones de solicitudes',
-                subtitle: 'Estado de tus solicitudes de adopción',
+                label: 'Solicitudes de adopción',
+                // El texto anterior ("Estado de tus solicitudes de
+                // adopción") describía solo la mitad de lo que este
+                // interruptor gobierna: la MISMA preferencia
+                // ('notif_solicitudes') gatea los dos lados — el aviso al
+                // adoptante de que su solicitud se aprobó o rechazó, Y el
+                // aviso al rescatista/albergue de que alguien pidió uno de
+                // sus animales (ver `notificar` en functions/index.js).
+                // Un albergue que lo apagaba entendiendo "el estado de MIS
+                // solicitudes" dejaba de enterarse de que le pedían un
+                // animal, sin ninguna forma de saber por qué.
+                subtitle:
+                    'Cuando alguien pide uno de tus animales, y cuando '
+                    'responden a tus solicitudes',
                 value: _solicitudes,
                 last: true,
                 onChanged: (v) {

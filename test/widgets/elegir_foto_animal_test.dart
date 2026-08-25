@@ -9,8 +9,9 @@ import 'package:salva_patitas/widgets/elegir_foto_animal.dart';
 // simular las 3 respuestas reales: la persona eligió una foto, canceló,
 // o la cámara falló.
 class _FakeImagePicker extends ImagePickerPlatform {
-  _FakeImagePicker({this.devuelve, this.lanza});
-
+  // Sin parámetros en el constructor: los tests setean `devuelve`/`lanza`
+  // directamente sobre la instancia (ver los grupos de abajo), así que
+  // pedirlos acá era código muerto.
   /// Qué "archivo" devuelve cuando la elección sale bien.
   XFile? devuelve;
 

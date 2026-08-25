@@ -8,9 +8,9 @@ import '../routing/app_router.dart';
 import '../theme.dart';
 import '../domain/reglas_negocio.dart';
 import '../widgets/cambiar_estado_sheet.dart';
+import '../widgets/dialogos_eliminar_rescate.dart';
 import '../widgets/estado_error_feed.dart';
 import '../widgets/fotos.dart';
-import '../widgets/texto_sin_desborde.dart';
 import '../data/creator_role.dart';
 import '../data/rescates_repository.dart';
 import '../data/rescate_fotos_repository.dart';
@@ -61,6 +61,28 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
   // abrir la pantalla; 30 es el valor por defecto mientras carga o si
   // nunca se configuró.
   int _umbralEstancado = umbralEstancadoDefault;
+
+  // `late final`, no un `.snapshots()` armado dentro de `_listaAnimales()`
+  // (que corre en cada build) — mismo patrón, y misma causa, que el
+  // parpadeo/desactualización ya arreglado en home_screen.dart,
+  // albergue_home_screen.dart, aliado_home_screen.dart, AdoptanteChatsScreen
+  // y AliadoPublicoScreen. Acá el síntoma no era el parpadeo sino datos
+  // VIEJOS: cualquier rebuild de esta pantalla (tocar un chip de filtro,
+  // o el redibujado normal del árbol al volver de Editar) recreaba la
+  // query, y StreamBuilder se desuscribe de la anterior y se resuscribe a
+  // una NUEVA — el primer snapshot de una suscripción recién armada puede
+  // venir de la caché local antes de que llegue el fresco del servidor,
+  // así que un vistazo justo en ese instante veía la foto/nombre de antes
+  // de guardar. Con una sola suscripción viva desde que se abre la
+  // pantalla, no hay resuscripción que pueda mostrar la caché vieja.
+  // Hallazgo real de Eliza: cambió la foto y la descripción de un animal
+  // como rescatista, volvió a "Mis rescates" y seguía viendo la foto y el
+  // nombre viejos — reportado 2-3 veces antes de encontrar esta causa.
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _rescatesStream =
+      _rescatesRepo.misRescates(
+        uid: FirebaseAuth.instance.currentUser?.uid ?? '',
+        role: widget.esAlbergue ? CreatorRole.albergue : CreatorRole.rescatista,
+      );
 
   Future<void> _cargarUmbralEstancado() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -153,46 +175,12 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
     }
     if (!context.mounted) return;
     if (bloqueo != null) {
-      await showDialog<void>(
-        context: context,
-        builder: (dlgCtx) => AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: Text(bloqueo!.$1),
-          content: Text(bloqueo.$2),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dlgCtx),
-              child: const Text('Entendido'),
-            ),
-          ],
-        ),
-      );
+      await mostrarBloqueoEliminarRescate(context, bloqueo);
       return;
     }
 
-    final confirmar = await showDialog<bool>(
-      context: context,
-      builder: (dlgCtx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Eliminar publicación'),
-        content: Text(
-          '¿Seguro que quieres eliminar a $nombre? Esta acción no se puede deshacer.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dlgCtx, false),
-            child: const Text('Cancelar'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dlgCtx, true),
-            child: const Text('Eliminar', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-    if (confirmar != true || !context.mounted) return;
+    final confirmar = await confirmarEliminarRescate(context, nombre);
+    if (!confirmar || !context.mounted) return;
     // Feedback inmediato y persistente: sin señal, entre el timeout de
     // las fotos (10s) y el del documento (12s) pueden pasar ~20 segundos
     // en los que NADA en pantalla indicaba que había un borrado en curso —
@@ -419,10 +407,7 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
 
   Widget _listaAnimales(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: _rescatesRepo.misRescates(
-        uid: FirebaseAuth.instance.currentUser?.uid ?? '',
-        role: widget.esAlbergue ? CreatorRole.albergue : CreatorRole.rescatista,
-      ),
+      stream: _rescatesStream,
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator(color: appTeal));
@@ -508,11 +493,17 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
     final estado = d['estado'] ?? '';
     final urgencia = d['urgencia'] ?? '';
     final ubicacion = d['ubicacion'] ?? '';
+    // Todos los animales de un mismo albergue comparten la ubicación del
+    // perfil del albergue (ver creator_role.dart:esRescateDeAlbergue) — el
+    // albergue ya sabe dónde queda su propio refugio, mostrarla repetida en
+    // cada tarjeta de "Mis animales" no aporta nada. Pedido real de Eliza.
+    final esDeAlbergue = esRescateDeAlbergue(d);
     final fotoUrl = d['fotoUrl'] as String?;
     final fotoUrl2 = d['fotoUrl2'] as String?;
     final estadoAdopcion = d['estadoAdopcion'] as String? ?? 'Rescatado';
     final motivoRegreso = d['motivoRegreso'] as String?;
     final diasEsperando = _diasEsperando(d['creadoEn'] as Timestamp?);
+    final creadoEnFecha = (d['creadoEn'] as Timestamp?)?.toDate();
     // esEstancado/esEstancadoGrave (domain/reglas_negocio.dart) — mismo criterio que el
     // filtro "Estancados" de arriba, única fuente para las dos.
     final estancado = esEstancado(
@@ -548,6 +539,7 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
         : appTeal;
 
     return Container(
+      key: ValueKey(docId),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -597,6 +589,8 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                           url: fotoUrl,
                           width: 64,
                           height: 64,
+                          // Miniatura de lista: sin fondo borroso, ver FotoAnimal.
+                          fondoBorroso: false,
                           fallback: Container(
                             width: 64,
                             height: 64,
@@ -642,23 +636,44 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                         color: Colors.grey.shade700,
                       ),
                     ),
-                    // El pin solo se muestra si hay ubicación que
-                    // mostrar — mismo criterio que el panel del
-                    // rescatista en home_screen.dart.
-                    if ((ubicacion as String).isNotEmpty) ...[
+                    // Ciudad reemplazada por la fecha acá — la ciudad ya no
+                    // se mostraba para albergue (siempre la misma, heredada
+                    // del perfil, ver el comentario de `esDeAlbergue` más
+                    // arriba) y para un rescatista individual pasa casi lo
+                    // mismo en la práctica: la ubicación que se guarda al
+                    // publicar es "CIUDAD" (nivel ciudad, no una dirección
+                    // puntual del rescate), y quien la escribe casi siempre
+                    // pone la suya propia — se repite tarjeta tras tarjeta
+                    // sin sumar nada nuevo. La fecha, en cambio, es distinta
+                    // en cada animal y sí ayuda de un vistazo (¿hace cuánto
+                    // que espera?). Pedido real de Eliza.
+                    if (creadoEnFecha != null) ...[
                       const SizedBox(height: 4),
-                      TextoSinDesborde(
-                        texto: ubicacion,
-                        separacion: 2,
-                        antes: const Icon(
-                          Icons.location_on,
-                          size: 13,
-                          color: appTeal,
-                        ),
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade700,
-                        ),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.calendar_today,
+                            size: 12,
+                            color: appTeal,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${esDeAlbergue ? 'Ingresó' : 'Rescatado'} el '
+                            // Sin esto, un animal rescatado el año pasado se
+                            // vería "18 ago" en pleno 2027 — indistinguible
+                            // de uno rescatado ayer. Mismo criterio que
+                            // chat_screen.dart: el año solo se agrega cuando
+                            // DIFIERE del actual. Hallazgo real de Eliza.
+                            '${formatearFecha(
+                              creadoEnFecha,
+                              conAnio: creadoEnFecha.year != DateTime.now().year,
+                            )}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade700,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ],
@@ -738,6 +753,7 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                           d['energia'] as String,
                       ],
                       fotoUrl: fotoUrl,
+                      paisCodigo: d['paisCodigo'] as String?,
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -1029,6 +1045,7 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                           d['energia'] as String,
                       ],
                       fotoUrl: fotoUrl,
+                      paisCodigo: d['paisCodigo'] as String?,
                     ),
                     child: Container(
                       padding: const EdgeInsets.all(8),

@@ -5,15 +5,17 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme.dart';
 import '../domain/reglas_negocio.dart';
+import '../widgets/avatares.dart';
 import '../widgets/cambiar_estado_sheet.dart';
 import '../widgets/cambiar_rol_debug.dart';
+import '../widgets/dialogo_cerrar_sesion.dart';
 import '../widgets/elegir_foto_perfil.dart';
 import '../widgets/estado_error_feed.dart';
 import '../widgets/fondo_decorativo.dart';
 import '../widgets/fotos.dart';
+import '../widgets/resultado_guardado_snackbar.dart';
 import '../widgets/umbral_estancado_sheet.dart';
 import '../services/notificaciones_service.dart';
-import '../data/auth_helper.dart';
 import '../data/chats_repository.dart';
 import '../data/creator_role.dart';
 import '../data/firestore_resiliencia.dart';
@@ -141,33 +143,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
       }),
     );
     if (!context.mounted) return;
-    switch (resultado) {
-      case ResultadoGuardado.confirmado:
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Umbral actualizado'),
-            backgroundColor: msgExito,
-          ),
-        );
-      case ResultadoGuardado.siguePendiente:
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Esto está tardando. Se va a guardar solo apenas vuelva la señal.',
-            ),
-            backgroundColor: msgAdvertencia,
-          ),
-        );
-      case ResultadoGuardado.fallo:
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'No se pudo guardar. Revisá tu conexión e intentá de nuevo.',
-            ),
-            backgroundColor: msgError,
-          ),
-        );
-    }
+    mostrarResultadoGuardado(context, resultado, exito: 'Umbral actualizado');
   }
 
   Future<void> _uploadFotoPerfil() async {
@@ -408,37 +384,21 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                           width: 2.5,
                         ),
                       ),
-                      child: Builder(
-                        builder: (_) {
-                          final fotoBytes = bytesFotoSegura(fotoBase64);
-                          final photoUrl =
-                              FirebaseAuth.instance.currentUser?.photoURL;
-                          final ImageProvider? avatarImg = fotoBytes != null
-                              ? MemoryImage(fotoBytes)
-                              : photoUrl != null
-                              ? NetworkImage(photoUrl)
-                              : null;
-                          return CircleAvatar(
-                            radius: 28,
-                            backgroundColor: Colors.white.withValues(
-                              alpha: 0.2,
-                            ),
-                            backgroundImage: avatarImg,
-                            onBackgroundImageError: avatarImg != null
-                                ? (_, __) {}
-                                : null,
-                            child: avatarImg == null
-                                ? Text(
-                                    iniciales,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 18,
-                                    ),
-                                  )
-                                : null,
-                          );
-                        },
+                      // AvatarPersona (widgets/avatares.dart), no un
+                      // CircleAvatar armado a mano: con
+                      // onBackgroundImageError vacío, si la foto fallaba al
+                      // cargar quedaba un círculo vacío en vez de caer a
+                      // las iniciales. AvatarPersona ya resuelve el mismo
+                      // orden de prioridad (logo propio → foto de Google →
+                      // iniciales) que antes se armaba acá a mano. Hallazgo
+                      // de auditoría de código.
+                      child: AvatarPersona(
+                        fotoBase64: fotoBase64,
+                        fotoUrl: FirebaseAuth.instance.currentUser?.photoURL,
+                        inicial: iniciales,
+                        radius: 28,
+                        backgroundColor: Colors.white.withValues(alpha: 0.2),
+                        textColor: Colors.white,
                       ),
                     ),
                     const SizedBox(width: 14),
@@ -765,11 +725,23 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
           Padding(
             padding: const EdgeInsets.only(left: 16),
             child: _jauriaCarousel(
+              // Solo se excluye 'Adoptado' acá — esos animales viven en su
+              // propia sección de abajo ("Encontraron hogar"). Antes
+              // 'Fallecido' se excluía igual que 'Adoptado', así que un
+              // animal fallecido desaparecía de la pantalla principal del
+              // albergue por completo: no en Jauría (filtrado acá) y no en
+              // "Encontraron hogar" (esa sección solo mira 'Adoptado').
+              // El lado rescatista (home_screen.dart:_misRescatesCarousel)
+              // no filtra NADA — un animal fallecido sigue en su único
+              // carrusel, solo que al final (prioridadEstado lo manda ahí).
+              // Acá se iguala ese comportamiento: Jauría ahora SÍ muestra
+              // los fallecidos, ordenados al final por la misma prioridad.
+              // Hallazgo real de Eliza.
               rescates.where((d) {
                   final e =
                       (d.data() as Map)['estadoAdopcion'] as String? ??
                       'Rescatado';
-                  return e != 'Adoptado' && e != 'Fallecido';
+                  return e != 'Adoptado';
                 }).toList()
                 // En proceso de adopción y hogar de paso primero (necesitan
                 // atención activa) — ver prioridadEstado() en domain/reglas_negocio.dart.
@@ -913,35 +885,13 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                             ),
                           ],
                         ),
-                        child: Builder(
-                          builder: (_) {
-                            final fotoBytes = bytesFotoSegura(fotoBase64);
-                            final ImageProvider? avatarImg = fotoBytes != null
-                                ? MemoryImage(fotoBytes)
-                                : user?.photoURL != null
-                                ? NetworkImage(user!.photoURL!)
-                                : null;
-                            return CircleAvatar(
-                              radius: 52,
-                              backgroundColor: Colors.white.withValues(
-                                alpha: 0.2,
-                              ),
-                              backgroundImage: avatarImg,
-                              onBackgroundImageError: avatarImg != null
-                                  ? (_, __) {}
-                                  : null,
-                              child: avatarImg == null
-                                  ? Text(
-                                      iniciales,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 32,
-                                      ),
-                                    )
-                                  : null,
-                            );
-                          },
+                        child: AvatarPersona(
+                          fotoBase64: fotoBase64,
+                          fotoUrl: user?.photoURL,
+                          inicial: iniciales,
+                          radius: 52,
+                          backgroundColor: Colors.white.withValues(alpha: 0.2),
+                          textColor: Colors.white,
                         ),
                       ),
                       Positioned(
@@ -1049,52 +999,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
-                    onPressed: () async {
-                      final confirmar = await showDialog<bool>(
-                        context: ctx,
-                        builder: (_) => AlertDialog(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          title: const Text('Cerrar sesión'),
-                          content: const Text(
-                            '¿Seguro que quieres cerrar sesión?',
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(ctx, false),
-                              child: const Text(
-                                'Cancelar',
-                                style: TextStyle(color: Colors.grey),
-                              ),
-                            ),
-                            TextButton(
-                              onPressed: () => Navigator.pop(ctx, true),
-                              child: const Text(
-                                'Cerrar sesión',
-                                style: TextStyle(
-                                  color: Colors.red,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                      if (confirmar == true) {
-                        final ok = await cerrarSesion();
-                        if (!ok && ctx.mounted) {
-                          ScaffoldMessenger.of(ctx).showSnackBar(
-                            const SnackBar(
-                              backgroundColor: msgError,
-                              content: Text(
-                                'Esperá unos segundos e intentá de nuevo.',
-                              ),
-                            ),
-                          );
-                        }
-                      }
-                    },
+                    onPressed: () => mostrarDialogoCerrarSesion(ctx),
                     icon: const Icon(Icons.logout, size: 18),
                     label: const Text('Cerrar sesión'),
                     style: OutlinedButton.styleFrom(
@@ -1574,13 +1479,16 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
         ),
       );
     }
-    final sorted = [...rescates]
-      ..sort((a, b) {
-        final ta = ((a.data() as Map)['creadoEn'] as Timestamp?);
-        final tb = ((b.data() as Map)['creadoEn'] as Timestamp?);
-        if (ta == null || tb == null) return 0;
-        return tb.compareTo(ta);
-      });
+    // SIN re-ordenar acá: quien llama (más arriba, "── Jauría ──") ya deja
+    // `rescates` ordenado por prioridad de estado (en proceso de adopción →
+    // hogar de paso → rescatado → fallecido) con empate por fecha. Antes
+    // este widget volvía a ordenar TODO de nuevo, solo por fecha —
+    // pisando ese orden en silencio. Con pocos animales de estados
+    // distintos podía coincidir por casualidad (el más nuevo también era
+    // el de mayor prioridad, como en la captura de Eliza), pero en
+    // general el orden por prioridad nunca llegaba a verse. Hallazgo real
+    // de Eliza: "no está organizado la jauría como en el rescatista".
+    final sorted = rescates;
 
     return SizedBox(
       height: 195,
@@ -1603,12 +1511,27 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
           final emoji = especie == 'Gato' ? '🐱' : '🐶';
           final esNuevo =
               ts != null && DateTime.now().difference(ts.toDate()).inHours < 24;
+          // El año solo se agrega cuando DIFIERE del actual — mismo
+          // criterio que mis_rescates_screen.dart y chat_screen.dart. Sin
+          // esto, un animal de hace más de un año se ve indistinguible de
+          // uno de ayer. Hallazgo real de Eliza, probando ya entrado 2027.
           final fechaStr = ts != null
-              ? formatearFecha(ts.toDate(), conAnio: false)
+              ? formatearFecha(
+                  ts.toDate(),
+                  conAnio: ts.toDate().year != DateTime.now().year,
+                )
               : '';
           final estadoColor = cicloColor(estadoAdopcion);
 
           return Container(
+            // Sin esto, aprobar una solicitud (o cualquier cambio que
+            // mueva a este animal de posición dentro del orden por
+            // prioridad) hacía que Flutter reutilizara por POSICIÓN la
+            // tarjeta de otro animal para este lugar — la foto vieja se
+            // veía un instante, un parpadeo. Mismo arreglo que
+            // home_screen.dart:_misRescatesCarousel. Hallazgo real de
+            // Eliza.
+            key: ValueKey(docId),
             width: 128,
             decoration: BoxDecoration(
               color: Colors.white,
@@ -1846,6 +1769,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
           final estadoColor = cicloColor(estadoAdopcion);
 
           return Container(
+            key: ValueKey(docId),
             width: 128,
             decoration: BoxDecoration(
               color: Colors.white,

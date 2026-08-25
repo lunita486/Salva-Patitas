@@ -7,10 +7,12 @@ import 'package:image_picker/image_picker.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import '../theme.dart';
 import '../widgets/tardando_mucho_mixin.dart';
-import '../widgets/texto_sin_desborde.dart';
 import '../data/creator_role.dart';
 import '../data/rescates_repository.dart';
+import '../data/usuarios_repository.dart';
 import '../data/foto_normalizador.dart';
+import '../services/ubicacion_service.dart';
+import '../widgets/elegir_foto_animal.dart';
 
 class SubirLoteScreen extends StatefulWidget {
   const SubirLoteScreen({super.key});
@@ -37,13 +39,14 @@ class _AnimalDraft {
 
 class _SubirLoteScreenState extends State<SubirLoteScreen>
     with TardandoMuchoMixin {
-  final _picker = ImagePicker();
   int _paso = 0;
 
   String _especie = 'Perro';
   String _urgencia = 'Alta';
   String _ciudad = '';
-  bool _cargandoCiudad = true;
+  double? _latitud;
+  double? _longitud;
+  String _paisCodigo = '';
 
   final List<_AnimalDraft> _animales = [];
   bool _publicando = false;
@@ -62,24 +65,27 @@ class _SubirLoteScreenState extends State<SubirLoteScreen>
   Future<void> _cargarCiudad() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    final doc = await FirebaseFirestore.instance
-        .collection('usuarios')
-        .doc(uid)
-        .get();
-    final ciudad = (doc.data()?['ciudad'] as String?) ?? '';
-    if (mounted)
-      setState(() {
-        _ciudad = ciudad;
-        _cargandoCiudad = false;
-      });
+    // UsuariosRepository.ubicacionDeAlbergue — la MISMA función que usa el
+    // alta individual. Antes acá se leían los mismos campos a mano pero SIN
+    // la red de seguridad que repara los perfiles viejos sin coordenadas:
+    // el mismo albergue, con el mismo perfil, publicaba animales con
+    // distancia y bandera si los cargaba de a uno, y sin nada si los
+    // cargaba en lote — y como el lote no reparaba, seguía así siempre.
+    final ubi = await UsuariosRepository().ubicacionDeAlbergue(
+      uid: uid,
+      geocodificar: UbicacionService.desdeTexto,
+    );
+    if (!mounted) return;
+    setState(() {
+      _ciudad = ubi.ciudad;
+      _latitud = ubi.latitud;
+      _longitud = ubi.longitud;
+      _paisCodigo = ubi.paisCodigo;
+    });
   }
 
   Future<void> _pickFotos() async {
-    final picked = await _picker.pickMultiImage(
-      imageQuality: 80,
-      maxWidth: 1000,
-      maxHeight: 1000,
-    );
+    final picked = await elegirVariasFotosAnimal(context);
     if (picked.isEmpty) return;
     final pathsExistentes = _animales.map((a) => a.foto1.path).toSet();
     final nuevas = picked
@@ -92,12 +98,10 @@ class _SubirLoteScreenState extends State<SubirLoteScreen>
   }
 
   Future<void> _pickSegundaFoto(int index) async {
-    final img = await _picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 80,
-      maxWidth: 1000,
-      maxHeight: 1000,
-    );
+    // Antes esto era una copia a mano del picker: forzaba galería (sin
+    // ofrecer la cámara, a diferencia de publicar y editar), usaba calidad
+    // 80 en vez de 90, y no atrapaba nada. Ver elegirFotoAnimal().
+    final img = await elegirFotoAnimal(context);
     if (img != null && mounted) setState(() => _animales[index].foto2 = img);
   }
 
@@ -111,6 +115,18 @@ class _SubirLoteScreenState extends State<SubirLoteScreen>
     // animalito para el albergue — mismo tramo silencioso que el alta
     // individual (ver el comentario igual en subir_rescate_screen.dart).
     setState(() => _publicando = true);
+    // Se dispara ACÁ, antes del chequeo de duplicados (que puede esperar a
+    // que la persona decida en un diálogo) y antes de procesar fotos — es
+    // una lectura independiente de las dos cosas (el nombre/logo del
+    // albergue no depende de qué decida en el diálogo ni de las fotos), así
+    // que arranca temprano en vez de esperar su turno más abajo. Mismo
+    // motivo que el mismo arreglo en subir_rescate_screen.dart. Hallazgo
+    // real de Eliza: "guardar animalitos se estaba demorando muchísimo".
+    final uidParaPerfil = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final userDocFuture = FirebaseFirestore.instance
+        .collection('usuarios')
+        .doc(uidParaPerfil)
+        .get();
     // Aviso, no bloqueo, y ANTES de arrancar el lote (no tiene sentido
     // interrumpir a mitad de un lote que ya está publicando). Chequea dos
     // cosas: nombres que ya existen en tus animales publicados como
@@ -203,16 +219,23 @@ class _SubirLoteScreenState extends State<SubirLoteScreen>
     final fallidos = <String>[];
     var publicados = 0;
     try {
-      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      final uid = uidParaPerfil;
       var nombre =
           FirebaseAuth.instance.currentUser?.displayName ?? 'Rescatista';
-      final userDoc = await FirebaseFirestore.instance
-          .collection('usuarios')
-          .doc(uid)
-          .get();
-      final albergueNombre = userDoc.data()?['albergueNombre'] as String?;
-      if (albergueNombre != null && albergueNombre.isNotEmpty)
-        nombre = albergueNombre;
+      // userDocFuture ya viene corriendo desde el principio de _publicar()
+      // — para cuando llegamos acá (después del chequeo de duplicados, que
+      // puede haber esperado a un diálogo) este await casi nunca espera de
+      // verdad.
+      final userDoc = await userDocFuture;
+      // UsuariosRepository.nombrePropioDesde — misma regla compartida que
+      // el alta individual y los avisos automáticos. Esta pantalla solo la
+      // alcanza un albergue (se abre desde albergue_home_screen), de ahí
+      // el 'albergue' fijo.
+      nombre = UsuariosRepository.nombrePropioDesde(
+        datosUsuario: userDoc.data(),
+        creadoPor: 'albergue',
+        nombreDeLaCuenta: nombre,
+      );
       final fotoAlbergue = userDoc.data()?['fotoBase64'] as String?;
 
       // Cada animal se publica en paralelo, no uno atrás del otro — antes
@@ -256,6 +279,9 @@ class _SubirLoteScreenState extends State<SubirLoteScreen>
               'estado': 'Sano',
               'urgencia': a.urgenciaOverride ?? _urgencia,
               'ubicacion': _ciudad,
+              if (_latitud != null) 'latitud': _latitud,
+              if (_longitud != null) 'longitud': _longitud,
+              if (_paisCodigo.isNotEmpty) 'paisCodigo': _paisCodigo,
               'descripcion': a.descCtl.text.trim(),
               'estadoAdopcion': 'Rescatado',
               'rescatistaNombre': nombre,
@@ -767,37 +793,6 @@ class _SubirLoteScreenState extends State<SubirLoteScreen>
               ? const Color(0xFFE65100)
               : appTeal,
         ),
-        const SizedBox(height: 24),
-        _label('CIUDAD'),
-        const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey.shade200),
-          ),
-          // TextoSinDesborde (widgets/texto_sin_desborde.dart): una ciudad larga empujaba el
-          // candado fuera de la tarjeta. El Spacer va DENTRO del `despues`
-          // para que el candado siga pegado a la derecha.
-          child: TextoSinDesborde(
-            texto: _cargandoCiudad
-                ? 'Cargando...'
-                : (_ciudad.isNotEmpty ? _ciudad : 'Sin ciudad'),
-            antes: const Icon(Icons.location_on, size: 16, color: appTeal),
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-            despues: Icon(
-              Icons.lock_outline,
-              size: 14,
-              color: Colors.grey.shade400,
-            ),
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'Tomada del perfil del albergue',
-          style: TextStyle(fontSize: 11, color: Colors.grey.shade400),
-        ),
       ],
     ),
   );
@@ -811,6 +806,7 @@ class _SubirLoteScreenState extends State<SubirLoteScreen>
     itemBuilder: (_, i) {
       final a = _animales[i];
       return Container(
+        key: ObjectKey(a),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: Colors.white,
@@ -1001,8 +997,6 @@ class _SubirLoteScreenState extends State<SubirLoteScreen>
                             onChanged: (v) =>
                                 setState(() => a.urgenciaOverride = v),
                           ),
-                          if (_ciudad.isNotEmpty)
-                            _miniChip(_ciudad, Colors.grey.shade700),
                         ],
                       ),
                     ],
@@ -1024,11 +1018,13 @@ class _SubirLoteScreenState extends State<SubirLoteScreen>
                 ),
                 GestureDetector(
                   onTap: () {
-                    final nombre = a.nombreCtl.text.trim().isNotEmpty
-                        ? a.nombreCtl.text.trim()
-                        : 'Animal ${i + 1}';
-                    final plantilla =
-                        '$nombre fue encontrado/a [contá cómo o dónde lo/la encontraste]. '
+                    // Sin el nombre acá adentro — mismo motivo que
+                    // subir_rescate_screen.dart: ya se muestra arriba en su
+                    // propio campo, y repetirlo como texto plano es lo que
+                    // dejaba el nombre viejo pegado en la descripción para
+                    // siempre después de renombrar. Pedido real de Eliza.
+                    const plantilla =
+                        'Fue encontrado/a [contá cómo o dónde lo/la encontraste]. '
                         'Lo/la que lo/la hace único/a es [una costumbre, gesto o anécdota que lo/la describa]. '
                         'Ya pasó por mucho. Ahora solo le falta alguien que decida quedarse. '
                         '¿Serás vos?';
@@ -1241,19 +1237,6 @@ class _SubirLoteScreenState extends State<SubirLoteScreen>
         ),
       );
     }).toList(),
-  );
-
-  Widget _miniChip(String label, Color color) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-    decoration: BoxDecoration(
-      color: color.withValues(alpha: 0.1),
-      borderRadius: BorderRadius.circular(20),
-      border: Border.all(color: color.withValues(alpha: 0.3)),
-    ),
-    child: Text(
-      label,
-      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: color),
-    ),
   );
 
   Widget _selectableMiniChip({

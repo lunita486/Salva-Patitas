@@ -39,6 +39,17 @@ Future<String?> pedirMotivo(
   // pantalla conserve el aspecto que ya tenía.
   bool confirmarRelleno = false,
   int maxLines = 3,
+  // 500: bastante para una explicación real (motivo de rechazo, nota de
+  // regresado/fallecido) sin llegar al tope técnico del mensaje de chat
+  // (2000, ver ChatsRepository.registrarMensaje) donde termina viajando
+  // este texto — ese es el límite del SERVIDOR, no el que tiene sentido
+  // pedirle a la persona que llene acá. Antes este diálogo no tenía NINGÚN
+  // tope ni contador, a diferencia de cualquier otro campo de texto libre
+  // de la app. Hallazgo real de Eliza. `maxLength` sin overridear
+  // `counterText` a propósito: acá SÍ conviene que se vea el contador (es
+  // un diálogo dedicado a escribir una explicación, no la barra chica de
+  // chat_screen.dart, que lo oculta por espacio).
+  int maxLength = 500,
   bool autofocus = false,
   double radioDialogo = 0,
   double radioCampo = 0,
@@ -52,6 +63,7 @@ Future<String?> pedirMotivo(
     colorConfirmar: colorConfirmar,
     confirmarRelleno: confirmarRelleno,
     maxLines: maxLines,
+    maxLength: maxLength,
     autofocus: autofocus,
     radioDialogo: radioDialogo,
     radioCampo: radioCampo,
@@ -66,6 +78,7 @@ class _MotivoDialog extends StatefulWidget {
   final Color colorConfirmar;
   final bool confirmarRelleno;
   final int maxLines;
+  final int maxLength;
   final bool autofocus;
   final double radioDialogo;
   final double radioCampo;
@@ -77,6 +90,7 @@ class _MotivoDialog extends StatefulWidget {
     required this.colorConfirmar,
     required this.confirmarRelleno,
     required this.maxLines,
+    required this.maxLength,
     required this.autofocus,
     required this.radioDialogo,
     required this.radioCampo,
@@ -116,6 +130,7 @@ class _MotivoDialogState extends State<_MotivoDialog> {
       content: TextField(
         controller: _ctrl,
         maxLines: widget.maxLines,
+        maxLength: widget.maxLength,
         autofocus: widget.autofocus,
         decoration: InputDecoration(
           hintText: widget.hint,

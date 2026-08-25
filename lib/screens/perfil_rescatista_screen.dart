@@ -1,80 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme.dart';
 import '../domain/reglas_negocio.dart';
+import '../widgets/dialogo_cerrar_sesion.dart';
 import '../widgets/fondo_decorativo.dart';
+import '../widgets/resultado_guardado_snackbar.dart';
+import '../widgets/roles_sheet.dart';
 import '../widgets/umbral_estancado_sheet.dart';
-import '../data/auth_helper.dart';
 import '../data/creator_role.dart';
 import '../data/firestore_resiliencia.dart';
 import '../data/rescates_repository.dart';
-import '../data/usuarios_repository.dart';
 import 'eliminar_cuenta_dialog.dart';
 
 class PerfilRescatistaScreen extends StatelessWidget {
   const PerfilRescatistaScreen({super.key});
-
-  Future<void> _gestionarRoles(BuildContext context) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    final doc = await FirebaseFirestore.instance
-        .collection('usuarios')
-        .doc(uid)
-        .get();
-    final roles = List<String>.from(
-      (doc.data()?['roles'] as List?) ?? ['rescatista'],
-    );
-    if (!context.mounted) return;
-    final seleccion = await showModalBottomSheet<List<String>>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => _RolesSheet(rolesActuales: roles),
-    );
-    if (seleccion == null || seleccion.isEmpty) return;
-    // guardarConAviso, no un await directo suelto (lo que había acá antes):
-    // la hoja ya se cerró para cuando esto corre, así que sin esto, si la
-    // escritura fallaba de verdad, la persona quedaba creyendo que cambió
-    // de rol sin que nada se hubiera guardado — sin ningún aviso, ni de
-    // éxito ni de error. Mismo arreglo que ya tiene _configurarUmbralEstancado
-    // acá abajo, que antes nunca se replicó acá (hallazgo de auditoría de
-    // código).
-    final resultado = await guardarConAviso(
-      () => UsuariosRepository().actualizarRoles(uid, seleccion),
-    );
-    if (!context.mounted) return;
-    switch (resultado) {
-      case ResultadoGuardado.confirmado:
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Roles actualizados'),
-            backgroundColor: msgExito,
-          ),
-        );
-      case ResultadoGuardado.siguePendiente:
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Esto está tardando. Se va a guardar solo apenas vuelva la señal.',
-            ),
-            backgroundColor: msgAdvertencia,
-          ),
-        );
-      case ResultadoGuardado.fallo:
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'No se pudo guardar. Revisá tu conexión e intentá de nuevo.',
-            ),
-            backgroundColor: msgError,
-          ),
-        );
-    }
-  }
 
   Future<void> _configurarUmbralEstancado(BuildContext context) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -106,33 +48,7 @@ class PerfilRescatistaScreen extends StatelessWidget {
       }),
     );
     if (!context.mounted) return;
-    switch (resultado) {
-      case ResultadoGuardado.confirmado:
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Umbral actualizado'),
-            backgroundColor: msgExito,
-          ),
-        );
-      case ResultadoGuardado.siguePendiente:
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Esto está tardando. Se va a guardar solo apenas vuelva la señal.',
-            ),
-            backgroundColor: msgAdvertencia,
-          ),
-        );
-      case ResultadoGuardado.fallo:
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'No se pudo guardar. Revisá tu conexión e intentá de nuevo.',
-            ),
-            backgroundColor: msgError,
-          ),
-        );
-    }
+    mostrarResultadoGuardado(context, resultado, exito: 'Umbral actualizado');
   }
 
   @override
@@ -166,7 +82,7 @@ class PerfilRescatistaScreen extends StatelessWidget {
                   const SizedBox(height: 8),
                   foto != null
                       ? CircleAvatar(
-                          backgroundImage: NetworkImage(foto),
+                          backgroundImage: CachedNetworkImageProvider(foto),
                           radius: 44,
                         )
                       : CircleAvatar(
@@ -215,52 +131,11 @@ class PerfilRescatistaScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 32),
-                  // Stats
-                  StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                    stream: RescatesRepository().misRescates(
-                      uid: user?.uid ?? '',
-                      role: CreatorRole.rescatista,
-                    ),
-                    builder: (context, snap) {
-                      final total = snap.data?.docs.length ?? 0;
-                      return Row(
-                        children: [
-                          _statTile('$total', 'Animales\nrescatados', appTeal),
-                          const SizedBox(width: 12),
-                          // Antes contaba solicitudes con estado 'aprobada' — eso
-                          // suma tanto adopciones como hogares de paso aprobados,
-                          // y nunca resta cuando un hogar de paso termina y el
-                          // animal vuelve a estar disponible: la solicitud queda
-                          // aprobada para siempre en esa colección aunque el
-                          // animal ya no esté adoptado. El número no bajaba nunca
-                          // y no reflejaba la realidad. Hallazgo real de Eliza:
-                          // "11 aprobadas" con solo 1 animal realmente en estado
-                          // Adoptado. Ahora cuenta animales cuyo estadoAdopcion
-                          // ACTUAL es 'Adoptado' — mismo campo que ya usa el resto
-                          // de la app (mis_rescates_screen.dart, albergue_home_screen.dart)
-                          // para decidir qué animal está adoptado de verdad.
-                          StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                            stream: RescatesRepository().misRescates(
-                              uid: user?.uid ?? '',
-                              role: CreatorRole.rescatista,
-                              estadoAdopcion: 'Adoptado',
-                            ),
-                            builder: (context, snap2) {
-                              final adoptados = snap2.data?.docs.length ?? 0;
-                              return _statTile(
-                                '$adoptados',
-                                'Adopciones\naprobadas',
-                                appOrange,
-                              );
-                            },
-                          ),
-                        ],
-                      );
-                    },
-                  ),
+                  _StatsRescatista(uid: user?.uid ?? ''),
                   const SizedBox(height: 16),
                   GestureDetector(
-                    onTap: () => _gestionarRoles(context),
+                    onTap: () =>
+                        gestionarRoles(context, rolFallback: 'rescatista'),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 20,
@@ -331,50 +206,7 @@ class PerfilRescatistaScreen extends StatelessWidget {
                   const SizedBox(height: 16),
                   // Cerrar sesión
                   GestureDetector(
-                    onTap: () => showDialog(
-                      context: context,
-                      builder: (dlgCtx) => AlertDialog(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        title: const Text('Cerrar sesión'),
-                        content: const Text(
-                          '¿Seguro que quieres cerrar sesión?',
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(dlgCtx),
-                            child: const Text('Cancelar'),
-                          ),
-                          TextButton(
-                            onPressed: () async {
-                              Navigator.pop(dlgCtx);
-                              final ok = await cerrarSesion();
-                              if (context.mounted) {
-                                if (ok) {
-                                  Navigator.of(
-                                    context,
-                                  ).popUntil((route) => route.isFirst);
-                                } else {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      backgroundColor: msgError,
-                                      content: Text(
-                                        'Esperá unos segundos e intentá de nuevo.',
-                                      ),
-                                    ),
-                                  );
-                                }
-                              }
-                            },
-                            child: const Text(
-                              'Cerrar sesión',
-                              style: TextStyle(color: Colors.red),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                    onTap: () => mostrarDialogoCerrarSesion(context),
                     child: Container(
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(vertical: 14),
@@ -480,7 +312,76 @@ class PerfilRescatistaScreen extends StatelessWidget {
     );
   }
 
-  Widget _statTile(String n, String lbl, Color color) => Expanded(
+}
+
+/// Los dos contadores de la parte de arriba del perfil ("Animales
+/// rescatados" / "Adopciones aprobadas"). Separado de PerfilRescatistaScreen
+/// (StatelessWidget) para poder guardar las dos consultas como `late final`
+/// — mismo patrón, y mismo motivo, que el arreglo de mis_rescates_screen.dart:
+/// armadas inline en build() (como estaban antes acá) se recrean en CADA
+/// rebuild de la pantalla, y un rebuild justo después de editar/borrar un
+/// animal podía mostrar el número viejo un instante, tomado de la caché
+/// local de la resuscripción recién armada.
+class _StatsRescatista extends StatefulWidget {
+  final String uid;
+  const _StatsRescatista({required this.uid});
+  @override
+  State<_StatsRescatista> createState() => _StatsRescatistaState();
+}
+
+class _StatsRescatistaState extends State<_StatsRescatista> {
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _totalStream =
+      RescatesRepository().misRescates(
+        uid: widget.uid,
+        role: CreatorRole.rescatista,
+      );
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _adoptadosStream =
+      RescatesRepository().misRescates(
+        uid: widget.uid,
+        role: CreatorRole.rescatista,
+        estadoAdopcion: 'Adoptado',
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: _totalStream,
+      builder: (context, snap) {
+        final total = snap.data?.docs.length ?? 0;
+        return Row(
+          children: [
+            _statTile('$total', 'Animales\nrescatados', appTeal),
+            const SizedBox(width: 12),
+            // Antes contaba solicitudes con estado 'aprobada' — eso suma
+            // tanto adopciones como hogares de paso aprobados, y nunca
+            // resta cuando un hogar de paso termina y el animal vuelve a
+            // estar disponible: la solicitud queda aprobada para siempre
+            // en esa colección aunque el animal ya no esté adoptado. El
+            // número no bajaba nunca y no reflejaba la realidad. Hallazgo
+            // real de Eliza: "11 aprobadas" con solo 1 animal realmente en
+            // estado Adoptado. Ahora cuenta animales cuyo estadoAdopcion
+            // ACTUAL es 'Adoptado' — mismo campo que ya usa el resto de la
+            // app (mis_rescates_screen.dart, albergue_home_screen.dart)
+            // para decidir qué animal está adoptado de verdad.
+            StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: _adoptadosStream,
+              builder: (context, snap2) {
+                final adoptados = snap2.data?.docs.length ?? 0;
+                return _statTile(
+                  '$adoptados',
+                  'Adopciones\naprobadas',
+                  appOrange,
+                );
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+Widget _statTile(String n, String lbl, Color color) => Expanded(
     child: Container(
       padding: const EdgeInsets.symmetric(vertical: 18),
       decoration: BoxDecoration(
@@ -514,149 +415,3 @@ class PerfilRescatistaScreen extends StatelessWidget {
       ),
     ),
   );
-}
-
-class _RolesSheet extends StatefulWidget {
-  final List<String> rolesActuales;
-  const _RolesSheet({required this.rolesActuales});
-  @override
-  State<_RolesSheet> createState() => _RolesSheetState();
-}
-
-class _RolesSheetState extends State<_RolesSheet> {
-  late List<String> _roles;
-
-  @override
-  void initState() {
-    super.initState();
-    _roles = List.from(widget.rolesActuales);
-  }
-
-  void _toggle(String rol) {
-    setState(() {
-      if (_roles.contains(rol)) {
-        if (_roles.length > 1) _roles.remove(rol);
-      } else {
-        _roles.add(rol);
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
-      // SingleChildScrollView a propósito: en horizontal hay mucha menos
-      // altura disponible y este Column (título + 2 tiles + botón) no
-      // entraba entero — sin scroll, lo que sobraba quedaba cortado en
-      // silencio (ni error ni aviso), y con eso el botón Guardar
-      // directamente no se podía tocar. Hallazgo de prueba en teléfono
-      // real, 2026-08-02: la hoja "se quedaba ahí" sin poder subir ni
-      // bajar apenas se rotaba a horizontal.
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Mis roles',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Podés tener los dos roles al mismo tiempo',
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
-            ),
-            const SizedBox(height: 20),
-            _rolTile(
-              'adoptante',
-              '🐾 Adoptante',
-              'Busco animales para adoptar',
-            ),
-            const SizedBox(height: 10),
-            _rolTile(
-              'rescatista',
-              '🦺 Rescatista',
-              'Rescato y publico animales',
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _roles.isNotEmpty
-                    ? () => Navigator.pop(context, _roles)
-                    : null,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: appTeal,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  elevation: 0,
-                ),
-                child: const Text(
-                  'Guardar',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _rolTile(String rol, String titulo, String subtitulo) {
-    final activo = _roles.contains(rol);
-    return GestureDetector(
-      onTap: () => _toggle(rol),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: activo ? appTeal.withValues(alpha: 0.08) : Colors.grey.shade50,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: activo ? appTeal : Colors.grey.shade200,
-            width: activo ? 2 : 1,
-          ),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    titulo,
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: activo ? appTeal : appInk,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitulo,
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                  ),
-                ],
-              ),
-            ),
-            if (activo)
-              const Icon(Icons.check_circle, color: appTeal, size: 22),
-          ],
-        ),
-      ),
-    );
-  }
-}

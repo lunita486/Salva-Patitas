@@ -429,6 +429,7 @@ class ChatsRepository {
     required String emisor,
     required String hora,
     bool? escritoPorRescatista,
+    bool avisoDeEstado = false,
     Duration timeout = const Duration(seconds: 15),
   }) async {
     final chatRef = _db.collection('chats').doc(chatId);
@@ -442,6 +443,7 @@ class ChatsRepository {
       'creadoEn': FieldValue.serverTimestamp(),
       if (escritoPorRescatista != null)
         'escritoPorRescatista': escritoPorRescatista,
+      if (avisoDeEstado) 'avisoDeEstado': true,
     });
     await batch.commit().timeout(timeout);
   }
@@ -477,6 +479,7 @@ class ChatsRepository {
     required bool paraAdoptante,
     bool avisoParaAmbosLados = false,
     bool? escritoPorRescatista,
+    bool avisoDeEstado = false,
     Map<String, dynamic> camposChat = const {},
     String? hora,
   }) async {
@@ -498,6 +501,7 @@ class ChatsRepository {
       emisor: emisor,
       hora: h,
       escritoPorRescatista: escritoPorRescatista,
+      avisoDeEstado: avisoDeEstado,
     );
   }
 
@@ -607,6 +611,14 @@ class ChatsRepository {
     String? fotoUrl,
     String? tipoSolicitud,
     bool avisoParaAmbosLados = false,
+    /// El mensaje acompana un cambio de estado de la solicitud
+    /// (aprobada/rechazada), que YA dispara su propia notificacion push
+    /// desde onCambioEstadoSolicitud. Marcarlo asi hace que onNuevoMensaje
+    /// no mande la suya encima: eran dos push por un solo hecho, con textos
+    /// distintos - "Tu solicitud fue aprobada" y, aparte, "Mensaje sobre
+    /// Pacolin". El mensaje se escribe igual y se ve en el chat como
+    /// siempre; lo unico que se evita es el aviso repetido.
+    bool avisoDeEstado = false,
   }) async {
     try {
       final hora = horaAhora();
@@ -649,6 +661,7 @@ class ChatsRepository {
           texto: texto,
           emisor: emisor,
           hora: hora,
+          avisoDeEstado: avisoDeEstado,
           // Estos avisos los manda siempre el rescatista/albergue. En una
           // autoconsulta `emisor` vale 'adoptante' por la regla, así que
           // sin este dato el aviso se dibujaría del lado equivocado.
@@ -665,6 +678,7 @@ class ChatsRepository {
         emisor: emisor,
         paraAdoptante: true,
         avisoParaAmbosLados: avisoParaAmbosLados,
+        avisoDeEstado: avisoDeEstado,
         hora: hora,
         escritoPorRescatista: true,
         camposChat: {

@@ -92,6 +92,46 @@ void main() {
       },
     );
 
+    test(
+      'subir() dos veces al MISMO slot devuelve dos URLs DISTINTAS — Storage '
+      'sirve el archivo en el mismo path siempre (rescates/{id}/foto{slot}.jpg) '
+      'y conserva el mismo token de descarga al reemplazarlo, así que sin el '
+      'parámetro de cache-busting la URL de la foto nueva es IDÉNTICA a la de '
+      'la vieja, y el teléfono nunca vuelve a pedirla de la red. Hallazgo real '
+      'de Eliza: reemplazar una foto tocándola directamente (sin quitarla '
+      'primero) dejaba pegada la foto vieja para siempre.',
+      () async {
+        final storage = fsm.MockFirebaseStorage();
+        final repo = RescateFotosRepository(storage: storage);
+
+        final url1 = await repo.subir(
+          rescateId: 'rescate-reemplazo',
+          slot: 1,
+          bytes: Uint8List.fromList([1, 2, 3]),
+        );
+        // Delay chico a propósito: sin esto, las dos subidas del mock (sin
+        // ninguna demora real de red) pueden caer en el mismo microsegundo
+        // en una VM rápida — en la vida real, dos reemplazos de foto están
+        // separados por segundos como mínimo.
+        await Future.delayed(const Duration(milliseconds: 2));
+        final url2 = await repo.subir(
+          rescateId: 'rescate-reemplazo',
+          slot: 1,
+          bytes: Uint8List.fromList([4, 5, 6]),
+        );
+
+        expect(url1, contains('&v='));
+        expect(url2, contains('&v='));
+        expect(
+          url1,
+          isNot(equals(url2)),
+          reason:
+              'si las dos URLs son iguales, un caché de imágenes por URL '
+              '(CachedNetworkImage) nunca vuelve a bajar la foto reemplazada',
+        );
+      },
+    );
+
     test('subir() CANCELA la tarea real al vencer el timeout, no solo deja '
         'de esperarla — Future.timeout() por sí solo no frena la subida '
         'nativa: quedaba corriendo de fondo y terminaba subiendo el '

@@ -10,15 +10,46 @@ import 'package:go_router/go_router.dart';
 import '../routing/app_router.dart';
 import '../theme.dart';
 import '../widgets/chips_seleccionables.dart';
+import '../widgets/aviso_ubicacion.dart';
 import '../widgets/confirmar_ciudad_resuelta.dart';
+import '../widgets/dialogos_eliminar_rescate.dart';
 import '../widgets/elegir_foto_animal.dart';
 import '../widgets/fotos.dart';
 import '../widgets/tardando_mucho_mixin.dart';
+import '../data/creator_role.dart';
 import '../data/rescates_repository.dart';
 import '../data/rescate_fotos_repository.dart';
 import '../data/foto_normalizador.dart';
 import '../services/ubicacion_service.dart';
 import '../services/ubicacion_lifecycle.dart';
+
+/// "Usar plantilla" (ver subir_rescate_screen.dart/subir_lote_screen.dart)
+/// escribía el nombre del animal DENTRO del texto de la descripción, como
+/// "Pacolin fue encontrado/a [...]" — a partir de ahí quedaba como texto
+/// plano guardado, sin ninguna relación con el campo `nombre`. Renombrar
+/// el animal después no lo tocaba, así que la descripción se quedaba con
+/// el nombre viejo para siempre. La plantilla ya no repite el nombre
+/// (arranca directo con "Fue encontrado/a...") — el nombre ya se ve arriba
+/// en su propio campo, repetirlo ahí adentro era la única razón por la
+/// que este problema podía existir. Esto migra a ese formato nuevo los
+/// animales que se publicaron ANTES de ese cambio: si la descripción
+/// todavía tiene el nombre pegado adelante, se lo saca. No intenta
+/// reemplazar por el nombre nuevo (ya no hace falta, el nombre no vuelve a
+/// escribirse ahí) — solo migra, y solo el caso SIN ambigüedad: la
+/// descripción tiene que empezar exactamente con "{nombre} fue
+/// encontrado/a" (nadie la reescribió a mano); cualquier otra cosa se deja
+/// intacta, mejor no arriesgar un recorte equivocado en medio de una frase
+/// real. Hallazgo real de Eliza: editó "lino" (antes "Hermoso") y la
+/// descripción seguía "Hermoso fue encontrado/a...".
+String descripcionSinNombreDePlantillaVieja({
+  required String descripcion,
+  required String nombreOriginal,
+}) {
+  if (nombreOriginal.isEmpty) return descripcion;
+  final prefijoViejo = '$nombreOriginal fue encontrado/a';
+  if (!descripcion.startsWith(prefijoViejo)) return descripcion;
+  return 'Fue encontrado/a${descripcion.substring(prefijoViejo.length)}';
+}
 
 class EditarRescateScreen extends StatefulWidget {
   final String docId;
@@ -40,6 +71,16 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
   late TextEditingController _nombreCtl;
   late TextEditingController _descCtl;
   late TextEditingController _lugarCtl;
+  // El texto que estaba en el campo la última vez que quedó sincronizado
+  // con _latitud/_longitud — arranca con lo que el animal ya tenía
+  // guardado, y se actualiza cada vez que el GPS o el geocodificador
+  // dejan texto y coordenadas consistentes entre sí de nuevo. Es a donde
+  // se vuelve si la persona cancela la confirmación de una ciudad nueva
+  // (ver _guardar): revertir el texto SIN tocar lat/lng los deja
+  // consistentes entre sí, en vez de dejar el campo con un texto sin
+  // confirmar que vuelve a disparar el mismo diálogo en cada intento de
+  // guardar. Mismo patrón que _lugarSincronizado en subir_rescate_screen.dart.
+  late String _lugarOriginal;
   late String _especie;
   late String _estado;
   late String _urgencia;
@@ -95,13 +136,25 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
   static const _siNo = RescatesRepository.siNo;
   static const _saludOpts = RescatesRepository.salud;
 
+  // Un animal de albergue hereda ciudad/coordenadas del PERFIL del
+  // albergue al publicarse (subir_rescate_screen.dart:_cargarCiudadAlbergue)
+  // — por eso esa pantalla ni siquiera muestra el campo de Ubicación al
+  // publicar. Acá al editar sí se mostraba, siempre, para cualquier
+  // animal — dejaba tocar a mano un dato que en realidad vive en el
+  // perfil, animal por animal, en vez de en un solo lugar. Pedido real de
+  // Eliza: para cambiar la ciudad de los animales de un albergue, se edita
+  // el perfil del albergue, no cada animal suyo.
+  late final bool _esDeAlbergue;
+
   @override
   void initState() {
     super.initState();
     final d = widget.data;
+    _esDeAlbergue = esRescateDeAlbergue(d);
     _nombreCtl = TextEditingController(text: d['nombre'] ?? '');
     _descCtl = TextEditingController(text: d['descripcion'] ?? '');
-    _lugarCtl = TextEditingController(text: d['ubicacion'] ?? '');
+    _lugarOriginal = d['ubicacion'] ?? '';
+    _lugarCtl = TextEditingController(text: _lugarOriginal);
     _especie = d['especie'] ?? 'Perro';
     _estado = d['estado'] ?? 'Sano';
     _urgencia = d['urgencia'] ?? 'Media';
@@ -165,27 +218,6 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
   @override
   void reintentarConPermiso() => _obtenerUbicacionGPS();
 
-  /// Aviso con botón directo al ajuste que hace falta.
-  /// `marcarVolviendoDeAjustes()` (ReintentoUbicacionTrasAjustes) habilita
-  /// el reintento automático al volver.
-  void _avisarConAjustes(String mensaje, Future<bool> Function() abrirAjustes) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(mensaje),
-        backgroundColor: msgError,
-        action: SnackBarAction(
-          label: 'Abrir Ajustes',
-          textColor: Colors.white,
-          onPressed: () {
-            marcarVolviendoDeAjustes();
-            abrirAjustes();
-          },
-        ),
-        duration: const Duration(seconds: 8),
-      ),
-    );
-  }
-
   /// Toda la secuencia de servicio/permiso/GPS/geocoding vive en
   /// UbicacionService; acá queda solo la UI propia de esta pantalla.
   /// Totalmente opcional: guardar nunca depende de esto.
@@ -212,37 +244,45 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
         case FalloUbicacion.servicioApagado:
           // El GPS del sistema apagado no es lo mismo que el permiso de la
           // app: cada uno lleva a una pantalla de ajustes distinta.
-          _avisarConAjustes(
-            'Activa el GPS en tu dispositivo',
-            Geolocator.openLocationSettings,
+          avisarErrorUbicacion(
+            context,
+            mensajeGpsApagado,
+            accionAjustes: Geolocator.openLocationSettings,
+            antesDeAbrirAjustes: marcarVolviendoDeAjustes,
           );
         case FalloUbicacion.permisoBloqueado:
-          _avisarConAjustes(
-            'Permiso de ubicación bloqueado.',
-            Geolocator.openAppSettings,
+          avisarErrorUbicacion(
+            context,
+            mensajePermisoBloqueado,
+            accionAjustes: Geolocator.openAppSettings,
+            antesDeAbrirAjustes: marcarVolviendoDeAjustes,
           );
         case FalloUbicacion.permisoDenegado:
           break;
         case FalloUbicacion.sinRespuesta:
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'No se pudo detectar tu ubicación. Podés reintentar tocando de nuevo.',
-              ),
-              backgroundColor: msgError,
-            ),
+          avisarErrorUbicacion(
+            context,
+            'No se pudo detectar tu ubicación. Podés reintentar tocando de nuevo.',
           );
       }
+      return;
+    }
+
+    // El GPS anduvo pero nadie le supo poner nombre al punto. Antes de
+    // acá se guardaban igual las coordenadas nuevas conservando el texto
+    // de ciudad VIEJO: el animal quedaba diciendo "Córdoba" mientras sus
+    // coordenadas apuntaban a otro lado y el país quedaba vacío — y el
+    // tilde se veía en verde, porque solo mira que haya latitud. Ver
+    // ResultadoUbicacion.sinNombre.
+    if (resultado.sinNombre) {
+      avisarErrorUbicacion(context, avisoCiudadSinNombre);
       return;
     }
 
     setState(() {
       _latitud = resultado.posicion!.latitude;
       _longitud = resultado.posicion!.longitude;
-      // Solo se pisa el texto si el geocoding devolvió algo: a diferencia
-      // de publicar (campo vacío), acá el animal ya puede tener una
-      // ubicación escrita que no hay que borrar porque el geocoding falló.
-      if (resultado.ciudad.isNotEmpty) _lugarCtl.text = resultado.ciudad;
+      _lugarCtl.text = resultado.ciudad;
       // El listener de _lugarCtl (ver initState) prende esto apenas la
       // línea de arriba toca el texto — hay que apagarlo de nuevo ACÁ, ya
       // en el mismo tramo: el GPS acaba de dejar texto y coordenadas
@@ -250,6 +290,7 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
       // desactualizado respecto del otro.
       _ubicacionTocadaAMano = false;
       _paisCodigo = resultado.paisCodigo;
+      _lugarOriginal = _lugarCtl.text;
     });
   }
 
@@ -354,58 +395,33 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
     }
     if (!mounted) return;
     if (bloqueo != null) {
-      await showDialog<void>(
-        context: context,
-        builder: (dlgCtx) => AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: Text(bloqueo!.$1),
-          content: Text(bloqueo.$2),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dlgCtx),
-              child: const Text('Entendido'),
-            ),
-          ],
-        ),
-      );
+      await mostrarBloqueoEliminarRescate(context, bloqueo);
       return;
     }
 
-    final confirmar = await showDialog<bool>(
-      context: context,
-      builder: (dlgCtx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Eliminar publicación'),
-        content: Text(
-          '¿Seguro que quieres eliminar a $nombre? Esta acción no se puede deshacer.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dlgCtx, false),
-            child: const Text('Cancelar'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dlgCtx, true),
-            child: const Text('Eliminar', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-    if (confirmar != true || !mounted) return;
+    final confirmar = await confirmarEliminarRescate(context, nombre);
+    if (!confirmar || !mounted) return;
     setState(() => _guardando = true);
     // Mismo feedback persistente que en mis_rescates_screen.dart: sin
     // señal hay hasta ~20s de timeouts encadenados, y el spinner de
     // _guardando (pensado para el botón de guardar) no le dice a nadie
     // que hay un BORRADO en curso. Los desenlaces lo reemplazan con
     // hideCurrentSnackBar antes de mostrarse.
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Eliminando a $nombre…'),
-        duration: const Duration(seconds: 30),
-      ),
-    );
+    //
+    // hideCurrentSnackBar TAMBIÉN acá (no solo en los desenlaces): los
+    // SnackBar se ENCOLAN, no se pisan — sin esto, un aviso de error de un
+    // guardado anterior en esta misma pantalla se quedaría en la cola y
+    // este "Eliminando a…" esperaría a que termine su duración antes de
+    // mostrarse. Mismo arreglo que ya tenía mis_rescates_screen.dart,
+    // hallazgo de auditoría de código: esta copia nunca lo recibió.
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('Eliminando a $nombre…'),
+          duration: const Duration(seconds: 30),
+        ),
+      );
     try {
       // Fotos ANTES que el documento, a propósito: storage.rules verifica
       // el dueño de una foto leyendo el documento de rescates — con el doc
@@ -523,53 +539,54 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
         // ver el comentario de más arriba sobre por qué esto bloquea en
         // vez de guardar con coordenadas viejas — pero con un mensaje que
         // no confunde "no hay señal" con "eso no es una ciudad".
-        ({
-          double lat,
-          double lng,
-          String paisCodigo,
-          String ciudadResuelta,
-          String regionResuelta,
-        })?
-        resultado;
-        String? errorUbicacion;
-        try {
-          resultado = await UbicacionService.desdeTexto(_lugarCtl.text.trim());
-          if (resultado == null) {
-            errorUbicacion =
-                'No encontramos ese lugar. Revisá cómo lo escribiste.';
-          }
-        } catch (_) {
-          errorUbicacion =
-              'No pudimos verificar esa ubicación. Revisá tu conexión e intentá de nuevo.';
-        }
-        if (errorUbicacion != null) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(errorUbicacion), backgroundColor: msgError),
-          );
-          return;
-        }
-        // Un texto mal escrito puede coincidir con OTRO lugar real del
-        // mundo (no da null) — hallazgo real de Eliza escribiendo
-        // "Nedellin" y quedando guardado a 9077km de Medellín.
-        if (!mounted) return;
-        final confirmo = await confirmarCiudadResuelta(
+        // Misma función compartida que las otras 3 pantallas que piden una
+        // ciudad — ver el comentario de resolverCiudadEscrita(). Antes acá
+        // vivía una copia a mano de esta secuencia.
+        final elegida = await resolverCiudadEscrita(
           context,
-          escribiste: _lugarCtl.text.trim(),
-          resuelta: resultado!.ciudadResuelta,
-          paisCodigo: resultado.paisCodigo,
-          region: resultado.regionResuelta,
+          _lugarCtl.text.trim(),
         );
-        if (!confirmo) return;
-        _latitud = resultado.lat;
-        _longitud = resultado.lng;
+        // null = canceló ("No, corregir"), o no se pudo verificar
+        // (resolverCiudadEscrita ya explicó por qué). Ninguno de los dos
+        // debe dejar a la persona TRABADA sin forma de guardar nada — se
+        // vuelve al texto que el animal YA tenía guardado (no al que se
+        // tecleó, que quedó sin confirmar) y se corta ACÁ, sin tocar
+        // Firestore ni salir de la pantalla. Antes seguía derecho a guardar
+        // el resto de los cambios y cerraba la pantalla igual — así que
+        // tocar "No, corregir" (que suena a "dejame corregir eso") te
+        // sacaba igual a Mis rescates, sin darte la chance de reintentar
+        // la ciudad ni de revisar qué se guardó. Hallazgo real de Eliza
+        // editando un animal, escribiendo "mora": tocó "No, corregir" y la
+        // pantalla se cerró sola. Ahora, si de verdad no querés resolver la
+        // ciudad, un segundo toque de "Guardar" sin volver a tocar ese
+        // campo guarda el resto igual (el texto ya quedó revertido a uno
+        // válido) — se sigue pudiendo salir del paso sin quedar en bucle,
+        // solo que ya no de forma silenciosa en el mismo toque.
+        if (elegida == null) {
+          _lugarCtl.text = _lugarOriginal;
+          _ubicacionTocadaAMano = false;
+          cancelarTimerTardando();
+          if (mounted) setState(() => _guardando = false);
+          return;
+        } else {
+          // Los tres datos del MISMO candidato, siempre — ver el
+          // invariante en confirmar_ciudad_resuelta.dart. El nombre es el
+          // que resolvió el geocodificador, nunca el texto tecleado: si
+          // alguien escribió "Córdoba, Argentina" para desambiguar de
+          // Córdoba, España, se guarda "Córdoba" y el país sale de la
+          // bandera 🇦🇷, no repetido en el texto. paisCodigo se asigna
+          // aunque venga vacío: pertenece al lugar nuevo, y conservar el
+          // del lugar viejo sería justamente la mezcla que este
+          // invariante prohíbe.
+          _latitud = elegida.lat;
+          _longitud = elegida.lng;
+          _lugarCtl.text = elegida.ciudadResuelta;
+          _paisCodigo = elegida.paisCodigo;
+          _lugarOriginal = _lugarCtl.text;
+        }
         // Texto y coordenadas vuelven a estar sincronizados — mismo motivo
         // que el reset en _obtenerUbicacionGPS().
         _ubicacionTocadaAMano = false;
-        // El país viene en el mismo pedido (desdeTexto lo resuelve de una).
-        // Sin esto, paisCodigo quedaría apuntando al país viejo; vacío
-        // significa que no se pudo resolver, y ahí se conserva el que había.
-        if (resultado.paisCodigo.isNotEmpty) _paisCodigo = resultado.paisCodigo;
       }
       // normalizarFoto corre en su propio isolate (recorte a 1000px, JPEG
       // q80, corrige orientación) — igual que al publicar. Las dos en
@@ -614,8 +631,10 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
         await RescatesRepository()
             .actualizar(widget.docId, {
               'nombre': _nombreCtl.text.trim(),
-              'descripcion': _descCtl.text.trim(),
-              'ubicacion': _lugarCtl.text.trim(),
+              'descripcion': descripcionSinNombreDePlantillaVieja(
+                descripcion: _descCtl.text.trim(),
+                nombreOriginal: (widget.data['nombre'] as String?)?.trim() ?? '',
+              ),
               'especie': _especie,
               'estado': _estado,
               'urgencia': _urgencia,
@@ -630,9 +649,26 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
               'desparasitado': _desparasitado,
               'fotoUrl': fotoUrl ?? FieldValue.delete(),
               'fotoUrl2': fotoUrl2 ?? FieldValue.delete(),
-              if (_latitud != null) 'latitud': _latitud,
-              if (_longitud != null) 'longitud': _longitud,
-              if (_paisCodigo.isNotEmpty) 'paisCodigo': _paisCodigo,
+              // Un animal de albergue NUNCA manda estos 4 campos desde
+              // ACÁ — su ubicación es siempre la del perfil del albergue
+              // (la propaga el trigger onPerfilActualizado, ver
+              // functions/propagar_copias.js), y esta pantalla ni siquiera le muestra el campo
+              // para tocarla (_esDeAlbergue arriba). Sin este chequeo,
+              // _lugarCtl/_latitud/_longitud/_paisCodigo — cargados UNA
+              // vez al abrir la pantalla, nunca actualizados después —
+              // se reescribían en cada guardado con lo que sea que
+              // tuvieran en ese momento, pisando cualquier sincronización
+              // más reciente del perfil. Hallazgo real de Eliza: cambió
+              // la ciudad del albergue a Santiago de los Caballeros
+              // (confirmado guardado), después editó nombre/descripción
+              // de un animal de ese albergue, y el feed volvió a mostrar
+              // Montería — el guardado del animal la pisó de vuelta.
+              if (!_esDeAlbergue) ...{
+                'ubicacion': _lugarCtl.text.trim(),
+                if (_latitud != null) 'latitud': _latitud,
+                if (_longitud != null) 'longitud': _longitud,
+                if (_paisCodigo.isNotEmpty) 'paisCodigo': _paisCodigo,
+              },
             })
             .timeout(const Duration(seconds: 20));
       } on TimeoutException {
@@ -760,8 +796,10 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
                     const SizedBox(height: 20),
                     _campo('Nombre', _nombreCtl, 'ej. Luna', maxLength: 30),
                     const SizedBox(height: 16),
-                    _campoUbicacion(),
-                    const SizedBox(height: 16),
+                    if (!_esDeAlbergue) ...[
+                      _campoUbicacion(),
+                      const SizedBox(height: 16),
+                    ],
                     _campo(
                       'Descripción',
                       _descCtl,
