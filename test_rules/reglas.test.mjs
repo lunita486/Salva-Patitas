@@ -36,6 +36,7 @@ import {
   query,
   where,
   limit,
+  deleteField,
 } from 'firebase/firestore';
 
 const aca = dirname(fileURLToPath(import.meta.url));
@@ -1068,5 +1069,78 @@ describe('chats — quién puede ABRIR una conversación (y contra quién)', () 
       creadoPor: 'rescatista',
       animalNombre: 'inventado',
     }));
+  });
+});
+
+// ── usuarios: get vs list — P0-2 de la auditoría del 2026-08-25 ────────
+describe('usuarios — leer UNO sí, listar TODOS no', () => {
+  it('cualquier cuenta NO puede listar la colección entera', async () => {
+    const db = como(OTRO);
+    await assertFails(getDocs(collection(db, 'usuarios')));
+  });
+
+  // El filtro por rol solo abre la puerta para 'aliado'. Pedir la lista de
+  // adoptantes con la misma forma de consulta se rechaza igual.
+  it('tampoco listando por OTRO rol', async () => {
+    const db = como(OTRO);
+    await assertFails(getDocs(query(collection(db, 'usuarios'), where('roles', 'array-contains', 'adoptante'))));
+  });
+
+  it('ni filtrando por un campo cualquiera', async () => {
+    const db = como(OTRO);
+    await assertFails(getDocs(query(collection(db, 'usuarios'), where('ciudad', '==', 'Santiago'))));
+  });
+
+  // Lo que SÍ tiene que seguir andando: el directorio de negocios.
+  it('el directorio de aliados (UsuariosRepository.aliados) sigue funcionando', async () => {
+    await sembrar(async (db) => {
+      await setDoc(doc(db, 'usuarios', ALIADO), {
+        roles: ['aliado'], aliadoNombre: 'Veterinaria 30', aliadoTipo: 'veterinaria',
+      });
+    });
+    const db = como(ADOPTANTE);
+    const snap = await assertSucceeds(
+      getDocs(query(collection(db, 'usuarios'), where('roles', 'array-contains', 'aliado'))),
+    );
+    if (snap.size !== 1) throw new Error(`esperaba 1 aliado, vinieron ${snap.size}`);
+  });
+
+  // Y leer el perfil de UNA contraparte, que es lo que necesitan el chat y
+  // las pantallas públicas de albergue y aliado.
+  it('leer el perfil puntual de otra persona sigue permitido', async () => {
+    const db = como(ADOPTANTE);
+    await assertSucceeds(getDoc(doc(db, 'usuarios', ALBERGUE)));
+  });
+
+  // P1: cerrarSesion() borra el token antes del signOut. Si la regla no lo
+  // permitiera, ese borrado fallaria en silencio (es best-effort) y el
+  // token quedaria pegado al perfil igual que antes.
+  it('cada quien puede borrar su propio fcmToken', async () => {
+    await sembrar(async (db) => {
+      await setDoc(doc(db, 'usuarios', ADOPTANTE), {
+        roles: ['adoptante'], nombre: 'Ana', fcmToken: 'token-telefono',
+      });
+    });
+    const db = como(ADOPTANTE);
+    await assertSucceeds(updateDoc(doc(db, 'usuarios', ADOPTANTE), {
+      fcmToken: deleteField(),
+    }));
+  });
+
+  it('pero no el de otra persona', async () => {
+    await sembrar(async (db) => {
+      await setDoc(doc(db, 'usuarios', ALBERGUE), {
+        roles: ['albergue'], fcmToken: 'token-de-eliza',
+      });
+    });
+    const db = como(OTRO);
+    await assertFails(updateDoc(doc(db, 'usuarios', ALBERGUE), {
+      fcmToken: deleteField(),
+    }));
+  });
+
+  it('sin sesión no se lee nada', async () => {
+    const db = sinSesion();
+    await assertFails(getDoc(doc(db, 'usuarios', ALBERGUE)));
   });
 });

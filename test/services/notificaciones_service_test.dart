@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
@@ -121,6 +122,48 @@ void main() {
       ).thenThrow(Exception('SERVICE_NOT_AVAILABLE'));
 
       await expectLater(NotificacionesService.guardarToken(), completes);
+    });
+  });
+
+  // ── P1 de la auditoría del 2026-08-25 ────────────────────────────────
+  //
+  // El token de este teléfono se escribía en usuarios/{uid} en cada
+  // arranque y NADA lo borraba nunca. En un teléfono prestado o vendido,
+  // la cuenta A cerraba sesión, entraba B, y las notificaciones de A
+  // seguían llegando a ese aparato — con el texto del mensaje privado
+  // visible en la pantalla de bloqueo.
+  group('olvidarToken()', () {
+    test('saca el token del perfil de quien cierra sesión', () async {
+      final db = FakeFirebaseFirestore();
+      await db.collection('usuarios').doc('ana').set({
+        'nombre': 'Ana',
+        'fcmToken': 'token-de-este-telefono',
+      });
+      NotificacionesService.debugFirestoreParaTests = db;
+
+      await NotificacionesService.olvidarToken(uid: 'ana');
+
+      final d = (await db.collection('usuarios').doc('ana').get()).data()!;
+      expect(d.containsKey('fcmToken'), isFalse, reason: 'el campo se borra');
+      expect(d['nombre'], 'Ana', reason: 'y no se lleva puesto el resto');
+    });
+
+    // Lo que NO debe pasar: que un fallo acá deje a alguien atrapado dentro
+    // de la app. cerrarSesion() lo llama sin protección propia, así que si
+    // esto relanzara, el signOut nunca correría.
+    test('un perfil que no existe no lanza', () async {
+      final db = FakeFirebaseFirestore();
+      NotificacionesService.debugFirestoreParaTests = db;
+      await expectLater(
+        NotificacionesService.olvidarToken(uid: 'no_existe'),
+        completes,
+      );
+    });
+
+    test('sin uid y sin sesión, no hace nada y no lanza', () async {
+      final db = FakeFirebaseFirestore();
+      NotificacionesService.debugFirestoreParaTests = db;
+      await expectLater(NotificacionesService.olvidarToken(), completes);
     });
   });
 }

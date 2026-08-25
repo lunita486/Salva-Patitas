@@ -92,7 +92,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
   // UsuariosRepository.aliados() es la única fuente de esta consulta para
   // toda la app — se pide UNA sola vez acá (no en cada build de
   // _aliadosSection()), ver el doc del método para el porqué completo.
-  late final Future<QuerySnapshot<Map<String, dynamic>>> _aliadosFuture =
+  late final Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _aliadosFuture =
       UsuariosRepository().aliados();
 
   /// Descarga por adelantado la 2da foto (y siguientes) de la tarjeta
@@ -943,10 +943,11 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
   }
 
   Widget _aliadosSection() {
-    return FutureBuilder<QuerySnapshot>(
+    return FutureBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
       future: _aliadosFuture,
       builder: (context, snap) {
-        final aliados = snap.data?.docs ?? [];
+        // aliados() ya devuelve la lista filtrada, no un QuerySnapshot.
+        final aliados = snap.data ?? [];
         if (aliados.isEmpty) return const SizedBox.shrink();
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -978,7 +979,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                 itemCount: aliados.length,
                 separatorBuilder: (_, __) => const SizedBox(width: 12),
                 itemBuilder: (_, i) {
-                  final d = aliados[i].data() as Map<String, dynamic>;
+                  final d = aliados[i].data();
                   final nombre = d['aliadoNombre'] as String? ?? 'Aliado';
                   final tipo = d['aliadoTipo'] as String? ?? '';
                   final foto = d['aliadoFotoBase64'] as String?;

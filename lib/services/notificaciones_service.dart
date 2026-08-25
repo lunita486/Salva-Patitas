@@ -20,6 +20,13 @@ class NotificacionesService {
   static set debugMessagingParaTests(FirebaseMessaging messaging) =>
       _messaging = messaging;
 
+  static FirebaseFirestore _db = FirebaseFirestore.instance;
+
+  /// Misma costura que [debugMessagingParaTests], por el mismo motivo, para
+  /// poder probar [olvidarToken] con `fake_cloud_firestore`.
+  @visibleForTesting
+  static set debugFirestoreParaTests(FirebaseFirestore db) => _db = db;
+
   static StreamSubscription<RemoteMessage>? _foregroundSub;
 
   /// Nada acá adentro puede lanzar hacia afuera — ni un solo paso. main.dart
@@ -101,11 +108,50 @@ class NotificacionesService {
       // tras el primer login puede llegar antes de que el doc exista —
       // update() fallaría con "not-found" en ese momento, que es al
       // arrancar la app.
-      await FirebaseFirestore.instance.collection('usuarios').doc(uid).set({
+      await _db.collection('usuarios').doc(uid).set({
         'fcmToken': token,
       }, SetOptions(merge: true));
     } catch (e) {
       debugPrint('NotificacionesService: no se pudo guardar el token ($e)');
+    }
+  }
+
+  /// Saca el token de este teléfono del perfil de la cuenta que está por
+  /// cerrar sesión.
+  ///
+  /// Sin esto, el token quedaba en `usuarios/{uid}` PARA SIEMPRE: no había
+  /// ninguna ruta de código que lo borrara (`guardarToken` lo escribe en
+  /// cada arranque, y nada lo sacaba). El resultado, en un teléfono
+  /// prestado o vendido: la cuenta A cierra sesión, entra la cuenta B, y
+  /// las notificaciones de A —con el texto del mensaje privado adentro—
+  /// siguen llegando a ese teléfono y se leen en la pantalla de bloqueo.
+  /// Peor todavía, el mismo token queda escrito en los DOS perfiles, así
+  /// que las dos cuentas empujan al mismo aparato.
+  ///
+  /// Se borra el campo en vez de escribir null: `notificar()` (functions/
+  /// index.js) corta con `if (!token) return`, y un null lo satisface
+  /// igual, pero dejar el campo con basura adentro invita a que alguien lo
+  /// lea mal más adelante. Es además lo mismo que ya hace esa función
+  /// cuando FCM le dice que el token murió.
+  ///
+  /// Best-effort igual que [guardarToken]: si falla, se sigue cerrando la
+  /// sesión. Dejar a alguien atrapado adentro de la app por no poder
+  /// escribir en Firestore sería peor que el problema que esto resuelve.
+  ///
+  /// [uid] se puede pasar explícito (los tests lo necesitan, porque
+  /// `FirebaseAuth.instance` no tiene costura); en la app real se toma de
+  /// la sesión que todavía está abierta.
+  static Future<void> olvidarToken({String? uid}) async {
+    try {
+      final quien = uid ?? FirebaseAuth.instance.currentUser?.uid;
+      if (quien == null) return;
+      await _db
+          .collection('usuarios')
+          .doc(quien)
+          .update({'fcmToken': FieldValue.delete()})
+          .timeout(const Duration(seconds: 5));
+    } catch (e) {
+      debugPrint('NotificacionesService: no se pudo olvidar el token ($e)');
     }
   }
 

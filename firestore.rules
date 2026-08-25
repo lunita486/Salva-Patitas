@@ -40,7 +40,43 @@ service cloud.firestore {
     // del dueño, y si toca `roles`, se valida contra la lista permitida
     // (antes cualquier cliente podía escribir cualquier string ahí).
     match /usuarios/{userId} {
-      allow read: if signedIn();
+      // ── P0-2 (auditoría del 2026-08-25) ──────────────────────────────
+      // Esto era `allow read: if signedIn()`, y en Firestore `read` cubre
+      // `get` (leer UN documento) Y `list` (listar la colección). La regla
+      // se escribió pensando solo en el `get` — las pantallas públicas de
+      // albergue y de aliado, y el chat, necesitan leer el perfil de la
+      // contraparte. Pero con la misma condición cualquier cuenta recién
+      // registrada podía pedir la colección ENTERA y bajarse el nombre,
+      // email, foto, ciudad, coordenadas, teléfono, dirección y fcmToken
+      // de TODOS los usuarios. Verificado contra el emulador.
+      //
+      // Además de la fuga en sí, era lo que entregaba la lista de uids que
+      // el agujero de chats.create necesitaba para elegir blancos.
+      allow get: if signedIn();
+      // El único listado real de la app es el directorio de negocios
+      // aliados (UsuariosRepository.aliados()). Esta condición es la que
+      // hace que ESA consulta siga andando y que cualquier otra se
+      // rechace: Firestore acepta un `list` solo si puede DEMOSTRAR, a
+      // partir de los filtros de la consulta, que todo lo que devolvería
+      // cumple la regla.
+      //
+      // Ojo con esa palabra, "demostrar". La consulta era
+      // `where('aliadoNombre', isGreaterThan: '')` y la regla espejo
+      // (`resource.data.aliadoNombre > ''`) NO alcanza: el motor solo sabe
+      // hacer esa demostración con igualdad y con `array-contains`, no con
+      // rangos. Probado contra el emulador, las dos variantes daban
+      // permission-denied. Por eso la consulta pasó a filtrar por el ROL,
+      // que los aliados ya tienen, y el filtro por nombre quedó del lado
+      // de Dart.
+      //
+      // Residual conocido: un aliado queda listable con su documento
+      // entero, no solo con los 2 campos que la pantalla usa. No es una
+      // fuga nueva — su nombre, tipo, teléfono, dirección, email y web ya
+      // se muestran en su perfil público a cualquiera que esté logueado.
+      // Lo que sí sobra ahí es `fcmToken` y `ultimaVezActiva`. Cerrarlo
+      // del todo pide mover el directorio a una colección pública aparte
+      // con solo los campos de vitrina; queda anotado, no hecho.
+      allow list: if signedIn() && 'aliado' in resource.data.roles;
       allow write: if signedIn() && uid() == userId &&
         (!('roles' in request.resource.data) ||
           request.resource.data.roles.hasOnly(['adoptante', 'rescatista', 'albergue', 'aliado']));
@@ -282,7 +318,7 @@ service cloud.firestore {
            get(/databases/$(database)/documents/solicitudes/$(request.resource.data.solicitudId)).data.adoptanteId == request.resource.data.adoptanteId &&
            get(/databases/$(database)/documents/solicitudes/$(request.resource.data.solicitudId)).data.rescatistaId == request.resource.data.rescatistaId)
           ||
-          // (D) TRANSITORIA — se borra cuando la mayoría esté en APK91+.
+          // (D) La ÚLTIMA rama sin ancla. Sigue abierta, a sabiendas.
           //
           // El único camino de la app que llegaba acá era una fuga de dato,
           // no un caso legítimo: al abrir la ficha del animal DESDE un chat,
@@ -293,14 +329,26 @@ service cloud.firestore {
           // DUPLICADA, sin nada contra lo cual anclarla. Arreglado en
           // APK91 (chat_screen.dart, `'rescateId': rescateId`).
           //
-          // Se deja viva solo para no romperles el chat a quienes todavía
-          // tienen un APK viejo instalado. Es la última rama sin ancla que
-          // queda, y mientras exista sigue siendo posible abrirle un chat
-          // a una cuenta con rol de rescatista/albergue con un
-          // `animalNombre` inventado (que es el título de la push).
+          // Pero NO alcanza con esperar a que todos actualicen: queda un
+          // segundo camino vivo, con el APK nuevo y todo. Una solicitud
+          // vieja (anterior a que `rescateId` fuera obligatorio) hace que
+          // mis_solicitudes_screen arme el chat con rescateId '' (ver la
+          // línea `d['rescateId'] as String? ?? ''` ahí), y el adoptante
+          // cae de nuevo acá al tocar "Ir al chat".
           //
-          // Para borrarla: quitar este bloque y su test positivo
-          // "(D) el camino viejo sigue abierto...", y dejar el negativo.
+          // Mientras esta rama exista sigue siendo posible abrirle un chat
+          // a una cuenta con rol de rescatista/albergue con un
+          // `animalNombre` inventado, que es el título de la push. El
+          // alcance es mucho menor que el agujero original (antes era
+          // cualquier cuenta contra cualquier cuenta, ahora solo contra
+          // rescatistas/albergues, y es lo que un adoptante ya puede hacer
+          // legítimamente por la rama (A)) pero no es cero.
+          //
+          // Para cerrarla de verdad hay que pasarle el `solicitudId` a
+          // ChatScreen en ese camino, y entonces cae en (C) como el aviso
+          // automático. Recién ahí se puede borrar este bloque junto con
+          // su test positivo "(D) el camino viejo sigue abierto...",
+          // dejando el negativo.
           (request.resource.data.get('rescateId', '') == '' &&
            request.resource.data.get('solicitudId', '') == '' &&
            request.resource.data.get('tipoSolicitud', '') != 'consulta_aliado' &&

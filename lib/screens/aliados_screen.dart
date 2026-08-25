@@ -32,7 +32,7 @@ class _AliadosScreenState extends State<AliadosScreen> {
   // vivo, arreglada por separado la primera vez que apareció el síntoma en
   // el feed. Con un solo método, no hay una segunda copia que se pueda
   // quedar atrás.
-  late final Future<QuerySnapshot<Map<String, dynamic>>> _aliadosFuture =
+  late final Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _aliadosFuture =
       UsuariosRepository().aliados();
 
   @override
@@ -66,7 +66,7 @@ class _AliadosScreenState extends State<AliadosScreen> {
               ),
             ),
             Expanded(
-              child: FutureBuilder<QuerySnapshot>(
+              child: FutureBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
                 future: _aliadosFuture,
                 builder: (context, snap) {
                   // Sin esto, un error real del stream (sin conexión, permiso
@@ -88,7 +88,8 @@ class _AliadosScreenState extends State<AliadosScreen> {
                       child: CircularProgressIndicator(color: appTeal),
                     );
                   }
-                  final aliados = snap.data?.docs ?? [];
+                  // aliados() ya devuelve la lista filtrada, no un QuerySnapshot.
+                  final aliados = snap.data ?? [];
                   if (aliados.isEmpty) {
                     return Center(
                       child: Column(
@@ -136,7 +137,7 @@ class _AliadosScreenState extends State<AliadosScreen> {
                     ),
                     itemCount: aliados.length,
                     itemBuilder: (_, i) {
-                      final d = aliados[i].data() as Map<String, dynamic>;
+                      final d = aliados[i].data();
                       final nombre = d['aliadoNombre'] as String? ?? 'Aliado';
                       final tipo = d['aliadoTipo'] as String? ?? '';
                       final foto = d['aliadoFotoBase64'] as String?;

@@ -34,8 +34,28 @@ class UsuariosRepository {
   /// con la versión en vivo hasta que Eliza encontró el mismo síntoma ahí
   /// también. Que sea UN método achica ese riesgo a "un lugar para revisar",
   /// no "acordarse de buscar todas las copias" cada vez.
-  Future<QuerySnapshot<Map<String, dynamic>>> aliados() =>
-      _db.collection('usuarios').where('aliadoNombre', isGreaterThan: '').get();
+  ///
+  /// Filtra por ROL y no por `aliadoNombre`, aunque el nombre sea lo que de
+  /// verdad interesa. El motivo es de seguridad, no de datos: `usuarios` ya
+  /// no se puede listar entero (ver firestore.rules, P0-2), y Firestore
+  /// solo deja pasar un listado si puede DEMOSTRAR desde los filtros de la
+  /// consulta que todo lo que devolvería cumple la regla. Esa demostración
+  /// la sabe hacer con igualdad y con `array-contains`, no con rangos: la
+  /// versión anterior (`isGreaterThan: ''`) daba permission-denied contra
+  /// la regla nueva, probado en el emulador.
+  ///
+  /// Como el rol lo tiene también quien se registró de aliado pero nunca
+  /// completó el nombre de su negocio, el filtro por nombre se hace acá
+  /// abajo. Es el mismo criterio de antes, movido de lugar.
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> aliados() async {
+    final snap = await _db
+        .collection('usuarios')
+        .where('roles', arrayContains: 'aliado')
+        .get();
+    return snap.docs
+        .where((d) => (d.data()['aliadoNombre'] as String?)?.isNotEmpty == true)
+        .toList();
+  }
 
   /// Completa las coordenadas del perfil a partir de su ciudad ya guardada.
   ///

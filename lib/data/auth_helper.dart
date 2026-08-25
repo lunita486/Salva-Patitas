@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'usuarios_repository.dart';
+import '../services/notificaciones_service.dart';
 
 /// Todo el flujo de sesión de Google/Firebase vive acá — login Y logout —
 /// para que ninguna pantalla hable con GoogleSignIn directo. Historia de por
@@ -162,6 +163,14 @@ Future<bool> cerrarSesion() async {
   if (_authOcupado) return false;
   _marcarOcupado();
   var huboProblema = false;
+  // ANTES de cerrar sesión: mientras todavía hay `currentUser` y token
+  // válido para escribir en Firestore. Después del signOut ya no se puede,
+  // y el token quedaría pegado al perfil para siempre — ver olvidarToken().
+  //
+  // No suma a `huboProblema`: que no se pueda limpiar el token nunca debe
+  // frenar ni demorar el cierre de sesión (olvidarToken ya se traga sus
+  // propios errores y tiene su propio timeout de 5s).
+  await NotificacionesService.olvidarToken();
   try {
     await _asegurarGoogleSignInListo().timeout(const Duration(seconds: 10));
     await GoogleSignIn.instance.signOut().timeout(const Duration(seconds: 10));
