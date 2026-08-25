@@ -1044,11 +1044,13 @@ describe('chats — quién puede ABRIR una conversación (y contra quién)', () 
     }));
   });
 
-  // (D) es TRANSITORIA: solo para APKs viejos. Cuando se borre la rama,
-  // este test se borra y el de abajo se queda.
-  it('(D) el camino viejo sigue abierto para un APK sin actualizar', async () => {
+  // Ya no queda NINGUNA rama sin ancla. Un chat sin animal y sin solicitud
+  // se rechaza, lo cree quien lo cree: las dos escrituras (la legitima de
+  // antes y la de un ataque) eran identicas, asi que no habia forma de
+  // distinguirlas y la unica salida era cerrar la puerta.
+  it('un chat sin animal Y sin solicitud se rechaza, aunque lo cree el adoptante', async () => {
     const db = como(ADOPTANTE);
-    await assertSucceeds(setDoc(doc(db, 'chats', 'firulais_albergue'), {
+    await assertFails(setDoc(doc(db, 'chats', 'firulais_albergue'), {
       rescatistaId: ALBERGUE,
       adoptanteId: ADOPTANTE,
       rescateId: '',
@@ -1057,7 +1059,7 @@ describe('chats — quién puede ABRIR una conversación (y contra quién)', () 
     }));
   });
 
-  it('(D) pero solo lo puede crear el adoptante, nunca el otro lado', async () => {
+  it('ni con el rol auto-asignado y poniendose del lado del rescatista', async () => {
     await sembrar(async (db) => {
       await setDoc(doc(db, 'usuarios', OTRO), { roles: ['adoptante', 'rescatista'] });
     });
@@ -1068,6 +1070,22 @@ describe('chats — quién puede ABRIR una conversación (y contra quién)', () 
       rescateId: '',
       creadoPor: 'rescatista',
       animalNombre: 'inventado',
+    }));
+  });
+
+  // Y el camino real que antes caia ahi: una solicitud vieja sin rescateId,
+  // abierta desde Mis Solicitudes. Ahora viaja con su solicitudId y entra
+  // por (C).
+  it('el chat de una solicitud vieja (sin rescateId) funciona con su solicitudId', async () => {
+    await sembrarSolicitudPendiente('sol_vieja', { rescateId: '' });
+    const db = como(ADOPTANTE);
+    await assertSucceeds(setDoc(doc(db, 'chats', 'firulais_albergue'), {
+      rescatistaId: ALBERGUE,
+      adoptanteId: ADOPTANTE,
+      rescateId: '',
+      solicitudId: 'sol_vieja',
+      creadoPor: 'albergue',
+      animalNombre: 'Firulais',
     }));
   });
 });

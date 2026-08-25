@@ -650,6 +650,13 @@ class _MisSolicitudesScreenState extends State<MisSolicitudesScreen> {
                                               d['rescatistaId'] as String? ??
                                               '',
                                           'rescateId': rescateIdChat,
+                                          // El ancla para las reglas cuando
+                                          // el animal no trae rescateId
+                                          // (solicitud vieja): la solicitud
+                                          // misma prueba que estas dos
+                                          // personas tienen relación. Ver
+                                          // firestore.rules, chats.create.
+                                          'solicitudId': docs[i].id,
                                           'especie':
                                               d['especie'] as String? ??
                                               'Perro',

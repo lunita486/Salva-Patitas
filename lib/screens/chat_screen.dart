@@ -207,6 +207,15 @@ class _ChatScreenState extends State<ChatScreen> {
               .set({
                 'animalNombre': widget.animal['nombre'],
                 'rescateId': rescateId ?? '',
+                // Sin `rescateId` no hay animal contra el cual anclar este
+                // chat, así que el ancla es la solicitud. Las reglas
+                // rechazan un chat sin ninguna de las dos: era la última
+                // puerta por la que se le podía abrir conversación (y
+                // mandar una push con texto libre) a alguien con quien no
+                // hay ninguna relación. Ver firestore.rules, chats.create.
+                if ((widget.animal['solicitudId'] as String?)?.isNotEmpty ==
+                    true)
+                  'solicitudId': widget.animal['solicitudId'],
                 'creadoPor': widget.animal['creadoPor'] ?? 'rescatista',
                 'rescatista': widget.animal['rescatista'] ?? 'Rescatista',
                 'rescatistaId': widget.animal['rescatistaId'] ?? '',

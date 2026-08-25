@@ -317,44 +317,21 @@ service cloud.firestore {
           (request.resource.data.get('solicitudId', '') != '' &&
            get(/databases/$(database)/documents/solicitudes/$(request.resource.data.solicitudId)).data.adoptanteId == request.resource.data.adoptanteId &&
            get(/databases/$(database)/documents/solicitudes/$(request.resource.data.solicitudId)).data.rescatistaId == request.resource.data.rescatistaId)
-          ||
-          // (D) La ÚLTIMA rama sin ancla. Sigue abierta, a sabiendas.
+          // Antes había acá una rama (D) sin ancla: `rescateId` vacío,
+          // sin solicitud, y como único chequeo el rol del destinatario.
+          // Era la última puerta por la que se le podía abrir un chat (y
+          // por lo tanto mandarle una push con texto libre) a alguien con
+          // quien no hay ninguna relación. Se cerró pasándole el
+          // `solicitudId` a ChatScreen en el único camino de la app que
+          // llegaba ahí (mis_solicitudes_screen, una solicitud vieja sin
+          // `rescateId`), con lo que ese caso pasó a caer en (C).
           //
-          // El único camino de la app que llegaba acá era una fuga de dato,
-          // no un caso legítimo: al abrir la ficha del animal DESDE un chat,
-          // chat_screen armaba el mapa con `...d` (los campos del rescate),
-          // y `rescateId` es el NOMBRE del documento, no un campo adentro,
-          // así que se perdía. Volver al chat desde esa ficha caía al
-          // esquema viejo de id por nombre y abría una conversación
-          // DUPLICADA, sin nada contra lo cual anclarla. Arreglado en
-          // APK91 (chat_screen.dart, `'rescateId': rescateId`).
-          //
-          // Pero NO alcanza con esperar a que todos actualicen: queda un
-          // segundo camino vivo, con el APK nuevo y todo. Una solicitud
-          // vieja (anterior a que `rescateId` fuera obligatorio) hace que
-          // mis_solicitudes_screen arme el chat con rescateId '' (ver la
-          // línea `d['rescateId'] as String? ?? ''` ahí), y el adoptante
-          // cae de nuevo acá al tocar "Ir al chat".
-          //
-          // Mientras esta rama exista sigue siendo posible abrirle un chat
-          // a una cuenta con rol de rescatista/albergue con un
-          // `animalNombre` inventado, que es el título de la push. El
-          // alcance es mucho menor que el agujero original (antes era
-          // cualquier cuenta contra cualquier cuenta, ahora solo contra
-          // rescatistas/albergues, y es lo que un adoptante ya puede hacer
-          // legítimamente por la rama (A)) pero no es cero.
-          //
-          // Para cerrarla de verdad hay que pasarle el `solicitudId` a
-          // ChatScreen en ese camino, y entonces cae en (C) como el aviso
-          // automático. Recién ahí se puede borrar este bloque junto con
-          // su test positivo "(D) el camino viejo sigue abierto...",
-          // dejando el negativo.
-          (request.resource.data.get('rescateId', '') == '' &&
-           request.resource.data.get('solicitudId', '') == '' &&
-           request.resource.data.get('tipoSolicitud', '') != 'consulta_aliado' &&
-           request.resource.data.adoptanteId == uid() &&
-           request.resource.data.get('creadoPor', '') in ['rescatista', 'albergue'] &&
-           tieneRol(request.resource.data.rescatistaId, request.resource.data.creadoPor))
+          // Efecto en APKs anteriores a este cambio: si alguien abre el
+          // chat de una solicitud vieja SIN chat previo, la creación se
+          // rechaza. Con chat previo funciona igual (ChatScreen no crea
+          // nada), y actualizando la app se arregla. Es el precio de no
+          // dejar abierta una rama que no puede distinguir un caso
+          // legítimo de un ataque: las dos escrituras son idénticas.
         );
       allow update: if signedIn() &&
         request.resource.data.adoptanteId == resource.data.adoptanteId &&
