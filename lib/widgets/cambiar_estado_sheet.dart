@@ -31,6 +31,14 @@ class CambiarEstadoSheet extends StatelessWidget {
     this.esAlbergue = false,
   });
 
+  /// ¿Hay alguien CON CUENTA cuidando a este animalito?
+  ///
+  /// Se pregunta en dos lugares con polaridad opuesta —para saber a quién
+  /// avisar, y para saber si hace falta preguntar quién lo cuida— así que
+  /// tiene nombre en vez de estar escrita dos veces. Un hogar de paso
+  /// puesto a mano da `false`: esa persona existe, pero no en la app.
+  bool get _hayCuidadorConCuenta => (adoptanteIdEnProceso ?? '').isNotEmpty;
+
   /// Suma al cuidador a la red de hogares de paso del albergue.
   ///
   /// Usa `sumarAyudaManual`, que busca por nombre + email: si esa persona
@@ -114,7 +122,7 @@ class CambiarEstadoSheet extends StatelessWidget {
     // no mandarle el aviso dos veces a la misma persona si por algún motivo
     // aparece en los dos grupos.
     final porAvisar = <String, String>{}; // adoptanteId -> su nombre
-    if ((adoptanteIdEnProceso ?? '').isNotEmpty) {
+    if (_hayCuidadorConCuenta) {
       porAvisar[adoptanteIdEnProceso!] = 'Adoptante';
     }
     try {
@@ -240,8 +248,7 @@ class CambiarEstadoSheet extends StatelessWidget {
               // Si YA hay alguien con cuenta cuidándolo (vino de una
               // solicitud aprobada) no se pregunta nada: esos datos ya
               // están y volver a pedirlos los pisaría.
-              if (e.$1 == 'Hogar de paso' &&
-                  (adoptanteIdEnProceso ?? '').isEmpty) {
+              if (e.$1 == 'Hogar de paso' && !_hayCuidadorConCuenta) {
                 final datos = await pedirHogarDePaso(
                   context,
                   pedirEmail: esAlbergue,
@@ -257,11 +264,9 @@ class CambiarEstadoSheet extends StatelessWidget {
                     'hogarDePasoNombre': datos.nombre,
                     if (datos.contacto.isNotEmpty)
                       'hogarDePasoContacto': datos.contacto,
-                    // Las banderas de "ya avisé" se limpian: es un período
-                    // nuevo, y sin esto un animalito que ya tuvo un hogar
-                    // de paso vencido no volvería a avisar nunca.
-                    'avisoPrevioAvisado': FieldValue.delete(),
-                    'vencimientoAvisado': FieldValue.delete(),
+                    // Mismo par que usa el camino de aprobar una
+                    // solicitud, para que los dos no puedan divergir.
+                    ...RescatesRepository.avisosHogarDePasoDesdeCero,
                   },
                 );
                 if (ok && esAlbergue) {

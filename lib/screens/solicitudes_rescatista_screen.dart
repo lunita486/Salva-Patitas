@@ -161,7 +161,8 @@ _aprobarSolicitudImpl(String docId, Map<String, dynamic> d) async {
     if (tipoSolicitud == 'hogar_de_paso') ...{
       if (fechaInicio != null) 'fechaInicioHogar': fechaInicio,
       if (fechaFin != null) 'fechaFinHogar': fechaFin,
-      'vencimientoAvisado': false,
+      // Las DOS banderas, no solo una. Ver el doc de esta constante.
+      ...RescatesRepository.avisosHogarDePasoDesdeCero,
     },
   };
 
@@ -584,12 +585,23 @@ Future<void> verificarVencimientos(
     // animal sin nombre, así que un simple '?? valor' nunca alcanza acá.
     final nombre = RescatesRepository.nombreDe(d);
     final adoptanteId = d['adoptanteIdEnProceso'] as String?;
-    // Sin adoptanteId (dato legado/corrupto: un hogar de paso sin nadie
-    // en proceso) no hay a quién avisarle — antes esto igual llamaba a
+    // Sin adoptanteId no hay a quién avisarle POR CHAT, que es lo único
+    // que esta función sabe hacer.
+    //
+    // OJO, esto ya NO significa "dato corrupto" como decía antes: un hogar
+    // de paso puesto a mano desde el desplegable de estado es un caso
+    // legítimo y frecuente, y esa persona no tiene cuenta en la app (ver
+    // pedirHogarDePaso). Saltearlo acá es correcto —no hay chat que
+    // escribir— pero NO quiere decir que nadie se entere: de ese caso se
+    // encarga avisarVencimientosHogarDePaso en el servidor, que le manda
+    // una notificación al rescatista/albergue. Ver comoAvisar() en
+    // functions/avisos_vencimiento_logica.js.
+    //
+    // Y no se marca el flag de avisado al saltear, justamente para que el
+    // servidor pueda hacer su parte. Antes esto llamaba a
     // enviarMensajeChat('', ...), que arma un chat "fantasma" sin dueño
-    // real y, si esa escritura llega a tener éxito, marcaba el flag de
-    // avisado como si alguien de verdad se hubiera enterado. Hallazgo de
-    // auditoría de código.
+    // real y marcaba el flag como si alguien se hubiera enterado. Hallazgo
+    // de auditoría de código.
     if (adoptanteId == null || adoptanteId.isEmpty) continue;
     // diasHastaVencimiento/hogarDePasoVencido (domain/reglas_negocio.dart)
     // — única fuente. Acá se usaba `fechaFin.isAfter(ahora)`, CON hora: como

@@ -1952,4 +1952,30 @@ void main() {
       verifyNever(() => mocks.ref2.getData(any()));
     });
   });
+
+  group(
+    'avisosHogarDePasoDesdeCero — hay DOS caminos que empiezan un periodo '
+    'de hogar de paso (aprobar una solicitud, y ponerlo a mano desde el '
+    'desplegable) y ya se habian desincronizado: el de aprobar limpiaba '
+    'solo una de las dos banderas.',
+    () {
+      test('limpia LAS DOS banderas de aviso', () {
+        expect(
+          RescatesRepository.avisosHogarDePasoDesdeCero,
+          {'avisoPrevioAvisado': false, 'vencimientoAvisado': false},
+        );
+      });
+
+      // El caso concreto que el olvido causaba: un animalito que ya tuvo un
+      // hogar de paso vencido no volvia a avisar "vence mañana" en el
+      // siguiente, porque la bandera vieja lo silenciaba para siempre.
+      test('incluye avisoPrevioAvisado, que era la que se olvidaba', () {
+        expect(
+          RescatesRepository.avisosHogarDePasoDesdeCero
+              .containsKey('avisoPrevioAvisado'),
+          isTrue,
+        );
+      });
+    },
+  );
 }

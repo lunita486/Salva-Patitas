@@ -70,6 +70,24 @@ class RescatesRepository {
   /// adoptante_feed_screen.dart sí comparaba contra vacío. Tres copias de la
   /// misma decisión — nombreDe es la única, para que no puedan volver a
   /// divergir entre sí.
+  /// Las banderas de "ya avisé" del período de hogar de paso, puestas de
+  /// vuelta en cero.
+  ///
+  /// Hay que limpiar LAS DOS al empezar un período nuevo. Si no, un
+  /// animalito que ya tuvo un hogar de paso que venció no vuelve a avisar
+  /// nunca: la bandera vieja lo silencia para siempre.
+  ///
+  /// Existe acá, y no escrita en cada lugar, porque hay DOS caminos que
+  /// empiezan un período —aprobar una solicitud de hogar de paso, y
+  /// ponerlo a mano desde el desplegable de estado— y ya se habían
+  /// desincronizado: el de aprobar limpiaba solo `vencimientoAvisado` y se
+  /// olvidaba de `avisoPrevioAvisado`, así que el aviso de "vence mañana"
+  /// no se disparaba en el segundo período.
+  static const avisosHogarDePasoDesdeCero = <String, Object?>{
+    'avisoPrevioAvisado': false,
+    'vencimientoAvisado': false,
+  };
+
   static String nombreDe(
     Map<String, dynamic> datos, {
     String siVacio = 'Sin nombre',
