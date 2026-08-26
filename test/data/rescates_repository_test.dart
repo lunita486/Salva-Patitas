@@ -1717,12 +1717,21 @@ void main() {
       expect(RescatesRepository.nombreDe({}), 'Sin nombre');
     });
 
-    test('el valor por defecto se puede personalizar por llamador — los '
-        'avisos de vencimiento usan "Sin nombre" igual que el feed, pero '
-        'nada obliga a que sea siempre ese texto', () {
+    // El parámetro `siVacio` ya no existe: cada llamador podía elegir su
+    // propio texto, y eso es justamente lo que dejó diez rellenos distintos
+    // repartidos por la app ("Sin nombre", "Animal", "este animal", ""...).
+    // Ahora la decisión vive en nombreDeAnimal y solo hay DOS formas, que
+    // no son un gusto de cada pantalla sino dos papeles gramaticales: la de
+    // título y la que va dentro de una oración.
+    test('dentro de una frase da la otra forma, no un texto a elección', () {
       expect(
-        RescatesRepository.nombreDe({'nombre': ''}, siVacio: 'El animal'),
-        'El animal',
+        RescatesRepository.nombreDe({'nombre': ''}, enFrase: true),
+        'un animalito',
+      );
+      expect(
+        RescatesRepository.nombreDe({'nombre': 'Luna'}, enFrase: true),
+        'Luna',
+        reason: 'con nombre real, las dos formas son iguales',
       );
     });
   });

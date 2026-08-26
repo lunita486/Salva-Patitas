@@ -67,6 +67,29 @@ function comoAvisar({ adoptanteIdEnProceso, rescatistaId }) {
     : { via: 'push', rescatistaId };
 }
 
+/**
+ * El nombre de un animalito, listo para meter DENTRO de una frase.
+ *
+ * Es el espejo en JS de `nombreDeAnimal(..., enFrase: true)`
+ * (lib/domain/reglas_negocio.dart). Existir dos veces es inevitable: el
+ * servidor no puede importar Dart. Pero UNA por lenguaje, no diez: en la
+ * app había siete copias sueltas más dos funciones, y por eso el mismo bug
+ * ("Para Sin nombre", que reportó Eliza) se arregló una vez y siguió vivo
+ * en las otras nueve.
+ *
+ * Los textos de acá siempre son frases ("El período de hogar de paso de X
+ * vence mañana"), así que no hace falta la forma de título.
+ *
+ * Trata el literal 'Sin nombre' como ausencia de nombre, igual que la
+ * versión de Dart: ese texto se coló a la base guardado como si fuera el
+ * dato real, y sin esto saldría "El período de hogar de paso de Sin nombre
+ * vence mañana".
+ */
+function nombreEnFrase(nombre) {
+  const limpio = (nombre || '').trim();
+  return limpio === '' || limpio === 'Sin nombre' ? 'un animalito' : limpio;
+}
+
 /** Título de la notificación, según si ya venció o vence mañana. */
 function tituloPush(tipo) {
   return tipo === 'previo'
@@ -76,6 +99,7 @@ function tituloPush(tipo) {
 
 module.exports = {
   decidirAviso,
+  nombreEnFrase,
   textoVenceManana,
   textoVencido,
   comoAvisar,

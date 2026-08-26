@@ -5,6 +5,7 @@ const {
   textoVenceManana,
   textoVencido,
   comoAvisar,
+  nombreEnFrase,
   tituloPush,
 } = require('../avisos_vencimiento_logica');
 
@@ -110,6 +111,45 @@ describe(
       assert.notStrictEqual(tituloPush('previo'), tituloPush('vencido'));
       assert.ok(tituloPush('previo').includes('manana') ||
                 tituloPush('previo').includes('mañana'));
+    });
+  },
+);
+
+describe(
+  'nombreEnFrase — el espejo en JS de nombreDeAnimal(enFrase: true). ' +
+  'Existir dos veces es inevitable (el servidor no puede importar Dart) ' +
+  'pero UNA por lenguaje, no diez.',
+  () => {
+    test('con nombre real lo deja tal cual', () => {
+      assert.strictEqual(nombreEnFrase('Pacolin'), 'Pacolin');
+    });
+
+    test('sin nombre da la forma de frase, no la de titulo', () => {
+      assert.strictEqual(nombreEnFrase(''), 'un animalito');
+      assert.strictEqual(nombreEnFrase('   '), 'un animalito');
+      assert.strictEqual(nombreEnFrase(null), 'un animalito');
+      assert.strictEqual(nombreEnFrase(undefined), 'un animalito');
+    });
+
+    // El texto de pantalla se colo a la base guardado como si fuera el dato
+    // real. Sin esto la push diria "El periodo de hogar de paso de Sin
+    // nombre vence manana".
+    test('el literal "Sin nombre" GUARDADO cuenta como no tener nombre', () => {
+      assert.strictEqual(nombreEnFrase('Sin nombre'), 'un animalito');
+    });
+
+    // Y un animalito que de verdad se llama parecido no cae en el caso de
+    // arriba: la comparacion es exacta, igual que en Dart.
+    test('un nombre que solo se PARECE al relleno se respeta', () => {
+      assert.strictEqual(nombreEnFrase('Sin nombre aun'), 'Sin nombre aun');
+    });
+
+    test('y el texto del aviso queda legible', () => {
+      const { textoVenceManana } = require('../avisos_vencimiento_logica');
+      assert.ok(
+          textoVenceManana(nombreEnFrase('')).includes('de un animalito'),
+          textoVenceManana(nombreEnFrase('')),
+      );
     });
   },
 );

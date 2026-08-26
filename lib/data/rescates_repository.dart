@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../domain/reglas_negocio.dart';
 import 'creator_role.dart';
 import 'solicitudes_repository.dart';
 import 'favoritos_repository.dart';
@@ -88,13 +89,18 @@ class RescatesRepository {
     'vencimientoAvisado': false,
   };
 
-  static String nombreDe(
-    Map<String, dynamic> datos, {
-    String siVacio = 'Sin nombre',
-  }) {
-    final nombre = datos['nombre'] as String?;
-    return (nombre?.isNotEmpty ?? false) ? nombre! : siVacio;
-  }
+  /// Atajo para leer el nombre desde el MAPA del animal. La decisión de
+  /// qué mostrar cuando no hay nombre NO vive acá: vive en
+  /// `nombreDeAnimal` (domain/reglas_negocio.dart), que es la única. Esta
+  /// función solo sabe de dónde sacar el campo.
+  ///
+  /// Antes tenía su propia copia de esa decisión, con su propio default.
+  /// Eran dos funciones respondiendo lo mismo, más siete copias sueltas
+  /// escritas a mano en las pantallas: diez lugares donde cambiar el mismo
+  /// texto. Por eso el bug de "Para Sin nombre" se arregló una vez y
+  /// siguió vivo en las otras nueve.
+  static String nombreDe(Map<String, dynamic> datos, {bool enFrase = false}) =>
+      nombreDeAnimal(datos['nombre'] as String?, enFrase: enFrase);
 
   RescatesRepository({
     FirebaseFirestore? db,
@@ -560,12 +566,12 @@ class RescatesRepository {
       case 'Hogar de paso':
         return (
           'No se puede eliminar todavía',
-          '$nombre está en hogar de paso ahora mismo. Cambiá su estado a "Rescatado" primero, y después podés eliminar la publicación.',
+          '${nombreDeAnimal(nombre, enFrase: true)} está en hogar de paso ahora mismo. Cambiá su estado a "Rescatado" primero, y después podés eliminar la publicación.',
         );
       case 'En proceso de adopción':
         return (
           'No se puede eliminar todavía',
-          '$nombre tiene un proceso de adopción en curso. Cambiá su estado primero, y después podés eliminar la publicación.',
+          '${nombreDeAnimal(nombre, enFrase: true)} tiene un proceso de adopción en curso. Cambiá su estado primero, y después podés eliminar la publicación.',
         );
       case 'Regresado':
         return (

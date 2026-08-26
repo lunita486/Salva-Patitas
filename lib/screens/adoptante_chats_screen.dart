@@ -237,7 +237,16 @@ class _AdoptanteChatsScreenState extends State<AdoptanteChatsScreen> {
       itemCount: docs.length,
       itemBuilder: (_, i) {
         final d = docs[i].data() as Map<String, dynamic>;
+        // Dos formas del mismo nombre, porque esta pantalla lo usa en dos
+        // papeles gramaticales distintos: como título de la fila, y detrás
+        // de "Sobre ". Una sola variable para los dos daba "Sobre Sin
+        // nombre", que es el mismo caso de "Para Sin nombre" que reportó
+        // Eliza.
         final animalNombre = nombreDeAnimal(d['animalNombre'] as String?);
+        final animalEnFrase = nombreDeAnimal(
+          d['animalNombre'] as String?,
+          enFrase: true,
+        );
         final rescatista = d['rescatista'] as String? ?? 'Rescatista';
         final tipoSolicitud = d['tipoSolicitud'] as String? ?? 'adopcion';
         // Para un chat de ANIMAL, la query de arriba ya garantiza de qué
@@ -499,7 +508,7 @@ class _AdoptanteChatsScreenState extends State<AdoptanteChatsScreen> {
                           ),
                           Flexible(
                             child: Text(
-                              animalNombre,
+                              animalEnFrase,
                               overflow: TextOverflow.ellipsis,
                               maxLines: 1,
                               style: TextStyle(

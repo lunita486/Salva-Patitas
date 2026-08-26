@@ -1499,9 +1499,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
         itemBuilder: (ctx, i) {
           final d = sorted[i].data() as Map<String, dynamic>;
           final docId = sorted[i].id;
-          final nombre = (d['nombre'] as String?)?.isNotEmpty == true
-              ? d['nombre'] as String
-              : 'Sin nombre';
+          final nombre = nombreDeAnimal(d['nombre'] as String?);
           final especie = d['especie'] as String? ?? 'Perro';
           final edad = d['edad'] as String? ?? '';
           final fotoUrl = d['fotoUrl'] as String?;
@@ -1760,9 +1758,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
         itemBuilder: (ctx, i) {
           final d = sorted[i].data() as Map<String, dynamic>;
           final docId = sorted[i].id;
-          final nombre = (d['nombre'] as String?)?.isNotEmpty == true
-              ? d['nombre'] as String
-              : 'Sin nombre';
+          final nombre = nombreDeAnimal(d['nombre'] as String?);
           final especie = d['especie'] as String? ?? 'Perro';
           final fotoUrl = d['fotoUrl'] as String?;
           final estadoAdopcion = d['estadoAdopcion'] as String? ?? 'Adoptado';

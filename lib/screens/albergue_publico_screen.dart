@@ -451,9 +451,7 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
   );
 
   Widget _animalCard(BuildContext ctx, Map<String, dynamic> d, String docId) {
-    final nombre = (d['nombre'] as String?)?.isNotEmpty == true
-        ? d['nombre'] as String
-        : 'Sin nombre';
+    final nombre = nombreDeAnimal(d['nombre'] as String?);
     final especie = d['especie'] as String? ?? 'Perro';
     final edad = d['edad'] as String? ?? '';
     final fotoUrl = d['fotoUrl'] as String?;

@@ -198,7 +198,7 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
-          content: Text('Eliminando a $nombre…'),
+          content: Text('Eliminando a ${nombreDeAnimal(nombre, enFrase: true)}…'),
           duration: const Duration(seconds: 30),
         ),
       );
@@ -487,9 +487,7 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
     String docId,
     Map<String, dynamic> d,
   ) {
-    final nombre = (d['nombre'] as String?)?.isNotEmpty == true
-        ? d['nombre']
-        : 'Sin nombre';
+    final nombre = nombreDeAnimal(d['nombre'] as String?);
     final especie = d['especie'] ?? '';
     final estado = d['estado'] ?? '';
     final urgencia = d['urgencia'] ?? '';

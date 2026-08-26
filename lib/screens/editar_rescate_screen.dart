@@ -22,6 +22,7 @@ import '../data/rescate_fotos_repository.dart';
 import '../data/foto_normalizador.dart';
 import '../services/ubicacion_service.dart';
 import '../services/ubicacion_lifecycle.dart';
+import '../domain/reglas_negocio.dart';
 
 /// "Usar plantilla" (ver subir_rescate_screen.dart/subir_lote_screen.dart)
 /// escribía el nombre del animal DENTRO del texto de la descripción, como
@@ -364,9 +365,9 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
   }
 
   Future<void> _eliminarImpl() async {
-    final nombre = _nombreCtl.text.trim().isNotEmpty
-        ? _nombreCtl.text.trim()
-        : 'este animal';
+    // nombreDeAnimal, no un texto propio: acá había una OCTAVA variante
+    // del mismo relleno ('este animal'), distinta de las otras siete.
+    final nombre = nombreDeAnimal(_nombreCtl.text, enFrase: true);
 
     // Los 3 chequeos de elegibilidad viven centralizados en
     // RescatesRepository.bloqueoParaEliminar — antes estaban duplicados

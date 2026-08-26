@@ -37,7 +37,7 @@ class _AnimalDetalleScreenState extends State<AnimalDetalleScreen> {
     // un mapa armado a mano en otra pantalla) que se olvide uno de estos
     // 5 campos hace crashear la ficha entera en vez de mostrarla con un
     // valor vacío. Hallazgo de auditoría de código.
-    final nombre = (animal['nombre'] as String?) ?? 'Sin nombre';
+    final nombre = nombreDeAnimal(animal['nombre'] as String?);
     final edad = (animal['edad'] as String?) ?? '';
     final genero = (animal['genero'] as String?) ?? '';
     final raza = (animal['raza'] as String?) ?? 'Criolla';

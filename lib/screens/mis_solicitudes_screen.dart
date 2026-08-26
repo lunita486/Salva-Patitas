@@ -52,7 +52,7 @@ class _MisSolicitudesScreenState extends State<MisSolicitudesScreen> {
             '• No revenderlo, regalarlo ni cederlo a otra persona sin avisarle a quien te lo entregó.\n\n'
             '• Si en algún momento no podés seguir teniéndolo, devolverlo a quien te lo dio en adopción, nunca abandonarlo.\n\n'
             '• Darle buen trato, alimentación y atención veterinaria.\n\n'
-            'Este es un compromiso de buena fe entre vos y quien te lo entregó, para que $animal tenga un hogar responsable.',
+            'Este es un compromiso de buena fe entre vos y quien te lo entregó, para que ${nombreDeAnimal(animal, enFrase: true)} tenga un hogar responsable.',
             style: const TextStyle(fontSize: 13.5, height: 1.5),
           ),
         ),
@@ -727,7 +727,7 @@ class _MisSolicitudesScreenState extends State<MisSolicitudesScreen> {
                                       child: Text(
                                         motivo != null && motivo.isNotEmpty
                                             ? motivo
-                                            : 'Hola, gracias por tu interés en adoptar a $animal. '
+                                            : 'Hola, gracias por tu interés en adoptar a ${nombreDeAnimal(animal, enFrase: true)}. '
                                                   'Luego de revisar tu solicitud, en esta ocasión no podemos continuar con el proceso. '
                                                   '¡Esperamos que pronto encuentres a tu compañero perfecto! 🐾',
                                         style: TextStyle(

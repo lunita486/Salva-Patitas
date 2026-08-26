@@ -254,8 +254,8 @@ _aprobarSolicitudImpl(String docId, Map<String, dynamic> d) async {
       return (aprobada: false, animalEliminado: animalEliminado, avisoOk: true);
     }
     final mensaje = animalEliminado
-        ? '🐾 $animalNombre ya no está disponible en la plataforma. ¡No te desanimes, hay más amiguitos esperándote!'
-        : '🐾 $animalNombre ya tiene un proceso de adopción activo. ¡No te desanimes, hay más amiguitos esperándote!';
+        ? '🐾 ${nombreDeAnimal(animalNombre, enFrase: true)} ya no está disponible en la plataforma. ¡No te desanimes, hay más amiguitos esperándote!'
+        : '🐾 ${nombreDeAnimal(animalNombre, enFrase: true)} ya tiene un proceso de adopción activo. ¡No te desanimes, hay más amiguitos esperándote!';
     final avisoOk = await enviarMensajeChat(
       adoptanteId,
       animalNombre,
@@ -308,7 +308,7 @@ _aprobarSolicitudImpl(String docId, Map<String, dynamic> d) async {
         await enviarMensajeChat(
           otroAdoptanteId,
           animalNombre,
-          '🐾 $animalNombre ya tiene un proceso de adopción activo. ¡No te desanimes, hay más amiguitos esperándote!',
+          '🐾 ${nombreDeAnimal(animalNombre, enFrase: true)} ya tiene un proceso de adopción activo. ¡No te desanimes, hay más amiguitos esperándote!',
           fotoUrl: otra['fotoUrl'] as String?,
           rescateId: otra['rescateId'] as String? ?? rescateId,
           creadoPor: otra['creadoPor'] as String? ?? creadoPor,
@@ -372,7 +372,7 @@ Future<bool> _rechazarSolicitudImpl(
   final animalNombre = d['animalNombre'] as String? ?? '';
   final texto = motivo.trim().isNotEmpty
       ? motivo.trim()
-      : 'Hola, gracias por tu interés en adoptar a $animalNombre. '
+      : 'Hola, gracias por tu interés en adoptar a ${nombreDeAnimal(animalNombre, enFrase: true)}. '
             'Luego de revisar tu solicitud, en esta ocasión no podemos continuar con el proceso. '
             '¡Esperamos que pronto encuentres a tu compañero perfecto! 🐾';
   await SolicitudesRepository().rechazar(docId, texto);
@@ -617,7 +617,7 @@ Future<void> verificarVencimientos(
           d['avisoPrevioAvisado'] != true &&
           await reclamarAviso(doc.reference, 'avisoPrevioAvisado')) {
         final msg =
-            '📋 El período de hogar de paso de $nombre vence mañana. '
+            '📋 El período de hogar de paso de ${nombreDeAnimal(nombre, enFrase: true)} vence mañana. '
             'Coordiná con tiempo la devolución o el proceso de adopción definitivo. 🐾';
         // Solo se cuenta como avisado si el mensaje realmente se guardó —
         // antes se marcaba igual aunque enviarMensajeChat() fallara, y ese
@@ -652,7 +652,7 @@ Future<void> verificarVencimientos(
     if (d['vencimientoAvisado'] == true) continue;
     if (!await reclamarAviso(doc.reference, 'vencimientoAvisado')) continue;
     final msg =
-        '📋 El período de hogar de paso de $nombre ha vencido. '
+        '📋 El período de hogar de paso de ${nombreDeAnimal(nombre, enFrase: true)} ha vencido. '
         'Por favor coordina la devolución o el proceso de adopción definitivo. 🐾';
     final avisoOk = await enviarMensajeChat(
       adoptanteId,
@@ -739,7 +739,7 @@ Future<void> verificarSeguimientoPostAdopcion({
       final avisoOk = await enviarMensajeChat(
         adoptanteId,
         nombre,
-        'Ya pasó un mes desde que $nombre encontró hogar con vos 🎉 ¿Cómo se está adaptando? Nos encantaría saber cómo le va.',
+        'Ya pasó un mes desde que ${nombreDeAnimal(nombre, enFrase: true)} encontró hogar con vos 🎉 ¿Cómo se está adaptando? Nos encantaría saber cómo le va.',
         fotoUrl: d['fotoUrl'] as String?,
         rescateId: doc.id,
         creadoPor: creadoPor,
@@ -763,7 +763,7 @@ Future<void> verificarSeguimientoPostAdopcion({
       final avisoOk = await enviarMensajeChat(
         adoptanteId,
         nombre,
-        '¿Cómo le va a $nombre en su nuevo hogar? 🏡💚 Cualquier cosa que necesite, contános.',
+        '¿Cómo le va a ${nombreDeAnimal(nombre, enFrase: true)} en su nuevo hogar? 🏡💚 Cualquier cosa que necesite, contános.',
         fotoUrl: d['fotoUrl'] as String?,
         rescateId: doc.id,
         creadoPor: creadoPor,
@@ -1382,7 +1382,7 @@ class _SolicitudesRescatistaScreenState
                                   (d['motivoRechazo'] as String?)?.isNotEmpty ==
                                           true
                                       ? d['motivoRechazo'] as String
-                                      : 'Hola, gracias por tu interés en adoptar a $animal. '
+                                      : 'Hola, gracias por tu interés en adoptar a ${nombreDeAnimal(animal, enFrase: true)}. '
                                             'Luego de revisar tu solicitud, en esta ocasión no podemos continuar con el proceso. '
                                             '¡Esperamos que pronto encuentres a tu compañero perfecto! 🐾',
                                   style: TextStyle(
@@ -1624,7 +1624,7 @@ class _SolicitudesRescatistaScreenState
                                                 context,
                                                 titulo: 'Mensaje de rechazo',
                                                 textoInicial:
-                                                    'Hola, gracias por tu interés en adoptar a $animal. '
+                                                    'Hola, gracias por tu interés en adoptar a ${nombreDeAnimal(animal, enFrase: true)}. '
                                                     'Luego de revisar tu solicitud, en esta ocasión no podemos continuar con el proceso. '
                                                     '¡Esperamos que pronto encuentres a tu compañero perfecto! 🐾',
                                                 maxLines: 5,

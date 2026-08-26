@@ -414,7 +414,7 @@ class _ChatScreenState extends State<ChatScreen> {
         // chat sin nada contra lo cual anclarlo. Ver firestore.rules,
         // chats.create.
         'rescateId': rescateId,
-        'nombre': (d['nombre'] as String?) ?? 'Sin nombre',
+        'nombre': nombreDeAnimal(d['nombre'] as String?),
         'raza': (d['raza'] as String?) ?? 'Criolla',
         'ubicacion': (d['ubicacion'] as String?) ?? '',
         'descripcion': (d['descripcion'] as String?) ?? '',

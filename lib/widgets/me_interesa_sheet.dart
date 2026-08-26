@@ -102,7 +102,7 @@ class MeInteresaSheet extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              '¿Cómo querés ayudar a $nombre?',
+              '¿Cómo querés ayudar a ${nombreDeAnimal(nombre, enFrase: true)}?',
               style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
               textAlign: TextAlign.center,
             ),

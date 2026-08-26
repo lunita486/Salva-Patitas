@@ -512,7 +512,7 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
                 const Text('🐾', style: TextStyle(fontSize: 32)),
                 const SizedBox(height: 16),
                 Text(
-                  '$nombre te está esperando.',
+                  '${nombreDeAnimal(nombre, enFrase: true)} te está esperando.',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     fontSize: 18,
@@ -1119,7 +1119,7 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              'Le avisamos a la rescatista.\nPronto sabrás si $nombre encontró su hogar contigo. 🌿',
+              'Le avisamos a la rescatista.\nPronto sabrás si ${nombreDeAnimal(nombre, enFrase: true)} encontró su hogar contigo. 🌿',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 15,

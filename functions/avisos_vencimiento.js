@@ -3,6 +3,7 @@ const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const {
   decidirAviso,
   comoAvisar,
+  nombreEnFrase,
   tituloPush,
 } = require('./avisos_vencimiento_logica');
 const { notificar } = require('./notificar');
@@ -131,7 +132,9 @@ exports.avisarVencimientosHogarDePaso = onSchedule(
       });
       if (!destino) continue;
 
-      const nombre = (d.nombre || '').trim() || 'Sin nombre';
+      // Los textos de decidirAviso son frases, no títulos. Ver
+      // nombreEnFrase: acá había una copia más del mismo relleno.
+      const nombre = nombreEnFrase(d.nombre);
       const aviso = decidirAviso({
         fechaFin: fechaFinTs.toDate(),
         ahora,

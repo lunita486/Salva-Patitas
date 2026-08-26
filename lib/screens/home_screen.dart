@@ -542,9 +542,7 @@ class _HomeScreenState extends State<HomeScreen>
             separatorBuilder: (_, __) => const SizedBox(width: 12),
             itemBuilder: (_, i) {
               final data = docs[i].data();
-              final nombre = (data['nombre'] as String?)?.isNotEmpty == true
-                  ? data['nombre']
-                  : 'Sin nombre';
+              final nombre = nombreDeAnimal(data['nombre'] as String?);
               final especie = data['especie'] ?? '';
               final estadoAdopcion = data['estadoAdopcion'] ?? 'Rescatado';
               final fotoUrl = data['fotoUrl'] as String?;
