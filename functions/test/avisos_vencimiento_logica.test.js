@@ -1,6 +1,12 @@
 const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
-const { decidirAviso, textoVenceManana, textoVencido } = require('../avisos_vencimiento_logica');
+const {
+  decidirAviso,
+  textoVenceManana,
+  textoVencido,
+  comoAvisar,
+  tituloPush,
+} = require('../avisos_vencimiento_logica');
 
 // 2026-08-20 12:00 como "ahora" en todos los tests, para no depender de
 // cuándo se corre la suite.
@@ -61,3 +67,49 @@ describe('decidirAviso', () => {
     );
   });
 });
+
+describe(
+  'comoAvisar — un hogar de paso puesto A MANO no tiene cuenta en la app. ' +
+  'Antes eso hacia que la funcion salteara el animalito entero, asi que el ' +
+  'rescatista TAMPOCO se enteraba: el recordatorio no existia para el caso ' +
+  'mas comun en un refugio de verdad.',
+  () => {
+    test('con cuidador con cuenta: por chat, y los dos lo ven', () => {
+      assert.deepStrictEqual(
+          comoAvisar({ adoptanteIdEnProceso: 'ana', rescatistaId: 'rita' }),
+          { via: 'chat', adoptanteId: 'ana', rescatistaId: 'rita' },
+      );
+    });
+
+    // EL CASO QUE MOTIVA TODO ESTO.
+    test('sin cuidador con cuenta: igual le llega al dueno, por push', () => {
+      assert.deepStrictEqual(
+          comoAvisar({ rescatistaId: 'rita' }),
+          { via: 'push', rescatistaId: 'rita' },
+      );
+    });
+
+    test('un adoptanteId vacio o en blanco cuenta como sin cuenta', () => {
+      for (const vacio of ['', '   ', null, undefined]) {
+        assert.strictEqual(
+            comoAvisar({ adoptanteIdEnProceso: vacio, rescatistaId: 'rita' }).via,
+            'push',
+            `con ${JSON.stringify(vacio)}`,
+        );
+      }
+    });
+
+    // Lo unico que sigue sin tener salida: un animalito sin dueno. Ahi de
+    // verdad no hay a quien avisarle.
+    test('sin dueno no hay a quien avisar', () => {
+      assert.strictEqual(comoAvisar({ rescatistaId: '' }), null);
+      assert.strictEqual(comoAvisar({ adoptanteIdEnProceso: 'ana' }), null);
+    });
+
+    test('el titulo del push distingue "vence manana" de "ya vencio"', () => {
+      assert.notStrictEqual(tituloPush('previo'), tituloPush('vencido'));
+      assert.ok(tituloPush('previo').includes('manana') ||
+                tituloPush('previo').includes('mañana'));
+    });
+  },
+);

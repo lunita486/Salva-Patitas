@@ -162,12 +162,60 @@ class HogaresDePasoRepository {
   /// try/catch en la pantalla que hoy no atrapaba nada porque nunca había
   /// una excepción real que atrapar; `actualizarContacto`/`eliminar` ni
   /// siquiera tenían eso. Hallazgo de auditoría de código.
+  /// Suma a la red al cuidador de un hogar de paso puesto A MANO desde el
+  /// desplegable de estado.
+  ///
+  /// Es el gemelo de [registrarAyuda] para el caso sin cuenta. No se puede
+  /// reusar aquella: corta de entrada con `if (adoptanteId.isEmpty) return`,
+  /// porque su trabajo es vincular a una cuenta real. Acá, por definición,
+  /// no hay ninguna: la mayoría de los hogares de paso de un refugio son
+  /// personas que ayudan y que nunca van a instalar la app.
+  ///
+  /// Si esa persona ya estaba en la red (mismo nombre y mismo email) le
+  /// suma una ayuda en vez de crear una fila repetida. Si no la encuentra,
+  /// la agrega con [agregarManual].
+  ///
+  /// Ojo con el caso sin email: [buscarDuplicado] necesita nombre Y email
+  /// para poder afirmar que son la misma persona, así que sin email no hay
+  /// forma de distinguir a dos "María" distintas y se agrega una fila
+  /// nueva. Es a propósito: preferimos dos filas que puedan unirse a mano
+  /// antes que fusionar por nombre a dos personas que no lo son.
+  Future<void> sumarAyudaManual({
+    required String albergueId,
+    required String nombre,
+    String email = '',
+  }) async {
+    if (nombre.trim().isEmpty) return;
+    final yaEsta = await buscarDuplicado(
+      albergueId: albergueId,
+      nombre: nombre,
+      email: email,
+    );
+    if (yaEsta != null) {
+      await yaEsta.reference.update({'vecesAyudo': FieldValue.increment(1)});
+      return;
+    }
+    await agregarManual(
+      albergueId: albergueId,
+      nombre: nombre.trim(),
+      email: email,
+      // Uno, no cero: esta persona no es un contacto anotado, se está
+      // llevando a un animalito ahora mismo.
+      vecesAyudo: 1,
+    );
+  }
+
   Future<void> agregarManual({
     required String albergueId,
     required String nombre,
     String telefono = '',
     String notas = '',
     String email = '',
+    /// Cuántas ayudas lleva ya. Cero cuando alguien anota un contacto que
+    /// conoce (todavía no cuidó a nadie), UNO cuando se agrega porque en
+    /// este mismo momento se está llevando a un animalito — ver
+    /// [sumarAyudaManual].
+    int vecesAyudo = 0,
     Duration timeout = const Duration(seconds: 15),
   }) => _col
       .add({
@@ -177,7 +225,7 @@ class HogaresDePasoRepository {
         'telefono': telefono,
         'notas': notas,
         'email': _normalizarEmail(email),
-        'vecesAyudo': 0,
+        'vecesAyudo': vecesAyudo,
         'ultimaVez': null,
         'creadoEn': FieldValue.serverTimestamp(),
         'agregadoManualmente': true,

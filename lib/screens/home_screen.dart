@@ -580,6 +580,10 @@ class _HomeScreenState extends State<HomeScreen>
                           nombre: nombre,
                           adoptanteIdEnProceso:
                               data['adoptanteIdEnProceso'] as String?,
+                          // home_screen es el panel del RESCATISTA: no
+                          // tiene red de hogares de paso (es solo para
+                          // albergues, decisión de producto).
+                          esAlbergue: false,
                         ),
                       ),
                 // 'Hogar de paso' antes se quedaba afuera de esta condición

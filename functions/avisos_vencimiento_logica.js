@@ -38,4 +38,46 @@ function decidirAviso({ fechaFin, ahora, avisoPrevioAvisado, vencimientoAvisado,
   return { tipo: 'vencido', flag: 'vencimientoAvisado', mensaje: textoVencido(nombre) };
 }
 
-module.exports = { decidirAviso, textoVenceManana, textoVencido };
+/**
+ * ¿Por qué vía le avisamos, y a quién?
+ *
+ * **El caso que faltaba.** Un hogar de paso puesto A MANO desde el
+ * desplegable de estado no tiene cuenta en la app: es la señora que ayuda
+ * al refugio y que nunca va a instalar nada. Sin `adoptanteIdEnProceso` no
+ * hay a quién escribirle por chat.
+ *
+ * Antes eso hacía que la función salteara el animalito ENTERO
+ * (`if (!fechaFinTs || !adoptanteId || !rescatistaId) continue`), así que
+ * el rescatista tampoco se enteraba. El recordatorio no existía para el
+ * caso más común en un refugio de verdad.
+ *
+ * Ahora se separan las dos cosas: si el cuidador tiene cuenta, el aviso va
+ * por chat y los dos lo ven. Si no la tiene, igual le llega al
+ * rescatista/albergue por notificación, que es quien puede hacer algo al
+ * respecto.
+ *
+ * Devuelve `null` solo cuando no hay dueño: ahí sí no hay nadie a quien
+ * avisarle.
+ */
+function comoAvisar({ adoptanteIdEnProceso, rescatistaId }) {
+  if (!rescatistaId) return null;
+  const cuidador = (adoptanteIdEnProceso || '').trim();
+  return cuidador !== ''
+    ? { via: 'chat', adoptanteId: cuidador, rescatistaId }
+    : { via: 'push', rescatistaId };
+}
+
+/** Título de la notificación, según si ya venció o vence mañana. */
+function tituloPush(tipo) {
+  return tipo === 'previo'
+    ? 'Un hogar de paso vence mañana'
+    : 'Un hogar de paso ya venció';
+}
+
+module.exports = {
+  decidirAviso,
+  textoVenceManana,
+  textoVencido,
+  comoAvisar,
+  tituloPush,
+};

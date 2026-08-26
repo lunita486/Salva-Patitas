@@ -7,6 +7,8 @@ import '../data/rescates_repository.dart';
 import '../data/solicitudes_repository.dart';
 import '../data/usuarios_repository.dart';
 import '../theme.dart';
+import '../data/hogares_de_paso_repository.dart';
+import 'pedir_hogar_de_paso.dart';
 import 'pedir_motivo.dart';
 
 // ─── Cambiar Estado Adopción Sheet ────────────────────────────────────────────
@@ -16,13 +18,40 @@ class CambiarEstadoSheet extends StatelessWidget {
   final String estadoActual;
   final String nombre;
   final String? adoptanteIdEnProceso;
+
+  /// Un albergue guarda al cuidador en su red de hogares de paso; un
+  /// rescatista no tiene red. Ver pedirHogarDePaso().
+  final bool esAlbergue;
   const CambiarEstadoSheet({
     super.key,
     required this.docId,
     required this.estadoActual,
     this.nombre = '',
     this.adoptanteIdEnProceso,
+    this.esAlbergue = false,
   });
+
+  /// Suma al cuidador a la red de hogares de paso del albergue.
+  ///
+  /// Usa `sumarAyudaManual`, que busca por nombre + email: si esa persona
+  /// ya estaba en la red le suma una ayuda en vez de crear una fila
+  /// repetida. Por eso el email del diálogo se valida antes — uno mal
+  /// escrito rompe esa búsqueda y la persona termina duplicada.
+  ///
+  /// Best-effort: si falla, el animalito igual quedó en hogar de paso con
+  /// sus fechas, que es lo que importa. Perder la fila de la red es
+  /// recuperable a mano; bloquear el cambio de estado por eso, no.
+  Future<void> _sumarARed(DatosHogarDePaso datos) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (uid.isEmpty) return;
+    try {
+      await HogaresDePasoRepository().sumarAyudaManual(
+        albergueId: uid,
+        nombre: datos.nombre,
+        email: datos.contacto,
+      );
+    } catch (_) {}
+  }
 
   /// Único punto de escritura del estado — pasa por
   /// [RescatesRepository.cambiarEstadoAdopcion] (ver ARCHITECTURE.md) y
@@ -200,6 +229,50 @@ class CambiarEstadoSheet extends StatelessWidget {
           final sel = e.$1 == estadoActual;
           return GestureDetector(
             onTap: () async {
+              // "Hogar de paso" puesto a mano: hay que preguntar quién y
+              // hasta cuándo. Antes se escribía solo el estado, y eso
+              // dejaba tres cosas rotas en silencio a la vez — el
+              // recordatorio de vencimiento no se disparaba nunca, la
+              // tarjeta no mostraba el período, y no había a quién
+              // contactar. Ver pedirHogarDePaso() para el porqué de que
+              // este camino exista y no se exija una solicitud.
+              //
+              // Si YA hay alguien con cuenta cuidándolo (vino de una
+              // solicitud aprobada) no se pregunta nada: esos datos ya
+              // están y volver a pedirlos los pisaría.
+              if (e.$1 == 'Hogar de paso' &&
+                  (adoptanteIdEnProceso ?? '').isEmpty) {
+                final datos = await pedirHogarDePaso(
+                  context,
+                  pedirEmail: esAlbergue,
+                );
+                if (datos == null) return;
+                if (!context.mounted) return;
+                final ok = await _actualizarEstado(
+                  context,
+                  e.$1,
+                  extra: {
+                    'fechaInicioHogar': Timestamp.fromDate(datos.desde),
+                    'fechaFinHogar': Timestamp.fromDate(datos.hasta),
+                    'hogarDePasoNombre': datos.nombre,
+                    if (datos.contacto.isNotEmpty)
+                      'hogarDePasoContacto': datos.contacto,
+                    // Las banderas de "ya avisé" se limpian: es un período
+                    // nuevo, y sin esto un animalito que ya tuvo un hogar
+                    // de paso vencido no volvería a avisar nunca.
+                    'avisoPrevioAvisado': FieldValue.delete(),
+                    'vencimientoAvisado': FieldValue.delete(),
+                  },
+                );
+                if (ok && esAlbergue) {
+                  // Se suma sola a la red, con registrarAyuda: si esa
+                  // persona ya estaba (mismo email) le suma una ayuda en
+                  // vez de duplicarla.
+                  await _sumarARed(datos);
+                }
+                if (ok && context.mounted) Navigator.pop(context);
+                return;
+              }
               if (e.$1 != 'Regresado' && e.$1 != 'Fallecido') {
                 final ok = await _actualizarEstado(
                   context,

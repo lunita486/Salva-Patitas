@@ -558,4 +558,101 @@ void main() {
       );
     });
   });
+
+  group(
+    'sumarAyudaManual() — el cuidador de un hogar de paso puesto A MANO no '
+    'tiene cuenta en la app. registrarAyuda() no sirve para eso: corta de '
+    'entrada si no hay adoptanteId, porque su trabajo es vincular a una '
+    'cuenta real.',
+    () {
+      late FakeFirebaseFirestore db;
+      late HogaresDePasoRepository repo;
+
+      setUp(() {
+        db = FakeFirebaseFirestore();
+        repo = HogaresDePasoRepository(db: db);
+      });
+
+      Future<List<Map<String, dynamic>>> red() async =>
+          (await db.collection('hogaresDePaso').get())
+              .docs
+              .map((d) => d.data())
+              .toList();
+
+      test('la primera vez la agrega a la red', () async {
+        await repo.sumarAyudaManual(
+          albergueId: 'refugio',
+          nombre: 'María González',
+          email: 'maria@correo.com',
+        );
+        final filas = await red();
+        expect(filas, hasLength(1));
+        expect(filas.first['nombre'], 'María González');
+        expect(filas.first['adoptanteId'], '', reason: 'no tiene cuenta');
+      });
+
+      // Lo que evita la fila repetida: la misma persona cuidando un segundo
+      // animalito suma una ayuda, no crea otra fila.
+      test('la segunda vez suma una ayuda, no duplica', () async {
+        await repo.sumarAyudaManual(
+          albergueId: 'refugio',
+          nombre: 'María González',
+          email: 'maria@correo.com',
+        );
+        await repo.sumarAyudaManual(
+          albergueId: 'refugio',
+          nombre: 'María González',
+          email: 'maria@correo.com',
+        );
+        final filas = await red();
+        expect(filas, hasLength(1), reason: 'sigue habiendo una sola');
+        expect(filas.first['vecesAyudo'], 2);
+      });
+
+      test('el email no distingue mayúsculas ni espacios', () async {
+        await repo.sumarAyudaManual(
+          albergueId: 'refugio',
+          nombre: 'María González',
+          email: 'maria@correo.com',
+        );
+        await repo.sumarAyudaManual(
+          albergueId: 'refugio',
+          nombre: 'María González',
+          email: '  MARIA@Correo.com ',
+        );
+        expect(await red(), hasLength(1));
+      });
+
+      // Sin email no hay forma de afirmar que dos "María" son la misma
+      // persona. Se agrega una fila nueva a propósito: preferimos dos filas
+      // que se puedan unir a mano antes que fusionar a dos personas
+      // distintas por tener el mismo nombre.
+      test('sin email agrega fila nueva, no fusiona por nombre', () async {
+        await repo.sumarAyudaManual(albergueId: 'refugio', nombre: 'María');
+        await repo.sumarAyudaManual(albergueId: 'refugio', nombre: 'María');
+        expect(await red(), hasLength(2));
+      });
+
+      test('otro albergue no ve ni pisa la red del primero', () async {
+        await repo.sumarAyudaManual(
+          albergueId: 'refugio',
+          nombre: 'María González',
+          email: 'maria@correo.com',
+        );
+        await repo.sumarAyudaManual(
+          albergueId: 'otro_refugio',
+          nombre: 'María González',
+          email: 'maria@correo.com',
+        );
+        final filas = await red();
+        expect(filas, hasLength(2));
+        expect(filas.every((f) => f['vecesAyudo'] == 1), isTrue);
+      });
+
+      test('sin nombre no hace nada', () async {
+        await repo.sumarAyudaManual(albergueId: 'refugio', nombre: '   ');
+        expect(await red(), isEmpty);
+      });
+    },
+  );
 }

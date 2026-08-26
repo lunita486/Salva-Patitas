@@ -1632,6 +1632,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                                         adoptanteIdEnProceso:
                                             d['adoptanteIdEnProceso']
                                                 as String?,
+                                        esAlbergue: true,
                                       ),
                                     ),
                               child: Container(
@@ -1853,6 +1854,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                                   nombre: nombre,
                                   adoptanteIdEnProceso:
                                       d['adoptanteIdEnProceso'] as String?,
+                                  esAlbergue: true,
                                 ),
                               ),
                               child: Container(

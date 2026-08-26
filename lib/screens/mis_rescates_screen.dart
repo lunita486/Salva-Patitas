@@ -15,6 +15,7 @@ import '../data/creator_role.dart';
 import '../data/rescates_repository.dart';
 import '../data/rescate_fotos_repository.dart';
 import 'compartir_animal.dart';
+import '../widgets/texto_sin_desborde.dart';
 import 'solicitudes_rescatista_screen.dart' show contactarPersonaEnProceso;
 
 class TodosLosRescatesScreen extends StatefulWidget {
@@ -825,6 +826,23 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Quién lo tiene, cuando es un hogar de paso puesto a
+                  // mano: esa persona no tiene cuenta en la app, así que
+                  // este texto es la única forma de saber a quién buscar.
+                  if (((d['hogarDePasoNombre'] as String?) ?? '').isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: TextoSinDesborde(
+                        texto:
+                            '🏡 Con ${d['hogarDePasoNombre']}'
+                            '${((d['hogarDePasoContacto'] as String?) ?? '').isNotEmpty ? ' · ${d['hogarDePasoContacto']}' : ''}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade800,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
                   if (fechaInicioHogar != null)
                     Text(
                       '📅 ${formatearFecha(fechaInicioHogar)} → ${formatearFecha(fechaFinHogar)}',
@@ -903,6 +921,7 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                             nombre: nombre,
                             adoptanteIdEnProceso:
                                 d['adoptanteIdEnProceso'] as String?,
+                            esAlbergue: widget.esAlbergue,
                           ),
                         ),
                   child: Container(

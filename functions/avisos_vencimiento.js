@@ -1,6 +1,11 @@
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
-const { decidirAviso } = require('./avisos_vencimiento_logica');
+const {
+  decidirAviso,
+  comoAvisar,
+  tituloPush,
+} = require('./avisos_vencimiento_logica');
+const { notificar } = require('./notificar');
 
 // El aviso de "hogar de paso vence mañana/ya venció" solo se mandaba desde
 // el lado del cliente (verificarVencimientos(), lib/screens/
@@ -116,12 +121,15 @@ exports.avisarVencimientosHogarDePaso = onSchedule(
     for (const doc of snap.docs) {
       const d = doc.data();
       const fechaFinTs = d.fechaFinHogar;
-      const adoptanteId = d.adoptanteIdEnProceso;
       const rescatistaId = d.rescatistaId;
-      // Sin fecha, sin adoptante o sin dueño no hay a quién avisarle ni con
-      // qué criterio — mismo chequeo defensivo que verificarVencimientos()
-      // del lado del cliente.
-      if (!fechaFinTs || !adoptanteId || !rescatistaId) continue;
+      // Sin fecha no hay con qué criterio decidir. Sin dueño no hay a quién
+      // avisarle. Pero SIN CUIDADOR CON CUENTA sí hay: ver comoAvisar().
+      if (!fechaFinTs) continue;
+      const destino = comoAvisar({
+        adoptanteIdEnProceso: d.adoptanteIdEnProceso,
+        rescatistaId,
+      });
+      if (!destino) continue;
 
       const nombre = (d.nombre || '').trim() || 'Sin nombre';
       const aviso = decidirAviso({
@@ -134,19 +142,34 @@ exports.avisarVencimientosHogarDePaso = onSchedule(
       if (!aviso) continue;
 
       try {
-        const rescatista = await nombreDeUsuario(db, rescatistaId, 'Rescatista');
-        await avisarPorVencimiento(db, {
-          rescateId: doc.id,
-          adoptanteId,
-          rescatistaId,
-          rescatista,
-          adoptanteNombre: 'Adoptante',
-          animalNombre: nombre,
-          especie: d.especie,
-          fotoUrl: d.fotoUrl,
-          creadoPor: d.creadoPor,
-          texto: aviso.mensaje,
-        });
+        if (destino.via === 'chat') {
+          const rescatista = await nombreDeUsuario(db, rescatistaId, 'Rescatista');
+          await avisarPorVencimiento(db, {
+            rescateId: doc.id,
+            adoptanteId: destino.adoptanteId,
+            rescatistaId,
+            rescatista,
+            adoptanteNombre: 'Adoptante',
+            animalNombre: nombre,
+            especie: d.especie,
+            fotoUrl: d.fotoUrl,
+            creadoPor: d.creadoPor,
+            texto: aviso.mensaje,
+          });
+        } else {
+          // El cuidador no tiene cuenta (hogar de paso puesto a mano). No
+          // hay chat que crear, pero el aviso igual tiene que llegarle a
+          // quien puede hacer algo: el dueño del animalito.
+          //
+          // Va con `notif_solicitudes` y no con `notif_mensajes` porque no
+          // es una conversación: es el estado de un animal tuyo.
+          await notificar(
+              rescatistaId,
+              tituloPush(aviso.tipo),
+              aviso.mensaje,
+              'notif_solicitudes',
+          );
+        }
         // Solo se marca "avisado" si el mensaje realmente se guardó — mismo
         // criterio que verificarVencimientos(): un aviso que falló a mitad
         // de camino tiene que poder reintentarse mañana, no perderse.
