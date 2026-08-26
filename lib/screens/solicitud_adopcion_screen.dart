@@ -98,6 +98,11 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
   static const _mascotasOpts = ['Sí', 'No'];
   static const _experienciaOpts = ['Sí', 'No, sería mi primera mascota'];
 
+  /// El tipo se compara en varios lugares de esta pantalla (qué preguntar,
+  /// si pedir fechas, si el formulario está completo). Con nombre, para no
+  /// repetir el literal.
+  bool get _esHogarDePaso => _tipoSolicitud == 'hogar_de_paso';
+
   bool get _completo =>
       _integrantesCtl.text.trim().isNotEmpty &&
       _horasCtl.text.trim().isNotEmpty &&
@@ -106,7 +111,7 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
       _mascotas.isNotEmpty &&
       _experienciaPrevia.isNotEmpty &&
       _motivacionCtl.text.trim().isNotEmpty &&
-      (_tipoSolicitud != 'hogar_de_paso' ||
+      (!_esHogarDePaso ||
           (_fechaInicio != null && _fechaFin != null));
 
   Future<void> _enviar() async {
@@ -775,14 +780,25 @@ class _SolicitudAdopcionScreenState extends State<SolicitudAdopcionScreen> {
             (v) => setState(() => _experienciaPrevia = v),
           ),
           const SizedBox(height: 24),
+          // La pregunta y el ejemplo cambian según el tipo. Antes eran fijos
+          // los dos: elegías "Ser hogar de paso" y el formulario te
+          // preguntaba por qué querías ADOPTARLO. La pantalla ya sabía
+          // distinguir los dos casos (más abajo muestra el período de hogar
+          // de paso solo para uno) pero acá se había quedado con el texto de
+          // adopción. Mismo caso que la notificación que decía "hogar de
+          // paso" en el título y "quiere adoptar" en el cuerpo.
           _campoTexto(
-            '¿Por qué quieres adoptarlo?',
+            _esHogarDePaso
+                ? '¿Por qué querés darle hogar de paso?'
+                : '¿Por qué quieres adoptarlo?',
             _motivacionCtl,
-            'ej. Siempre quise tener un perro, tengo espacio y mucho amor...',
+            _esHogarDePaso
+                ? 'ej. Tengo espacio y experiencia, puedo cuidarlo mientras encuentra familia...'
+                : 'ej. Siempre quise tener un perro, tengo espacio y mucho amor...',
             maxLines: 3,
             maxLength: 600,
           ),
-          if (_tipoSolicitud == 'hogar_de_paso') ...[
+          if (_esHogarDePaso) ...[
             const SizedBox(height: 24),
             RichText(
               text: const TextSpan(

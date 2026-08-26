@@ -30,6 +30,12 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # Traducciones de los widgets de Material (calendario, selector de hora,
+  # menús de copiar/pegar). Sin esto Flutter cae a inglés: el selector de
+  # fechas salía "Select date / August 2026 / S M T W T F S" adentro de una
+  # app que está entera en español.
+  flutter_localizations:
+    sdk: flutter
 
   image_picker: ^1.1.2
   firebase_core: ^3.13.0

@@ -9,6 +9,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'firebase_options.dart';
 import 'theme.dart';
 import 'data/auth_helper.dart';
@@ -132,6 +133,20 @@ class PatitasApp extends StatelessWidget {
     return MaterialApp.router(
       title: 'Salva Patitas',
       debugShowCheckedModeBanner: false,
+      // Sin esto, los widgets que trae Material con texto propio salen en
+      // INGLÉS adentro de una app que está entera en español. El caso que
+      // se veía: el selector de fechas del hogar de paso decía "Select
+      // date", "August 2026" y los días "S M T W T F S". También afecta al
+      // menú de copiar/pegar y al selector de hora.
+      //
+      // `localeResolutionCallback` fuerza español pase lo que pase: sin él,
+      // un teléfono configurado en otro idioma seguiría viendo esos widgets
+      // en el suyo, mientras que TODO el resto de la app (que está escrita
+      // a mano en español) no cambiaría. Media app en un idioma y media en
+      // otro es peor que toda en español.
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
+      supportedLocales: const [Locale('es')],
+      localeResolutionCallback: (_, __) => const Locale('es'),
       // El observer de Analytics ("screen_view" automático en cada cambio
       // de pantalla) ahora se pasa al GoRouter (ver lib/routing/
       // app_router.dart), no acá — MaterialApp.router no tiene
