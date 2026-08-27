@@ -5,12 +5,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import '../routing/app_router.dart';
 import '../theme.dart';
 import '../widgets/chips_seleccionables.dart';
-import '../widgets/aviso_ubicacion.dart';
 import '../widgets/confirmar_ciudad_resuelta.dart';
 import '../widgets/dialogos_eliminar_rescate.dart';
 import '../widgets/elegir_foto_animal.dart';
@@ -20,9 +18,9 @@ import '../data/creator_role.dart';
 import '../data/rescates_repository.dart';
 import '../data/rescate_fotos_repository.dart';
 import '../data/foto_normalizador.dart';
-import '../services/ubicacion_service.dart';
 import '../services/ubicacion_lifecycle.dart';
 import '../domain/reglas_negocio.dart';
+import '../widgets/campo_ciudad.dart';
 
 /// "Usar plantilla" (ver subir_rescate_screen.dart/subir_lote_screen.dart)
 /// escribía el nombre del animal DENTRO del texto de la descripción, como
@@ -114,6 +112,10 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
   /// tarde.
   final _lugarFocus = FocusNode();
 
+  /// Para dispararle la detección al campo desde acá (el reintento al
+  /// volver de los Ajustes). Ver CampoCiudadControlador.
+  final _ciudadCtrl = CampoCiudadControlador();
+
   /// Evita que se abra la lista dos veces a la vez: el foco se pierde
   /// también al tocar "Guardar", así que sin esto ese toque podía disparar
   /// una segunda resolución encima de la que ya estaba corriendo.
@@ -157,7 +159,6 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
       _nuevaFoto2 != null ||
       _foto2UrlExistente != null;
 
-  bool _detectandoUbicacion = false;
   // A diferencia de subir_rescate_screen.dart, acá la detección es manual
   // (no arranca sola en initState) — este flag evita que el reintento
   // automático al volver de Ajustes dispare un pedido de ubicación que la
@@ -264,85 +265,12 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
   @override
   bool get yaTieneUbicacion => !_sePidioUbicacion || _latitud != null;
   @override
-  bool get detectandoUbicacion => _detectandoUbicacion;
+  bool get detectandoUbicacion => _ciudadCtrl.detectando;
   @override
-  void reintentarConPermiso() => _obtenerUbicacionGPS();
+  void reintentarConPermiso() => _ciudadCtrl.detectar();
 
   /// Toda la secuencia de servicio/permiso/GPS/geocoding vive en
   /// UbicacionService; acá queda solo la UI propia de esta pantalla.
-  /// Totalmente opcional: guardar nunca depende de esto.
-  Future<void> _obtenerUbicacionGPS() async {
-    // Limpia cualquier aviso de un intento anterior — sin esto, reintentar
-    // varias veces (o el reintento automático al volver de Ajustes) los
-    // apilaba uno atrás de otro.
-    ScaffoldMessenger.of(context).clearSnackBars();
-    _sePidioUbicacion = true;
-    setState(() => _detectandoUbicacion = true);
-
-    final resultado = await UbicacionService.actual(
-      conCiudad: true,
-      precision: LocationAccuracy.high,
-    );
-
-    // La detección puede tardar y la usuaria puede haber salido de la
-    // pantalla mientras tanto (setState tras dispose es una excepción).
-    if (!mounted) return;
-    setState(() => _detectandoUbicacion = false);
-
-    if (!resultado.ok) {
-      switch (resultado.fallo!) {
-        case FalloUbicacion.servicioApagado:
-          // El GPS del sistema apagado no es lo mismo que el permiso de la
-          // app: cada uno lleva a una pantalla de ajustes distinta.
-          avisarErrorUbicacion(
-            context,
-            mensajeGpsApagado,
-            accionAjustes: Geolocator.openLocationSettings,
-            antesDeAbrirAjustes: marcarVolviendoDeAjustes,
-          );
-        case FalloUbicacion.permisoBloqueado:
-          avisarErrorUbicacion(
-            context,
-            mensajePermisoBloqueado,
-            accionAjustes: Geolocator.openAppSettings,
-            antesDeAbrirAjustes: marcarVolviendoDeAjustes,
-          );
-        case FalloUbicacion.permisoDenegado:
-          break;
-        case FalloUbicacion.sinRespuesta:
-          avisarErrorUbicacion(
-            context,
-            'No se pudo detectar tu ubicación. Podés reintentar tocando de nuevo.',
-          );
-      }
-      return;
-    }
-
-    // El GPS anduvo pero nadie le supo poner nombre al punto. Antes de
-    // acá se guardaban igual las coordenadas nuevas conservando el texto
-    // de ciudad VIEJO: el animal quedaba diciendo "Córdoba" mientras sus
-    // coordenadas apuntaban a otro lado y el país quedaba vacío — y el
-    // tilde se veía en verde, porque solo mira que haya latitud. Ver
-    // ResultadoUbicacion.sinNombre.
-    if (resultado.sinNombre) {
-      avisarErrorUbicacion(context, avisoCiudadSinNombre);
-      return;
-    }
-
-    setState(() {
-      _latitud = resultado.posicion!.latitude;
-      _longitud = resultado.posicion!.longitude;
-      _lugarCtl.text = resultado.ciudad;
-      // El listener de _lugarCtl (ver initState) prende esto apenas la
-      // línea de arriba toca el texto — hay que apagarlo de nuevo ACÁ, ya
-      // en el mismo tramo: el GPS acaba de dejar texto y coordenadas
-      // sincronizados entre sí, no es una edición a mano que deje al uno
-      // desactualizado respecto del otro.
-      _ubicacionTocadaAMano = false;
-      _paisCodigo = resultado.paisCodigo;
-      _lugarOriginal = _lugarCtl.text;
-    });
-  }
 
   // Mismo motivo que subir_rescate_screen.dart: un SnackBar como "Activa el
   // GPS en tu dispositivo" (8s) queda visible sobre la pantalla de ATRÁS si
@@ -380,8 +308,7 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
       if (texto == _lugarOriginal.trim()) _ubicacionTocadaAMano = false;
       return;
     }
-    _resolviendoCiudad = true;
-    setState(() => _detectandoUbicacion = true);
+    setState(() => _resolviendoCiudad = true);
     try {
       final elegida = await resolverCiudadEscrita(context, texto);
       if (!mounted) return;
@@ -404,13 +331,14 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
           _lugarOriginal = _lugarCtl.text;
         }
         _ubicacionTocadaAMano = false;
-        _detectandoUbicacion = false;
+        _resolviendoCiudad = false;
       });
     } catch (_) {
       // Sin señal o el mapa no contesta: se deja lo que había, sin
       // bloquear. Guardar volverá a intentarlo, que es el respaldo.
-      if (mounted) setState(() => _detectandoUbicacion = false);
+      if (mounted) setState(() => _resolviendoCiudad = false);
     } finally {
+      // Si salió por !mounted, el setState de arriba no corrió.
       _resolviendoCiudad = false;
     }
   }
@@ -617,7 +545,8 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
     });
     iniciarTimerTardando(const Duration(seconds: 8));
     try {
-      // _ubicacionTocadaAMano (ver initState/_obtenerUbicacionGPS): si el
+      // _ubicacionTocadaAMano (ver initState y el onDetectado del
+      // CampoCiudad): si el
       // texto se tocó a mano desde la última vez que quedó sincronizado con
       // _latitud/_longitud (la carga inicial, o el último GPS), esas
       // coordenadas ya no corresponden a lo que dice el texto ahora.
@@ -1277,7 +1206,6 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
   /// había un campo de texto Y, debajo, una tarjeta aparte solo para el
   /// detector — quedaba "ubicación" pedida dos veces en la misma pantalla.
   Widget _campoUbicacion() {
-    final obtenida = _latitud != null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1290,44 +1218,27 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
           ),
         ),
         const SizedBox(height: 6),
-        TextField(
+        // CampoCiudad: el mismo campo que usan los perfiles y publicar.
+        // Antes acá había una versión propia con su copia entera de la
+        // detección por GPS — eran tres, una por pantalla.
+        CampoCiudad(
           controller: _lugarCtl,
           focusNode: _lugarFocus,
-          textInputAction: TextInputAction.done,
-          decoration: InputDecoration(
-            hintText: 'ej. Laureles',
-            hintStyle: TextStyle(color: Colors.grey.shade400),
-            filled: true,
-            fillColor: Colors.white,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
-            ),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 12,
-            ),
-            suffixIcon: _detectandoUbicacion
-                ? const Padding(
-                    padding: EdgeInsets.all(14),
-                    child: SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: appTeal,
-                      ),
-                    ),
-                  )
-                : IconButton(
-                    tooltip: 'Detectar mi ubicación',
-                    icon: Icon(
-                      obtenida ? Icons.check_circle : Icons.my_location,
-                      color: obtenida ? appTeal : Colors.grey.shade700,
-                    ),
-                    onPressed: _obtenerUbicacionGPS,
-                  ),
-          ),
+          hint: 'ej. Laureles',
+          maxLength: 60,
+          controlador: _ciudadCtrl,
+          antesDeAbrirAjustes: marcarVolviendoDeAjustes,
+          // Mismo criterio que al publicar: los tres datos del MISMO punto.
+          onDetectado: (r) => setState(() {
+            _latitud = r.posicion?.latitude;
+            _longitud = r.posicion?.longitude;
+            _paisCodigo = r.paisCodigo;
+            // El listener de _lugarCtl prende la marca al escribir el
+            // texto, así que apagarla va DESPUÉS: esto no es una edición a
+            // mano, texto y coordenadas salieron del mismo lugar.
+            _ubicacionTocadaAMano = false;
+            _lugarOriginal = _lugarCtl.text;
+          }),
         ),
       ],
     );

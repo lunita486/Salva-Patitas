@@ -4,13 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:go_router/go_router.dart';
 import '../routing/app_router.dart';
 import '../theme.dart';
 import '../widgets/chips_seleccionables.dart';
-import '../widgets/aviso_ubicacion.dart';
 import '../widgets/confirmar_ciudad_resuelta.dart';
 import '../widgets/elegir_foto_animal.dart';
 import '../widgets/tardando_mucho_mixin.dart';
@@ -20,6 +18,7 @@ import '../data/usuarios_repository.dart';
 import '../data/foto_normalizador.dart';
 import '../services/ubicacion_service.dart';
 import '../services/ubicacion_lifecycle.dart';
+import '../widgets/campo_ciudad.dart';
 
 class SubirRescateScreen extends StatefulWidget {
   final bool esAlbergue;
@@ -98,7 +97,6 @@ class _SubirRescateScreenState extends State<SubirRescateScreen>
   // sin ningún texto, hasta que el timeout de 45s se cumple. Sin este
   // aviso parecía que la app estaba colgada (el bug real que reportó
   // Eliza: "el mensaje se demora mucho en presentarse").
-  bool _detectandoUbicacion = false;
   double? _latitud;
   double? _longitud;
   String _paisCodigo = '';
@@ -108,6 +106,12 @@ class _SubirRescateScreenState extends State<SubirRescateScreen>
   // sí (por GPS o por el geocodificador en _publicar()) — ver ese comentario
   // para el porqué completo. Mismo patrón que editar_rescate_screen.dart.
   bool _ubicacionTocadaAMano = false;
+
+  /// Para dispararle la detección al campo de ciudad desde acá: al abrir la
+  /// pantalla, al volver de los Ajustes, y desde el diálogo de "publicar
+  /// sin ubicación". Ver CampoCiudadControlador — antes esta pantalla tenía
+  /// su propia copia entera de la detección, y editar_rescate una tercera.
+  final _ciudadCtrl = CampoCiudadControlador();
   // El texto que estaba en el campo la última vez que quedó sincronizado
   // con _latitud/_longitud (arranca vacío: acá no hay un "original" fijo
   // como en editar_rescate_screen.dart, el animal todavía no existe). Es a
@@ -124,7 +128,7 @@ class _SubirRescateScreenState extends State<SubirRescateScreen>
     if (widget.esAlbergue)
       _cargarCiudadAlbergue();
     else
-      _obtenerUbicacionGPS();
+      _ciudadCtrl.detectar();
   }
 
   // El botón "Abrir Ajustes" del aviso de permiso bloqueado saca a la
@@ -139,9 +143,9 @@ class _SubirRescateScreenState extends State<SubirRescateScreen>
   @override
   bool get yaTieneUbicacion => widget.esAlbergue || _latitud != null;
   @override
-  bool get detectandoUbicacion => _detectandoUbicacion;
+  bool get detectandoUbicacion => _ciudadCtrl.detectando;
   @override
-  void reintentarConPermiso() => _obtenerUbicacionGPS();
+  void reintentarConPermiso() => _ciudadCtrl.detectar();
 
   Future<void> _cargarCiudadAlbergue() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -176,80 +180,6 @@ class _SubirRescateScreenState extends State<SubirRescateScreen>
   /// Toda la secuencia de servicio/permiso/GPS/geocoding y sus reintentos
   /// vive en UbicacionService. Lo único que queda acá es la UI, que es lo
   /// que de verdad distingue a esta pantalla: avisos con botón a Ajustes, y
-  /// la ubicación como algo opcional que nunca bloquea publicar.
-  Future<void> _obtenerUbicacionGPS() async {
-    // Limpia cualquier aviso de un intento anterior (ej. "permiso
-    // bloqueado" todavía en pantalla) antes de mostrar el resultado de
-    // este — sin esto, reintentar varias veces (o el reintento automático
-    // al volver de Ajustes) los apilaba uno atrás de otro.
-    ScaffoldMessenger.of(context).clearSnackBars();
-    setState(() => _detectandoUbicacion = true);
-
-    final resultado = await UbicacionService.actual(
-      conCiudad: true,
-      precision: LocationAccuracy.high,
-    );
-
-    // La detección puede tardar y la usuaria puede haber salido de la
-    // pantalla mientras tanto (setState tras dispose es una excepción).
-    if (!mounted) return;
-    setState(() => _detectandoUbicacion = false);
-
-    if (!resultado.ok) {
-      switch (resultado.fallo!) {
-        case FalloUbicacion.servicioApagado:
-          // El GPS del sistema apagado no es lo mismo que el permiso de la
-          // app: lleva a los ajustes de ubicación del teléfono, no a los de
-          // la app.
-          avisarErrorUbicacion(
-            context,
-            mensajeGpsApagado,
-            accionAjustes: Geolocator.openLocationSettings,
-            antesDeAbrirAjustes: marcarVolviendoDeAjustes,
-          );
-        case FalloUbicacion.permisoBloqueado:
-          avisarErrorUbicacion(
-            context,
-            mensajePermisoBloqueado,
-            accionAjustes: Geolocator.openAppSettings,
-            antesDeAbrirAjustes: marcarVolviendoDeAjustes,
-          );
-        case FalloUbicacion.permisoDenegado:
-          // Acaba de decir que no: se le puede volver a preguntar tocando
-          // el campo otra vez, no hace falta un aviso rojo.
-          break;
-        case FalloUbicacion.sinRespuesta:
-          avisarErrorUbicacion(
-            context,
-            'No se pudo detectar tu ubicación. Podés tocar para '
-            'reintentar, o publicar igual sin ubicación exacta.',
-          );
-      }
-      return;
-    }
-
-    // Misma regla que en editar: sin nombre no se toca nada. Acá el daño
-    // era menor (el campo suele estar vacío al publicar) pero la conducta
-    // era una tercera distinta — borraba el texto en silencio y dejaba
-    // coordenadas sin ciudad. Ver ResultadoUbicacion.sinNombre.
-    if (resultado.sinNombre) {
-      avisarErrorUbicacion(context, avisoCiudadSinNombre);
-      return;
-    }
-
-    setState(() {
-      _latitud = resultado.posicion!.latitude;
-      _longitud = resultado.posicion!.longitude;
-      // El orden importa: escribir el texto dispara el listener que prende
-      // _ubicacionTocadaAMano, así que el reset va DESPUÉS. Acá texto y
-      // coordenadas quedan sincronizados por definición (salieron del mismo
-      // punto), que es justo lo contrario de una edición a mano.
-      _lugarCtl.text = resultado.ciudad;
-      _ubicacionTocadaAMano = false;
-      _paisCodigo = resultado.paisCodigo;
-      _lugarSincronizado = _lugarCtl.text;
-    });
-  }
 
   // Cuando la usuaria confirma "Publicar igual" habiendo un duplicado, se
   // guarda el rastro en el nuevo doc (con qué otro animal se cruzó y
@@ -458,7 +388,7 @@ class _SubirRescateScreenState extends State<SubirRescateScreen>
       // encontrar y tocar el campo de ubicación por su cuenta.
       if (continuar != true) {
         setState(() => _publicando = false);
-        if (mounted && !_detectandoUbicacion) _obtenerUbicacionGPS();
+        if (mounted) _ciudadCtrl.detectar();
         return;
       }
     }
@@ -1139,63 +1069,41 @@ class _SubirRescateScreenState extends State<SubirRescateScreen>
     ],
   );
 
-  Widget _locationField() {
-    final obtenida = _latitud != null;
-    final ciudad = _lugarCtl.text;
-    return GestureDetector(
-      onTap: _detectandoUbicacion ? null : _obtenerUbicacionGPS,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        decoration: BoxDecoration(
-          color: obtenida
-              ? appTeal.withValues(alpha: 0.08)
-              : Colors.white.withValues(alpha: 0.88),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: obtenida ? appTeal : Colors.grey.shade300),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 6,
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            if (_detectandoUbicacion)
-              const SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: appTeal,
-                ),
-              )
-            else
-              Icon(
-                obtenida ? Icons.check_circle : Icons.my_location,
-                color: obtenida ? appTeal : Colors.grey.shade700,
-                size: 22,
-              ),
-            const SizedBox(width: 12),
-            Text(
-              _detectandoUbicacion
-                  ? 'Detectando ubicación...'
-                  : obtenida
-                  ? (ciudad.isNotEmpty ? '$ciudad ✓' : 'Ubicación detectada ✓')
-                  : 'Toca para detectar tu ubicación',
-              style: TextStyle(
-                fontSize: 14,
-                color: obtenida || _detectandoUbicacion
-                    ? appTeal
-                    : Colors.grey.shade700,
-                fontWeight: obtenida ? FontWeight.w600 : FontWeight.normal,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  /// La ubicación del animalito: se puede escribir Y detectar por GPS.
+  ///
+  /// Antes acá había una versión propia que SOLO detectaba: un
+  /// `GestureDetector` sobre un texto, sin forma de escribir nada. La idea
+  /// era que un rescate se publica desde donde está el animal, así que el
+  /// GPS alcanzaba. No alcanza: en Medellín el mapa devuelve el barrio en
+  /// vez de la ciudad, y quien publicaba quedaba atrapada con ese nombre
+  /// hasta ir a editar. Hallazgo real de Eliza.
+  ///
+  /// Ahora usa CampoCiudad, el mismo widget que los perfiles y que editar.
+  Widget _locationField() => CampoCiudad(
+    controller: _lugarCtl,
+    hint: 'Ciudad donde está el animalito',
+    maxLength: 60,
+    controlador: _ciudadCtrl,
+    antesDeAbrirAjustes: marcarVolviendoDeAjustes,
+    // El GPS trae coordenadas y país junto con el nombre, y los tres tienen
+    // que quedar del MISMO lugar: mezclar el nombre de uno con las
+    // coordenadas de otro es lo que deja un animalito diciendo una ciudad y
+    // apareciendo en otra.
+    //
+    // Escribir a mano NO pasa por acá, y está bien: ese texto todavía no lo
+    // confirmó el mapa. De eso se encarga el guardado, que lo resuelve y
+    // recién ahí fija las coordenadas (ver _publicar).
+    onDetectado: (r) => setState(() {
+      _latitud = r.posicion?.latitude;
+      _longitud = r.posicion?.longitude;
+      _paisCodigo = r.paisCodigo;
+      // Texto y coordenadas quedan sincronizados por definición: salieron
+      // del mismo punto. El listener de _lugarCtl prende la marca al
+      // escribir el texto, así que hay que apagarla DESPUÉS.
+      _ubicacionTocadaAMano = false;
+      _lugarSincronizado = _lugarCtl.text;
+    }),
+  );
 
   Widget _publishBtn() => SizedBox(
     width: double.infinity,
