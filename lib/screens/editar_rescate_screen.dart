@@ -314,7 +314,23 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
       if (!mounted) return;
       setState(() {
         if (elegida == null) {
-          _lugarCtl.text = _lugarOriginal;
+          // Se deja lo tecleado tal cual, a propósito. Acá `null` significa
+          // tres cosas distintas —no existe ese lugar, no hubo señal, o
+          // cerró el diálogo sin elegir— y en las tres borrar el texto es
+          // perder trabajo de alguien que solo movió el foco de campo.
+          //
+          // Era contradictorio además: el aviso dice "revisá cómo la
+          // escribiste" y acto seguido se borraba lo que había que revisar,
+          // dejando de nuevo el nombre viejo. Así se veía "no me deja poner
+          // Medellín, siempre me lo reemplaza por Los Olivos" — hallazgo
+          // real de Eliza. Lo tecleado queda, ella corrige una letra en vez
+          // de escribir todo otra vez.
+          //
+          // No se pierde la red de seguridad: `_ubicacionTocadaAMano` sigue
+          // prendida, así que Guardar vuelve a resolver antes de escribir
+          // nada, y las coordenadas siguen siendo las del lugar viejo hasta
+          // que alguna resolución termine bien. Nunca se guarda un texto
+          // que el mapa no confirmó.
         } else {
           // Los tres datos del MISMO candidato, siempre — ver el
           // invariante en confirmar_ciudad_resuelta.dart. El nombre es el
@@ -329,8 +345,12 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
           _lugarCtl.text = elegida.ciudadResuelta;
           _paisCodigo = elegida.paisCodigo;
           _lugarOriginal = _lugarCtl.text;
+          // Solo se apaga cuando el mapa CONFIRMÓ el lugar. Si quedó texto
+          // sin resolver, la marca sigue prendida para que Guardar lo
+          // vuelva a intentar: es lo que impide que un nombre sin confirmar
+          // llegue a Firestore con las coordenadas del lugar anterior.
+          _ubicacionTocadaAMano = false;
         }
-        _ubicacionTocadaAMano = false;
         _resolviendoCiudad = false;
       });
     } catch (_) {

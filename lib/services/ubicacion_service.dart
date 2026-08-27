@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:geolocator/geolocator.dart';
 // conReintento vive en data/firestore_resiliencia.dart por su origen (fallas
 // transitorias de Firestore), pero la función en sí es genérica: "reintentá
@@ -511,6 +512,64 @@ class UbicacionService {
     return address as Map<String, dynamic>;
   }
 
+  /// Envoltorios administrativos que OpenStreetMap le pega al nombre de la
+  /// ciudad y que no son parte del nombre para nadie que viva ahí.
+  ///
+  /// **No es un caso raro: le pasa a la mayoría de las usuarias.** Tocando el
+  /// botón de GPS en el centro de Medellín, el mapa contesta
+  /// `city = "Perímetro Urbano Medellín"`, y eso es lo que se guardaba y lo
+  /// que salía en la tarjeta del animalito. Nadie busca "Perímetro Urbano
+  /// Medellín". Hallazgo real de Eliza, que no lograba dejar puesto
+  /// "Medellín".
+  ///
+  /// Se verificó contra el servicio de verdad, no de memoria — el mismo
+  /// destrato le toca a Barranquilla (mismo prefijo) y a Cali, que sale como
+  /// `"Cali ciudad"`. Bogotá, Envigado, Bello y Rionegro vienen limpias, así
+  /// que esto no es "todas las ciudades" ni se puede deducir del nombre: hay
+  /// que sacar el envoltorio y dejar el resto intacto.
+  ///
+  /// **Por qué la lista es corta a propósito.** Cada patrón de acá es puro
+  /// artefacto de catastro, nunca parte de un nombre real. La tentación es
+  /// agregar `"Ciudad de "`, y sería un error: se llevaría puesta a Ciudad de
+  /// México y la dejaría como "México", que es el país. Por eso el sufijo se
+  /// saca solo al final (`"Cali ciudad"` sí, `"Ciudad de México"` y `"Ciudad
+  /// Bolívar"` no se tocan) y nada se saca del medio.
+  static const _prefijosAdministrativos = ['Perímetro Urbano ', 'Perímetro Rural '];
+  static const _sufijosAdministrativos = [' ciudad'];
+
+  /// Saca el envoltorio administrativo de [_prefijosAdministrativos] y
+  /// [_sufijosAdministrativos] y devuelve el nombre que usaría una persona.
+  ///
+  /// Vive acá, y no en cada pantalla, porque lo tienen que ver por igual el
+  /// botón de GPS (reverse) y la ciudad escrita a mano (search): son las dos
+  /// puertas por las que entra un nombre de ciudad a la app, y las dos pasan
+  /// por [_direccionDe].
+  ///
+  /// Efecto de regalo en el buscador: escribir "Medellín Antioquia" traía dos
+  /// candidatos para elegir, "Medellín" y "Perímetro Urbano Medellín", que
+  /// para quien mira son el mismo lugar dos veces. Limpiados quedan idénticos
+  /// y el deduplicado de [desdeTexto] los junta en uno solo.
+  ///
+  /// Si limpiar dejara el nombre vacío se devuelve el original: es preferible
+  /// un nombre feo a ninguno.
+  @visibleForTesting
+  static String limpiarNombreDeCiudad(String nombre) {
+    var limpio = nombre.trim();
+    for (final prefijo in _prefijosAdministrativos) {
+      if (limpio.toLowerCase().startsWith(prefijo.toLowerCase())) {
+        limpio = limpio.substring(prefijo.length).trim();
+        break;
+      }
+    }
+    for (final sufijo in _sufijosAdministrativos) {
+      if (limpio.toLowerCase().endsWith(sufijo.toLowerCase())) {
+        limpio = limpio.substring(0, limpio.length - sufijo.length).trim();
+        break;
+      }
+    }
+    return limpio.isEmpty ? nombre.trim() : limpio;
+  }
+
   /// Localidad de un `address` de Nominatim — no tiene un único campo
   /// "ciudad" como el geocodificador viejo (`locality`): según qué tan
   /// urbano sea el lugar, el dato viene en `city`, `town`, `village` o
@@ -523,7 +582,7 @@ class UbicacionService {
         address['municipality'] as String? ??
         '';
     return (
-      locality: localidad,
+      locality: limpiarNombreDeCiudad(localidad),
       administrativeArea: address['state'] as String? ?? '',
     );
   }
