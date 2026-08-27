@@ -1,12 +1,11 @@
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme.dart';
+import '../widgets/boton_cambiar_rol.dart';
 import '../domain/reglas_negocio.dart';
 import '../widgets/avatares.dart';
-import '../widgets/cambiar_rol_debug.dart';
 import '../widgets/dialogo_cerrar_sesion.dart';
 import '../widgets/estado_error_feed.dart';
 import '../widgets/fondo_decorativo.dart';
@@ -83,11 +82,6 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
       }
     });
   }
-
-  // El diálogo/escritura viven en mostrarCambiarRolDebug (widgets/cambiar_rol_debug.dart,
-  // compartida entre 5 pantallas que antes cada una tenía su propia copia
-  // — hallazgo de auditoría de código).
-  Future<void> _cambiarRolDebug() => mostrarCambiarRolDebug(context);
 
   // guardarConAviso, no un await directo suelto (lo que había acá antes,
   // sin try/catch ni aviso de ningún tipo): mismo bug encontrado y
@@ -200,19 +194,10 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
 
             return Scaffold(
               backgroundColor: appBg,
-              floatingActionButton: kDebugMode
-                  ? FloatingActionButton.small(
-                      heroTag: 'debug_rol',
-                      onPressed: _cambiarRolDebug,
-                      backgroundColor: Colors.purple.shade100,
-                      elevation: 4,
-                      tooltip: 'Cambiar rol (debug)',
-                      child: Icon(
-                        Icons.developer_mode,
-                        color: Colors.purple.shade700,
-                      ),
-                    )
-                  : null,
+              floatingActionButton: botonCambiarRol(
+                context,
+                heroTag: 'debug_rol',
+              ),
               bottomNavigationBar: _bottomNav(chatsNuevos),
               body: Stack(
                 children: [

@@ -1,11 +1,10 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme.dart';
-import '../widgets/cambiar_rol_debug.dart';
+import '../widgets/boton_cambiar_rol.dart';
 import '../widgets/campo_ciudad.dart';
 import '../widgets/campo_pais_telefono.dart';
 import '../widgets/campos_perfil.dart';
@@ -136,12 +135,6 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
     });
     await _cargarDatosExistentes();
   }
-
-  // El diálogo/escritura viven en mostrarCambiarRolDebug (widgets/cambiar_rol_debug.dart,
-  // compartida entre 5 pantallas que antes cada una tenía su propia copia
-  // — hallazgo de auditoría de código).
-  Future<void> _cambiarRolDebug(BuildContext ctx) =>
-      mostrarCambiarRolDebug(ctx);
 
   Future<void> _pickFoto() async {
     final b64 = await elegirFotoPerfil();
@@ -788,37 +781,11 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
               ),
             ),
           ),
-          if (kDebugMode)
+          if (chipCambiarRol(context) case final boton?)
             Positioned(
               top: MediaQuery.of(context).padding.top + 8,
               right: 16,
-              child: Builder(
-                builder: (ctx) => Tooltip(
-                  message: 'Cambiar rol (debug)',
-                  child: GestureDetector(
-                    onTap: () => _cambiarRolDebug(ctx),
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.purple.shade100,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.12),
-                            blurRadius: 4,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Icon(
-                        Icons.developer_mode,
-                        color: Colors.purple.shade700,
-                        size: 18,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+              child: boton,
             ),
         ],
       ),

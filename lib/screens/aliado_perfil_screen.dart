@@ -1,10 +1,9 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme.dart';
-import '../widgets/cambiar_rol_debug.dart';
+import '../widgets/boton_cambiar_rol.dart';
 import '../widgets/campo_ciudad.dart';
 import '../widgets/campo_pais_telefono.dart';
 import '../widgets/campos_perfil.dart';
@@ -326,11 +325,6 @@ class _AliadoPerfilScreenState extends State<AliadoPerfilScreen> {
     super.dispose();
   }
 
-  // El diálogo/escritura viven en mostrarCambiarRolDebug (widgets/cambiar_rol_debug.dart,
-  // compartida entre 5 pantallas que antes cada una tenía su propia copia
-  // — hallazgo de auditoría de código).
-  Future<void> _cambiarRolDebug() => mostrarCambiarRolDebug(context);
-
   @override
   Widget build(BuildContext context) {
     if (_cargando) {
@@ -400,16 +394,7 @@ class _AliadoPerfilScreenState extends State<AliadoPerfilScreen> {
     }
     return Scaffold(
       backgroundColor: appBg,
-      floatingActionButton: kDebugMode
-          ? FloatingActionButton.small(
-              heroTag: 'debug_perfil',
-              onPressed: _cambiarRolDebug,
-              backgroundColor: Colors.purple.shade100,
-              elevation: 4,
-              tooltip: 'Cambiar rol (debug)',
-              child: Icon(Icons.developer_mode, color: Colors.purple.shade700),
-            )
-          : null,
+      floatingActionButton: botonCambiarRol(context, heroTag: 'debug_perfil'),
       body: Stack(
         fit: StackFit.expand,
         children: [

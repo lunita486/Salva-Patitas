@@ -49,6 +49,31 @@ const _bandera = String.fromEnvironment('SANDBOX');
 // en un APK de release esto es `false` y el bloque entero desaparece.
 const bool enSandbox = (kDebugMode || kProfileMode) && _bandera == 'true';
 
+/// Estamos en una build de pruebas (debug o profile), nunca en release.
+///
+/// Es lo que decide si se dibuja el botón morado de cambiar de rol. Antes
+/// ese botón preguntaba por [kDebugMode] a secas, en cinco pantallas, y eso
+/// lo dejaba afuera de las builds de PROFILE — justo las que se usan para
+/// probar en el emulador de Android, porque una build de debug ahí es tan
+/// lenta que Android la mata antes de poder tocar nada (ver el comentario
+/// largo de [enSandbox]).
+///
+/// El resultado era una trampa: la única build que corre bien en el
+/// emulador es la única sin el botón para cambiar de rol. Eliza:
+/// "recordás que teníamos un botón morado en el emulador, una vez me
+/// logueaba con mi cuenta de gmail podía entrar a cualquier rol desde la
+/// misma cuenta mía de gmail".
+///
+/// Separado de [enSandbox] a propósito: cambiar de rol con la cuenta de
+/// Google DE VERDAD es justamente lo que ella quiere poder hacer, así que
+/// este botón no puede depender de que se hayan levantado los emuladores
+/// locales.
+///
+/// La garantía de release es la misma y por el mismo motivo: las dos son
+/// constantes de compilación, así que en un APK de release esto es `false`
+/// y todo lo que cuelga de acá se borra del binario.
+const bool enModoPruebas = kDebugMode || kProfileMode;
+
 /// `localhost` desde adentro del emulador de Android es el propio teléfono
 /// virtual, no la máquina. 10.0.2.2 es el alias que Android reserva para
 /// "la máquina que me hospeda". En iOS y escritorio sí es localhost.

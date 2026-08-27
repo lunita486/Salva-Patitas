@@ -1,12 +1,11 @@
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme.dart';
+import '../widgets/boton_cambiar_rol.dart';
 import '../domain/reglas_negocio.dart';
 import '../widgets/avatares.dart';
 import '../widgets/cambiar_estado_sheet.dart';
-import '../widgets/cambiar_rol_debug.dart';
 import '../widgets/fondo_decorativo.dart';
 import '../widgets/fotos.dart';
 import '../widgets/texto_sin_desborde.dart';
@@ -183,17 +182,6 @@ class _HomeScreenState extends State<HomeScreen>
     });
   }
 
-  // ── Debug: cambio rápido de rol (solo en builds de desarrollo) ─────────────
-  // El diálogo/escritura en sí viven en mostrarCambiarRolDebug (widgets/cambiar_rol_debug.dart,
-  // compartida entre 5 pantallas que antes cada una tenía su propia copia)
-  // — acá solo se agrega lo propio de ESTA pantalla: releer el rol después,
-  // porque a diferencia de las otras, home_screen.dart cachea
-  // _isRescatista/_roles localmente en vez de escuchar el doc en vivo.
-  Future<void> _cambiarRolDebug() async {
-    await mostrarCambiarRolDebug(context);
-    if (mounted) await _cargarRol();
-  }
-
   // Ambas centralizadas en solicitudes_rescatista_screen.dart — antes
   // duplicadas byte a byte con albergue_home_screen.dart (hallazgo de
   // auditoría de código).
@@ -343,18 +331,12 @@ class _HomeScreenState extends State<HomeScreen>
                   ),
                 ],
               ),
-              floatingActionButton: kDebugMode
-                  ? FloatingActionButton.small(
-                      onPressed: _cambiarRolDebug,
-                      backgroundColor: Colors.purple.shade100,
-                      elevation: 4,
-                      tooltip: 'Cambiar rol (debug)',
-                      child: Icon(
-                        Icons.developer_mode,
-                        color: Colors.purple.shade700,
-                      ),
-                    )
-                  : null,
+              floatingActionButton: botonCambiarRol(
+                context,
+                alVolver: () {
+                  if (mounted) _cargarRol();
+                },
+              ),
               bottomNavigationBar: _bottomNav(noLeidosRescatista),
             );
           },

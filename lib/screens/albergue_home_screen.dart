@@ -1,13 +1,12 @@
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme.dart';
+import '../widgets/boton_cambiar_rol.dart';
 import '../domain/reglas_negocio.dart';
 import '../widgets/avatares.dart';
 import '../widgets/cambiar_estado_sheet.dart';
-import '../widgets/cambiar_rol_debug.dart';
 import '../widgets/dialogo_cerrar_sesion.dart';
 import '../widgets/elegir_foto_perfil.dart';
 import '../widgets/estado_error_feed.dart';
@@ -171,13 +170,6 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
     }
   }
 
-  // El diálogo/escritura viven en mostrarCambiarRolDebug (widgets/cambiar_rol_debug.dart,
-  // compartida entre 5 pantallas que antes cada una tenía su propia copia
-  // — hallazgo de auditoría de código).
-  Future<void> _cambiarRolDebug() async {
-    await mostrarCambiarRolDebug(context);
-  }
-
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<DocumentSnapshot>(
@@ -317,36 +309,12 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (kDebugMode)
+          if (chipCambiarRol(context) case final boton?)
             Align(
               alignment: Alignment.centerRight,
               child: Padding(
                 padding: const EdgeInsets.only(right: 16, top: 8),
-                child: Tooltip(
-                  message: 'Cambiar rol (debug)',
-                  child: GestureDetector(
-                    onTap: _cambiarRolDebug,
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.purple.shade100,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.12),
-                            blurRadius: 4,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Icon(
-                        Icons.developer_mode,
-                        color: Colors.purple.shade700,
-                        size: 18,
-                      ),
-                    ),
-                  ),
-                ),
+                child: boton,
               ),
             ),
 
