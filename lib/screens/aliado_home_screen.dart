@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme.dart';
+import '../widgets/roles_sheet.dart';
 import '../widgets/boton_cambiar_rol.dart';
 import '../domain/reglas_negocio.dart';
 import '../widgets/avatares.dart';
@@ -1158,6 +1159,30 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                         borderRadius: BorderRadius.circular(14),
                       ),
                       elevation: 0,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    // Sin esto no había NINGUNA salida: resolverPantallaPerfil
+                    // manda a albergue/aliado antes que a cualquier otro rol,
+                    // así que quien tuviera ese rol aterrizaba siempre acá, y
+                    // "Gestionar mis roles" solo existía en los perfiles de
+                    // adoptante y rescatista. Quedaba encerrada para siempre.
+                    // Hallazgo real de Eliza con su propia cuenta.
+                    onPressed: () =>
+                        gestionarRoles(context, rolFallback: 'aliado'),
+                    icon: const Icon(Icons.switch_account_outlined, size: 18),
+                    label: const Text('Gestionar mis roles'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: appTeal,
+                      side: BorderSide(color: appTeal.withValues(alpha: 0.4)),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
                     ),
                   ),
                 ),
