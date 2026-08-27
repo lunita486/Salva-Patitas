@@ -92,4 +92,93 @@ void main() {
       );
     },
   );
+
+  group(
+    'hayQueResolverCiudad() — cuándo aparece la lista de ciudades. Antes la '
+    'lista salía recién al tocar Guardar, así que elegir una de la lista '
+    'era, sin que se notara, aceptar el guardado entero: la pantalla se '
+    'cerraba y volvías a Mis rescates. Hallazgo real de Eliza en Medellín.',
+    () {
+      test('escribió algo distinto: hay que verificarlo', () {
+        expect(
+          hayQueResolverCiudad(
+            texto: 'Medellín Antioquia',
+            original: 'Los Olivos',
+            tocadaAMano: true,
+          ),
+          isTrue,
+        );
+      });
+
+      // Resolver de más pisa lo que la persona escribió, y se siente como
+      // "siempre me lo reemplaza".
+      test('no tocó el campo: no se toca nada', () {
+        expect(
+          hayQueResolverCiudad(
+            texto: 'Los Olivos',
+            original: 'Los Olivos',
+            tocadaAMano: false,
+          ),
+          isFalse,
+        );
+      });
+
+      test('escribió lo mismo que ya estaba: el mapa ya lo confirmó', () {
+        expect(
+          hayQueResolverCiudad(
+            texto: 'Medellín',
+            original: 'Medellín',
+            tocadaAMano: true,
+          ),
+          isFalse,
+        );
+      });
+
+      test('y los espacios no lo hacen parecer distinto', () {
+        expect(
+          hayQueResolverCiudad(
+            texto: '  Medellín  ',
+            original: 'Medellín',
+            tocadaAMano: true,
+          ),
+          isFalse,
+        );
+      });
+
+      // Hay animalitos sin ubicación, y borrarla tiene que poder hacerse.
+      // Antes un campo vacío bloqueaba el guardado entero: hallazgo real de
+      // Eliza editando un animalito sin ciudad.
+      test('lo dejó vacío: es válido, no hay nada que resolver', () {
+        expect(
+          hayQueResolverCiudad(
+            texto: '',
+            original: 'Medellín',
+            tocadaAMano: true,
+          ),
+          isFalse,
+        );
+        expect(
+          hayQueResolverCiudad(
+            texto: '   ',
+            original: 'Medellín',
+            tocadaAMano: true,
+          ),
+          isFalse,
+        );
+      });
+
+      // Resolver de menos deja guardar un texto que el mapa nunca confirmó,
+      // y entonces el animalito dice una ciudad y aparece en otra.
+      test('un animalito que no tenía ciudad y ahora sí: se verifica', () {
+        expect(
+          hayQueResolverCiudad(
+            texto: 'Medellín',
+            original: '',
+            tocadaAMano: true,
+          ),
+          isTrue,
+        );
+      });
+    },
+  );
 }

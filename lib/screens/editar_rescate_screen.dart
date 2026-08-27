@@ -52,6 +52,32 @@ String descripcionSinNombreDePlantillaVieja({
   return 'Fue encontrado/a${descripcion.substring(prefijoViejo.length)}';
 }
 
+/// ¿Hay que ir al mapa a resolver la ciudad que quedó escrita?
+///
+/// Es la decisión que gobierna cuándo aparece la lista de ciudades. Vale la
+/// pena tenerla aparte y probada porque los dos errores posibles duelen de
+/// formas distintas:
+///
+///  · resolver de más pisa lo que la persona escribió (se siente como
+///    "siempre me lo reemplaza");
+///  · resolver de menos deja guardar un texto que el mapa nunca confirmó,
+///    y entonces el animalito dice una ciudad y aparece en otra.
+///
+/// [tocadaAMano] viene del listener del campo: si la persona no lo tocó, no
+/// hay nada nuevo que verificar. Un campo VACÍO tampoco se resuelve: hay
+/// animalitos sin ubicación y borrarla tiene que poder hacerse.
+bool hayQueResolverCiudad({
+  required String texto,
+  required String original,
+  required bool tocadaAMano,
+}) {
+  if (!tocadaAMano) return false;
+  final limpio = texto.trim();
+  if (limpio.isEmpty) return false;
+  // Ya es la que estaba guardada: el mapa ya la confirmó en su momento.
+  return limpio != original.trim();
+}
+
 class EditarRescateScreen extends StatefulWidget {
   final String docId;
   final Map<String, dynamic> data;
@@ -72,6 +98,26 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
   late TextEditingController _nombreCtl;
   late TextEditingController _descCtl;
   late TextEditingController _lugarCtl;
+
+  /// La ciudad se resuelve al SALIR del campo, no al guardar.
+  ///
+  /// Antes la lista de ciudades aparecía recién al tocar "Guardar", así que
+  /// elegir una de la lista era, sin que se notara, aceptar el guardado
+  /// entero: la pantalla se cerraba y volvías a Mis rescates. Vos creías
+  /// que estabas eligiendo una ciudad, no confirmando todo. Hallazgo real
+  /// de Eliza editando un animalito en Medellín.
+  ///
+  /// Ahora se resuelve cuando dejás el campo: ves en pantalla qué ciudad
+  /// quedó, la podés volver a cambiar, y Guardar guarda lo que estás
+  /// viendo. Importa especialmente acá porque el mapa a veces devuelve el
+  /// barrio en vez de la ciudad, y sin verlo antes te enterás demasiado
+  /// tarde.
+  final _lugarFocus = FocusNode();
+
+  /// Evita que se abra la lista dos veces a la vez: el foco se pierde
+  /// también al tocar "Guardar", así que sin esto ese toque podía disparar
+  /// una segunda resolución encima de la que ya estaba corriendo.
+  bool _resolviendoCiudad = false;
   // El texto que estaba en el campo la última vez que quedó sincronizado
   // con _latitud/_longitud — arranca con lo que el animal ya tenía
   // guardado, y se actualiza cada vez que el GPS o el geocodificador
@@ -204,6 +250,9 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
     // del arreglo no cubría "GPS y DESPUÉS texto a mano", solo "nunca se
     // tocó el GPS en absoluto".
     _lugarCtl.addListener(() => _ubicacionTocadaAMano = true);
+    _lugarFocus.addListener(() {
+      if (!_lugarFocus.hasFocus) _resolverCiudadAlSalir();
+    });
   }
 
   bool _ubicacionTocadaAMano = false;
@@ -309,6 +358,63 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
     _scaffoldMessenger = ScaffoldMessenger.of(context);
   }
 
+  /// Resuelve contra el mapa la ciudad que se acaba de escribir, al salir
+  /// del campo. Ver el doc de [_lugarFocus] para el porqué de que sea acá y
+  /// no al guardar.
+  ///
+  /// Si se cancela la lista, el texto vuelve al que el animalito YA tenía
+  /// guardado, no al que se tecleó: un texto sin verificar no puede quedar
+  /// en pantalla como si fuera válido, porque después Guardar lo tomaría
+  /// por bueno. Mismo criterio que tenía el guardado antes.
+  Future<void> _resolverCiudadAlSalir() async {
+    if (_resolviendoCiudad) return;
+    final texto = _lugarCtl.text.trim();
+    if (!hayQueResolverCiudad(
+      texto: texto,
+      original: _lugarOriginal,
+      tocadaAMano: _ubicacionTocadaAMano,
+    )) {
+      // Volvió sola al texto que ya estaba: no hay nada pendiente de
+      // verificar, y dejar la marca prendida haría que Guardar preguntara
+      // de nuevo por algo ya confirmado.
+      if (texto == _lugarOriginal.trim()) _ubicacionTocadaAMano = false;
+      return;
+    }
+    _resolviendoCiudad = true;
+    setState(() => _detectandoUbicacion = true);
+    try {
+      final elegida = await resolverCiudadEscrita(context, texto);
+      if (!mounted) return;
+      setState(() {
+        if (elegida == null) {
+          _lugarCtl.text = _lugarOriginal;
+        } else {
+          // Los tres datos del MISMO candidato, siempre — ver el
+          // invariante en confirmar_ciudad_resuelta.dart. El nombre es el
+          // que resolvió el mapa, nunca el texto tecleado: si alguien
+          // escribió "Córdoba, Argentina" para desambiguar de Córdoba,
+          // España, se guarda "Córdoba" y el país sale de la bandera 🇦🇷, no
+          // repetido en el texto. paisCodigo se asigna aunque venga vacío:
+          // pertenece al lugar nuevo, y conservar el del lugar viejo sería
+          // justamente la mezcla que este invariante prohíbe.
+          _latitud = elegida.lat;
+          _longitud = elegida.lng;
+          _lugarCtl.text = elegida.ciudadResuelta;
+          _paisCodigo = elegida.paisCodigo;
+          _lugarOriginal = _lugarCtl.text;
+        }
+        _ubicacionTocadaAMano = false;
+        _detectandoUbicacion = false;
+      });
+    } catch (_) {
+      // Sin señal o el mapa no contesta: se deja lo que había, sin
+      // bloquear. Guardar volverá a intentarlo, que es el respaldo.
+      if (mounted) setState(() => _detectandoUbicacion = false);
+    } finally {
+      _resolviendoCiudad = false;
+    }
+  }
+
   @override
   void dispose() {
     // El removeObserver de WidgetsBindingObserver ahora lo hace
@@ -318,6 +424,7 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
     _nombreCtl.dispose();
     _descCtl.dispose();
     _lugarCtl.dispose();
+    _lugarFocus.dispose();
     super.dispose();
   }
 
@@ -569,25 +676,39 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
           cancelarTimerTardando();
           if (mounted) setState(() => _guardando = false);
           return;
-        } else {
-          // Los tres datos del MISMO candidato, siempre — ver el
-          // invariante en confirmar_ciudad_resuelta.dart. El nombre es el
-          // que resolvió el geocodificador, nunca el texto tecleado: si
-          // alguien escribió "Córdoba, Argentina" para desambiguar de
-          // Córdoba, España, se guarda "Córdoba" y el país sale de la
-          // bandera 🇦🇷, no repetido en el texto. paisCodigo se asigna
-          // aunque venga vacío: pertenece al lugar nuevo, y conservar el
-          // del lugar viejo sería justamente la mezcla que este
-          // invariante prohíbe.
-          _latitud = elegida.lat;
-          _longitud = elegida.lng;
-          _lugarCtl.text = elegida.ciudadResuelta;
-          _paisCodigo = elegida.paisCodigo;
-          _lugarOriginal = _lugarCtl.text;
         }
-        // Texto y coordenadas vuelven a estar sincronizados — mismo motivo
-        // que el reset en _obtenerUbicacionGPS().
-        _ubicacionTocadaAMano = false;
+        // Elegir una ciudad NO es aceptar el guardado. Se llenan los datos,
+        // se corta acá, y la pantalla queda abierta para que se vea qué
+        // quedó antes de confirmar. Antes seguía derecho a guardar y
+        // cerraba: elegir de la lista te sacaba a Mis rescates sin haber
+        // pedido nunca guardar. Hallazgo real de Eliza en Medellín.
+        //
+        // Este camino es el RESPALDO: normalmente la ciudad ya se resolvió
+        // al salir del campo (ver _resolverCiudadAlSalir) y acá no se
+        // pregunta nada. Solo entra si el foco nunca se perdió, por ejemplo
+        // si se toca Guardar con el teclado todavía abierto.
+        if (mounted) {
+          setState(() {
+            _latitud = elegida.lat;
+            _longitud = elegida.lng;
+            _lugarCtl.text = elegida.ciudadResuelta;
+            _paisCodigo = elegida.paisCodigo;
+            _lugarOriginal = _lugarCtl.text;
+            _ubicacionTocadaAMano = false;
+            _guardando = false;
+          });
+          cancelarTimerTardando();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: msgAdvertencia,
+              content: Text(
+                'Ubicación: ${elegida.ciudadResuelta}. '
+                'Tocá Guardar para confirmar los cambios.',
+              ),
+            ),
+          );
+        }
+        return;
       }
       // normalizarFoto corre en su propio isolate (recorte a 1000px, JPEG
       // q80, corrige orientación) — igual que al publicar. Las dos en
@@ -1171,6 +1292,8 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
         const SizedBox(height: 6),
         TextField(
           controller: _lugarCtl,
+          focusNode: _lugarFocus,
+          textInputAction: TextInputAction.done,
           decoration: InputDecoration(
             hintText: 'ej. Laureles',
             hintStyle: TextStyle(color: Colors.grey.shade400),
