@@ -56,3 +56,4 @@ functions/node_modules/
 # Builds locales (APK/AAB de prueba) — no deben subirse al repo
 *.apk
 *.aab
+emulator-data/
