@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import '../domain/reglas_negocio.dart';
 import 'creator_role.dart';
 import 'solicitudes_repository.dart';
@@ -191,6 +192,7 @@ class RescatesRepository {
     required String nombre,
     required CreatorRole role,
     String? especie,
+    String? excluyendoId,
   }) async {
     final buscado = nombre.trim().toLowerCase();
     if (buscado.isEmpty) return null;
@@ -220,13 +222,128 @@ class RescatesRepository {
       }
     }
     for (final d in snap.docs) {
+      if (d.id == excluyendoId) continue;
       final data = d.data();
       if (especie != null && especie.isNotEmpty && data['especie'] != especie)
         continue;
       return d;
     }
-    return null;
+    // Ningún match por el camino rápido. Todavía puede haber un duplicado
+    // REAL que la consulta de arriba no puede ver, y esa es la diferencia
+    // entre "no hay duplicado" y "no lo encontré".
+    return _duplicadoEntreLosViejos(
+      uid: uid,
+      role: role,
+      buscado: buscado,
+      especie: especie,
+      excluyendoId: excluyendoId,
+    );
   }
+
+  /// uid+rol cuyos animales ya se comprobó que están todos migrados, para no
+  /// repetir el rastreo caro en cada publicación de la misma sesión.
+  static final _yaMigrados = <String>{};
+
+  /// Solo para los tests, que necesitan cada caso desde cero.
+  @visibleForTesting
+  static void olvidarQuienEstaMigrado() => _yaMigrados.clear();
+
+  /// El rastreo de respaldo para animales que la consulta rápida no puede
+  /// ver.
+  ///
+  /// **Por qué hace falta.** [buscarDuplicado] filtra por `nombreBusqueda` y
+  /// por `creadoPor`, dos campos que se agregaron después de que la app ya
+  /// estaba en uso. Un animal cargado antes no tiene ninguno de los dos, así
+  /// que era **invisible** para el aviso: se podía publicar un segundo
+  /// "Michi" gato y no pasaba nada. Reporte real de Eliza — la rescatista
+  /// Lucía Jiménez cargó dos gatos con el mismo nombre y el segundo no avisó.
+  ///
+  /// Esto ya estaba anotado en el código como un costo aceptado ("no van a
+  /// matchear hasta que ese animal se vuelva a guardar una vez"). La cuenta
+  /// estaba mal: no es un puñado de casos raros, es todo lo cargado antes de
+  /// esa fecha, que para una cuenta de verdad es casi todo. Una función que
+  /// avisa solo a veces, sin decir cuándo, es peor que no tenerla.
+  ///
+  /// **Por qué no reemplaza a la consulta rápida.** Traer todos los animales
+  /// de la cuenta en cada publicación es justamente la demora que Eliza
+  /// reportó antes ("se demora mucho en almacenarlo"). Así que el camino
+  /// rápido se queda, esto corre solo cuando aquel no encontró nada, y en
+  /// cuanto se comprueba que la cuenta está entera migrada no se vuelve a
+  /// correr en toda la sesión.
+  ///
+  /// **El límite que tiene el memo.** Una vez que se comprobó que la cuenta
+  /// está entera migrada no se vuelve a rastrear en toda la sesión, así que
+  /// un documento sin `nombreBusqueda` que apareciera DESPUÉS quedaría
+  /// invisible hasta reabrir la app. En la práctica no puede pasar: el único
+  /// que escribe animales sin ese campo es una versión vieja de la app
+  /// corriendo en otro teléfono al mismo tiempo. Se acepta a cambio de no
+  /// pagar el rastreo en cada publicación, que es la demora que Eliza ya
+  /// había reportado. La marca solo se pone si se recorrió la cuenta entera
+  /// sin encontrar ni uno sin migrar, que es lo que un test custodia.
+  ///
+  /// La cura definitiva es rellenar `nombreBusqueda` de una vez en los
+  /// documentos viejos; el día que no quede ninguno sin migrar, esta función
+  /// y su memo se pueden borrar enteros.
+  Future<QueryDocumentSnapshot<Map<String, dynamic>>?> _duplicadoEntreLosViejos({
+    required String uid,
+    required CreatorRole role,
+    required String buscado,
+    String? especie,
+    String? excluyendoId,
+  }) async {
+    final memo = '$uid/${role.firestoreValue}';
+    if (_yaMigrados.contains(memo)) return null;
+    // Se filtra SOLO por rescatistaId: agregar `creadoPor` acá volvería a
+    // dejar afuera a los documentos viejos, que es lo que vinimos a
+    // arreglar. El rol se decide en Dart con creatorRoleFromFirestore(),
+    // que ya sabe que un `creadoPor` ausente significa 'rescatista'.
+    final consulta = _col.where('rescatistaId', isEqualTo: uid);
+    QuerySnapshot<Map<String, dynamic>> snap;
+    try {
+      snap = await consulta.get();
+    } catch (_) {
+      try {
+        snap = await consulta.get(const GetOptions(source: Source.cache));
+      } catch (_) {
+        return null;
+      }
+    }
+    var todosMigrados = true;
+    QueryDocumentSnapshot<Map<String, dynamic>>? encontrado;
+    for (final d in snap.docs) {
+      final data = d.data();
+      if (((data['nombreBusqueda'] as String?) ?? '').isEmpty) {
+        todosMigrados = false;
+      }
+      if (creatorRoleFromFirestore(data['creadoPor'] as String?) != role) {
+        continue;
+      }
+      if (encontrado != null || d.id == excluyendoId) continue;
+      if (claveDuplicado(data['nombre'] as String?, data['especie'] as String?) !=
+          claveDuplicado(buscado, especie)) {
+        continue;
+      }
+      encontrado = d;
+    }
+    // Solo se marca como migrada si se recorrió TODA la cuenta sin
+    // encontrar un solo documento sin `nombreBusqueda`.
+    if (todosMigrados) _yaMigrados.add(memo);
+    return encontrado;
+  }
+
+  /// La única definición de "estos dos animales cuentan como el mismo" para
+  /// el aviso de duplicado: nombre normalizado + especie.
+  ///
+  /// Existe como función y no escrita a mano en cada lado porque había DOS
+  /// reglas: la de [buscarDuplicado] (publicar de a uno) y la de
+  /// [nombresExistentes] (subir un lote). Dos definiciones de lo mismo es
+  /// exactamente cómo una queda arreglada y la otra no.
+  ///
+  /// Una especie vacía compara solo por nombre, a propósito: es lo que pide
+  /// un llamador que todavía no sabe la especie.
+  @visibleForTesting
+  static String claveDuplicado(String? nombre, String? especie) =>
+      '${(nombre ?? '').trim().toLowerCase()}_${especie ?? ''}';
 
   /// Conveniencia sobre [buscarDuplicado] para los llamadores (ej. el lote,
   /// que solo necesita saber si avisar) a los que no les hace falta el
@@ -256,9 +373,13 @@ class RescatesRepository {
     required String uid,
     required CreatorRole role,
   }) async {
-    final consulta = _col
-        .where('rescatistaId', isEqualTo: uid)
-        .where('creadoPor', isEqualTo: role.firestoreValue);
+    // Sin filtrar por `creadoPor` en la consulta, por el mismo motivo que
+    // _duplicadoEntreLosViejos: los animales cargados antes de que ese campo
+    // existiera no lo tienen y quedaban invisibles para el aviso del lote,
+    // igual que quedaban para el de publicar de a uno. El rol se decide en
+    // Dart, donde creatorRoleFromFirestore() sabe qué hacer con un campo
+    // ausente.
+    final consulta = _col.where('rescatistaId', isEqualTo: uid);
     QuerySnapshot<Map<String, dynamic>> snap;
     try {
       snap = await consulta.get();
@@ -269,12 +390,20 @@ class RescatesRepository {
         return {};
       }
     }
-    return snap.docs.map((d) {
-      final data = d.data();
-      final nombre = ((data['nombre'] as String?) ?? '').trim().toLowerCase();
-      final especie = (data['especie'] as String?) ?? '';
-      return '${nombre}_$especie';
-    }).toSet();
+    return snap.docs
+        .where(
+          (d) =>
+              creatorRoleFromFirestore(d.data()['creadoPor'] as String?) == role,
+        )
+        // La MISMA clave que usa buscarDuplicado. Antes esta línea tenía su
+        // propia copia de la regla.
+        .map(
+          (d) => claveDuplicado(
+            d.data()['nombre'] as String?,
+            d.data()['especie'] as String?,
+          ),
+        )
+        .toSet();
   }
 
   /// Tamaño de cada tanda del feed público paginado — ver [feedPublico].

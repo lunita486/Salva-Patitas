@@ -165,6 +165,10 @@ void main() {
     setUp(() {
       firestore = FakeFirebaseFirestore();
       repo = RescatesRepository(db: firestore);
+      // El memo de "esta cuenta ya está migrada" es estático y sobrevive
+      // entre tests: sin esto, el primero que la marca migrada haría pasar
+      // por casualidad a los que vienen después.
+      RescatesRepository.olvidarQuienEstaMigrado();
     });
 
     test(
@@ -1287,6 +1291,176 @@ void main() {
           expect(bloqueo?.$2, contains('solicitud esperando respuesta'));
         },
       );
+    });
+
+
+    // ── Animales que el aviso de duplicado no podía ver ────────────────
+    //
+    // Reporte de Eliza: "la rescatista Lucía Jiménez cargó 2 gatos con el
+    // mismo nombre y el segundo no obtuvo ningún mensaje".
+    //
+    // La causa: buscarDuplicado() filtra por `nombreBusqueda` y por
+    // `creadoPor`, dos campos que se agregaron cuando la app ya estaba en
+    // uso. Un animal cargado antes no tiene ninguno de los dos y quedaba
+    // INVISIBLE para el aviso. Estaba anotado en el código como un costo
+    // aceptado; la cuenta estaba mal, porque no son casos raros sino todo
+    // lo cargado antes de esa fecha.
+    group('duplicados contra animales viejos', () {
+      Future<void> cargarComoVersionVieja(Map<String, dynamic> extra) =>
+          firestore.collection('rescates').add({
+            'nombre': 'Michi',
+            'especie': 'Gato',
+            'rescatistaId': 'lucia',
+            ...extra,
+          });
+
+      Future<QueryDocumentSnapshot<Map<String, dynamic>>?> buscarMichi({
+        String? excluyendoId,
+      }) => repo.buscarDuplicado(
+            uid: 'lucia',
+            nombre: 'Michi',
+            role: CreatorRole.rescatista,
+            especie: 'Gato',
+            excluyendoId: excluyendoId,
+          );
+
+      test('sin nombreBusqueda, igual avisa', () async {
+        await cargarComoVersionVieja({'creadoPor': 'rescatista'});
+        expect(await buscarMichi(), isNotNull);
+      });
+
+      test('sin creadoPor, igual avisa (era el único rol posible)', () async {
+        await cargarComoVersionVieja({'nombreBusqueda': 'michi'});
+        expect(await buscarMichi(), isNotNull);
+      });
+
+      test('sin ninguno de los dos, igual avisa', () async {
+        await cargarComoVersionVieja({});
+        expect(await buscarMichi(), isNotNull);
+      });
+
+      test('un animal viejo de OTRA cuenta no avisa', () async {
+        await firestore.collection('rescates').add({
+          'nombre': 'Michi',
+          'especie': 'Gato',
+          'rescatistaId': 'otra-persona',
+        });
+        expect(await buscarMichi(), isNull);
+      });
+
+      test('un animal viejo de otra ESPECIE no avisa', () async {
+        await cargarComoVersionVieja({'especie': 'Perro'});
+        expect(await buscarMichi(), isNull);
+      });
+
+      // El rastreo de respaldo se saltea cuando la cuenta ya se comprobó
+      // migrada, para no pagarlo en cada publicación. Lo que hay que
+      // custodiar es que esa marca NO se ponga mientras quede un solo
+      // animal sin migrar: si se pusiera de más, el aviso volvería a
+      // fallar justo en la cuenta que lo necesita.
+      test('con un animal viejo presente, sigue avisando todas las veces',
+          () async {
+        await repo.crear(
+          uid: 'lucia',
+          role: CreatorRole.rescatista,
+          datos: {'nombre': 'Otro', 'especie': 'Gato'},
+        );
+        await cargarComoVersionVieja({});
+        for (var intento = 1; intento <= 3; intento++) {
+          expect(
+            await buscarMichi(),
+            isNotNull,
+            reason: 'falló en el intento $intento: el memo se puso de más',
+          );
+        }
+      });
+    });
+
+    // Sin excluyendoId, editar cualquier animal avisaría que es duplicado
+    // de sí mismo, aunque no se hubiera tocado el nombre.
+    group('excluyendoId, para que editar no se encuentre a sí mismo', () {
+      test('un animal no es duplicado de sí mismo', () async {
+        final ref = await repo.crear(
+          uid: 'lucia',
+          role: CreatorRole.rescatista,
+          datos: {'nombre': 'Michi', 'especie': 'Gato'},
+        );
+        expect(
+          await repo.buscarDuplicado(
+            uid: 'lucia',
+            nombre: 'Michi',
+            role: CreatorRole.rescatista,
+            especie: 'Gato',
+            excluyendoId: ref.id,
+          ),
+          isNull,
+        );
+      });
+
+      test('pero sí de OTRO que se llama igual', () async {
+        final propio = await repo.crear(
+          uid: 'lucia',
+          role: CreatorRole.rescatista,
+          datos: {'nombre': 'Michi', 'especie': 'Gato'},
+        );
+        await repo.crear(
+          uid: 'lucia',
+          role: CreatorRole.rescatista,
+          datos: {'nombre': 'Michi', 'especie': 'Gato'},
+        );
+        final hallado = await repo.buscarDuplicado(
+          uid: 'lucia',
+          nombre: 'Michi',
+          role: CreatorRole.rescatista,
+          especie: 'Gato',
+          excluyendoId: propio.id,
+        );
+        expect(hallado, isNotNull);
+        expect(hallado!.id, isNot(propio.id));
+      });
+
+      test('y tampoco a sí mismo cuando es un animal viejo', () async {
+        final ref = await firestore.collection('rescates').add({
+          'nombre': 'Michi',
+          'especie': 'Gato',
+          'rescatistaId': 'lucia',
+        });
+        expect(
+          await repo.buscarDuplicado(
+            uid: 'lucia',
+            nombre: 'Michi',
+            role: CreatorRole.rescatista,
+            especie: 'Gato',
+            excluyendoId: ref.id,
+          ),
+          isNull,
+        );
+      });
+    });
+
+    // Publicar de a uno y subir un lote tenían su PROPIA regla de qué
+    // cuenta como duplicado. Dos definiciones de lo mismo es cómo una queda
+    // arreglada y la otra no; ahora las dos usan claveDuplicado().
+    group('el lote y el alta de a uno comparan igual', () {
+      test('nombresExistentes ve a los animales viejos', () async {
+        await firestore.collection('rescates').add({
+          'nombre': 'Michi',
+          'especie': 'Gato',
+          'rescatistaId': 'refugio',
+        });
+        final nombres = await repo.nombresExistentes(
+          uid: 'refugio',
+          role: CreatorRole.rescatista,
+        );
+        expect(nombres, contains(RescatesRepository.claveDuplicado('Michi', 'Gato')));
+      });
+
+      test('la clave normaliza igual que buscarDuplicado', () {
+        expect(
+          RescatesRepository.claveDuplicado('  MICHI ', 'Gato'),
+          RescatesRepository.claveDuplicado('michi', 'Gato'),
+        );
+      });
     });
 
     group('nombresExistentes()', () {

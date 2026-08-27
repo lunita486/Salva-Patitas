@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:go_router/go_router.dart';
 import '../routing/app_router.dart';
 import '../theme.dart';
+import '../widgets/aviso_animal_duplicado.dart';
 import '../widgets/chips_seleccionables.dart';
 import '../widgets/confirmar_ciudad_resuelta.dart';
 import '../widgets/dialogos_eliminar_rescate.dart';
@@ -548,6 +549,48 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
   /// nueva → subirla (sobreescribe el mismo path); sin cambios → mantener
   /// la URL que ya había, sin tocar Storage; se quitó sin reemplazarla →
   /// borrarla de Storage para no dejarla huérfana pagando almacenamiento.
+  /// False si hay que cortar el guardado (había un duplicado y decidió no
+  /// seguir). True si se puede guardar, sea porque no hay duplicado o porque
+  /// dijo que son dos animales distintos con el mismo nombre.
+  ///
+  /// `excluyendoId` es imprescindible: sin él, este animal se encontraría a
+  /// sí mismo y CUALQUIER guardado avisaría "ya tenés otro llamado así",
+  /// incluso sin haber tocado el nombre.
+  Future<bool> _pasaElChequeoDeDuplicado() async {
+    final nombre = _nombreCtl.text.trim();
+    if (nombre.isEmpty) return true;
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final duplicado = await RescatesRepository().buscarDuplicado(
+      uid: uid,
+      nombre: nombre,
+      role: creatorRoleFromFirestore(widget.data['creadoPor'] as String?),
+      especie: _especie,
+      excluyendoId: widget.docId,
+    );
+    if (!mounted) return false;
+    if (duplicado == null) return true;
+    final accion = await avisarAnimalDuplicado(
+      context,
+      nombre: nombre,
+      especie: _especie,
+      etiquetaSeguir: 'Guardar igual',
+    );
+    if (!mounted) return false;
+    if (accion == AccionDuplicado.verFicha) {
+      setState(() => _guardando = false);
+      context.push(
+        AppRoutes.editarRescate,
+        extra: (docId: duplicado.id, data: duplicado.data()),
+      );
+      return false;
+    }
+    if (accion != AccionDuplicado.seguir) {
+      setState(() => _guardando = false);
+      return false;
+    }
+    return true;
+  }
+
   Future<void> _guardar() async {
     if (!_tieneAlMenosUnaFoto) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -563,6 +606,15 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
     setState(() {
       _guardando = true;
     });
+    // El mismo aviso que al publicar. Antes esta pantalla no lo hacía, así
+    // que renombrar un animal para que coincidiera con otro dejaba el
+    // duplicado sin que nadie dijera nada — la validación cubría la puerta
+    // de entrada y no la de al lado. Pregunta de Eliza.
+    //
+    // El spinner ya está prendido a propósito (mismo criterio que al
+    // publicar): esto es una consulta de red y sin spinner el botón parece
+    // muerto mientras corre.
+    if (!await _pasaElChequeoDeDuplicado()) return;
     iniciarTimerTardando(const Duration(seconds: 8));
     try {
       // _ubicacionTocadaAMano (ver initState y el onDetectado del

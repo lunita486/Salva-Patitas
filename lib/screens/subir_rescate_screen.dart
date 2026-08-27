@@ -8,6 +8,7 @@ import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:go_router/go_router.dart';
 import '../routing/app_router.dart';
 import '../theme.dart';
+import '../widgets/aviso_animal_duplicado.dart';
 import '../widgets/chips_seleccionables.dart';
 import '../widgets/confirmar_ciudad_resuelta.dart';
 import '../widgets/elegir_foto_animal.dart';
@@ -228,43 +229,13 @@ class _SubirRescateScreenState extends State<SubirRescateScreen>
       );
       if (!mounted) return;
       if (duplicado != null) {
-        // 3 salidas en vez de 2: "Ver ficha existente" además de
-        // cancelar/continuar, para no dejar a la usuaria adivinando cuál
-        // es el otro animal — antes solo podía cancelar y buscarlo ella
-        // misma en "Mis animales".
-        final accion = await showDialog<String>(
-          context: context,
-          builder: (dlgCtx) => AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            title: const Text('Posible animal duplicado'),
-            content: Text(
-              'Ya tenés otro animal llamado "$nombreIngresado" '
-              '($_especie). Si es a propósito (dos animales distintos con '
-              'el mismo nombre, uno que volvió, etc.) podés publicar igual. '
-              'Si fue sin querer, revisá la ficha existente primero.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dlgCtx, 'cancelar'),
-                child: const Text('Cancelar'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(dlgCtx, 'ver'),
-                child: const Text('Ver ficha existente'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(dlgCtx, 'continuar'),
-                child: const Text(
-                  'Publicar igual',
-                  style: TextStyle(color: appTeal),
-                ),
-              ),
-            ],
-          ),
+        final accion = await avisarAnimalDuplicado(
+          context,
+          nombre: nombreIngresado,
+          especie: _especie,
+          etiquetaSeguir: 'Publicar igual',
         );
-        if (accion == 'ver') {
+        if (accion == AccionDuplicado.verFicha) {
           if (!mounted) return;
           setState(() => _publicando = false);
           context.push(
@@ -273,7 +244,7 @@ class _SubirRescateScreenState extends State<SubirRescateScreen>
           );
           return;
         }
-        if (accion != 'continuar') {
+        if (accion != AccionDuplicado.seguir) {
           setState(() => _publicando = false);
           return;
         }
