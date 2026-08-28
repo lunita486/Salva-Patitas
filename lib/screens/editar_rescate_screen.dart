@@ -65,12 +65,7 @@ String descripcionSinNombreDePlantillaVieja({
 /// [tocadaAMano] viene del listener del campo: si la persona no lo tocó, no
 /// hay nada nuevo que verificar. Un campo VACÍO tampoco se resuelve: hay
 /// animalitos sin ubicación y borrarla tiene que poder hacerse.
-bool hayQueResolverCiudad({
-  required String texto,
-  required String original,
-  required bool tocadaAMano,
-}) {
-  if (!tocadaAMano) return false;
+bool hayQueResolverCiudad({required String texto, required String original}) {
   final limpio = texto.trim();
   if (limpio.isEmpty) return false;
   // Ya es la que estaba guardada: el mapa ya la confirmó en su momento.
@@ -237,27 +232,37 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
     _latitud = (d['latitud'] as num?)?.toDouble();
     _longitud = (d['longitud'] as num?)?.toDouble();
     _paisCodigo = d['paisCodigo'] as String? ?? '';
-    // _ubicacionTocadaAMano (ver _guardar()) empieza en false y se prende
-    // con este listener apenas la persona toca el campo de texto — MÁS
-    // preciso que comparar contra las coordenadas de cuando se abrió la
-    // pantalla (lo que hacía esto antes). Ese enfoque viejo tenía un hueco
-    // real: si se usaba el botón de GPS (que cambia _latitud/_longitud) Y
-    // DESPUÉS se retocaba el texto a mano, las coordenadas ya no eran
-    // iguales a las "originales" de la pantalla, así que el chequeo
-    // (comparaba contra ESAS) daba falso y no volvía a geocodificar —
-    // quedaban guardadas las coordenadas del GPS aunque el texto dijera
-    // otra cosa. Hallazgo real de Eliza (con Luna, gatita de Córdoba,
-    // Argentina) que resultó ser el mismo bug que ya había encontrado antes
-    // con "Schiffdorf, Alemania → Córdoba Argentina" — la primera vuelta
-    // del arreglo no cubría "GPS y DESPUÉS texto a mano", solo "nunca se
-    // tocó el GPS en absoluto".
-    _lugarCtl.addListener(() => _ubicacionTocadaAMano = true);
+    // Qué cuenta como "ciudad sin confirmar" lo decide _ciudadSinConfirmar,
+    // comparando el texto con _lugarOriginal. Ver su doc: antes esto era una
+    // bandera que prendía un listener del campo, y se reencendía sola
+    // después de cerrarse el diálogo.
     _lugarFocus.addListener(() {
       if (!_lugarFocus.hasFocus) _resolverCiudadAlSalir();
     });
   }
 
-  bool _ubicacionTocadaAMano = false;
+  /// ¿El texto de ciudad dice algo que el mapa todavía no confirmó?
+  ///
+  /// **Por qué es una comparación y no una bandera.** Acá vivía
+  /// `_ubicacionTocadaAMano`, un bool que prendía el listener de _lugarCtl al
+  /// escribir y que cada camino apagaba a mano después de resolver. Se veía
+  /// correcto y no lo era: al cerrarse el diálogo el foco vuelve al campo, el
+  /// controller notifica otra vez y la bandera se reencendía DESPUÉS del
+  /// reset. El siguiente Guardar volvía a preguntar la ciudad, la resolvías,
+  /// y otra vez. Bucle sin salida que reportó Eliza:
+  /// "selecciono la ciudad, veo Tocá Guardar para confirmar, toco guardar y
+  /// me muestra de nuevo cuál es tu ciudad".
+  ///
+  /// Lo reproduje en el emulador: con el primer intento de arreglo (que le
+  /// tapaba la boca al camino del foco) el bucle seguía igual. La bandera no
+  /// se podía sincronizar con quien la prendía.
+  ///
+  /// Esto no tiene ese problema porque no hay nada que sincronizar:
+  /// [_lugarOriginal] es la última ciudad que el mapa confirmó, y si el texto
+  /// coincide, no hay nada que preguntar. Nadie puede reencenderlo por
+  /// detrás.
+  bool get _ciudadSinConfirmar =>
+      _lugarCtl.text.trim() != _lugarOriginal.trim();
 
   // El reintento (una sola vez, solo tras volver de Ajustes) vive en
   // ReintentoUbicacionTrasAjustes — mismo motivo (y mismo bucle infinito
@@ -298,17 +303,7 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
   Future<void> _resolverCiudadAlSalir() async {
     if (_resolviendoCiudad) return;
     final texto = _lugarCtl.text.trim();
-    if (!hayQueResolverCiudad(
-      texto: texto,
-      original: _lugarOriginal,
-      tocadaAMano: _ubicacionTocadaAMano,
-    )) {
-      // Volvió sola al texto que ya estaba: no hay nada pendiente de
-      // verificar, y dejar la marca prendida haría que Guardar preguntara
-      // de nuevo por algo ya confirmado.
-      if (texto == _lugarOriginal.trim()) _ubicacionTocadaAMano = false;
-      return;
-    }
+    if (!hayQueResolverCiudad(texto: texto, original: _lugarOriginal)) return;
     setState(() => _resolviendoCiudad = true);
     try {
       final elegida = await resolverCiudadEscrita(context, texto);
@@ -327,11 +322,11 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
           // real de Eliza. Lo tecleado queda, ella corrige una letra en vez
           // de escribir todo otra vez.
           //
-          // No se pierde la red de seguridad: `_ubicacionTocadaAMano` sigue
-          // prendida, así que Guardar vuelve a resolver antes de escribir
-          // nada, y las coordenadas siguen siendo las del lugar viejo hasta
-          // que alguna resolución termine bien. Nunca se guarda un texto
-          // que el mapa no confirmó.
+          // No se pierde la red de seguridad: el texto sigue difiriendo de
+          // _lugarOriginal, así que _ciudadSinConfirmar sigue dando true y
+          // Guardar vuelve a resolver antes de escribir nada. Las
+          // coordenadas siguen siendo las del lugar viejo hasta que alguna
+          // resolución termine bien. Nunca se guarda un texto sin confirmar.
         } else {
           // Los tres datos del MISMO candidato, siempre — ver el
           // invariante en confirmar_ciudad_resuelta.dart. El nombre es el
@@ -350,7 +345,6 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
           // sin resolver, la marca sigue prendida para que Guardar lo
           // vuelva a intentar: es lo que impide que un nombre sin confirmar
           // llegue a Firestore con las coordenadas del lugar anterior.
-          _ubicacionTocadaAMano = false;
         }
         _resolviendoCiudad = false;
       });
@@ -617,11 +611,9 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
     if (!await _pasaElChequeoDeDuplicado()) return;
     iniciarTimerTardando(const Duration(seconds: 8));
     try {
-      // _ubicacionTocadaAMano (ver initState y el onDetectado del
-      // CampoCiudad): si el
-      // texto se tocó a mano desde la última vez que quedó sincronizado con
-      // _latitud/_longitud (la carga inicial, o el último GPS), esas
-      // coordenadas ya no corresponden a lo que dice el texto ahora.
+      // _ciudadSinConfirmar: si el texto dice algo distinto de la última
+      // ciudad que el mapa confirmó (la carga inicial, o el último GPS), las
+      // coordenadas guardadas ya no corresponden a lo que dice el texto.
       // Guardarlas así dejaría al feed de adopción calculando distancia con
       // datos viejos. Acá se resuelve el texto contra un geocodificador
       // real — de paso valida que sea un lugar que existe, no cualquier
@@ -635,7 +627,17 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
       // GPS ni la red. Hallazgo real de Eliza editando un animal sin
       // ciudad: el guardado quedaba bloqueado por un campo que nunca debió
       // bloquear nada.
-      if (_ubicacionTocadaAMano && _lugarCtl.text.trim().isNotEmpty) {
+      // La carrera al revés: tocar Guardar puede apagar el foco del campo
+      // ANTES de llegar acá, con lo cual _resolverCiudadAlSalir() ya está
+      // preguntando por la ciudad. Apilarle un segundo diálogo idéntico es
+      // el mismo bucle por la otra puerta. Se deja que termine el que ya
+      // está, y el siguiente toque de Guardar encuentra la ciudad resuelta.
+      if (_resolviendoCiudad) {
+        cancelarTimerTardando();
+        if (mounted) setState(() => _guardando = false);
+        return;
+      }
+      if (_ciudadSinConfirmar && _lugarCtl.text.trim().isNotEmpty) {
         // UbicacionService.desdeTexto es la única fuente de "¿esto es un
         // lugar real?" para toda la app — antes acá CUALQUIER excepción
         // (incluida la falta de señal) se trataba exactamente igual que
@@ -651,10 +653,32 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
         // Misma función compartida que las otras 3 pantallas que piden una
         // ciudad — ver el comentario de resolverCiudadEscrita(). Antes acá
         // vivía una copia a mano de esta secuencia.
+        // ── Por qué esta bandera se prende ACÁ ─────────────────────────
+        //
+        // Abrir un diálogo le quita el foco al campo de texto que quedó
+        // abajo. Eso dispara el listener de _lugarFocus, que llama a
+        // _resolverCiudadAlSalir(), que abre un SEGUNDO diálogo pidiendo la
+        // misma ciudad. Contestabas uno, aparecía el otro, y no se podía
+        // guardar nunca. Bucle real que reportó Eliza: "selecciono la
+        // ciudad, veo Tocá Guardar para confirmar, toco guardar y me
+        // muestra de nuevo cuál es tu ciudad".
+        //
+        // Los dos caminos resuelven la ciudad y no se conocían entre sí.
+        // _resolverCiudadAlSalir() ya arrancaba con `if (_resolviendoCiudad)
+        // return;`, o sea que la defensa existía: lo que faltaba era que
+        // ESTE camino la levantara también. Hay un test que comprueba que
+        // abrir un diálogo apaga el foco (dialogo_roba_el_foco_test.dart);
+        // el día que eso deje de pasar, esta bandera deja de hacer falta.
+        _resolviendoCiudad = true;
+        // Sin try/finally a propósito: resolverCiudadEscrita() atrapa todo
+        // adentro y devuelve null en vez de lanzar (ver su doc), así que no
+        // hay camino por el que la bandera quede prendida. Envolverlo
+        // rompía además la promoción de tipo del `elegida == null` de abajo.
         final elegida = await resolverCiudadEscrita(
           context,
           _lugarCtl.text.trim(),
         );
+        _resolviendoCiudad = false;
         // null = canceló ("No, corregir"), o no se pudo verificar
         // (resolverCiudadEscrita ya explicó por qué). Ninguno de los dos
         // debe dejar a la persona TRABADA sin forma de guardar nada — se
@@ -673,7 +697,6 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
         // solo que ya no de forma silenciosa en el mismo toque.
         if (elegida == null) {
           _lugarCtl.text = _lugarOriginal;
-          _ubicacionTocadaAMano = false;
           cancelarTimerTardando();
           if (mounted) setState(() => _guardando = false);
           return;
@@ -695,8 +718,7 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
             _lugarCtl.text = elegida.ciudadResuelta;
             _paisCodigo = elegida.paisCodigo;
             _lugarOriginal = _lugarCtl.text;
-            _ubicacionTocadaAMano = false;
-            _guardando = false;
+              _guardando = false;
           });
           cancelarTimerTardando();
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1308,8 +1330,7 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
             // El listener de _lugarCtl prende la marca al escribir el
             // texto, así que apagarla va DESPUÉS: esto no es una edición a
             // mano, texto y coordenadas salieron del mismo lugar.
-            _ubicacionTocadaAMano = false;
-            _lugarOriginal = _lugarCtl.text;
+              _lugarOriginal = _lugarCtl.text;
           }),
         ),
       ],

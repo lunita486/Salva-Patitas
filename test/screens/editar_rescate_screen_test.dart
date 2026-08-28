@@ -104,7 +104,6 @@ void main() {
           hayQueResolverCiudad(
             texto: 'Medellín Antioquia',
             original: 'Los Olivos',
-            tocadaAMano: true,
           ),
           isTrue,
         );
@@ -114,12 +113,32 @@ void main() {
       // "siempre me lo reemplaza".
       test('no tocó el campo: no se toca nada', () {
         expect(
+          hayQueResolverCiudad(texto: 'Los Olivos', original: 'Los Olivos'),
+          isFalse,
+        );
+      });
+
+      // ── El bucle ────────────────────────────────────────────────────────
+      //
+      // Este es el estado JUSTO DESPUÉS de resolver la ciudad: el texto pasó
+      // a ser el nombre que devolvió el mapa, y _lugarOriginal se actualizó
+      // al mismo valor. Si acá diera true, el siguiente Guardar volvería a
+      // preguntar la ciudad, la resolverías, y otra vez, para siempre.
+      //
+      // Antes esta función también miraba una bandera `tocadaAMano`, que un
+      // listener del campo prendía al escribir. Al cerrarse el diálogo el
+      // foco vuelve al campo, el controller notifica y la bandera se
+      // reencendía DESPUÉS de que cada camino la apagaba: daba true acá y el
+      // bucle no tenía salida. Bug real de Eliza, reproducido en el
+      // emulador. Sin bandera no hay nada que se pueda desincronizar.
+      test('recién resuelta: NO se vuelve a preguntar (el bucle)', () {
+        expect(
           hayQueResolverCiudad(
-            texto: 'Los Olivos',
-            original: 'Los Olivos',
-            tocadaAMano: false,
+            texto: 'San Cristóbal',
+            original: 'San Cristóbal',
           ),
           isFalse,
+          reason: 'si esto es true, no se puede guardar nunca',
         );
       });
 
@@ -128,7 +147,6 @@ void main() {
           hayQueResolverCiudad(
             texto: 'Medellín',
             original: 'Medellín',
-            tocadaAMano: true,
           ),
           isFalse,
         );
@@ -139,7 +157,6 @@ void main() {
           hayQueResolverCiudad(
             texto: '  Medellín  ',
             original: 'Medellín',
-            tocadaAMano: true,
           ),
           isFalse,
         );
@@ -153,7 +170,6 @@ void main() {
           hayQueResolverCiudad(
             texto: '',
             original: 'Medellín',
-            tocadaAMano: true,
           ),
           isFalse,
         );
@@ -161,7 +177,6 @@ void main() {
           hayQueResolverCiudad(
             texto: '   ',
             original: 'Medellín',
-            tocadaAMano: true,
           ),
           isFalse,
         );
@@ -174,7 +189,6 @@ void main() {
           hayQueResolverCiudad(
             texto: 'Medellín',
             original: '',
-            tocadaAMano: true,
           ),
           isTrue,
         );
