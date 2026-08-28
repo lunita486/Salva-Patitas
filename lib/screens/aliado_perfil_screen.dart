@@ -52,6 +52,13 @@ class _AliadoPerfilScreenState extends State<AliadoPerfilScreen> {
   // quedan marcados.
   bool _ciudadVerificada = false;
 
+  /// "Ya te ofrecí verificar la ciudad y dijiste que no, no pregunto más
+  /// mientras estés en esta pantalla." NO se guarda en la base a propósito:
+  /// significa eso y nada más. Persistirlo dejaría marcada como verificada
+  /// una ciudad que nadie confirmó, que es exactamente lo que
+  /// `aliadoCiudadVerificada` no debe decir.
+  bool _ciudadRechazadaEnEstaPantalla = false;
+
   static const _tipos = [
     'Veterinaria',
     'Tienda de mascotas',
@@ -185,8 +192,12 @@ class _AliadoPerfilScreenState extends State<AliadoPerfilScreen> {
     // la ciudad y al otro no, escribiendo lo mismo. Eso en sí era correcto
     // (el segundo ya tenía esa ciudad guardada), pero destapó que su
     // ciudad no tenía forma de volver a validarse nunca.
-    if (ciudad.isNotEmpty &&
-        (ciudad != _ciudadOriginal || !_ciudadVerificada)) {
+    if (hayQueVerificarCiudadDePerfil(
+      ciudad: ciudad,
+      original: _ciudadOriginal,
+      yaVerificada: _ciudadVerificada,
+      seRechazoEnEstaPantalla: _ciudadRechazadaEnEstaPantalla,
+    )) {
       // Misma función compartida que las otras 3 pantallas que piden una
       // ciudad — antes acá vivía una copia a mano de esa secuencia, y su
       // `catch` vacío dejaba pasar el texto crudo ante cualquier tropiezo
@@ -213,6 +224,13 @@ class _AliadoPerfilScreenState extends State<AliadoPerfilScreen> {
       if (elegida == null) {
         ciudad = _ciudadOriginal;
         _ciudadCtl.text = ciudad;
+        // ESTA línea es la que faltaba. Sin ella, `!_ciudadVerificada`
+        // sigue siendo verdadera aunque el texto haya vuelto al original,
+        // así que el segundo "Guardar" vuelve a pedir la ciudad, y el
+        // tercero también: no había forma de guardar el nombre o el
+        // teléfono ya cambiados. albergue_perfil_screen.dart sí apagaba su
+        // segunda pata; esta pantalla no. Hallazgo real de Eliza.
+        _ciudadRechazadaEnEstaPantalla = true;
         if (mounted) setState(() => _guardando = false);
         return;
       } else {

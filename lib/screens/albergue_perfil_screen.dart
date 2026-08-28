@@ -44,6 +44,12 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
   // esto nunca se le validaba porque el texto no cambiaba. Ese es el motivo
   // real de que NINGÚN animal de albergue mostrara distancia.
   bool _tieneCoordenadas = false;
+
+  /// "Ya te ofrecí verificar la ciudad y dijiste que no, no pregunto más
+  /// mientras estés en esta pantalla." Reemplaza al truco de poner
+  /// _tieneCoordenadas/_tienePais en true al cancelar, que lograba lo mismo
+  /// afirmando algo falso sobre el perfil.
+  bool _ciudadRechazadaEnEstaPantalla = false;
   // Misma idea que _tieneCoordenadas, para el país: nunca se guardaba acá
   // (solo se usaba un instante para el cartel de confirmación y se
   // descartaba) — sin esto en la condición de abajo, un perfil que ya
@@ -200,8 +206,12 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
     // de que esta validación existiera (o antes de que paisCodigo se
     // empezara a guardar), que nunca pasaban por acá porque el texto no
     // cambiaba y por eso dejaban a TODOS sus animales sin distancia/bandera.
-    if (ciudad.isNotEmpty &&
-        (ciudad != _ciudadOriginal || !_tieneCoordenadas || !_tienePais)) {
+    if (hayQueVerificarCiudadDePerfil(
+      ciudad: ciudad,
+      original: _ciudadOriginal,
+      yaVerificada: _tieneCoordenadas && _tienePais,
+      seRechazoEnEstaPantalla: _ciudadRechazadaEnEstaPantalla,
+    )) {
       // Misma función compartida que las otras 3 pantallas que piden una
       // ciudad — ver el comentario de resolverCiudadEscrita(). Antes acá
       // vivía una copia a mano de esta secuencia.
@@ -231,8 +241,12 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
       if (elegida == null) {
         ciudad = _ciudadOriginal;
         _ciudadCtl.text = ciudad;
-        _tieneCoordenadas = true;
-        _tienePais = true;
+        // Antes acá se ponían _tieneCoordenadas y _tienePais en true, que
+        // conseguía lo mismo pero diciendo algo falso: el perfil podía
+        // seguir sin coordenadas. Esta bandera dice lo que de verdad pasó
+        // —se ofreció reparar y dijo que no— y deja a las otras dos
+        // describiendo el estado real.
+        _ciudadRechazadaEnEstaPantalla = true;
         if (mounted) setState(() => _guardando = false);
         return;
       } else {

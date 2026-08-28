@@ -783,4 +783,96 @@ void main() {
       });
     },
   );
+
+  // ── No quedar trabada después de tocar "No, corregir" ──────────────────
+  //
+  // Los perfiles de Aliado y de Albergue preguntaban esto mismo con su
+  // propia condición escrita a mano. Las dos tienen dos patas: "cambió el
+  // texto" O "este perfil viene de antes de que la validación existiera".
+  // La segunda es la delicada: NO se apaga sola cuando el texto vuelve al
+  // original, hay que apagarla a propósito al cancelar.
+  //
+  // Albergue se acordaba. Aliado no. En Aliado, tocar "No, corregir" te
+  // dejaba trabada: el segundo "Guardar" volvía a pedir la ciudad, y el
+  // tercero también, sin forma de guardar el nombre o el teléfono que sí
+  // habías cambiado. Hallazgo real de Eliza probando las dos seguidas.
+  group('hayQueVerificarCiudadDePerfil', () {
+    test('una ciudad nueva se verifica', () {
+      expect(
+        hayQueVerificarCiudadDePerfil(
+          ciudad: 'Bogotá',
+          original: 'Medellín',
+          yaVerificada: true,
+          seRechazoEnEstaPantalla: false,
+        ),
+        isTrue,
+      );
+    });
+
+    test('la misma ciudad ya verificada no se vuelve a preguntar', () {
+      expect(
+        hayQueVerificarCiudadDePerfil(
+          ciudad: 'Medellín',
+          original: 'Medellín',
+          yaVerificada: true,
+          seRechazoEnEstaPantalla: false,
+        ),
+        isFalse,
+      );
+    });
+
+    test('un perfil viejo sin verificar sí se pregunta, aunque no cambie', () {
+      expect(
+        hayQueVerificarCiudadDePerfil(
+          ciudad: 'Medellín',
+          original: 'Medellín',
+          yaVerificada: false,
+          seRechazoEnEstaPantalla: false,
+        ),
+        isTrue,
+      );
+    });
+
+    // EL test de esta sesión: el estado exacto en el que queda la pantalla
+    // después de tocar "No, corregir". Si esto vuelve a dar true, se
+    // reintrodujo el bucle que dejaba a Eliza sin poder guardar nada.
+    test('después de cancelar, el siguiente Guardar NO vuelve a preguntar', () {
+      expect(
+        hayQueVerificarCiudadDePerfil(
+          ciudad: 'Medellín', // ya revertida al original por el cancelar
+          original: 'Medellín',
+          yaVerificada: false, // sigue sin verificarse de verdad
+          seRechazoEnEstaPantalla: true, // y eso es lo que lo destraba
+        ),
+        isFalse,
+        reason: 'si esto es true, no se puede guardar nada nunca más',
+      );
+    });
+
+    // Pero rechazarla no la vuelve válida: si después escribe OTRA ciudad,
+    // esa sí hay que verificarla.
+    test('haber cancelado no deja pasar una ciudad nueva sin verificar', () {
+      expect(
+        hayQueVerificarCiudadDePerfil(
+          ciudad: 'cordoba',
+          original: 'Medellín',
+          yaVerificada: false,
+          seRechazoEnEstaPantalla: true,
+        ),
+        isTrue,
+      );
+    });
+
+    test('una ciudad vacía no se verifica: la ubicación es opcional', () {
+      expect(
+        hayQueVerificarCiudadDePerfil(
+          ciudad: '   ',
+          original: 'Medellín',
+          yaVerificada: false,
+          seRechazoEnEstaPantalla: false,
+        ),
+        isFalse,
+      );
+    });
+  });
 }

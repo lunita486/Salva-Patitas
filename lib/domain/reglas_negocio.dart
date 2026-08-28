@@ -434,3 +434,40 @@ String nombreDeAnimal(String? nombre, {bool enFrase = false}) {
   }
   return limpio;
 }
+
+/// ¿Hay que mandar la ciudad de un perfil de negocio al geocodificador
+/// antes de guardar?
+///
+/// **Por qué existe compartida.** Los perfiles de Aliado y de Albergue
+/// hacían esta misma pregunta con su propia condición escrita a mano, y las
+/// dos tienen la misma forma: "cambió el texto, O el perfil viene de antes
+/// de que esta validación existiera". Esa segunda pata es la delicada,
+/// porque NO se apaga sola cuando el texto vuelve al original — hay que
+/// apagarla a propósito al cancelar.
+///
+/// Albergue se acordaba. Aliado no. Resultado: en Aliado, tocar "No,
+/// corregir" te dejaba TRABADA — el segundo "Guardar" volvía a pedir la
+/// ciudad, y el tercero también, sin forma de guardar el nombre o el
+/// teléfono que sí habías cambiado. En Albergue el mismo camino funcionaba.
+/// Hallazgo real de Eliza probando las dos pantallas seguidas.
+///
+/// Dos copias de la misma decisión, una con el arreglo y la otra sin él, es
+/// justo lo que esta función existe para impedir.
+///
+/// - [ciudad]: lo que dice el campo ahora.
+/// - [original]: la ciudad que ya está guardada.
+/// - [yaVerificada]: si la ciudad guardada pasó por el mapa alguna vez.
+/// - [seRechazoEnEstaPantalla]: si ya se ofreció verificarla y dijo que no.
+///   Vive solo en memoria a propósito: significa "no me preguntes más por
+///   ahora", NO "esta ciudad es válida". Persistirlo grabaría como
+///   verificada una ciudad que nadie confirmó.
+bool hayQueVerificarCiudadDePerfil({
+  required String ciudad,
+  required String original,
+  required bool yaVerificada,
+  required bool seRechazoEnEstaPantalla,
+}) {
+  if (ciudad.trim().isEmpty) return false;
+  if (ciudad.trim() != original.trim()) return true;
+  return !yaVerificada && !seRechazoEnEstaPantalla;
+}
