@@ -471,3 +471,49 @@ bool hayQueVerificarCiudadDePerfil({
   if (ciudad.trim() != original.trim()) return true;
   return !yaVerificada && !seRechazoEnEstaPantalla;
 }
+
+/// Los campos de ubicación de un animalito, listos para escribir.
+///
+/// **La regla, una sola: los tres datos son del MISMO punto, o no hay
+/// ninguno.** Ciudad, coordenadas y país describen un solo lugar; que
+/// sobreviva uno sin los otros es siempre un dato que miente.
+///
+/// **El caso que faltaba: borrar la ubicación.** El guardado escribía
+/// `'ubicacion': texto` siempre, pero las coordenadas solo
+/// `if (latitud != null)`. Al vaciar el campo, la ciudad quedaba en blanco y
+/// las coordenadas VIEJAS seguían intactas en la base, porque un update que
+/// no menciona un campo no lo borra. En el feed eso se veía como un
+/// animalito sin pin ni bandera —correcto, no hay ciudad— pero con "se
+/// encuentra a 2 m de ti", que sale de las coordenadas que nadie limpió.
+/// Hallazgo real de Eliza con "Lindurita": "no sabemos su ubicación".
+///
+/// Los 2 metros no eran casualidad: eran las coordenadas de donde ella misma
+/// había publicado el animalito.
+///
+/// Vive acá y no en cada pantalla porque publicar y editar tenían la misma
+/// lista de campos escrita por separado, con el mismo agujero en las dos.
+Map<String, Object?> ubicacionParaGuardar({
+  required String ciudad,
+  required double? latitud,
+  required double? longitud,
+  required String paisCodigo,
+}) {
+  final limpia = ciudad.trim();
+  // Sin ciudad no hay lugar. Se escriben los nulos a propósito, en vez de
+  // omitir los campos: omitir es justamente lo que dejaba las coordenadas
+  // viejas dando una distancia inventada.
+  if (limpia.isEmpty) {
+    return {
+      'ubicacion': '',
+      'latitud': null,
+      'longitud': null,
+      'paisCodigo': '',
+    };
+  }
+  return {
+    'ubicacion': limpia,
+    if (latitud != null) 'latitud': latitud,
+    if (longitud != null) 'longitud': longitud,
+    if (paisCodigo.isNotEmpty) 'paisCodigo': paisCodigo,
+  };
+}

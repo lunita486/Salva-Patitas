@@ -808,12 +808,13 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
               // (confirmado guardado), después editó nombre/descripción
               // de un animal de ese albergue, y el feed volvió a mostrar
               // Montería — el guardado del animal la pisó de vuelta.
-              if (!_esDeAlbergue) ...{
-                'ubicacion': _lugarCtl.text.trim(),
-                if (_latitud != null) 'latitud': _latitud,
-                if (_longitud != null) 'longitud': _longitud,
-                if (_paisCodigo.isNotEmpty) 'paisCodigo': _paisCodigo,
-              },
+              if (!_esDeAlbergue)
+                ...ubicacionParaGuardar(
+                  ciudad: _lugarCtl.text,
+                  latitud: _latitud,
+                  longitud: _longitud,
+                  paisCodigo: _paisCodigo,
+                ),
             })
             .timeout(const Duration(seconds: 20));
       } on TimeoutException {

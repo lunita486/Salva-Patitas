@@ -875,4 +875,67 @@ void main() {
       );
     });
   });
+
+  // ── Borrar la ubicación tiene que borrarla de verdad ───────────────────
+  //
+  // Eliza guardó a "Lindurita" borrándole la ubicación. En el feed salía sin
+  // pin y sin bandera (correcto, no hay ciudad) pero decía "se encuentra a
+  // 2 m de ti". Los 2 metros eran las coordenadas viejas, de donde ella misma
+  // había publicado el animalito: el guardado escribía la ciudad vacía pero
+  // NO tocaba latitud/longitud, y un update que no menciona un campo no lo
+  // borra.
+  group('ubicacionParaGuardar', () {
+    test('sin ciudad, se borran también las coordenadas y el país', () {
+      final campos = ubicacionParaGuardar(
+        ciudad: '',
+        latitud: 6.24,
+        longitud: -75.58,
+        paisCodigo: 'CO',
+      );
+      expect(campos['ubicacion'], '');
+      expect(campos['latitud'], isNull);
+      expect(campos['longitud'], isNull);
+      expect(campos['paisCodigo'], '');
+    });
+
+    // Lo que de verdad importa: que las claves ESTÉN. Omitirlas es lo que
+    // dejaba el dato viejo vivo en la base.
+    test('las claves se escriben, no se omiten', () {
+      final campos = ubicacionParaGuardar(
+        ciudad: '   ',
+        latitud: 6.24,
+        longitud: -75.58,
+        paisCodigo: 'CO',
+      );
+      expect(campos.keys, containsAll(['latitud', 'longitud', 'paisCodigo']));
+    });
+
+    test('con ciudad, van los tres datos del mismo punto', () {
+      final campos = ubicacionParaGuardar(
+        ciudad: '  Medellín ',
+        latitud: 6.24,
+        longitud: -75.58,
+        paisCodigo: 'CO',
+      );
+      expect(campos['ubicacion'], 'Medellín');
+      expect(campos['latitud'], 6.24);
+      expect(campos['longitud'], -75.58);
+      expect(campos['paisCodigo'], 'CO');
+    });
+
+    // Una ciudad escrita a mano que el mapa no pudo ubicar: se guarda el
+    // nombre y no se inventan coordenadas, pero tampoco se pisan las que
+    // pudiera haber.
+    test('con ciudad pero sin coordenadas, no se escriben nulos', () {
+      final campos = ubicacionParaGuardar(
+        ciudad: 'Medellín',
+        latitud: null,
+        longitud: null,
+        paisCodigo: '',
+      );
+      expect(campos['ubicacion'], 'Medellín');
+      expect(campos.containsKey('latitud'), isFalse);
+      expect(campos.containsKey('paisCodigo'), isFalse);
+    });
+  });
 }

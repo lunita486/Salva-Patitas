@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:go_router/go_router.dart';
 import '../routing/app_router.dart';
+import '../domain/reglas_negocio.dart';
 import '../theme.dart';
 import '../widgets/aviso_animal_duplicado.dart';
 import '../widgets/chips_seleccionables.dart';
@@ -443,16 +444,18 @@ class _SubirRescateScreenState extends State<SubirRescateScreen>
               : _razaCtl.text.trim(),
           'estado': _estado,
           'urgencia': _urgencia,
-          'ubicacion': _lugarCtl.text.trim(),
           'descripcion': _descCtl.text.trim(),
           'estadoAdopcion': 'Rescatado',
           'rescatistaNombre': nombrePublicador,
           if (fotoPublicadorBase64 != null)
             'rescatistaFotoBase64': fotoPublicadorBase64,
           if (fotoPublicadorUrl != null) 'rescatistaFotoUrl': fotoPublicadorUrl,
-          if (_latitud != null) 'latitud': _latitud,
-          if (_longitud != null) 'longitud': _longitud,
-          if (_paisCodigo.isNotEmpty) 'paisCodigo': _paisCodigo,
+          ...ubicacionParaGuardar(
+            ciudad: _lugarCtl.text,
+            latitud: _latitud,
+            longitud: _longitud,
+            paisCodigo: _paisCodigo,
+          ),
           'edad': _edad,
           'genero': _genero,
           'energia': _energia,
