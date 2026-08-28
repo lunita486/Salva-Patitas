@@ -62,8 +62,38 @@ class _HomeScreenState extends State<HomeScreen>
     role: CreatorRole.rescatista,
     estado: 'pendiente',
   );
-  late final Stream<QuerySnapshot<Map<String, dynamic>>> _misRescatesStream =
-      _rescatesRepo.misRescates(uid: _uid, role: CreatorRole.rescatista);
+  /// El contador de "Animales rescatados". Se pide una vez y se vuelve a
+  /// pedir al volver de publicar (ver _refrescarContador), que es cuando de
+  /// verdad cambia para quien lo está mirando.
+  Future<int> _totalRescates = Future.value(0);
+
+  /// Vuelve a pedir el contador y la vista previa. Se llama al abrir y al
+  /// volver de publicar o de la lista completa: son los momentos en que
+  /// esto cambia para quien lo está mirando. Antes eran streams en vivo, y
+  /// esa comodidad costaba descargar la colección entera.
+  void _refrescarRescates() {
+    if (!mounted) return;
+    setState(() {
+      _totalRescates = _rescatesRepo.contar(
+        uid: _uid,
+        role: CreatorRole.rescatista,
+      );
+      _activos = _rescatesRepo.paginaDeMisRescates(
+        uid: _uid,
+        role: CreatorRole.rescatista,
+        porPagina: 10,
+      );
+    });
+  }
+
+  /// El carrusel "Tus rescates activos" es una VISTA PREVIA, no la lista:
+  /// para eso está "Ver todas". Trae una página acotada en vez de la
+  /// colección entera.
+  late Future<PaginaDeRescates> _activos = _rescatesRepo.paginaDeMisRescates(
+    uid: _uid,
+    role: CreatorRole.rescatista,
+    porPagina: 10,
+  );
   final _chatsRepo = ChatsRepository();
   late final Stream<QuerySnapshot> _chatsRescatistaStream = _chatsRepo.mios(
     uid: _uid,
@@ -91,6 +121,7 @@ class _HomeScreenState extends State<HomeScreen>
   void initState() {
     super.initState();
     _cargarRol();
+    _refrescarRescates();
     _verificarVencimientos();
     _verificarSeguimientoPostAdopcion();
     _detectarCiudad();
@@ -412,7 +443,9 @@ class _HomeScreenState extends State<HomeScreen>
             'MIS ANIMALES',
             'Tus rescates activos',
             'Gestionar',
-            onAction: () => context.push(AppRoutes.misRescates),
+            onAction: () => context
+                .push(AppRoutes.misRescates)
+                .then((_) => _refrescarRescates()),
           ),
           const SizedBox(height: 12),
           _misRescatesCarousel(),
@@ -462,23 +495,19 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _misRescatesCarousel() {
     return SizedBox(
       height: 245,
-      child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        // Ya existía _misRescatesStream (late final, arriba) para esta
-        // MISMA consulta — esta pantalla la usa en el contador de
-        // "Animales rescatados" de _statsRowDynamic(). Este carrusel tenía
-        // su PROPIA copia armada inline en build(), así que cada rebuild
-        // (por ejemplo, al aprobar una solicitud, que dispara varios
-        // StreamBuilder hermanos) se desuscribía y resuscribía a una NUEVA
-        // consulta — la key por docId (ver más abajo) evitaba que se
-        // reciclaran tarjetas de OTRO animal, pero no evitaba el parpadeo
-        // de la resuscripción en sí: un instante de caché local antes de
-        // que llegara el snapshot fresco del servidor. Mismo patrón, y
-        // mismo arreglo, que ya se hizo hoy en mis_rescates_screen.dart,
-        // solicitudes_preview.dart y solicitudes_rescatista_screen.dart —
-        // se había quedado afuera de esa limpieza porque esta consulta en
-        // particular vivía duplicada en vez de compartida. Hallazgo real
-        // de Eliza: aprobó una adopción y "Tus rescates activos" parpadeó.
-        stream: _misRescatesStream,
+      // Una PÁGINA, no la colección. Este carrusel es una vista previa —
+      // la lista completa está en "Ver todas" (mis_rescates_screen), que
+      // pagina sola. Antes escuchaba la consulta entera: con 1.000 animales
+      // descargaba 1.000 documentos para mostrar los primeros que entran en
+      // una fila horizontal.
+      //
+      // El orden por prioridad de estado se sigue haciendo acá abajo, pero
+      // ahora sobre 10 elementos en vez de sobre todo. Eso cambia algo y
+      // conviene saberlo: la vista previa muestra los 10 MÁS RECIENTES
+      // ordenados por prioridad, no los 10 de mayor prioridad de toda la
+      // cuenta. Para eso está la lista completa, que sí puede filtrar.
+      child: FutureBuilder<PaginaDeRescates>(
+        future: _activos,
         builder: (context, snap) {
           if (snap.connectionState == ConnectionState.waiting) {
             return const Center(
@@ -493,7 +522,8 @@ class _HomeScreenState extends State<HomeScreen>
               ),
             );
           }
-          final docs = [...snap.data?.docs ?? []];
+          final docs = [...?snap.data?.docs];
+
           if (docs.isEmpty) {
             return Center(
               child: Text(
@@ -845,17 +875,19 @@ class _HomeScreenState extends State<HomeScreen>
             ),
             const SizedBox(width: 10),
             Expanded(
-              child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                stream: _misRescatesStream,
-                builder: (context, rescSnap) {
-                  final total = (rescSnap.data?.docs ?? []).length;
-                  return _stat(
-                    '$total',
-                    'Animales\nrescatados',
-                    Colors.white,
-                    appInk,
-                  );
-                },
+              // contar() y no el stream completo: antes este número salía
+              // de `docs.length` sobre TODOS los rescates de la cuenta, o
+              // sea que abrir el inicio los descargaba enteros para pintar
+              // un número. Con 1.000 son 1.000 lecturas; con 100.000, cien
+              // veces más. Ver RescatesRepository.contar().
+              child: FutureBuilder<int>(
+                future: _totalRescates,
+                builder: (context, rescSnap) => _stat(
+                  '${rescSnap.data ?? 0}',
+                  'Animales\nrescatados',
+                  Colors.white,
+                  appInk,
+                ),
               ),
             ),
           ],
@@ -895,7 +927,9 @@ class _HomeScreenState extends State<HomeScreen>
   );
 
   Widget _ctaCard(BuildContext ctx) => GestureDetector(
-    onTap: () => ctx.push(AppRoutes.subirRescate, extra: false),
+    onTap: () => ctx
+        .push(AppRoutes.subirRescate, extra: false)
+        .then((_) => _refrescarRescates()),
     child: Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -968,7 +1002,9 @@ class _HomeScreenState extends State<HomeScreen>
                 Icons.add_circle_outline,
                 'Subir',
                 1,
-                onTap: () => context.push(AppRoutes.subirRescate, extra: false),
+                onTap: () => context
+                    .push(AppRoutes.subirRescate, extra: false)
+                    .then((_) => _refrescarRescates()),
               ),
               _navTap(
                 Icons.notifications_outlined,

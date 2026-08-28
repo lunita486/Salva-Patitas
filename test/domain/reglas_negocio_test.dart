@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:salva_patitas/data/rescates_repository.dart';
 import 'package:salva_patitas/domain/reglas_negocio.dart';
 
 void main() {
@@ -936,6 +937,57 @@ void main() {
       expect(campos['ubicacion'], 'Medellín');
       expect(campos.containsKey('latitud'), isFalse);
       expect(campos.containsKey('paisCodigo'), isFalse);
+    });
+  });
+
+  // ── La lista de estados y el predicado no pueden divergir ──────────────
+  //
+  // Las listas de "mis rescates" ahora se piden paginadas y filtradas del
+  // lado del servidor, así que la CONSULTA necesita los mismos estados que
+  // el predicado usa en Dart. Si alguien agrega un estado a la lista y se
+  // olvida del predicado (o al revés), el filtro empieza a mostrar cosas
+  // distintas de las que dice mostrar, y en una lista paginada eso es
+  // invisible: parece que simplemente no hay más animales.
+  group('estados: la lista manda, el predicado la usa', () {
+    test('cuentaComoEnCuidado acepta exactamente estadosEnCuidado', () {
+      for (final e in estadosEnCuidado) {
+        expect(cuentaComoEnCuidado(e), isTrue, reason: '$e debería contar');
+      }
+      for (final e in RescatesRepository.estados) {
+        expect(
+          cuentaComoEnCuidado(e),
+          estadosEnCuidado.contains(e),
+          reason: 'el predicado y la lista discrepan en "$e"',
+        );
+      }
+    });
+
+    test('un estado ausente cuenta como recién publicado', () {
+      expect(cuentaComoEnCuidado(null), isTrue);
+    });
+
+    test('esEstancado acepta exactamente estadosQuePuedenEstancarse', () {
+      for (final e in estadosQuePuedenEstancarse) {
+        expect(
+          esEstancado(diasEsperando: 99, estadoAdopcion: e, umbral: 30),
+          isTrue,
+          reason: '$e debería poder estancarse',
+        );
+      }
+      for (final e in ['Adoptado', 'Fallecido', 'En proceso de adopción']) {
+        expect(
+          esEstancado(diasEsperando: 99, estadoAdopcion: e, umbral: 30),
+          isFalse,
+          reason: '$e NO debería aparecer en Estancados',
+        );
+      }
+    });
+
+    test('el umbral sigue mandando por encima del estado', () {
+      expect(
+        esEstancado(diasEsperando: 5, estadoAdopcion: 'Rescatado', umbral: 30),
+        isFalse,
+      );
     });
   });
 }

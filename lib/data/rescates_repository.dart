@@ -10,6 +10,14 @@ import 'favoritos_repository.dart';
 import 'firestore_resiliencia.dart';
 import 'rescate_fotos_repository.dart';
 
+/// Una página de [RescatesRepository.paginaDeMisRescates]: los documentos,
+/// si queda algo más abajo, y el cursor para pedir la página siguiente.
+typedef PaginaDeRescates = ({
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  bool hayMas,
+  DocumentSnapshot<Map<String, dynamic>>? ultimo,
+});
+
 /// Única puerta de entrada a la colección `rescates`. Las pantallas no
 /// deben llamar `FirebaseFirestore.instance.collection('rescates')`
 /// directamente — ver ARCHITECTURE.md.
@@ -148,6 +156,131 @@ class RescatesRepository {
     }
     return q.snapshots();
   }
+
+  /// Cuántos animales tiene [uid] bajo [role], SIN descargar ninguno.
+  ///
+  /// **Por qué existe.** Tres pantallas mostraban un número calculado con
+  /// `snapshot.docs.length` sobre [misRescates], que es la colección
+  /// completa: `home_screen` ("Animales rescatados"),
+  /// `perfil_rescatista_screen` (total y adoptados) y `albergue_home_screen`
+  /// (en cuidado, en adopción, adoptados, y el porcentaje de capacidad).
+  ///
+  /// O sea que abrir el inicio descargaba TODOS los documentos de la cuenta
+  /// para pintar un número. Con 1.000 animales son 1.000 lecturas y ~2,5 MB;
+  /// con 100.000, cien veces eso. El costo de mostrar un contador no puede
+  /// depender de cuántos animales haya.
+  ///
+  /// `count()` lo resuelve del lado del servidor: Firestore lo cobra como
+  /// 1 lectura por cada 1.000 documentos contados y no manda ni un
+  /// documento. Un contador sobre 100.000 animales son 100 lecturas y unos
+  /// bytes.
+  ///
+  /// **Lo que se pierde, y por qué se acepta.** Esto devuelve un número una
+  /// vez, no un stream: el contador ya no se actualiza solo si otra persona
+  /// publica algo mientras la pantalla está abierta. Se refresca al abrir la
+  /// pantalla y al volver de publicar/editar/eliminar, que es cuando de
+  /// verdad cambia para quien lo está mirando.
+  ///
+  /// **Cuándo dejaría de alcanzar** (dejado anotado a propósito, sin
+  /// resolverlo ahora): si estos contadores se vuelven muy frecuentes —por
+  /// ejemplo si se refrescaran en cada scroll, o si el inicio se recargara
+  /// solo cada pocos segundos— el paso siguiente es guardar el número ya
+  /// calculado en el documento de `usuarios` y mantenerlo con un trigger de
+  /// Cloud Functions al crear/borrar/cambiar de estado un rescate. Eso lo
+  /// deja en 0 lecturas extra (esas pantallas YA escuchan ese documento),
+  /// a cambio de que un contador pueda quedar desincronizado si un trigger
+  /// falla. Hoy no hace falta: son 4 contadores que se piden al abrir.
+  ///
+  /// [estados] filtra por `estadoAdopcion`. Ojo: un documento SIN ese campo
+  /// no entra en ningún filtro (Firestore no puede consultar campos
+  /// ausentes). `crear()` siempre lo escribe, así que solo afecta a
+  /// documentos cargados a mano por fuera de la app.
+  Future<int> contar({
+    required String uid,
+    required CreatorRole role,
+    List<String>? estados,
+  }) async {
+    Query<Map<String, dynamic>> q = _col
+        .where('rescatistaId', isEqualTo: uid)
+        .where('creadoPor', isEqualTo: role.firestoreValue);
+    if (estados != null && estados.isNotEmpty) {
+      q = estados.length == 1
+          ? q.where('estadoAdopcion', isEqualTo: estados.single)
+          : q.where('estadoAdopcion', whereIn: estados);
+    }
+    return (await q.count().get()).count ?? 0;
+  }
+
+  /// Una página de los animales de [uid] bajo [role], con cursor.
+  ///
+  /// **Por qué existe.** [misRescates] devuelve un stream de la consulta
+  /// COMPLETA, sin `limit`. Con 1.000 animales eso es 1.000 documentos cada
+  /// vez que se abre la lista; con 100.000, cien veces eso. La regla que
+  /// esto respeta es que la cantidad total de animales de la cuenta no
+  /// determine cuánto trabajo hace el teléfono para mostrar una pantalla.
+  ///
+  /// **Cursor, no `offset` ni un `limit` que crece.** Firestore no tiene
+  /// `offset` barato: saltear N documentos los COBRA igual. Y agrandar el
+  /// `limit` de a poco (lo que hace hoy `feedPublico`) vuelve a traer todo
+  /// lo anterior en cada página: la página 10 son 500 documentos otra vez.
+  /// `startAfterDocument` arranca donde terminó la anterior y cobra solo lo
+  /// nuevo, sin importar cuán adentro de la colección se esté.
+  ///
+  /// Se piden [porPagina] + 1 documentos a propósito: el sobrante no se
+  /// devuelve, solo sirve para saber si [hayMas] sin pagar una consulta
+  /// aparte.
+  ///
+  /// Los filtros van en la CONSULTA, no en Dart. Filtrar del lado del
+  /// cliente sobre una página da resultados mal: si la primera página no
+  /// tiene ningún gato, "Gatos" se vería vacío aunque haya 300 más abajo.
+  ///
+  /// Ordena por `creadoEn` descendente. Un documento sin ese campo queda
+  /// afuera (Firestore excluye los que no tienen el campo del `orderBy`) —
+  /// `crear()` siempre lo escribe; el riesgo es solo para documentos
+  /// cargados a mano, el mismo que ya documenta [feedPublico].
+  Future<PaginaDeRescates> paginaDeMisRescates({
+    required String uid,
+    required CreatorRole role,
+    List<String>? estados,
+    String? especie,
+    /// Solo animales publicados ANTES de esta fecha. Existe para el filtro
+    /// "Estancados", que no es un estado guardado sino un cálculo: lleva
+    /// más de N días esperando y todavía se puede adoptar (ver esEstancado
+    /// en domain/reglas_negocio.dart). Antes ese filtro se resolvía en Dart
+    /// sobre la colección entera; como el corte es sobre `creadoEn`, que ya
+    /// es el campo por el que se ordena, Firestore lo puede resolver sin
+    /// traer nada de más.
+    DateTime? creadoAntesDe,
+    DocumentSnapshot<Map<String, dynamic>>? despuesDe,
+    int porPagina = paginaRescatesSize,
+  }) async {
+    Query<Map<String, dynamic>> q = _col
+        .where('rescatistaId', isEqualTo: uid)
+        .where('creadoPor', isEqualTo: role.firestoreValue);
+    if (estados != null && estados.isNotEmpty) {
+      q = estados.length == 1
+          ? q.where('estadoAdopcion', isEqualTo: estados.single)
+          : q.where('estadoAdopcion', whereIn: estados);
+    }
+    if (especie != null) q = q.where('especie', isEqualTo: especie);
+    if (creadoAntesDe != null) {
+      q = q.where(
+        'creadoEn',
+        isLessThanOrEqualTo: Timestamp.fromDate(creadoAntesDe),
+      );
+    }
+    q = q.orderBy('creadoEn', descending: true);
+    if (despuesDe != null) q = q.startAfterDocument(despuesDe);
+
+    final snap = await q.limit(porPagina + 1).get();
+    final hayMas = snap.docs.length > porPagina;
+    final docs = hayMas ? snap.docs.take(porPagina).toList() : snap.docs;
+    return (docs: docs, hayMas: hayMas, ultimo: docs.isEmpty ? null : docs.last);
+  }
+
+  /// Cuántos animales trae cada página de la lista. 20 llena de sobra una
+  /// pantalla de teléfono sin traer de más.
+  static const paginaRescatesSize = 20;
 
   /// True si [uid] ya tiene publicado otro animal con el mismo [nombre], la
   /// misma [especie] (sin importar mayúsculas/espacios en el nombre) Y bajo

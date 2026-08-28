@@ -57,8 +57,90 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
       .collection('usuarios')
       .doc(_uid)
       .snapshots();
-  late final Stream<QuerySnapshot<Map<String, dynamic>>> _rescatesStream =
-      _rescatesRepo.misRescates(uid: _uid, role: CreatorRole.albergue);
+  /// Los tres números del panel, contados del lado del servidor.
+  ///
+  /// Antes salían de filtrar en Dart el stream COMPLETO de rescates del
+  /// albergue: abrir el panel descargaba todos los animales para mostrar
+  /// "0 de 40". Con 1.000 son 1.000 lecturas y ~2,5 MB; con 100.000, cien
+  /// veces más. Un panel no puede costar en proporción al tamaño del
+  /// refugio.
+  ///
+  /// Son 3 consultas `count()` en vez de 1 descarga: Firestore cobra cada
+  /// una como 1 lectura por cada 1.000 documentos contados, así que un
+  /// refugio con 100.000 animales paga 300 lecturas en vez de 100.000, y no
+  /// baja ni un documento. Ver RescatesRepository.contar().
+  Future<List<int>> _numeros = Future.value(const [0, 0, 0]);
+
+  /// Los dos carruseles del panel son VISTAS PREVIAS, no listas: la lista
+  /// completa está en "Jauría" / "Ver todas", que pagina sola. Traen una
+  /// página acotada cada uno en vez de la colección entera.
+  ///
+  /// Se piden por separado y filtrados en la CONSULTA. Traer una sola página
+  /// y repartirla en Dart daría resultados falsos: si los 10 más recientes
+  /// fueran todos adoptados, la Jauría se vería vacía teniendo cientos.
+  static const PaginaDeRescates _sinNada = (
+    docs: <QueryDocumentSnapshot<Map<String, dynamic>>>[],
+    hayMas: false,
+    ultimo: null,
+  );
+  Future<PaginaDeRescates> _jauria = Future.value(_sinNada);
+
+  /// Lo que devolvió [_adoptados], para que la sección "Encontraron hogar"
+  /// pueda decidir si mostrarse sin anidar otro FutureBuilder adentro de la
+  /// columna que ya se está construyendo.
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _adoptadosCache = const [];
+
+  void _refrescarNumeros() {
+    if (!mounted) return;
+    setState(() {
+      // Solo se excluye 'Adoptado' de la Jauría — esos viven en su propia
+      // sección de abajo ("Encontraron hogar"). 'Fallecido' SÍ va en la
+      // Jauría: antes se excluía junto con 'Adoptado' y un animal fallecido
+      // desaparecía de la pantalla por completo.
+      _jauria = _rescatesRepo.paginaDeMisRescates(
+        uid: _uid,
+        role: CreatorRole.albergue,
+        estados: const [
+          'Rescatado',
+          'Regresado',
+          'En proceso de adopción',
+          'Hogar de paso',
+          'Fallecido',
+        ],
+        porPagina: 10,
+      );
+      _rescatesRepo
+          .paginaDeMisRescates(
+            uid: _uid,
+            role: CreatorRole.albergue,
+            estados: const ['Adoptado'],
+            porPagina: 10,
+          )
+          .then((p) {
+            if (mounted) setState(() => _adoptadosCache = p.docs);
+          });
+      _numeros = Future.wait([
+        // "En cuidado" son DOS estados — cuentaComoEnCuidado, en
+        // domain/reglas_negocio.dart, sigue siendo la única fuente de esa
+        // regla; acá se traduce a la consulta.
+        _rescatesRepo.contar(
+          uid: _uid,
+          role: CreatorRole.albergue,
+          estados: const ['Rescatado', 'Regresado'],
+        ),
+        _rescatesRepo.contar(
+          uid: _uid,
+          role: CreatorRole.albergue,
+          estados: const ['En proceso de adopción'],
+        ),
+        _rescatesRepo.contar(
+          uid: _uid,
+          role: CreatorRole.albergue,
+          estados: const ['Adoptado'],
+        ),
+      ]);
+    });
+  }
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _solicitudesStream =
       _solicitudesRepo.paraOwner(
         uid: _uid,
@@ -79,6 +161,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
 
   @override
   void initState() {
+    _refrescarNumeros();
     super.initState();
     _verificarVencimientos();
     _verificarSeguimientoPostAdopcion();
@@ -191,8 +274,8 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
 
         return Scaffold(
           backgroundColor: appBg,
-          body: StreamBuilder<QuerySnapshot>(
-            stream: _rescatesStream,
+          body: FutureBuilder<List<int>>(
+            future: _numeros,
             builder: (context, rSnap) {
               if (rSnap.connectionState == ConnectionState.waiting) {
                 return const Center(
@@ -200,35 +283,12 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                 );
               }
               // Sin esto, un error real (sin conexión, permiso denegado) se
-              // veía igual que "0 animales en cuidado/adopción" — mismo
-              // patrón ya arreglado en favoritos_screen.dart y otras
-              // pantallas (errorFeedState, widgets/estado_error_feed.dart), acá en el panel
-              // principal del albergue (hallazgo de auditoría de código).
+              // veía igual que "0 animales en cuidado": el panel mentía en
+              // vez de avisar.
               if (rSnap.hasError) return errorFeedState();
-              final rescates = rSnap.data?.docs ?? [];
-              // cuentaComoEnCuidado (domain/reglas_negocio.dart) es la única fuente de esta
-              // regla — antes estaba copiada a mano acá y en
-              // mis_rescates_screen.dart, cada una prometiendo en un
-              // comentario mantenerse igual que la otra.
-              final enCuidado = rescates
-                  .where(
-                    (d) => cuentaComoEnCuidado(
-                      (d.data() as Map)['estadoAdopcion'] as String?,
-                    ),
-                  )
-                  .length;
-              final enAdopcion = rescates
-                  .where(
-                    (d) =>
-                        (d.data() as Map)['estadoAdopcion'] ==
-                        'En proceso de adopción',
-                  )
-                  .length;
-              final adoptados = rescates
-                  .where(
-                    (d) => (d.data() as Map)['estadoAdopcion'] == 'Adoptado',
-                  )
-                  .length;
+              final enCuidado = rSnap.data?.elementAtOrNull(0) ?? 0;
+              final enAdopcion = rSnap.data?.elementAtOrNull(1) ?? 0;
+              final adoptados = rSnap.data?.elementAtOrNull(2) ?? 0;
               final totalActivos = enCuidado + enAdopcion;
               final pct = capacidad > 0
                   ? (totalActivos / capacidad).clamp(0.0, 1.0)
@@ -252,7 +312,6 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                             adoptados,
                             totalActivos,
                             pct,
-                            rescates,
                           )
                         : _nav == 3
                         ? _perfilTab(
@@ -296,7 +355,6 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
     int adoptados,
     int totalActivos,
     double pct,
-    List<QueryDocumentSnapshot> rescates,
   ) {
     // Con capacidades chicas, el % solo no alcanza a avisar con margen: con
     // capacidad=3, no existe ningún totalActivos entero entre el 90% (2.7)
@@ -693,57 +751,16 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
           const SizedBox(height: 12),
           Padding(
             padding: const EdgeInsets.only(left: 16),
-            child: _jauriaCarousel(
-              // Solo se excluye 'Adoptado' acá — esos animales viven en su
-              // propia sección de abajo ("Encontraron hogar"). Antes
-              // 'Fallecido' se excluía igual que 'Adoptado', así que un
-              // animal fallecido desaparecía de la pantalla principal del
-              // albergue por completo: no en Jauría (filtrado acá) y no en
-              // "Encontraron hogar" (esa sección solo mira 'Adoptado').
-              // El lado rescatista (home_screen.dart:_misRescatesCarousel)
-              // no filtra NADA — un animal fallecido sigue en su único
-              // carrusel, solo que al final (prioridadEstado lo manda ahí).
-              // Acá se iguala ese comportamiento: Jauría ahora SÍ muestra
-              // los fallecidos, ordenados al final por la misma prioridad.
-              // Hallazgo real de Eliza.
-              rescates.where((d) {
-                  final e =
-                      (d.data() as Map)['estadoAdopcion'] as String? ??
-                      'Rescatado';
-                  return e != 'Adoptado';
-                }).toList()
-                // En proceso de adopción y hogar de paso primero (necesitan
-                // atención activa) — ver prioridadEstado() en domain/reglas_negocio.dart.
-                // Empate por fecha de publicación, más nuevo primero. Mismo
-                // pedido de Eliza aplicado también del lado rescatista
-                // (home_screen.dart): "así le facilitamos el trabajo al
-                // rescatista y también al albergue".
-                ..sort((a, b) {
-                  final pa = prioridadEstado(
-                    (a.data() as Map)['estadoAdopcion'] as String?,
-                  );
-                  final pb = prioridadEstado(
-                    (b.data() as Map)['estadoAdopcion'] as String?,
-                  );
-                  if (pa != pb) return pa.compareTo(pb);
-                  final ta = (a.data() as Map)['creadoEn'] as Timestamp?;
-                  final tb = (b.data() as Map)['creadoEn'] as Timestamp?;
-                  if (ta == null && tb == null) return 0;
-                  if (ta == null) return 1;
-                  if (tb == null) return -1;
-                  return tb.compareTo(ta);
-                }),
+            child: FutureBuilder<PaginaDeRescates>(
+              future: _jauria,
+              builder: (_, snap) => _jauriaCarousel([...?snap.data?.docs]),
             ),
           ),
 
           // ── Ya encontraron hogar ──────────────────────────────────────────
           Builder(
             builder: (_) {
-              final adoptadosDocs = rescates
-                  .where(
-                    (d) => (d.data() as Map)['estadoAdopcion'] == 'Adoptado',
-                  )
-                  .toList();
+              final adoptadosDocs = _adoptadosCache;
               if (adoptadosDocs.isEmpty) return const SizedBox.shrink();
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

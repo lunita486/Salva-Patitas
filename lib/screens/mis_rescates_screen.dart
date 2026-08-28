@@ -79,11 +79,102 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
   // Hallazgo real de Eliza: cambió la foto y la descripción de un animal
   // como rescatista, volvió a "Mis rescates" y seguía viendo la foto y el
   // nombre viejos — reportado 2-3 veces antes de encontrar esta causa.
-  late final Stream<QuerySnapshot<Map<String, dynamic>>> _rescatesStream =
-      _rescatesRepo.misRescates(
-        uid: FirebaseAuth.instance.currentUser?.uid ?? '',
-        role: widget.esAlbergue ? CreatorRole.albergue : CreatorRole.rescatista,
+  // ── Paginación ────────────────────────────────────────────────────────
+  //
+  // Antes esto era un stream de la consulta COMPLETA, sin `limit`: abrir la
+  // lista descargaba TODOS los animales de la cuenta y los filtros se
+  // aplicaban en Dart. Con 1.000 son 1.000 documentos cada vez; con
+  // 100.000, cien veces más. La regla es que el total de animales de la
+  // cuenta no cambie cuánto trabajo hace el teléfono para mostrar una
+  // pantalla.
+  //
+  // Los filtros van ahora en la CONSULTA. Filtrar en Dart sobre una página
+  // daría resultados falsos: si en la primera página no hubiera ningún
+  // gato, "Gatos" se vería vacío teniendo cientos más abajo.
+  final _docs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+  DocumentSnapshot<Map<String, dynamic>>? _cursor;
+  bool _hayMas = true;
+  bool _cargando = false;
+  Object? _errorCarga;
+  final _scroll = ScrollController();
+
+  String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
+  CreatorRole get _rol =>
+      widget.esAlbergue ? CreatorRole.albergue : CreatorRole.rescatista;
+
+  /// Traduce el filtro de la pantalla a algo que Firestore pueda consultar.
+  ///
+  /// `cuentaComoEnCuidado` y `esEstancado` (domain/reglas_negocio.dart)
+  /// siguen siendo la única fuente de esas dos reglas — acá solo se
+  /// traducen a una consulta, y los tests de este archivo comprueban que la
+  /// traducción diga lo mismo que la regla.
+  ({List<String>? estados, DateTime? antesDe}) get _consultaDelFiltro {
+    switch (_filtroEstado) {
+      case null:
+        return (estados: null, antesDe: null);
+      case 'En cuidado':
+        return (estados: estadosEnCuidado, antesDe: null);
+      case 'Estancados':
+        return (
+          estados: estadosQuePuedenEstancarse,
+          antesDe: DateTime.now().subtract(Duration(days: _umbralEstancado)),
+        );
+      default:
+        return (estados: [_filtroEstado!], antesDe: null);
+    }
+  }
+
+  /// Vuelve a empezar desde la primera página. Se llama al abrir, al cambiar
+  /// un filtro, y al volver de editar o publicar.
+  Future<void> _recargar() async {
+    _cursor = null;
+    _hayMas = true;
+    _docs.clear();
+    await _cargarPagina();
+  }
+
+  /// Trae la página siguiente. Nunca se adelanta sola: la dispara abrir la
+  /// pantalla, cambiar un filtro, o llegar cerca del final desplazándose.
+  Future<void> _cargarPagina() async {
+    if (_cargando || !_hayMas) return;
+    setState(() {
+      _cargando = true;
+      _errorCarga = null;
+    });
+    try {
+      final filtro = _consultaDelFiltro;
+      final pagina = await _rescatesRepo.paginaDeMisRescates(
+        uid: _uid,
+        role: _rol,
+        estados: filtro.estados,
+        especie: _filtroEspecie,
+        creadoAntesDe: filtro.antesDe,
+        despuesDe: _cursor,
       );
+      if (!mounted) return;
+      setState(() {
+        _docs.addAll(pagina.docs);
+        _cursor = pagina.ultimo;
+        _hayMas = pagina.hayMas;
+        _cargando = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorCarga = e;
+        _cargando = false;
+      });
+    }
+  }
+
+  void _alDesplazar() {
+    if (!_scroll.hasClients || _cargando || !_hayMas) return;
+    final falta = _scroll.position.maxScrollExtent - _scroll.position.pixels;
+    // Un poco antes del final para que la siguiente página llegue sin que se
+    // note el corte, pero solo porque la persona SE ESTÁ desplazando hacia
+    // ahí: nunca se piden páginas que nadie pidió.
+    if (falta < 600) _cargarPagina();
+  }
 
   Future<void> _cargarUmbralEstancado() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -268,6 +359,8 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
   @override
   void initState() {
     super.initState();
+    _scroll.addListener(_alDesplazar);
+    _recargar();
     _filtroEstado = widget.filtroInicial;
     _cargarUmbralEstancado();
   }
@@ -364,6 +457,7 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
               (v) => setState(() {
                 _filtroEstado = v;
                 _filtroEspecie = null;
+                _recargar();
               }),
             ),
             ..._estadosFiltroRescatista.map(
@@ -371,7 +465,10 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                 e,
                 e,
                 _filtroEstado,
-                (v) => setState(() => _filtroEstado = v),
+                (v) => setState(() {
+                  _filtroEstado = v;
+                  _recargar();
+                }),
               ),
             ),
           ],
@@ -398,7 +495,10 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
               e,
               e,
               _filtroEspecie,
-              (v) => setState(() => _filtroEspecie = v),
+              (v) => setState(() {
+                _filtroEspecie = v;
+                _recargar();
+              }),
               small: true,
             ),
           )
@@ -407,77 +507,43 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
   );
 
   Widget _listaAnimales(BuildContext context) {
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: _rescatesStream,
-      builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: appTeal));
-        }
-        if (snap.hasError) return errorFeedState();
-        var allDocs = (snap.data?.docs ?? []).toList()
-          ..sort((a, b) {
-            final ta = a.data()['creadoEn'] as Timestamp?;
-            final tb = b.data()['creadoEn'] as Timestamp?;
-            if (ta == null || tb == null) return 0;
-            return tb.compareTo(ta);
-          });
-        if (_filtroEstado != null) {
-          allDocs = allDocs.where((doc) {
-            final data = doc.data();
-            final ea = data['estadoAdopcion'] as String? ?? 'Rescatado';
-            // cuentaComoEnCuidado/esEstancado (domain/reglas_negocio.dart) son la única
-            // fuente de estas dos reglas — antes copiadas a mano acá y en
-            // el contador del panel del albergue / el aviso de la
-            // tarjeta, cada una prometiendo en un comentario mantenerse
-            // igual que las otras.
-            if (_filtroEstado == 'En cuidado') {
-              return cuentaComoEnCuidado(ea);
-            }
-            // 'Estancados' no es un estadoAdopcion real — es un filtro
-            // calculado, mismo umbral que el aviso de la tarjeta.
-            if (_filtroEstado == 'Estancados') {
-              return esEstancado(
-                diasEsperando: _diasEsperando(data['creadoEn'] as Timestamp?),
-                estadoAdopcion: ea,
-                umbral: _umbralEstancado,
-              );
-            }
-            return ea == _filtroEstado;
-          }).toList();
-        }
-        if (_filtroEspecie != null) {
-          allDocs = allDocs.where((doc) {
-            final esp = doc.data()['especie'] as String? ?? '';
-            if (_filtroEspecie == 'Otro')
-              return esp != 'Perro' && esp != 'Gato';
-            return esp == _filtroEspecie;
-          }).toList();
-        }
-        if (allDocs.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('🐾', style: TextStyle(fontSize: 48)),
-                const SizedBox(height: 12),
-                Text(
-                  _filtroEstado == null
-                      ? 'Aún no has publicado rescates'
-                      : 'No hay animales en estado "$_filtroEstado"',
-                  style: TextStyle(fontSize: 15, color: Colors.grey.shade700),
-                  textAlign: TextAlign.center,
-                ),
-              ],
+    if (_errorCarga != null && _docs.isEmpty) return errorFeedState();
+    if (_docs.isEmpty && _cargando) {
+      return const Center(child: CircularProgressIndicator(color: appTeal));
+    }
+    if (_docs.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('🐾', style: TextStyle(fontSize: 48)),
+            const SizedBox(height: 12),
+            Text(
+              _filtroEstado == null
+                  ? 'Aún no has publicado rescates'
+                  : 'No hay animales en estado "$_filtroEstado"',
+              style: TextStyle(fontSize: 15, color: Colors.grey.shade700),
+              textAlign: TextAlign.center,
             ),
+          ],
+        ),
+      );
+    }
+    return ListView.separated(
+      controller: _scroll,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      // Una fila más al final SOLO mientras quede algo por traer: es el
+      // indicador de que se está cargando la página siguiente.
+      itemCount: _docs.length + (_hayMas ? 1 : 0),
+      separatorBuilder: (_, __) => const SizedBox(height: 12),
+      itemBuilder: (_, i) {
+        if (i >= _docs.length) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 20),
+            child: Center(child: CircularProgressIndicator(color: appTeal)),
           );
         }
-        return ListView.separated(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-          itemCount: allDocs.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 12),
-          itemBuilder: (_, i) =>
-              _tarjetaAnimal(context, allDocs[i].id, allDocs[i].data()),
-        );
+        return _tarjetaAnimal(context, _docs[i].id, _docs[i].data());
       },
     );
   }

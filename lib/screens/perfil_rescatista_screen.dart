@@ -330,50 +330,48 @@ class _StatsRescatista extends StatefulWidget {
 }
 
 class _StatsRescatistaState extends State<_StatsRescatista> {
-  late final Stream<QuerySnapshot<Map<String, dynamic>>> _totalStream =
-      RescatesRepository().misRescates(
-        uid: widget.uid,
-        role: CreatorRole.rescatista,
-      );
-  late final Stream<QuerySnapshot<Map<String, dynamic>>> _adoptadosStream =
-      RescatesRepository().misRescates(
-        uid: widget.uid,
-        role: CreatorRole.rescatista,
-        estadoAdopcion: 'Adoptado',
-      );
+  // contar() y no misRescates(): antes estos dos números salían de
+  // `snapshot.docs.length` sobre la consulta COMPLETA, o sea que mostrar
+  // "12 animales rescatados" descargaba los 12 documentos... y con 1.000
+  // habría descargado los 1.000, y con 100.000 los 100.000. El costo de
+  // pintar un contador no puede depender de cuántos animales haya.
+  //
+  // Se piden UNA vez, al montar. Es un perfil: se abre, se mira, se sale.
+  // Ver el doc de RescatesRepository.contar() para qué se pierde con esto
+  // (dejan de ser números en vivo) y cuándo convendría pasar a un contador
+  // guardado en el documento de usuario.
+  late final Future<List<int>> _numeros = Future.wait([
+    RescatesRepository().contar(
+      uid: widget.uid,
+      role: CreatorRole.rescatista,
+    ),
+    RescatesRepository().contar(
+      uid: widget.uid,
+      role: CreatorRole.rescatista,
+      estados: const ['Adoptado'],
+    ),
+  ]);
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: _totalStream,
+    return FutureBuilder<List<int>>(
+      future: _numeros,
       builder: (context, snap) {
-        final total = snap.data?.docs.length ?? 0;
+        // Sin datos todavía (o si la consulta falló) se muestra 0, igual que
+        // hacía el StreamBuilder de antes mientras esperaba.
+        final total = snap.data?.elementAtOrNull(0) ?? 0;
+        // Antes contaba solicitudes con estado 'aprobada' — eso suma tanto
+        // adopciones como hogares de paso aprobados, y nunca resta cuando un
+        // hogar de paso termina: la solicitud queda aprobada para siempre
+        // aunque el animal ya no esté adoptado. Hallazgo real de Eliza: "11
+        // aprobadas" con 1 solo animal en estado Adoptado. Ahora cuenta
+        // animales cuyo estadoAdopcion ACTUAL es 'Adoptado'.
+        final adoptados = snap.data?.elementAtOrNull(1) ?? 0;
         return Row(
           children: [
             _statTile('$total', 'Animales\nrescatados', appTeal),
             const SizedBox(width: 12),
-            // Antes contaba solicitudes con estado 'aprobada' — eso suma
-            // tanto adopciones como hogares de paso aprobados, y nunca
-            // resta cuando un hogar de paso termina y el animal vuelve a
-            // estar disponible: la solicitud queda aprobada para siempre
-            // en esa colección aunque el animal ya no esté adoptado. El
-            // número no bajaba nunca y no reflejaba la realidad. Hallazgo
-            // real de Eliza: "11 aprobadas" con solo 1 animal realmente en
-            // estado Adoptado. Ahora cuenta animales cuyo estadoAdopcion
-            // ACTUAL es 'Adoptado' — mismo campo que ya usa el resto de la
-            // app (mis_rescates_screen.dart, albergue_home_screen.dart)
-            // para decidir qué animal está adoptado de verdad.
-            StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-              stream: _adoptadosStream,
-              builder: (context, snap2) {
-                final adoptados = snap2.data?.docs.length ?? 0;
-                return _statTile(
-                  '$adoptados',
-                  'Adopciones\naprobadas',
-                  appOrange,
-                );
-              },
-            ),
+            _statTile('$adoptados', 'Adopciones\naprobadas', appOrange),
           ],
         );
       },

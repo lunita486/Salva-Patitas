@@ -173,10 +173,15 @@ int umbralEstancadoDe(
 /// animalitos y la app sigue mostrando solo 1"). `Hogar de paso` NO cuenta
 /// (está en la casa de otra persona, libera capacidad real aunque sigas
 /// siendo responsable de ese caso — pedido explícito de Eliza).
-bool cuentaComoEnCuidado(String? estadoAdopcion) {
-  final e = estadoAdopcion ?? 'Rescatado';
-  return e == 'Rescatado' || e == 'Regresado';
-}
+/// Los estados que cuentan como "en cuidado". Existe como LISTA, y no solo
+/// dentro del `if` de abajo, porque las listas ahora se piden paginadas y
+/// filtradas del lado del servidor: la consulta necesita los mismos valores
+/// que el predicado. Tenerlos por separado es exactamente cómo se
+/// desincronizan.
+const estadosEnCuidado = ['Rescatado', 'Regresado'];
+
+bool cuentaComoEnCuidado(String? estadoAdopcion) =>
+    estadosEnCuidado.contains(estadoAdopcion ?? 'Rescatado');
 
 /// ¿Este animal todavía se puede adoptar? Única fuente de esta pregunta.
 ///
@@ -199,10 +204,13 @@ bool cuentaComoEnCuidado(String? estadoAdopcion) {
 ///
 /// Un estado ausente es un animal recién publicado ('Rescatado'), así que
 /// también está disponible.
-bool sePuedeAdoptar(String? estadoAdopcion) {
-  final e = estadoAdopcion ?? 'Rescatado';
-  return e == 'Rescatado' || e == 'Regresado' || e == 'Hogar de paso';
-}
+/// Los estados en los que un animalito sigue disponible. Mismo motivo que
+/// [estadosEnCuidado] para que sea una lista: las pantallas que los listan
+/// ahora filtran del lado del servidor y necesitan estos mismos valores.
+const estadosDisponibles = ['Rescatado', 'Regresado', 'Hogar de paso'];
+
+bool sePuedeAdoptar(String? estadoAdopcion) =>
+    estadosDisponibles.contains(estadoAdopcion ?? 'Rescatado');
 
 /// ¿Se le puede ofrecer hogar de paso a este animalito?
 ///
@@ -313,9 +321,17 @@ bool esEstancado({
   required int umbral,
 }) {
   if (diasEsperando == null || diasEsperando < umbral) return false;
-  final e = estadoAdopcion ?? 'Rescatado';
-  return e == 'Rescatado' || e == 'Hogar de paso' || e == 'Regresado';
+  return estadosQuePuedenEstancarse.contains(estadoAdopcion ?? 'Rescatado');
 }
+
+/// Los estados en los que un animal puede considerarse estancado: los que
+/// siguen esperando a alguien. Mismo motivo que [estadosEnCuidado] para que
+/// sea una lista: el filtro "Estancados" ahora se resuelve en la consulta.
+const estadosQuePuedenEstancarse = [
+  'Rescatado',
+  'Hogar de paso',
+  'Regresado',
+];
 
 /// El aviso de estancado se pinta más grave (rojo en vez de naranja) al
 /// doble del umbral — única fuente de ese segundo corte, antes solo vivía

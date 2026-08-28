@@ -4,16 +4,116 @@
       "collectionGroup": "rescates",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "adoptanteIdEnProceso", "order": "ASCENDING" },
-        { "fieldPath": "estadoAdopcion", "order": "ASCENDING" }
+        {
+          "fieldPath": "adoptanteIdEnProceso",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "estadoAdopcion",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "rescates",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "rescatistaId", "order": "ASCENDING" },
-        { "fieldPath": "estadoAdopcion", "order": "ASCENDING" }
+        {
+          "fieldPath": "rescatistaId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "estadoAdopcion",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "rescates",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "rescatistaId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "creadoPor",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "creadoEn",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "rescates",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "rescatistaId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "creadoPor",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "estadoAdopcion",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "creadoEn",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "rescates",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "rescatistaId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "creadoPor",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "especie",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "creadoEn",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "rescates",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "rescatistaId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "creadoPor",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "estadoAdopcion",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "especie",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "creadoEn",
+          "order": "DESCENDING"
+        }
       ]
     }
   ],

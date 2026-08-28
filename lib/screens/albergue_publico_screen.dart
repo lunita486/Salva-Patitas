@@ -30,11 +30,26 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
       .collection('usuarios')
       .doc(widget.rescatistaId)
       .snapshots();
-  late final Stream<QuerySnapshot<Map<String, dynamic>>> _rescatesStream =
-      RescatesRepository().misRescates(
+  // Una página y un contador, no la colección. Este perfil es público: lo
+  // puede abrir cualquiera, sobre un albergue de cualquier tamaño. Antes
+  // descargaba TODOS los animales del albergue para mostrar los primeros y
+  // un número; con un refugio grande eso es megabytes por visita.
+  //
+  // sePuedeAdoptar (domain/reglas_negocio.dart) sigue siendo la única fuente
+  // de qué animal está disponible; acá se traduce a la consulta con
+  // estadosDisponibles, que es la misma lista.
+  late final Future<PaginaDeRescates> _disponibles = RescatesRepository()
+      .paginaDeMisRescates(
         uid: widget.rescatistaId,
         role: CreatorRole.albergue,
+        estados: estadosDisponibles,
+        porPagina: 30,
       );
+  late final Future<int> _totalAdoptados = RescatesRepository().contar(
+    uid: widget.rescatistaId,
+    role: CreatorRole.albergue,
+    estados: const ['Adoptado'],
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -61,7 +76,7 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
             .map((w) => w.isNotEmpty ? w[0].toUpperCase() : '')
             .join();
 
-        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        return FutureBuilder<PaginaDeRescates>(
           // Pasa por RescatesRepository (no una consulta armada a mano acá)
           // por la misma regla que el resto de la app: sin CreatorRole
           // obligatorio es fácil olvidarse el filtro por sub-rol y mezclar
@@ -70,39 +85,12 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
           // local de `creadoPor == 'albergue'` que había acá hacía lo mismo
           // a mano; ahora lo hace el repositorio, así el hook de pre-commit
           // cubre esta pantalla también.
-          stream: _rescatesStream,
+          future: _disponibles,
           builder: (context, rSnap) {
-            // Sin esto, un error real del stream se veía igual que "este
-            // albergue no tiene animales publicados" — mismo patrón ya
-            // arreglado en favoritos_screen.dart y otras pantallas
-            // (errorFeedState, widgets/estado_error_feed.dart), acá en el perfil público
-            // (hallazgo de auditoría de código).
+            // Sin esto, un error real se veía igual que "este albergue no
+            // tiene animales publicados".
             if (rSnap.hasError) return errorFeedState();
-            final all = rSnap.data?.docs ?? [];
-            // sePuedeAdoptar (domain/reglas_negocio.dart) — la MISMA regla
-            // que usan el feed y Favoritos. Acá vivía una lista escrita a
-            // mano que difería en 'En proceso de adopción': ese animal ya
-            // NO aparecía en el feed pero sí en el perfil público del
-            // albergue, con el botón "Solicitar adopción" activo. Quien lo
-            // pedía completaba el formulario entero para que después la
-            // aprobación se lo autorrechazara con "ya tiene un proceso con
-            // otro adoptante".
-            final disponibles =
-                all
-                    .where(
-                      (d) => sePuedeAdoptar(
-                        (d.data() as Map)['estadoAdopcion'] as String?,
-                      ),
-                    )
-                    .toList()..sort((a, b) {
-                  final ta = ((a.data() as Map)['creadoEn'] as Timestamp?);
-                  final tb = ((b.data() as Map)['creadoEn'] as Timestamp?);
-                  if (ta == null || tb == null) return 0;
-                  return tb.compareTo(ta);
-                });
-            final totalAdoptados = all
-                .where((d) => (d.data() as Map)['estadoAdopcion'] == 'Adoptado')
-                .length;
+            final disponibles = [...?rSnap.data?.docs];
 
             return Scaffold(
               backgroundColor: appBg,
@@ -218,10 +206,16 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
                             appTeal,
                           ),
                           const SizedBox(width: 10),
-                          _statChip(
-                            '$totalAdoptados',
-                            'adoptados',
-                            const Color(0xFF2196F3),
+                          // Un contador del lado del servidor: antes salía
+                          // de filtrar en Dart todos los animales del
+                          // albergue.
+                          FutureBuilder<int>(
+                            future: _totalAdoptados,
+                            builder: (_, s) => _statChip(
+                              '${s.data ?? 0}',
+                              'adoptados',
+                              const Color(0xFF2196F3),
+                            ),
                           ),
                           if (capacidad > 0) ...[
                             const SizedBox(width: 10),
