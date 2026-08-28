@@ -106,6 +106,34 @@ Future<void> mostrarEliminarCuentaDialog(
   );
   if (confirmado != true || !context.mounted) return;
 
+  // ── Por qué el spinner NO se cierra con `context` ──────────────────────
+  //
+  // El borrado del servidor incluye `usuarios/{uid}`, y esa baja le llega al
+  // cliente por el stream que escucha AuthWrapper: la pantalla desde la que
+  // se tocó "Eliminar mi cuenta" se desmonta SOLA mientras todavía estamos
+  // esperando la respuesta. Con el contexto desmontado, cada rama de abajo
+  // hacía `if (!context.mounted) return;` y se iba SIN cerrar el spinner.
+  //
+  // Y ese spinner no se puede descartar (barrierDismissible: false y
+  // PopScope canPop: false), así que quedaba tapando la pantalla nueva para
+  // siempre: la única salida era matar la app.
+  //
+  // Bug real de Eliza borrando un aliado: "sale eliminando tu cuenta y no
+  // pasa nada, se queda ahí... y al fondo se ve Hola, Carmen, ¿cómo vas a
+  // entrar?". Ese fondo ES la pantalla de elegir rol, y es la prueba: el
+  // borrado había avanzado y quien esperaba la respuesta ya no existía.
+  //
+  // Le pasa a los 4 roles, no solo a Aliado: las 4 pantallas llaman a esta
+  // misma función y todas escuchan ese documento. Que aparezca o no depende
+  // de si la baja del documento llega antes que la respuesta, que es una
+  // carrera.
+  //
+  // El navegador raíz sobrevive a ese cambio —AuthWrapper reemplaza lo que
+  // cuelga de él, no a él— así que cerrar el spinner con esta referencia
+  // funciona aunque el contexto de origen ya no esté.
+  final navegador = Navigator.of(context, rootNavigator: true);
+  final avisos = ScaffoldMessenger.of(context);
+
   // No descartable — el borrado recorre 8 colecciones del lado del
   // servidor, puede tardar más que un guardado normal.
   showDialog<void>(
@@ -133,21 +161,32 @@ Future<void> mostrarEliminarCuentaDialog(
     ),
   );
 
+  // Se cierra UNA sola vez, pase lo que pase. Que cada rama lo hiciera por
+  // su cuenta es lo que dejaba caminos sin cerrarlo.
+  var spinnerAbierto = true;
+  void cerrarSpinner() {
+    if (!spinnerAbierto) return;
+    spinnerAbierto = false;
+    navegador.pop();
+  }
+
   try {
     await CuentaRepository().eliminarCuenta();
-    if (!context.mounted) return;
-    Navigator.pop(context); // cierra "Eliminando tu cuenta…"
+    cerrarSpinner();
     // El borrado ya pasó del lado del servidor (incluida la cuenta de
     // Firebase Auth) — cerrar sesión acá es solo para que el cliente lo
     // note: sin esto, AuthWrapper (main.dart) seguiría mostrando la sesión
     // vieja hasta el próximo reinicio de la app.
     await cerrarSesion();
+    // Si el contexto ya no está, AuthWrapper YA cambió de pantalla solo:
+    // no hay nada que desapilar.
     if (context.mounted) Navigator.of(context).popUntil((r) => r.isFirst);
   } on CuentaBloqueada catch (e) {
-    if (!context.mounted) return;
-    Navigator.pop(context); // cierra "Eliminando tu cuenta…"
+    cerrarSpinner();
+    // navegador.context y no `context`: el de origen puede haberse
+    // desmontado, y este aviso tiene que salir igual.
     await showDialog<void>(
-      context: context,
+      context: navegador.context,
       builder: (dlgCtx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('No se puede eliminar todavía'),
@@ -161,18 +200,15 @@ Future<void> mostrarEliminarCuentaDialog(
       ),
     );
   } on TimeoutException {
-    // El timeout es del CLIENTE (120s) esperando la respuesta — no cancela
+    // El timeout es del CLIENTE (30s) esperando la respuesta — no cancela
     // el borrado, que sigue corriendo del lado del servidor (tiene su
     // propio límite de 300s, y recorre 8 colecciones: para una cuenta con
-    // muchos chats/mensajes puede tardar más que esos 120s). Mostrar el
-    // mensaje genérico de "no pudimos eliminar, revisá tu conexión" acá
-    // sería mentirle a la persona — lo más probable es que el borrado
-    // termine bien igual. Hallazgo de auditoría de código: revisión
-    // pre-lanzamiento a 7 días de subir a producción.
-    if (!context.mounted) return;
-    Navigator.pop(context); // cierra "Eliminando tu cuenta…"
+    // muchos chats/mensajes puede tardar más). Mostrar el mensaje genérico
+    // de "no pudimos eliminar, revisá tu conexión" acá sería mentirle a la
+    // persona — lo más probable es que el borrado termine bien igual.
+    cerrarSpinner();
     await showDialog<void>(
-      context: context,
+      context: navegador.context,
       builder: (dlgCtx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Esto está tardando más de lo normal'),
@@ -191,9 +227,8 @@ Future<void> mostrarEliminarCuentaDialog(
       ),
     );
   } catch (e) {
-    if (!context.mounted) return;
-    Navigator.pop(context); // cierra "Eliminando tu cuenta…"
-    ScaffoldMessenger.of(context).showSnackBar(
+    cerrarSpinner();
+    avisos.showSnackBar(
       SnackBar(
         backgroundColor: msgError,
         content: Text(CuentaRepository.mensajeError(e)),
