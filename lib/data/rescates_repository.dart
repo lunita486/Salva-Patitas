@@ -548,6 +548,22 @@ class RescatesRepository {
   /// catálogo.
   static const feedPageSize = 50;
 
+  /// [despuesDe] es el cursor de la página siguiente: mismo nombre y misma
+  /// forma que en [paginaDeMisRescates], para que las dos se lean igual.
+  ///
+  /// **Por qué acá el cursor y no un `limit` que crece.** Antes el feed
+  /// pedía 50, después 100, después 150: cada página volvía a traer TODO lo
+  /// anterior, así que la página 10 eran 500 documentos otra vez. Con el
+  /// cursor, cada página cuesta 50 sin importar cuán adentro del feed se
+  /// esté.
+  ///
+  /// Sigue devolviendo un STREAM, no una lectura de una vez, y eso es a
+  /// propósito: el feed se actualiza solo (un animal que se adopta cambia
+  /// de estado en la tarjeta sin recargar). Esa es la diferencia con
+  /// [paginaDeMisRescates], y es la razón por la que las dos no comparten
+  /// implementación: una es en vivo y la otra no. Quien junta las páginas
+  /// en vivo es FeedPaginado (data/feed_paginado.dart).
+  ///
   /// Feed público de adopción — sin scope por diseño, cualquiera lo ve.
   /// Paginado: trae como mucho [limite] animales (por defecto
   /// [feedPageSize]), ordenados por fecha de publicación, los más viejos
@@ -574,7 +590,12 @@ class RescatesRepository {
   /// en el feed, sin ningún aviso.
   Stream<QuerySnapshot<Map<String, dynamic>>> feedPublico({
     int limite = feedPageSize,
-  }) => _col.orderBy('creadoEn').limit(limite).snapshots();
+    DocumentSnapshot<Map<String, dynamic>>? despuesDe,
+  }) {
+    Query<Map<String, dynamic>> q = _col.orderBy('creadoEn');
+    if (despuesDe != null) q = q.startAfterDocument(despuesDe);
+    return q.limit(limite).snapshots();
+  }
 
   /// Stream de UN rescate por id — para pantallas que necesitan reaccionar
   /// en vivo a cambios de estado (ej. chat_screen.dart, que muestra "✅

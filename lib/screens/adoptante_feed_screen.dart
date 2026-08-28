@@ -15,6 +15,7 @@ import '../widgets/fotos.dart';
 import '../domain/compatibilidad.dart';
 import '../data/creator_role.dart';
 import '../data/favoritos_repository.dart';
+import '../data/feed_paginado.dart';
 import '../data/rescates_repository.dart';
 import '../data/preferencias_repository.dart';
 import '../data/firestore_resiliencia.dart';
@@ -56,14 +57,17 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
   late final String _uid = FirebaseAuth.instance.currentUser?.uid ?? '';
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _favoritosStream =
       FavoritosRepository().mios(_uid);
-  // Paginación del feed (ver RescatesRepository.feedPublico): arranca en
-  // una tanda y va creciendo de a `feedPageSize` a medida que la persona
-  // se acerca al final de lo ya cargado — ver _pedirMasAnimalesSiHaceFalta.
-  // Sigue siendo el MISMO stream en vivo, solo que le vamos pidiendo más:
-  // un animal nuevo de otra cuenta aparece solo, sin reabrir la pantalla,
-  // apenas el límite crezca lo suficiente para alcanzarlo.
-  int _limiteFeed = RescatesRepository.feedPageSize;
-  late Stream<QuerySnapshot<Map<String, dynamic>>> _feedStream;
+  // Paginación del feed. Antes era UN stream al que se le agrandaba el
+  // límite (50, después 100, después 150), así que cada tanda volvía a traer
+  // todo lo anterior: la página 10 eran 500 documentos otra vez.
+  //
+  // Ahora cada página es su propia consulta con cursor y cuesta lo mismo sin
+  // importar cuán adentro del feed se esté. Sigue siendo EN VIVO, que es lo
+  // que no había que perder: un animalito que se adopta cambia de estado en
+  // la tarjeta sin recargar, y uno nuevo aparece solo. Quien junta las
+  // páginas es FeedPaginado (data/feed_paginado.dart), aparte de esta
+  // pantalla para poder probarlo sin Firebase.
+  late final FeedPaginado _feed = FeedPaginado(repo: _rescatesRepo);
   // Guarda contra pedir más de una tanda a la vez: sin esto, si el
   // rebuild siguiente corre antes de que el setState de abajo termine de
   // aplicarse (y el nuevo `_feedStream` traiga el snapshot más grande),
@@ -305,7 +309,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
   @override
   void initState() {
     super.initState();
-    _feedStream = _rescatesRepo.feedPublico(limite: _limiteFeed);
+    _feed.pedirOtraPagina();
     _obtenerPosicion();
     _suscribirPerfil();
   }
@@ -323,21 +327,23 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
   @override
   void reintentarSinPedirPermiso() => _obtenerPosicion(pedirPermiso: false);
 
-  /// Agranda `_limiteFeed` (y con eso, `_feedStream`) en `feedPageSize` más
-  /// — se llama cuando la persona ya está por llegar al final de los
-  /// animales que se trajeron hasta ahora. `addPostFrameCallback`, no un
-  /// `setState` directo: esto se dispara desde adentro del `builder` del
-  /// StreamBuilder (durante build()), y llamar setState ahí mismo tira
-  /// "setState() called during build".
+  /// Abre la página siguiente del feed — se llama cuando la persona ya está
+  /// por llegar al final de los animalitos que se trajeron hasta ahora.
+  ///
+  /// `addPostFrameCallback`, no una llamada directa: esto se dispara desde
+  /// adentro del `builder` del StreamBuilder (durante build()), y tocar el
+  /// estado ahí mismo tira "setState() called during build".
+  ///
+  /// Ya no hace falta `setState`: la página nueva llega por el mismo stream
+  /// que la pantalla ya está escuchando, en vez de reemplazarlo por otro.
+  /// Eso además saca de raíz el parpadeo que había cada vez que se pedía
+  /// más (el StreamBuilder pasaba por `waiting` al cambiar de stream).
   void _pedirMasAnimalesSiHaceFalta() {
     if (_pidiendoMasAnimales) return;
     _pidiendoMasAnimales = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      setState(() {
-        _limiteFeed += RescatesRepository.feedPageSize;
-        _feedStream = _rescatesRepo.feedPublico(limite: _limiteFeed);
-      });
+      _feed.pedirOtraPagina();
       _pidiendoMasAnimales = false;
     });
   }
@@ -377,6 +383,9 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
     // de acá abajo — esta limpieza es la propia de esta pantalla.
     _prefSub?.cancel();
     _perfilAdopcionSub?.cancel();
+    // Cierra los listeners de TODAS las páginas abiertas, no solo el de la
+    // última.
+    _feed.dispose();
     _fotoPageNotifier.dispose();
     super.dispose();
   }
@@ -506,8 +515,12 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
         // que dispara el propio toque del corazón (que corre con el
         // snapshot viejo, sin el favorito todavía) y la tarjeta parpadearía.
         _favoritosRecientes.removeWhere(favRescateIds.contains);
-        return StreamBuilder<QuerySnapshot>(
-          stream: _feedStream,
+        return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+          stream: _feed.animales,
+          // Lo que ya se sabía, para que un rebuild de esta pantalla (hace
+          // uno por cada tarjeta que se pasa) no vuelva a mostrar el
+          // spinner. Los streams de Firestore hacían esto solos.
+          initialData: _feed.ultimo,
           builder: (context, snap) {
             if (snap.hasError) return errorFeedState();
             // Antes del primer snapshot real (instalación nueva, sin caché
@@ -550,11 +563,11 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
             // quedaba mudo para siempre apenas la especie/tamaño/edad elegidos
             // no tenían ningún animal en ese momento — bug real reportado por
             // una tester ("el botón Ver de nuevo no le funciona").
-            final disponibles = (snap.data?.docs ?? []).where((doc) {
+            final disponibles = (snap.data ?? const []).where((doc) {
               if (favRescateIds.contains(doc.id) ||
                   _favoritosRecientes.contains(doc.id))
                 return false;
-              final d = doc.data() as Map<String, dynamic>;
+              final d = doc.data();
               // sePuedeAdoptar (domain/reglas_negocio.dart) — única fuente
               // de esta pregunta. Antes esta lista de estados vivía escrita
               // a mano acá, y Favoritos tenía la SUYA, que se contradecía
@@ -563,7 +576,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
             }).toList();
             final firestoreDocs =
                 disponibles.where((doc) {
-                    final d = doc.data() as Map<String, dynamic>;
+                    final d = doc.data();
                     final especie = d['especie'] as String? ?? 'Perro';
                     if (_prefEspecie != 'Ambos' && especie != _prefEspecie)
                       return false;
@@ -580,10 +593,10 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                   // en vez de desaparecer del feed — ver feedPublico() en el repo.
                   ..sort((a, b) {
                     final ta =
-                        (a.data() as Map<String, dynamic>)['creadoEn']
+                        a.data()['creadoEn']
                             as Timestamp?;
                     final tb =
-                        (b.data() as Map<String, dynamic>)['creadoEn']
+                        b.data()['creadoEn']
                             as Timestamp?;
                     if (ta == null && tb == null) return 0;
                     if (ta == null) return 1;
@@ -592,7 +605,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                   });
             final animals = <Map<String, dynamic>>[
               ...firestoreDocs.map((doc) {
-                final d = doc.data() as Map<String, dynamic>;
+                final d = doc.data();
                 return {
                   'nombre': RescatesRepository.nombreDe(d),
                   'edad': d['edad'] ?? '',
@@ -677,8 +690,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
             // puede haber más en el servidor (si Firestore devolvió MENOS que
             // el límite pedido, es que no queda nada más y no hace falta
             // pedir de nuevo).
-            final rawCount = snap.data?.docs.length ?? 0;
-            if (rawCount >= _limiteFeed && _idx >= animals.length - 10) {
+            if (_feed.puedeHaberMas && _idx >= animals.length - 10) {
               _pedirMasAnimalesSiHaceFalta();
             }
 
