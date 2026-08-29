@@ -100,6 +100,47 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
   /// Si la última página vino llena, puede haber más abajo.
   bool _hayMas = true;
 
+  /// Hay una página abriéndose y todavía no llegó su primer snapshot.
+  ///
+  /// Sin esto, `_alDesplazar` (que se dispara en CADA evento de scroll,
+  /// muchos por segundo) abría una página por evento. Y peor: como
+  /// `_abrirPagina` agrega la página vacía sincrónicamente, la llamada
+  /// siguiente veía esa vacía, no encontraba cursor y volvía a abrir la
+  /// ventana de la página 1. El deduplicado lo tapaba, así que no se veía:
+  /// se pagaba en lecturas y en listeners.
+  bool _pidiendo = false;
+
+  /// El instante en que se armó la lista. Las páginas históricas piden
+  /// `creadoEn <= _t0` y los nuevos `creadoEn > _t0`.
+  ///
+  /// **Por qué existe.** El orden es descendente, así que un animalito nuevo
+  /// entra ARRIBA DE TODO. Sin este corte, correría la ventana de la página
+  /// 1 hacia abajo y el último de esa página se caía por el borde: no
+  /// quedaba ni en la página 1 (se corrió) ni en la 2 (que empieza después
+  /// de él). Desaparecía de la lista hasta recargar.
+  ///
+  /// Con el ancla, ninguna ventana ya cargada se puede mover: lo nuevo no
+  /// entra por ahí, entra por [_subNuevos]. Es la misma propiedad que hace
+  /// inmune al feed, que ordena ascendente y por eso recibe lo nuevo al
+  /// final.
+  DateTime _t0 = DateTime.now();
+
+  /// Los publicados después de [_t0], que van arriba de todo.
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _nuevos = const [];
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _subNuevos;
+
+  /// Tope de la consulta de nuevos.
+  ///
+  /// **Qué pasa al alcanzarlo, explícitamente:** se muestran los 20 MÁS
+  /// recientes y los que sobren no aparecen hasta que la lista se rearme
+  /// (cambiar un filtro, o salir y volver a entrar). No se recarga sola: una
+  /// recarga silenciosa mientras alguien mira la lista le movería todo bajo
+  /// el dedo.
+  ///
+  /// 20 es de sobra para el caso real: hay que publicar más de 20
+  /// animalitos, desde otro dispositivo, con esta pantalla abierta.
+  static const _maxNuevos = 20;
+
   /// Hasta que la primera página emite algo, la lista muestra el spinner.
   /// Con streams eso suele durar un instante: Firestore entrega la caché
   /// local antes de ir al servidor.
@@ -118,6 +159,13 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
   List<QueryDocumentSnapshot<Map<String, dynamic>>> get _docs {
     final vistos = <String>{};
     final todos = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+    // Los nuevos van primero: son los más recientes y el orden es
+    // descendente. No pueden pisarse con las páginas históricas (una
+    // consulta pide `> _t0` y la otra `<= _t0`), pero pasan igual por el
+    // deduplicado, que es la red para el caso de los borrados.
+    for (final doc in _nuevos) {
+      if (vistos.add(doc.id)) todos.add(doc);
+    }
     for (final pagina in _paginas) {
       for (final doc in pagina) {
         if (vistos.add(doc.id)) todos.add(doc);
@@ -157,9 +205,15 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
   void _recargar() {
     _cerrarPaginas();
     _paginas.clear();
+    _nuevos = const [];
     _hayMas = true;
+    _pidiendo = false;
     _primeraLlego = false;
     _errorCarga = null;
+    // Ancla nueva en cada rearmado: si no, los "nuevos" de la vez anterior
+    // se irían acumulando visita tras visita.
+    _t0 = DateTime.now();
+    _abrirNuevos();
     _abrirPagina();
   }
 
@@ -168,12 +222,47 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
       sub.cancel();
     }
     _subsPaginas.clear();
+    _subNuevos?.cancel();
+    _subNuevos = null;
+  }
+
+  /// Escucha lo publicado DESPUÉS de [_t0]. Ver [_t0] y [_maxNuevos].
+  ///
+  /// No se abre con el filtro "Estancados": ese ya trae su propio corte por
+  /// fecha hacia atrás, y un animalito recién publicado no puede llevar
+  /// meses esperando. Sin nada que traer, sería un listener al pedo.
+  void _abrirNuevos() {
+    final filtro = _consultaDelFiltro;
+    if (filtro.antesDe != null) return;
+    _subNuevos = _rescatesRepo
+        .misRescatesEnVivo(
+          uid: _uid,
+          role: _rol,
+          estados: filtro.estados,
+          especie: _filtroEspecie,
+          creadoDespuesDe: _t0,
+          porPagina: _maxNuevos,
+        )
+        .listen(
+          (snap) {
+            if (!mounted) return;
+            // La consulta pide _maxNuevos + 1; el sobrante no se muestra.
+            setState(
+              () => _nuevos = snap.docs.take(_maxNuevos).toList(),
+            );
+          },
+          // Un fallo acá no debe romper la lista histórica, que es lo
+          // importante: se queda sin los nuevos y nada más.
+          onError: (Object _) {},
+        );
   }
 
   /// Abre la página siguiente. Nunca se adelanta sola: la dispara abrir la
   /// pantalla, cambiar un filtro, o llegar cerca del final desplazándose.
   void _abrirPagina() {
+    if (_pidiendo) return;
     if (!_hayMas && _paginas.isNotEmpty) return;
+    _pidiendo = true;
     final indice = _paginas.length;
     // El cursor es el último documento de la página anterior, capturado UNA
     // vez acá: startAfterDocument usa los valores que tenía en este momento,
@@ -189,7 +278,11 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
             role: _rol,
             estados: filtro.estados,
             especie: _filtroEspecie,
-            creadoAntesDe: filtro.antesDe,
+            // El más restrictivo de los dos cortes: el ancla temporal, o el
+            // de "Estancados" si está puesto (siempre más viejo que _t0).
+            creadoAntesDe: filtro.antesDe == null || filtro.antesDe!.isAfter(_t0)
+                ? _t0
+                : filtro.antesDe,
             despuesDe: cursor,
           )
           .listen(
@@ -201,6 +294,7 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
               // no se muestra.
               final llena = snap.docs.length > RescatesRepository.paginaRescatesSize;
               setState(() {
+                _pidiendo = false;
                 _paginas[indice] = llena
                     ? snap.docs
                           .take(RescatesRepository.paginaRescatesSize)
@@ -214,6 +308,7 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
             onError: (Object e) {
               if (!mounted) return;
               setState(() {
+                _pidiendo = false;
                 _errorCarga = e;
                 _primeraLlego = true;
               });
@@ -429,6 +524,7 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
     // liberar. Ahora además hay un listener por página abierta, y hay que
     // cerrarlos TODOS o siguen escuchando Firestore después de salir.
     _cerrarPaginas();
+    _pidiendo = false;
     _scroll.dispose();
     super.dispose();
   }

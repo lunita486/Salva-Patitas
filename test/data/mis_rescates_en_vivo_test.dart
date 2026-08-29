@@ -17,6 +17,8 @@ import 'package:salva_patitas/data/rescates_repository.dart';
 /// el pintado inmediato y el tiempo real, SIN volver a traer la colección
 /// entera.
 void main() {
+  group('ancla temporal T0', anclaTemporal);
+
   late FakeFirebaseFirestore db;
   late RescatesRepository repo;
 
@@ -162,5 +164,212 @@ void main() {
     await db.collection('rescates').doc('r020').delete();
     final despues = await pagina(porPagina: 20).first;
     expect(despues.docs.length, 20, reason: 'ya no hay página siguiente');
+  });
+}
+
+/// El ancla temporal T0, que es lo que impide que un animalito nuevo tape a
+/// otro.
+///
+/// **El defecto.** El orden es descendente, así que uno nuevo entra ARRIBA.
+/// Sin corte, corría la ventana de la página 1 hacia abajo y su último
+/// documento se caía por el borde: no quedaba ni en la página 1 (se corrió)
+/// ni en la 2 (que empieza después de él). Desaparecía de la lista.
+///
+/// Con el ancla, las páginas históricas piden `creadoEn <= T0` y los nuevos
+/// `creadoEn > T0`. Ninguna ventana ya cargada se puede mover.
+void anclaTemporal() {
+  late FakeFirebaseFirestore db;
+  late RescatesRepository repo;
+
+  setUp(() {
+    db = FakeFirebaseFirestore();
+    repo = RescatesRepository(db: db);
+  });
+
+  /// Siembra con fechas controladas: [i] segundos después de la base.
+  Future<void> sembrar(int cuantos, {int desde = 0, String estado = 'Rescatado'}) async {
+    for (var i = desde; i < desde + cuantos; i++) {
+      await db.collection('rescates').doc('h${i.toString().padLeft(3, '0')}').set({
+        'nombre': 'Animal $i',
+        'especie': 'Perro',
+        'estadoAdopcion': estado,
+        'rescatistaId': 'refugio',
+        'creadoPor': 'albergue',
+        'creadoEn': Timestamp.fromDate(
+          DateTime(2026, 1, 1).add(Duration(seconds: i)),
+        ),
+      });
+    }
+  }
+
+  /// El T0 del test: todo lo sembrado hasta acá es "histórico".
+  final t0 = DateTime(2026, 1, 1, 1);
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> historicas({
+    DocumentSnapshot<Map<String, dynamic>>? despuesDe,
+    int porPagina = 20,
+  }) => repo.misRescatesEnVivo(
+    uid: 'refugio',
+    role: CreatorRole.albergue,
+    creadoAntesDe: t0,
+    despuesDe: despuesDe,
+    porPagina: porPagina,
+  );
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> nuevos({int porPagina = 20}) =>
+      repo.misRescatesEnVivo(
+        uid: 'refugio',
+        role: CreatorRole.albergue,
+        creadoDespuesDe: t0,
+        porPagina: porPagina,
+      );
+
+  /// Lo mismo que hace la pantalla: nuevos arriba, después las páginas, sin
+  /// repetidos por id.
+  List<String> juntar(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> arriba,
+    List<List<QueryDocumentSnapshot<Map<String, dynamic>>>> paginas,
+  ) {
+    final vistos = <String>{};
+    final ids = <String>[];
+    for (final d in arriba) {
+      if (vistos.add(d.id)) ids.add(d.id);
+    }
+    for (final p in paginas) {
+      for (final d in p) {
+        if (vistos.add(d.id)) ids.add(d.id);
+      }
+    }
+    return ids;
+  }
+
+  // ── EL escenario de la consigna ──────────────────────────────────────
+  test('1-3. 20 + 20, entra uno nuevo, y siguen estando los 41 sin repetidos',
+      () async {
+    await sembrar(40);
+
+    final p1 = (await historicas().first).docs.take(20).toList();
+    final p2 = (await historicas(despuesDe: p1.last).first).docs.take(20).toList();
+    expect(p1.length, 20);
+    expect(p2.length, 20);
+
+    // Entra el nuevo, DESPUÉS de T0.
+    await db.collection('rescates').doc('nuevo').set({
+      'nombre': 'Recién llegado',
+      'especie': 'Perro',
+      'estadoAdopcion': 'Rescatado',
+      'rescatistaId': 'refugio',
+      'creadoPor': 'albergue',
+      'creadoEn': Timestamp.fromDate(t0.add(const Duration(minutes: 1))),
+    });
+
+    // Las páginas históricas NO se movieron.
+    final p1b = (await historicas().first).docs.take(20).toList();
+    expect(
+      p1b.map((d) => d.id).toList(),
+      p1.map((d) => d.id).toList(),
+      reason: 'la ventana histórica se corrió: eso es el defecto',
+    );
+
+    final arriba = (await nuevos().first).docs;
+    final todos = juntar(arriba, [p1b, p2]);
+    expect(todos.length, 41, reason: 'se perdió alguno');
+    expect(todos.toSet().length, 41, reason: 'hay repetidos');
+    expect(todos.first, 'nuevo', reason: 'el nuevo va arriba');
+  });
+
+  test('8. un animalito nuevo NO entra en las páginas históricas', () async {
+    await sembrar(5);
+    await db.collection('rescates').doc('nuevo').set({
+      'nombre': 'Recién llegado',
+      'especie': 'Perro',
+      'estadoAdopcion': 'Rescatado',
+      'rescatistaId': 'refugio',
+      'creadoPor': 'albergue',
+      'creadoEn': Timestamp.fromDate(t0.add(const Duration(minutes: 1))),
+    });
+    final hist = (await historicas().first).docs.map((d) => d.id).toList();
+    expect(hist, isNot(contains('nuevo')));
+    expect(hist.length, 5);
+  });
+
+  test('9. las consultas > T0 y <= T0 nunca se pisan', () async {
+    await sembrar(6);
+    for (var i = 0; i < 3; i++) {
+      await db.collection('rescates').doc('n$i').set({
+        'nombre': 'Nuevo $i',
+        'especie': 'Perro',
+        'estadoAdopcion': 'Rescatado',
+        'rescatistaId': 'refugio',
+        'creadoPor': 'albergue',
+        'creadoEn': Timestamp.fromDate(t0.add(Duration(minutes: i + 1))),
+      });
+    }
+    final hist = (await historicas().first).docs.map((d) => d.id).toSet();
+    final arriba = (await nuevos().first).docs.map((d) => d.id).toSet();
+    expect(hist.intersection(arriba), isEmpty);
+    expect(hist.length + arriba.length, 9, reason: 'entre las dos, todos');
+  });
+
+  test('4-6. se elimina uno de la página 1: se completa y sin repetidos',
+      () async {
+    await sembrar(40);
+    final p1 = (await historicas().first).docs.take(20).toList();
+    final p2 = (await historicas(despuesDe: p1.last).first).docs.take(20).toList();
+
+    await db.collection('rescates').doc(p1[3].id).delete();
+
+    final p1b = (await historicas().first).docs.take(20).toList();
+    expect(p1b.length, 20, reason: 'la página se completó sola');
+    expect(p1b.map((d) => d.id), isNot(contains(p1[3].id)));
+
+    final todos = juntar(const [], [p1b, p2]);
+    expect(todos.toSet().length, todos.length, reason: 'hay repetidos');
+    expect(todos.length, 39, reason: 'quedan 39 de los 40');
+  });
+
+  test('7. uno que deja de cumplir el filtro desaparece', () async {
+    await sembrar(5, estado: 'Rescatado');
+    final conFiltro = repo.misRescatesEnVivo(
+      uid: 'refugio',
+      role: CreatorRole.albergue,
+      estados: const ['Rescatado'],
+      creadoAntesDe: t0,
+    );
+    expect((await conFiltro.first).docs.length, 5);
+    await db.collection('rescates').doc('h002').update({
+      'estadoAdopcion': 'Adoptado',
+    });
+    final despues = await conFiltro
+        .firstWhere((q) => q.docs.length == 4)
+        .timeout(const Duration(seconds: 5));
+    expect(despues.docs.map((d) => d.id), isNot(contains('h002')));
+  });
+
+  // El tope de la consulta de nuevos, y qué pasa al alcanzarlo.
+  test('con más nuevos que el tope, se muestran los MÁS RECIENTES', () async {
+    await sembrar(3);
+    for (var i = 0; i < 25; i++) {
+      await db.collection('rescates').doc('n${i.toString().padLeft(2, '0')}').set({
+        'nombre': 'Nuevo $i',
+        'especie': 'Perro',
+        'estadoAdopcion': 'Rescatado',
+        'rescatistaId': 'refugio',
+        'creadoPor': 'albergue',
+        'creadoEn': Timestamp.fromDate(t0.add(Duration(minutes: i + 1))),
+      });
+    }
+    // La pantalla pide tope+1 y recorta a tope.
+    final traidos = (await nuevos(porPagina: 20).first).docs;
+    expect(traidos.length, 21, reason: 'pide uno de más para saber que hay tope');
+    final mostrados = traidos.take(20).map((d) => d.id).toList();
+    expect(mostrados.length, 20);
+    // Los más recientes son los de índice más alto.
+    expect(mostrados.first, 'n24');
+    expect(
+      mostrados,
+      isNot(contains('n00')),
+      reason: 'los que sobran del tope aparecen recién al rearmar la lista',
+    );
   });
 }

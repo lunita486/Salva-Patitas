@@ -302,6 +302,14 @@ class RescatesRepository {
     List<String>? estados,
     String? especie,
     DateTime? creadoAntesDe,
+
+    /// Solo animalitos publicados DESPUÉS de esta fecha.
+    ///
+    /// Existe para el ancla temporal de la lista: las páginas históricas
+    /// piden `creadoEn <= T0` y esta consulta pide `creadoEn > T0`. Las dos
+    /// son disjuntas por construcción, así que un animalito nuevo no puede
+    /// entrar en una ventana ya cargada y correrla.
+    DateTime? creadoDespuesDe,
     DocumentSnapshot<Map<String, dynamic>>? despuesDe,
     int porPagina = paginaRescatesSize,
   }) {
@@ -318,6 +326,12 @@ class RescatesRepository {
       q = q.where(
         'creadoEn',
         isLessThanOrEqualTo: Timestamp.fromDate(creadoAntesDe),
+      );
+    }
+    if (creadoDespuesDe != null) {
+      q = q.where(
+        'creadoEn',
+        isGreaterThan: Timestamp.fromDate(creadoDespuesDe),
       );
     }
     q = q.orderBy('creadoEn', descending: true);
