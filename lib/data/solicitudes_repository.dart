@@ -307,6 +307,13 @@ class SolicitudesRepository {
     return rechazadas;
   }
 
+  // PENDIENTE (post-lanzamiento): falta el hermano de
+  // rechazarOtrasPendientes para el caso "el animalito falleció" — cerrar
+  // TODAS las pendientes de ese rescate y devolver las afectadas, con esta
+  // misma forma. La explicación completa, incluida la trampa del orden
+  // contra el aviso, está en widgets/cambiar_estado_sheet.dart, arriba de
+  // _avisarAdoptanteFallecido.
+
   /// Todas las solicitudes PENDIENTES de un rescate — de solo lectura, no
   /// las toca. Mismo filtro que [rechazarCompetidoras], pero sin el
   /// `batch.update` que las rechaza.
