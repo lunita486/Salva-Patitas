@@ -29,9 +29,21 @@ import '../data/servicios_repository.dart';
 /// roles tenga la cuenta. Pedido explícito de Eliza probando el perfil de
 /// Aliado: "el mensaje para el aliado debería solo decir el tema del
 /// aliado, no mencionar el tema de la adopción".
+/// [repo] y [alCerrarSesion] existen SOLO para poder probar este flujo.
+///
+/// Los dos tienen por defecto exactamente lo que se usaba antes, así que
+/// ninguna de las cuatro pantallas que llaman acá se entera. Sin ellos no
+/// hay forma de escribir un test de la UI: el diálogo construía
+/// `CuentaRepository()` adentro y llamaba a `cerrarSesion()` directo, y las
+/// dos cosas necesitan Firebase de verdad.
+///
+/// Lo que hace falta poder simular es una demora de más de 30 segundos, que
+/// es cuando aparece el aviso de "esto está tardando más de lo normal".
 Future<void> mostrarEliminarCuentaDialog(
   BuildContext context, {
   bool mostrarParrafoAdopciones = true,
+  CuentaRepository? repo,
+  Future<bool> Function()? alCerrarSesion,
 }) async {
   // Solo informa, no bloquea — pedido explícito de Eliza: no tiene sentido
   // obligar a borrar servicios a mano antes de poder irse, si de cualquier
@@ -171,13 +183,13 @@ Future<void> mostrarEliminarCuentaDialog(
   }
 
   try {
-    await CuentaRepository().eliminarCuenta();
+    await (repo ?? CuentaRepository()).eliminarCuenta();
     cerrarSpinner();
     // El borrado ya pasó del lado del servidor (incluida la cuenta de
     // Firebase Auth) — cerrar sesión acá es solo para que el cliente lo
     // note: sin esto, AuthWrapper (main.dart) seguiría mostrando la sesión
     // vieja hasta el próximo reinicio de la app.
-    await cerrarSesion();
+    await (alCerrarSesion ?? cerrarSesion)();
     // Si el contexto ya no está, AuthWrapper YA cambió de pantalla solo:
     // no hay nada que desapilar.
     if (context.mounted) Navigator.of(context).popUntil((r) => r.isFirst);
