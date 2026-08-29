@@ -91,12 +91,40 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
   // Los filtros van ahora en la CONSULTA. Filtrar en Dart sobre una página
   // daría resultados falsos: si en la primera página no hubiera ningún
   // gato, "Gatos" se vería vacío teniendo cientos más abajo.
-  final _docs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
-  DocumentSnapshot<Map<String, dynamic>>? _cursor;
+  /// Lo que trajo cada página, en orden. Cada una se reemplaza entera cuando
+  /// su stream emite: es una foto en vivo de esa ventana.
+  final _paginas = <List<QueryDocumentSnapshot<Map<String, dynamic>>>>[];
+  final _subsPaginas =
+      <StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>[];
+
+  /// Si la última página vino llena, puede haber más abajo.
   bool _hayMas = true;
-  bool _cargando = false;
+
+  /// Hasta que la primera página emite algo, la lista muestra el spinner.
+  /// Con streams eso suele durar un instante: Firestore entrega la caché
+  /// local antes de ir al servidor.
+  bool _primeraLlego = false;
   Object? _errorCarga;
   final _scroll = ScrollController();
+
+  /// Todos los animalitos de las páginas abiertas, en orden y SIN repetidos.
+  ///
+  /// El deduplicado hace falta de verdad, y acá más que en el feed: la
+  /// consulta de cada página es "los 21 que siguen a este cursor", así que
+  /// al BORRAR un animalito —y esta pantalla tiene un tacho por tarjeta— esa
+  /// consulta se reevalúa sola y completa su ventana con uno más del final,
+  /// que es justo el primero de la página siguiente. Sin esto, esa tarjeta
+  /// aparecería dos veces.
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> get _docs {
+    final vistos = <String>{};
+    final todos = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+    for (final pagina in _paginas) {
+      for (final doc in pagina) {
+        if (vistos.add(doc.id)) todos.add(doc);
+      }
+    }
+    return todos;
+  }
 
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
   CreatorRole get _rol =>
@@ -124,56 +152,83 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
     }
   }
 
-  /// Vuelve a empezar desde la primera página. Se llama al abrir, al cambiar
-  /// un filtro, y al volver de editar o publicar.
-  Future<void> _recargar() async {
-    _cursor = null;
+  /// Vuelve a empezar desde la primera página, cerrando las anteriores. Se
+  /// llama al abrir, al cambiar un filtro, y al volver de editar o publicar.
+  void _recargar() {
+    _cerrarPaginas();
+    _paginas.clear();
     _hayMas = true;
-    _docs.clear();
-    await _cargarPagina();
+    _primeraLlego = false;
+    _errorCarga = null;
+    _abrirPagina();
   }
 
-  /// Trae la página siguiente. Nunca se adelanta sola: la dispara abrir la
-  /// pantalla, cambiar un filtro, o llegar cerca del final desplazándose.
-  Future<void> _cargarPagina() async {
-    if (_cargando || !_hayMas) return;
-    setState(() {
-      _cargando = true;
-      _errorCarga = null;
-    });
-    try {
-      final filtro = _consultaDelFiltro;
-      final pagina = await _rescatesRepo.paginaDeMisRescates(
-        uid: _uid,
-        role: _rol,
-        estados: filtro.estados,
-        especie: _filtroEspecie,
-        creadoAntesDe: filtro.antesDe,
-        despuesDe: _cursor,
-      );
-      if (!mounted) return;
-      setState(() {
-        _docs.addAll(pagina.docs);
-        _cursor = pagina.ultimo;
-        _hayMas = pagina.hayMas;
-        _cargando = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _errorCarga = e;
-        _cargando = false;
-      });
+  void _cerrarPaginas() {
+    for (final sub in _subsPaginas) {
+      sub.cancel();
     }
+    _subsPaginas.clear();
+  }
+
+  /// Abre la página siguiente. Nunca se adelanta sola: la dispara abrir la
+  /// pantalla, cambiar un filtro, o llegar cerca del final desplazándose.
+  void _abrirPagina() {
+    if (!_hayMas && _paginas.isNotEmpty) return;
+    final indice = _paginas.length;
+    // El cursor es el último documento de la página anterior, capturado UNA
+    // vez acá: startAfterDocument usa los valores que tenía en este momento,
+    // así que sigue sirviendo aunque después ese animalito se borre.
+    final anterior = _paginas.isEmpty ? null : _paginas.last;
+    final cursor = (anterior == null || anterior.isEmpty) ? null : anterior.last;
+    _paginas.add(const []);
+    final filtro = _consultaDelFiltro;
+    _subsPaginas.add(
+      _rescatesRepo
+          .misRescatesEnVivo(
+            uid: _uid,
+            role: _rol,
+            estados: filtro.estados,
+            especie: _filtroEspecie,
+            creadoAntesDe: filtro.antesDe,
+            despuesDe: cursor,
+          )
+          .listen(
+            (snap) {
+              // La página puede haber sido descartada por un _recargar()
+              // mientras su primer snapshot venía en camino.
+              if (!mounted || indice >= _paginas.length) return;
+              // Se pidió una de más solo para saber si hay continuación; esa
+              // no se muestra.
+              final llena = snap.docs.length > RescatesRepository.paginaRescatesSize;
+              setState(() {
+                _paginas[indice] = llena
+                    ? snap.docs
+                          .take(RescatesRepository.paginaRescatesSize)
+                          .toList()
+                    : snap.docs;
+                if (indice == _paginas.length - 1) _hayMas = llena;
+                _primeraLlego = true;
+                _errorCarga = null;
+              });
+            },
+            onError: (Object e) {
+              if (!mounted) return;
+              setState(() {
+                _errorCarga = e;
+                _primeraLlego = true;
+              });
+            },
+          ),
+    );
   }
 
   void _alDesplazar() {
-    if (!_scroll.hasClients || _cargando || !_hayMas) return;
+    if (!_scroll.hasClients || !_hayMas) return;
     final falta = _scroll.position.maxScrollExtent - _scroll.position.pixels;
     // Un poco antes del final para que la siguiente página llegue sin que se
     // note el corte, pero solo porque la persona SE ESTÁ desplazando hacia
     // ahí: nunca se piden páginas que nadie pidió.
-    if (falta < 600) _cargarPagina();
+    if (falta < 600) _abrirPagina();
   }
 
   Future<void> _cargarUmbralEstancado() async {
@@ -360,9 +415,22 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
   void initState() {
     super.initState();
     _scroll.addListener(_alDesplazar);
-    _recargar();
+    // El filtro inicial va ANTES de _recargar(): la consulta se arma
+    // sincrónicamente adentro, así que asignarlo después dejaba la primera
+    // página SIN filtrar mientras el chip aparecía seleccionado.
     _filtroEstado = widget.filtroInicial;
+    _recargar();
     _cargarUmbralEstancado();
+  }
+
+  @override
+  void dispose() {
+    // Esta pantalla no tenía dispose: el ScrollController quedaba sin
+    // liberar. Ahora además hay un listener por página abierta, y hay que
+    // cerrarlos TODOS o siguen escuchando Firestore después de salir.
+    _cerrarPaginas();
+    _scroll.dispose();
+    super.dispose();
   }
 
   // El body de build() vivía entero acá (los 3 bloques de arriba: header,
@@ -508,7 +576,7 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
 
   Widget _listaAnimales(BuildContext context) {
     if (_errorCarga != null && _docs.isEmpty) return errorFeedState();
-    if (_docs.isEmpty && _cargando) {
+    if (!_primeraLlego) {
       return const Center(child: CircularProgressIndicator(color: appTeal));
     }
     if (_docs.isEmpty) {

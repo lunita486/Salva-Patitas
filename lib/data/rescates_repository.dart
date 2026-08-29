@@ -278,6 +278,53 @@ class RescatesRepository {
     return (docs: docs, hayMas: hayMas, ultimo: docs.isEmpty ? null : docs.last);
   }
 
+  /// La misma página que [paginaDeMisRescates], pero EN VIVO.
+  ///
+  /// **Por qué existe además de la otra.** La versión de una sola lectura
+  /// hacía que la pantalla esperara el viaje al servidor en cada apertura:
+  /// `Query.get()` usa `Source.serverAndCache`, que va al servidor y solo cae
+  /// a la caché si no hay conexión. Antes esta lista era `snapshots()`, que
+  /// entrega la caché local AL INSTANTE y después actualiza con el servidor,
+  /// así que aparecía sin esperar nada. Se notaba como una demora al abrir
+  /// "Gestionar la jauría" — hallazgo real de Eliza, y una regresión que
+  /// introdujo la paginación.
+  ///
+  /// Devolver un stream recupera las dos cosas: el pintado inmediato desde
+  /// caché y que la lista se actualice sola (editar un animalito y ver el
+  /// cambio al volver, sin recargar).
+  ///
+  /// [despuesDe] es el cursor, igual que en [paginaDeMisRescates] y en
+  /// [feedPublico]. Pide [porPagina] + 1 por el mismo motivo: saber si hay
+  /// más sin pagar otra consulta. Quien recorta ese sobrante es la pantalla.
+  Stream<QuerySnapshot<Map<String, dynamic>>> misRescatesEnVivo({
+    required String uid,
+    required CreatorRole role,
+    List<String>? estados,
+    String? especie,
+    DateTime? creadoAntesDe,
+    DocumentSnapshot<Map<String, dynamic>>? despuesDe,
+    int porPagina = paginaRescatesSize,
+  }) {
+    Query<Map<String, dynamic>> q = _col
+        .where('rescatistaId', isEqualTo: uid)
+        .where('creadoPor', isEqualTo: role.firestoreValue);
+    if (estados != null && estados.isNotEmpty) {
+      q = estados.length == 1
+          ? q.where('estadoAdopcion', isEqualTo: estados.single)
+          : q.where('estadoAdopcion', whereIn: estados);
+    }
+    if (especie != null) q = q.where('especie', isEqualTo: especie);
+    if (creadoAntesDe != null) {
+      q = q.where(
+        'creadoEn',
+        isLessThanOrEqualTo: Timestamp.fromDate(creadoAntesDe),
+      );
+    }
+    q = q.orderBy('creadoEn', descending: true);
+    if (despuesDe != null) q = q.startAfterDocument(despuesDe);
+    return q.limit(porPagina + 1).snapshots();
+  }
+
   /// Cuántos animales trae cada página de la lista. 20 llena de sobra una
   /// pantalla de teléfono sin traer de más.
   static const paginaRescatesSize = 20;
