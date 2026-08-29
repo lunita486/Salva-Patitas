@@ -61,6 +61,29 @@ Future<void> gestionarRoles(
   }
 }
 
+/// La hoja de "Mis roles".
+///
+/// **Solo ofrece Adoptante y Rescatista, y eso limita a quién le sirve.**
+/// No hay casilla para Albergue ni para Aliado, y `_roles` arranca copiando
+/// los que ya están, así que esos dos nunca se pueden sacar desde acá: una
+/// cuenta con rol de negocio solo podría AGREGAR adoptante/rescatista.
+///
+/// Y agregarlos no cambiaría nada, porque `resolverPantallaPerfil`
+/// (domain/resolucion_perfil.dart) manda a albergue y a aliado antes que a
+/// cualquier otro rol: después de guardar se vuelve a aterrizar en la misma
+/// pantalla de negocio.
+///
+/// Por eso este flujo se ofrece ÚNICAMENTE desde los perfiles de adoptante y
+/// de rescatista. Estuvo un rato también en los home de albergue y de
+/// aliado, con la idea de darles una salida, y hubo que sacarlo: no la daba.
+/// Un botón que promete algo y no lo cumple es peor que no tenerlo.
+///
+/// **Queda pendiente, a propósito.** Hoy quien tiene rol de negocio no puede
+/// volver al lado de adoptante/rescatista desde la app. La forma que tiene
+/// más sentido para resolverlo es un cambio de VISTA (como el interruptor
+/// Adoptante/Rescatista que ya existe en el inicio), no tocar los roles
+/// guardados: 'albergue' lleva verificación oficial y no debería poder
+/// ponérselo cualquiera. Es trabajo para después del lanzamiento.
 class RolesSheet extends StatefulWidget {
   final List<String> rolesActuales;
   const RolesSheet({super.key, required this.rolesActuales});

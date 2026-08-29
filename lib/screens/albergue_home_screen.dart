@@ -3,7 +3,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme.dart';
-import '../widgets/roles_sheet.dart';
 import '../widgets/boton_cambiar_rol.dart';
 import '../domain/reglas_negocio.dart';
 import '../widgets/avatares.dart';
@@ -981,29 +980,30 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    // Sin esto no había NINGUNA salida: resolverPantallaPerfil
-                    // manda a albergue/aliado antes que a cualquier otro rol,
-                    // así que quien tuviera ese rol aterrizaba siempre acá, y
-                    // "Gestionar mis roles" solo existía en los perfiles de
-                    // adoptante y rescatista. Quedaba encerrada para siempre.
-                    // Hallazgo real de Eliza con su propia cuenta.
-                    onPressed: () => gestionarRoles(ctx, rolFallback: 'albergue'),
-                    icon: const Icon(Icons.switch_account_outlined, size: 18),
-                    label: const Text('Gestionar mis roles'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: appTeal,
-                      side: BorderSide(color: appTeal.withValues(alpha: 0.4)),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                  ),
-                ),
+                // Acá NO va "Gestionar mis roles", y es a propósito.
+                //
+                // Estuvo un rato y había que sacarlo: la hoja de roles
+                // (widgets/roles_sheet.dart) solo ofrece Adoptante y
+                // Rescatista. No tiene casilla para Albergue ni para Aliado,
+                // y arranca copiando los roles que ya están, así que desde
+                // acá solo se podían AGREGAR roles, nunca salir de este.
+                //
+                // Y agregarlos no cambiaba nada: resolverPantallaPerfil
+                // (domain/resolucion_perfil.dart) manda a albergue y a aliado
+                // antes que a cualquier otro rol, así que después de guardar
+                // se volvía a aterrizar exactamente acá. Un botón que promete
+                // una salida y no la da es peor que no tenerlo.
+                //
+                // La salida de verdad sigue sin existir: quien tiene rol de
+                // negocio no puede volver al lado de adoptante/rescatista
+                // desde la app. Queda como trabajo para después del
+                // lanzamiento, y la forma que tiene más sentido es un cambio
+                // de VISTA (como el interruptor Adoptante/Rescatista que ya
+                // existe en el inicio), no tocar los roles guardados.
+                //
+                // Si estás por volver a poner este botón: no alcanza con
+                // ponerlo. Hay que hacer que la hoja o el enrutado permitan
+                // salir, o vuelve a no hacer nada.
                 const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,
