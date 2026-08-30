@@ -26,7 +26,7 @@ void main() {
   test('los contadores distinguen "cargando" de "cero"', () {
     expect(
       fuente,
-      contains('final cargando = !rSnap.hasData;'),
+      contains('final cargando = !_primeraLlego;'),
       reason: 'sin esta distinción no se puede saber si el 0 es real',
     );
   });
@@ -37,6 +37,46 @@ void main() {
 
   // El defecto que Eliza comprobó con un albergue de 55: el numero salia de
   // contar los documentos de UNA pagina, que pide 30.
+  // Decision de Eliza: que este numero diga lo mismo que el "En cuidado"
+  // del panel del albergue, para que las dos pantallas no muestren cifras
+  // distintas del mismo refugio.
+  test('el contador cuenta "en cuidado", no los tres estados adoptables', () {
+    expect(
+      fuente,
+      contains('estados: estadosEnCuidado'),
+      reason: 'el contador tiene que decir lo mismo que el panel',
+    );
+  });
+
+  test('pero la LISTA sigue trayendo los tres, sin sacar hogar de paso', () {
+    expect(
+      fuente,
+      contains('estados: estadosDisponibles'),
+      reason:
+          'los de hogar de paso se pueden adoptar y no habia que sacarlos',
+    );
+  });
+
+  // Lo que faltaba: la pantalla traia 30 y no tenia forma de pedir mas, asi
+  // que con 58 disponibles habia 28 inalcanzables para el adoptante.
+  test('la lista puede pedir la página siguiente', () {
+    expect(fuente, contains('despuesDe: _cursor'), reason: 'no hay cursor');
+    expect(fuente, contains('_scroll.addListener'), reason: 'nada la dispara');
+    expect(fuente, contains('_hayMas'), reason: 'no sabe si queda algo');
+  });
+
+  test('con guarda de reentrada, como en Mis rescates', () {
+    expect(
+      fuente,
+      contains('if (_pidiendo || !_hayMas) return;'),
+      reason: 'sin guarda, cada evento de scroll abre otra consulta',
+    );
+  });
+
+  test('y libera el ScrollController al salir', () {
+    expect(fuente, contains('_scroll.dispose()'));
+  });
+
   test('el contador de disponibles NO sale del tamaño de la página', () {
     expect(
       fuente,
@@ -119,12 +159,12 @@ void main() {
       }
     }
 
-    test('55 disponibles se cuentan como 55, no como 30', () async {
+    test('55 en cuidado se cuentan como 55, no como 30', () async {
       await sembrar(55, 'Rescatado');
       final total = await repo.contar(
         uid: 'refugio',
         role: CreatorRole.albergue,
-        estados: estadosDisponibles,
+        estados: estadosEnCuidado,
       );
       expect(total, 55, reason: 'el contador se quedó en el tamaño de página');
 
@@ -140,17 +180,43 @@ void main() {
       expect(pagina.hayMas, isTrue);
     });
 
-    test('cuenta los tres estados disponibles, igual que la lista', () async {
-      await sembrar(20, 'Rescatado');
-      await sembrar(15, 'Regresado');
-      await sembrar(12, 'Hogar de paso');
+    // El caso real de Eliza: 53 en cuidado + 5 en hogar de paso. El
+    // contador dice 53; la lista de abajo lista 58, porque los de hogar de
+    // paso se siguen pudiendo adoptar. Que no coincidan es a propósito.
+    test('el contador deja afuera hogar de paso; la lista no', () async {
+      await sembrar(48, 'Rescatado');
+      await sembrar(5, 'Regresado');
+      await sembrar(5, 'Hogar de paso');
       await sembrar(40, 'Adoptado');
-      final total = await repo.contar(
-        uid: 'refugio',
-        role: CreatorRole.albergue,
-        estados: estadosDisponibles,
+
+      expect(
+        await repo.contar(
+          uid: 'refugio',
+          role: CreatorRole.albergue,
+          estados: estadosEnCuidado,
+        ),
+        53,
+        reason: 'el contador tiene que decir lo mismo que el panel',
       );
-      expect(total, 47, reason: 'el número y la lista tienen que coincidir');
+
+      // Y la lista, recorrida entera con el cursor, trae los 58.
+      final ids = <String>{};
+      DocumentSnapshot<Map<String, dynamic>>? cursor;
+      while (true) {
+        final p = await repo.paginaDeMisRescates(
+          uid: 'refugio',
+          role: CreatorRole.albergue,
+          estados: estadosDisponibles,
+          despuesDe: cursor,
+          porPagina: 30,
+        );
+        for (final d in p.docs) {
+          ids.add(d.id);
+        }
+        if (!p.hayMas) break;
+        cursor = p.ultimo;
+      }
+      expect(ids.length, 58, reason: 'los 28 de más tienen que ser alcanzables');
     });
 
     test('si de verdad no hay ninguno, el número es 0', () async {
@@ -159,7 +225,7 @@ void main() {
         await repo.contar(
           uid: 'refugio',
           role: CreatorRole.albergue,
-          estados: estadosDisponibles,
+          estados: estadosEnCuidado,
         ),
         0,
       );

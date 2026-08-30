@@ -38,13 +38,78 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
   // sePuedeAdoptar (domain/reglas_negocio.dart) sigue siendo la única fuente
   // de qué animal está disponible; acá se traduce a la consulta con
   // estadosDisponibles, que es la misma lista.
-  late final Future<PaginaDeRescates> _disponibles = RescatesRepository()
-      .paginaDeMisRescates(
+  // ── Paginación ────────────────────────────────────────────────────────
+  //
+  // Antes esta pantalla traía UNA página de 30 y no tenía forma de pedir la
+  // siguiente: un albergue con 58 disponibles le mostraba 30 al adoptante y
+  // los otros 28 eran inalcanzables por más que se desplazara. Regresión que
+  // introduje al paginar esta pantalla, que antes usaba un stream sin
+  // límite. Hallazgo de Eliza.
+  //
+  // Mismo patrón que mis_rescates_screen: cursor, guarda de reentrada, y la
+  // página siguiente solo al acercarse al final. Sin ancla T0: acá quien
+  // mira es un adoptante que no publica nada, así que no hay inserciones
+  // que puedan correr la ventana.
+  final _repo = RescatesRepository();
+  final _docs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+  DocumentSnapshot<Map<String, dynamic>>? _cursor;
+  bool _hayMas = true;
+  bool _pidiendo = false;
+  bool _primeraLlego = false;
+  Object? _error;
+  final _scroll = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(_alDesplazar);
+    _pedirPagina();
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _alDesplazar() {
+    if (!_scroll.hasClients || _pidiendo || !_hayMas) return;
+    if (_scroll.position.maxScrollExtent - _scroll.position.pixels < 600) {
+      _pedirPagina();
+    }
+  }
+
+  Future<void> _pedirPagina() async {
+    if (_pidiendo || !_hayMas) return;
+    _pidiendo = true;
+    try {
+      final pagina = await _repo.paginaDeMisRescates(
         uid: widget.rescatistaId,
         role: CreatorRole.albergue,
         estados: estadosDisponibles,
+        despuesDe: _cursor,
         porPagina: 30,
       );
+      if (!mounted) return;
+      setState(() {
+        // Por id: con páginas de una sola lectura no deberían repetirse,
+        // pero si la guarda fallara se apilarían duplicados en la grilla.
+        final vistos = _docs.map((d) => d.id).toSet();
+        _docs.addAll(pagina.docs.where((d) => vistos.add(d.id)));
+        _cursor = pagina.ultimo ?? _cursor;
+        _hayMas = pagina.hayMas;
+        _primeraLlego = true;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e;
+        _primeraLlego = true;
+      });
+    } finally {
+      _pidiendo = false;
+    }
+  }
   /// El TOTAL de disponibles, no los de la página.
   ///
   /// Antes este número salía de `disponibles.length`, o sea de contar los
@@ -52,16 +117,24 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
   /// mostraba "30", y no por lentitud: estaba mal. Lo introduje al paginar
   /// esta pantalla. Hallazgo de Eliza, que comprobó un albergue con 55.
   ///
-  /// Mismo mecanismo que [_totalAdoptados], y con la MISMA lista de estados
-  /// (`estadosDisponibles`) que alimenta la página de abajo, para que el
-  /// número y la lista no puedan contradecirse.
+  /// **Cuenta `estadosEnCuidado` (Rescatado + Regresado), NO
+  /// `estadosDisponibles`.** Decisión de Eliza: que este número diga lo
+  /// mismo que el "En cuidado" del panel del albergue, para que las dos
+  /// pantallas no muestren cifras distintas del mismo refugio.
+  ///
+  /// Ojo, y queda dicho a propósito: la lista de abajo SÍ sigue trayendo
+  /// `estadosDisponibles`, que incluye 'Hogar de paso', porque esos
+  /// animalitos se pueden adoptar igual y no había que sacarlos del feed.
+  /// O sea que el número y la cantidad de tarjetas pueden no coincidir: con
+  /// 53 en cuidado y 5 en hogar de paso, dice 53 y lista 58. Es
+  /// intencional, no un descuido.
   ///
   /// De paso llega mucho antes: `contar()` es una agregación del servidor y
   /// no baja ningún documento, mientras que la página baja hasta 31.
   late final Future<int> _totalDisponibles = RescatesRepository().contar(
     uid: widget.rescatistaId,
     role: CreatorRole.albergue,
-    estados: estadosDisponibles,
+    estados: estadosEnCuidado,
   );
   late final Future<int> _totalAdoptados = RescatesRepository().contar(
     uid: widget.rescatistaId,
@@ -94,33 +167,22 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
             .map((w) => w.isNotEmpty ? w[0].toUpperCase() : '')
             .join();
 
-        return FutureBuilder<PaginaDeRescates>(
-          // Pasa por RescatesRepository (no una consulta armada a mano acá)
-          // por la misma regla que el resto de la app: sin CreatorRole
-          // obligatorio es fácil olvidarse el filtro por sub-rol y mezclar
-          // los animales que esta cuenta publicó como rescatista con los
-          // que publicó como albergue — ver ARCHITECTURE.md. El filtro
-          // local de `creadoPor == 'albergue'` que había acá hacía lo mismo
-          // a mano; ahora lo hace el repositorio, así el hook de pre-commit
-          // cubre esta pantalla también.
-          future: _disponibles,
-          builder: (context, rSnap) {
-            // Sin esto, un error real se veía igual que "este albergue no
-            // tiene animales publicados".
-            if (rSnap.hasError) return errorFeedState();
-            // Mientras la consulta no volvió, esta lista está vacía porque
-            // NO SE SABE, no porque el albergue no tenga animales. Sin
-            // distinguir las dos cosas, la pantalla mostraba "0
-            // disponibles" y "No hay animales disponibles por ahora" como
-            // si fueran datos ciertos, y recién después aparecía el número
-            // real. Hallazgo de Eliza: "el 0 inicial es especialmente
-            // molesto porque no significa que haya 0 animales".
-            final cargando = !rSnap.hasData;
-            final disponibles = [...?rSnap.data?.docs];
+        // Sin esto, un error real se veía igual que "este albergue no tiene
+        // animales publicados".
+        if (_error != null && _docs.isEmpty) return errorFeedState();
+        // Mientras la primera página no volvió, la lista está vacía porque
+        // NO SE SABE, no porque el albergue no tenga animales. Sin
+        // distinguir las dos cosas, la pantalla mostraba "0 disponibles" y
+        // "No hay animales disponibles por ahora" como si fueran datos
+        // ciertos. Hallazgo de Eliza: "el 0 inicial es especialmente
+        // molesto porque no significa que haya 0 animales".
+        final cargando = !_primeraLlego;
+        final disponibles = _docs;
 
             return Scaffold(
               backgroundColor: appBg,
               body: CustomScrollView(
+                controller: _scroll,
                 slivers: [
                   // ── Header ──────────────────────────────────────────────────
                   // Un solo Container con la decoración, que envuelve
@@ -432,11 +494,21 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
                         ),
                       ),
                     ),
+                  // Mientras viene la página siguiente. Solo si de verdad
+                  // queda algo por traer, para no dejar un spinner colgado
+                  // al final de la lista completa.
+                  if (_hayMas && disponibles.isNotEmpty)
+                    const SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 24),
+                        child: Center(
+                          child: CircularProgressIndicator(color: appTeal),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             );
-          },
-        );
       },
     );
   }
