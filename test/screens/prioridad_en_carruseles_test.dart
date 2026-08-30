@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -214,6 +215,22 @@ void main() {
       );
     });
 
+    // Esa consulta se dispara y no se espera. Sin manejo de error, un
+    // fallo de red deja una excepcion asincrona sin capturar: no rompe la
+    // pantalla, pero se reporta a Crashlytics como error no manejado.
+    test('la consulta de adoptados maneja su propio error', () {
+      final f = leer('lib/screens/albergue_home_screen.dart');
+      final refresco = f.substring(
+        f.indexOf('void _refrescarNumeros()'),
+        f.indexOf('Widget build(BuildContext context)'),
+      );
+      expect(
+        refresco,
+        contains('onError:'),
+        reason: 'si falla la consulta, la excepcion queda sin capturar',
+      );
+    });
+
     // Los contadores se piden una sola vez al abrir; sin esto, cambiar un
     // estado desde el panel no movia ningun numero hasta salir y volver.
     test('cambiar el estado desde el panel refresca los contadores', () {
@@ -223,6 +240,35 @@ void main() {
         2,
         reason: 'los DOS sheets de cambiar estado tienen que refrescar',
       );
+    });
+  });
+
+  // ── Que el patrón de arriba de verdad contenga el error ────────────────
+  //
+  // El test anterior mira que `onError:` esté escrito. Este comprueba que
+  // esa forma HACE lo que se espera: una consulta que falla y se dispara sin
+  // esperar no debe dejar una excepción suelta en la zona.
+  group('un .then que se dispara sin esperar', () {
+    Future<int> consultaQueFalla() async => throw StateError('sin señal');
+
+    test('SIN onError, el error se escapa a la zona', () async {
+      final escapados = <Object>[];
+      await runZonedGuarded(() async {
+        // ignore: unawaited_futures
+        consultaQueFalla().then((_) {});
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }, (e, _) => escapados.add(e));
+      expect(escapados, hasLength(1), reason: 'así estaba antes del arreglo');
+    });
+
+    test('CON onError, no se escapa nada', () async {
+      final escapados = <Object>[];
+      await runZonedGuarded(() async {
+        // ignore: unawaited_futures
+        consultaQueFalla().then((_) {}, onError: (Object _) {});
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }, (e, _) => escapados.add(e));
+      expect(escapados, isEmpty);
     });
   });
 }

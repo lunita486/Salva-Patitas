@@ -156,9 +156,26 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
             estados: const ['Adoptado'],
             porPagina: 10,
           )
-          .then((p) {
-            if (mounted) setState(() => _adoptadosCache = p.docs);
-          });
+          .then(
+            (p) {
+              if (mounted) setState(() => _adoptadosCache = p.docs);
+            },
+            // Sin esto, si la consulta falla (sin señal, permiso denegado)
+            // queda una excepción asíncrona sin capturar: no rompe la
+            // pantalla, pero se reporta a Crashlytics como error no
+            // manejado y ensucia lo que sí importa mirar ahí.
+            //
+            // Se deja lo que hubiera en _adoptadosCache en vez de vaciarlo:
+            // no poder confirmar la lista no es lo mismo que "no hay
+            // adoptados", y borrarla haría desaparecer la sección entera
+            // por un tropiezo de red. El próximo refresco vuelve a
+            // intentarlo.
+            //
+            // onError del `.then` y no un `.catchError` colgado después: así
+            // solo se atrapa el fallo de la CONSULTA, y un error dentro del
+            // setState de arriba sigue subiendo como corresponde.
+            onError: (Object _) {},
+          );
       _numeros = Future.wait([
         // "En cuidado" son DOS estados — cuentaComoEnCuidado, en
         // domain/reglas_negocio.dart, sigue siendo la única fuente de esa
