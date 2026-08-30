@@ -45,6 +45,24 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
         estados: estadosDisponibles,
         porPagina: 30,
       );
+  /// El TOTAL de disponibles, no los de la página.
+  ///
+  /// Antes este número salía de `disponibles.length`, o sea de contar los
+  /// documentos de UNA página, que pide 30. Un albergue con 55 disponibles
+  /// mostraba "30", y no por lentitud: estaba mal. Lo introduje al paginar
+  /// esta pantalla. Hallazgo de Eliza, que comprobó un albergue con 55.
+  ///
+  /// Mismo mecanismo que [_totalAdoptados], y con la MISMA lista de estados
+  /// (`estadosDisponibles`) que alimenta la página de abajo, para que el
+  /// número y la lista no puedan contradecirse.
+  ///
+  /// De paso llega mucho antes: `contar()` es una agregación del servidor y
+  /// no baja ningún documento, mientras que la página baja hasta 31.
+  late final Future<int> _totalDisponibles = RescatesRepository().contar(
+    uid: widget.rescatistaId,
+    role: CreatorRole.albergue,
+    estados: estadosDisponibles,
+  );
   late final Future<int> _totalAdoptados = RescatesRepository().contar(
     uid: widget.rescatistaId,
     role: CreatorRole.albergue,
@@ -208,10 +226,13 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
                       padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
                       child: Row(
                         children: [
-                          _statChip(
-                            cargando ? _cargandoValor : '${disponibles.length}',
-                            'disponibles',
-                            appTeal,
+                          FutureBuilder<int>(
+                            future: _totalDisponibles,
+                            builder: (_, s) => _statChip(
+                              s.hasData ? '${s.data}' : _cargandoValor,
+                              'disponibles',
+                              appTeal,
+                            ),
                           ),
                           const SizedBox(width: 10),
                           // Un contador del lado del servidor: antes salía
