@@ -90,6 +90,14 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
             // Sin esto, un error real se veía igual que "este albergue no
             // tiene animales publicados".
             if (rSnap.hasError) return errorFeedState();
+            // Mientras la consulta no volvió, esta lista está vacía porque
+            // NO SE SABE, no porque el albergue no tenga animales. Sin
+            // distinguir las dos cosas, la pantalla mostraba "0
+            // disponibles" y "No hay animales disponibles por ahora" como
+            // si fueran datos ciertos, y recién después aparecía el número
+            // real. Hallazgo de Eliza: "el 0 inicial es especialmente
+            // molesto porque no significa que haya 0 animales".
+            final cargando = !rSnap.hasData;
             final disponibles = [...?rSnap.data?.docs];
 
             return Scaffold(
@@ -201,7 +209,7 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
                       child: Row(
                         children: [
                           _statChip(
-                            '${disponibles.length}',
+                            cargando ? _cargandoValor : '${disponibles.length}',
                             'disponibles',
                             appTeal,
                           ),
@@ -212,7 +220,7 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
                           FutureBuilder<int>(
                             future: _totalAdoptados,
                             builder: (_, s) => _statChip(
-                              '${s.data ?? 0}',
+                              s.hasData ? '${s.data}' : _cargandoValor,
                               'adoptados',
                               const Color(0xFF2196F3),
                             ),
@@ -353,7 +361,18 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
                   ),
 
                   // ── Grid ─────────────────────────────────────────────────────
-                  if (disponibles.isEmpty)
+                  // Mismo motivo que el contador: mientras carga no se
+                  // afirma que no hay animales, porque todavía no se sabe.
+                  if (cargando)
+                    const SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.all(48),
+                        child: Center(
+                          child: CircularProgressIndicator(color: appTeal),
+                        ),
+                      ),
+                    )
+                  else if (disponibles.isEmpty)
                     const SliverToBoxAdapter(
                       child: Padding(
                         padding: EdgeInsets.all(48),
@@ -404,6 +423,10 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
   /// Una línea de contacto (dirección/email/sitio web): ícono + texto,
   /// tappable si se pasa [onTap] (email abre el cliente de correo, sitio
   /// web abre el navegador — dirección no tiene onTap, es solo texto).
+
+  /// Lo que se muestra en un contador mientras el dato todavía no llegó.
+  /// Un guion largo y no un "0": un cero se lee como un dato cierto.
+  static const _cargandoValor = '—';
 
   Widget _statChip(String valor, String label, Color color) => Expanded(
     child: Container(
