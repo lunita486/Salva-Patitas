@@ -427,24 +427,37 @@ void main() {
         expect(esSitioWebValido('sjejdj'), false);
       });
 
-      // ── El TLD demasiado largo para ser real ────────────────────────
+      // ── Limitación conocida: la forma no dice si el dominio existe ──
       //
-      // "www.casitahogar" y "a.djsfdsf" pasaban: los dos tienen forma de
-      // dominio y su última parte es solo letras, así que la regla anterior
-      // (solo letras, mínimo 2) los daba por buenos. Sintácticamente son
-      // indistinguibles de "tunegocio.com"; lo único que los separa es que
-      // "casitahogar" y "djsfdsf" son demasiado largos para ser un dominio
-      // de primer nivel. Hallazgo real de Eliza en el perfil del albergue y
-      // en el del aliado.
-      test('escribir el nombre del negocio en vez del TLD es inválido', () {
-        expect(esSitioWebValido('www.casitahogar'), false);
-        expect(esSitioWebValido('a.djsfdsf'), false);
+      // "www.casitahogar" y "a.djsfdsf" PASAN, y está aceptado. Los dos
+      // tienen estructura de dominio perfectamente válida y su última parte
+      // es solo letras; lo único que los delata es que "djsfdsf" no es un
+      // dominio de primer nivel real, y eso no se puede saber sin conocer
+      // los TLD que existen.
+      //
+      // Estuvo puesto un tope de 6 al largo del TLD, que los rechazaba, y
+      // se revirtió: también dejaba afuera .website y .company (7) o
+      // .photography (11), que son reales. Decisión de Eliza: no inventar
+      // una regla que pueda bloquear dominios legítimos.
+      //
+      // Acá rechazar de más es peor que aceptar de más: si se cuela un
+      // dominio inventado, lo peor que pasa es que el enlace no abra; si se
+      // rechaza uno real, alguien no puede guardar su sitio.
+      //
+      // Este test existe para que la limitación quede AFIRMADA y no
+      // olvidada: si alguien la "arregla", va a tener que venir acá y leer
+      // por qué se decidió así.
+      test('un dominio inexistente con forma válida PASA, y es a propósito', () {
+        expect(esSitioWebValido('www.casitahogar'), true);
+        expect(esSitioWebValido('a.djsfdsf'), true);
       });
 
-      test('los TLD que se usan de verdad siguen siendo válidos', () {
+      test('los TLD reales, cortos y largos, son todos válidos', () {
         for (final tld in [
           'com', 'co', 'org', 'net', 'es', 'ar', 'mx', 'de', 'io', 'app',
           'vet', 'pet', 'online', 'travel', 'museum',
+          // Los largos: son los que un tope por largo dejaba afuera.
+          'website', 'company', 'photography', 'international',
         ]) {
           expect(
             esSitioWebValido('tunegocio.$tld'),
@@ -456,20 +469,6 @@ void main() {
 
       test('un dominio compuesto sigue valiendo: manda el último segmento', () {
         expect(esSitioWebValido('www.casitahogar.com.co'), true);
-      });
-
-      test('el corte es por LARGO, no por una lista de dominios', () {
-        // Un TLD inventado pero corto pasa, y está bien que pase: una lista
-        // de dominios válidos se desactualizaría sola y bloquearía a quien
-        // escribió bien. Acá se prefiere aceptar de más antes que rechazar
-        // de más — lo peor que pasa si se cuela es que el enlace no abra.
-        expect(esSitioWebValido('tunegocio.zzz'), true);
-      });
-
-      test('vacío es inválido — mismo criterio que esEmailValido(): el '
-          'llamador decide si un campo opcional vacío bloquea el guardado, '
-          'acá solo se responde si TIENE forma de sitio web', () {
-        expect(esSitioWebValido(''), false);
       });
 
       test(

@@ -107,35 +107,35 @@ final RegExp _formaDeSitioWeb = RegExp(
 /// del aliado.
 final RegExp _tldSoloLetras = RegExp(r'\.([a-zA-Z]+)(?:\/.*)?$');
 
-/// Largo máximo del dominio de primer nivel.
+/// **Limitación conocida y aceptada a propósito.** Esto valida la FORMA, no
+/// la existencia. "a.djsfdsf" y "www.casitahogar" pasan: tienen estructura
+/// de dominio perfectamente válida y su última parte es solo letras. Lo
+/// único que los delata es que "djsfdsf" no es un dominio de primer nivel
+/// real, y eso no se puede saber sin conocer los TLD que existen.
 ///
-/// **Por qué un largo y no una lista.** "www.casitahogar" y "a.djsfdsf"
-/// pasaban: los dos tienen forma de dominio y su última parte es solo
-/// letras. Sintácticamente son indistinguibles de "tunegocio.com"; lo único
-/// que los separa de verdad es que "casitahogar" y "djsfdsf" son
-/// demasiado largos para ser un dominio de primer nivel. Hallazgo real de
-/// Eliza probando el perfil del albergue y el del aliado.
+/// Se probaron y descartaron dos formas de atajarlo:
 ///
-/// Una lista de dominios válidos se descartó a propósito: hay más de 1.500
-/// y se desactualizaría sola, y un dominio que falte en la lista bloquea a
-/// alguien que escribió bien. Rechazar de más es peor que aceptar de más
-/// acá: lo peor que pasa si se cuela uno inventado es que el enlace no
-/// abra.
+///   · una **lista** de TLD válidos: hay más de 1.500 y se desactualiza
+///     sola, así que uno que falte bloquea a alguien que escribió BIEN;
+///   · un **tope al largo** del TLD (estuvo puesto, en 6): rechazaba
+///     "djsfdsf" pero también .website y .company (7) o .photography (11),
+///     que son reales. Decisión de Eliza: no inventar una regla que pueda
+///     bloquear dominios legítimos.
 ///
-/// **6 no es arbitrario, pero tiene un costo y conviene saberlo.** Cubre
-/// los que se usan de verdad en la región (.com, .co, .org, .net, .es,
-/// .ar, .mx, .de, .io, .app, .vet, .pet, .online, .travel, .museum) y deja
-/// afuera "djsfdsf", que tiene 7. El precio es que también deja afuera
-/// dominios reales pero largos, como .website o .company (7) y
-/// .photography (11). Si alguna vez alguien reporta que no puede guardar
-/// un sitio legítimo, el número de acá es lo que hay que subir.
-const _maxLargoTld = 6;
-
+/// El criterio de fondo: acá **rechazar de más es peor que aceptar de
+/// más**. Si se cuela un dominio inventado, lo peor que pasa es que el
+/// enlace no abra. Si se rechaza uno real, alguien no puede guardar su
+/// sitio y no entiende por qué.
+///
+/// Lo único que resolvería esto de verdad es consultar si el dominio
+/// resuelve, y eso es una llamada de red al guardar, con sus propios
+/// problemas (qué hacer sin señal, cuánto esperar). Queda fuera a
+/// propósito.
 bool esSitioWebValido(String sitioWeb) {
   final texto = sitioWeb.trim();
   if (!_formaDeSitioWeb.hasMatch(texto)) return false;
   final tld = _tldSoloLetras.firstMatch(texto)?.group(1);
-  return tld != null && tld.length >= 2 && tld.length <= _maxLargoTld;
+  return tld != null && tld.length >= 2;
 }
 
 /// Mensajes de aviso para [esEmailValido]/[esSitioWebValido], compartidos
