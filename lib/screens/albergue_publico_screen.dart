@@ -66,6 +66,31 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
     super.initState();
     _scroll.addListener(_alDesplazar);
     _pedirPagina();
+    // Los dos contadores arrancan ACÁ, no cuando el árbol los lee.
+    //
+    // Estaban declarados como `late final _totalX = contar(...)`, y `late`
+    // quiere decir que la consulta no sale al abrir la pantalla sino la
+    // primera vez que alguien lee la variable. Esa lectura está adentro del
+    // StreamBuilder de `_perfilStream`, así que los conteos quedaban
+    // esperando a que llegara `usuarios/{uid}`: dos viajes al servidor
+    // ENCADENADOS donde los pedidos son independientes entre sí.
+    //
+    // Un contador no necesita nada del perfil: le alcanza con el
+    // rescatistaId, que ya viene por parámetro desde el feed. Arrancándolos
+    // acá los viajes se solapan y el número suele estar listo antes de que
+    // llegue el documento del albergue.
+    //
+    // No cambia QUÉ se cuenta ni cuánto da: solo cuándo empieza.
+    _totalDisponibles = RescatesRepository().contar(
+      uid: widget.rescatistaId,
+      role: CreatorRole.albergue,
+      estados: estadosEnCuidado,
+    );
+    _totalAdoptados = RescatesRepository().contar(
+      uid: widget.rescatistaId,
+      role: CreatorRole.albergue,
+      estados: const ['Adoptado'],
+    );
   }
 
   @override
@@ -139,16 +164,12 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
   ///
   /// De paso llega mucho antes: `contar()` es una agregación del servidor y
   /// no baja ningún documento, mientras que la página baja hasta 31.
-  late final Future<int> _totalDisponibles = RescatesRepository().contar(
-    uid: widget.rescatistaId,
-    role: CreatorRole.albergue,
-    estados: estadosEnCuidado,
-  );
-  late final Future<int> _totalAdoptados = RescatesRepository().contar(
-    uid: widget.rescatistaId,
-    role: CreatorRole.albergue,
-    estados: const ['Adoptado'],
-  );
+  ///
+  /// Las dos consultas se lanzan en `initState`, no acá: ver el comentario
+  /// largo ahí. Sin inicializador, `late` deja de significar "cuando alguien
+  /// lo lea" y pasa a significar solo "se asigna una vez, en initState".
+  late final Future<int> _totalDisponibles;
+  late final Future<int> _totalAdoptados;
 
   @override
   Widget build(BuildContext context) {
