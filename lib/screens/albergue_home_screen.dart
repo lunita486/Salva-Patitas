@@ -89,6 +89,58 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
   /// columna que ya se está construyendo.
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _adoptadosCache = const [];
 
+  /// Los 10 de la Jauría, **por prioridad y no por fecha**.
+  ///
+  /// Antes esto era UNA página de 10 ordenada por `creadoEn` descendente, y
+  /// el orden por prioridad se hacía después en Dart sobre esos 10. O sea
+  /// que un animalito en proceso de adopción publicado hace meses no entraba
+  /// en la página y no se veía NUNCA, aunque fuera justo el que hay que
+  /// mirar. Hallazgo real de Eliza: "en la Jauría ahora solo aparecen
+  /// animales en estado Rescatado". Regresión que introduje al paginar esta
+  /// pantalla.
+  ///
+  /// Se piden en dos consultas, no en una: primero los que necesitan
+  /// atención (en proceso de adopción, hogar de paso) y solo se rellena con
+  /// el resto si sobra lugar. Así los prioritarios entran siempre, sin
+  /// importar cuán viejos sean, que es justo lo que se había perdido.
+  ///
+  /// No se puede hacer en una sola consulta: Firestore no sabe ordenar por
+  /// una lista de prioridades, solo por un campo.
+  ///
+  /// 'Adoptado' queda afuera de las dos: esos viven en su propia sección.
+  /// 'Fallecido' SÍ va, al final, porque si no desaparecería de la pantalla.
+  Future<PaginaDeRescates> _cargarJauria() async {
+    const cuantos = 10;
+    final prioritarios = await _rescatesRepo.paginaDeMisRescates(
+      uid: _uid,
+      role: CreatorRole.albergue,
+      estados: estadosQueNecesitanAtencion,
+      porPagina: cuantos,
+    );
+    final docs = [...prioritarios.docs];
+    if (docs.length < cuantos) {
+      final resto = await _rescatesRepo.paginaDeMisRescates(
+        uid: _uid,
+        role: CreatorRole.albergue,
+        estados: const ['Rescatado', 'Regresado', 'Fallecido'],
+        porPagina: cuantos - docs.length,
+      );
+      docs.addAll(resto.docs);
+    }
+    // Dentro de cada grupo el orden ya viene por fecha; esto ordena ENTRE
+    // grupos (en proceso antes que hogar de paso, y fallecido al final).
+    docs.sort((a, b) {
+      final pa = prioridadEstado(a.data()['estadoAdopcion'] as String?);
+      final pb = prioridadEstado(b.data()['estadoAdopcion'] as String?);
+      if (pa != pb) return pa.compareTo(pb);
+      final ta = a.data()['creadoEn'] as Timestamp?;
+      final tb = b.data()['creadoEn'] as Timestamp?;
+      if (ta == null || tb == null) return 0;
+      return tb.compareTo(ta);
+    });
+    return (docs: docs, hayMas: false, ultimo: docs.isEmpty ? null : docs.last);
+  }
+
   void _refrescarNumeros() {
     if (!mounted) return;
     setState(() {
@@ -96,18 +148,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
       // sección de abajo ("Encontraron hogar"). 'Fallecido' SÍ va en la
       // Jauría: antes se excluía junto con 'Adoptado' y un animal fallecido
       // desaparecía de la pantalla por completo.
-      _jauria = _rescatesRepo.paginaDeMisRescates(
-        uid: _uid,
-        role: CreatorRole.albergue,
-        estados: const [
-          'Rescatado',
-          'Regresado',
-          'En proceso de adopción',
-          'Hogar de paso',
-          'Fallecido',
-        ],
-        porPagina: 10,
-      );
+      _jauria = _cargarJauria();
       _rescatesRepo
           .paginaDeMisRescates(
             uid: _uid,
@@ -1641,7 +1682,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                                                 as String?,
                                         esAlbergue: true,
                                       ),
-                                    ),
+                                    ).then((_) => _refrescarNumeros()),
                               child: Container(
                                 width: double.infinity,
                                 padding: const EdgeInsets.symmetric(
@@ -1861,7 +1902,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                                       d['adoptanteIdEnProceso'] as String?,
                                   esAlbergue: true,
                                 ),
-                              ),
+                              ).then((_) => _refrescarNumeros()),
                               child: Container(
                                 width: double.infinity,
                                 padding: const EdgeInsets.symmetric(

@@ -371,6 +371,20 @@ bool esEstancadoGrave({required int? diasEsperando, required int umbral}) =>
 /// trámite pendiente, y al final lo que ya se cerró (adoptado/fallecido) y
 /// no necesita ninguna acción más. Pedido real de Eliza: "así le facilitamos
 /// el trabajo al rescatista y también al albergue". Menor número = primero.
+/// Los estados de prioridad 0 y 1 de [prioridadEstado]: los que necesitan
+/// atención activa y por eso van primero en los carruseles de vista previa.
+///
+/// Existe como lista, y no solo dentro del `switch`, porque esos carruseles
+/// ahora los piden en una consulta aparte. Antes traían una página de 10 por
+/// FECHA y recién después ordenaban por prioridad en Dart: un animalito en
+/// proceso de adopción publicado hace meses quedaba fuera de esos 10 y no se
+/// veía nunca, aunque fuera justo el que había que mirar. Hallazgo real de
+/// Eliza en la Jauría del albergue.
+///
+/// Tenerlos por separado del `switch` es exactamente cómo se desincronizan,
+/// así que hay un test que exige que esta lista sean los de prioridad < 2.
+const estadosQueNecesitanAtencion = ['En proceso de adopción', 'Hogar de paso'];
+
 int prioridadEstado(String? estadoAdopcion) => switch (estadoAdopcion) {
   'En proceso de adopción' => 0,
   'Hogar de paso' => 1,

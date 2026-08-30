@@ -78,22 +78,59 @@ class _HomeScreenState extends State<HomeScreen>
         uid: _uid,
         role: CreatorRole.rescatista,
       );
-      _activos = _rescatesRepo.paginaDeMisRescates(
-        uid: _uid,
-        role: CreatorRole.rescatista,
-        porPagina: 10,
-      );
+      _activos = _cargarActivos();
     });
   }
 
   /// El carrusel "Tus rescates activos" es una VISTA PREVIA, no la lista:
   /// para eso está "Ver todas". Trae una página acotada en vez de la
   /// colección entera.
-  late Future<PaginaDeRescates> _activos = _rescatesRepo.paginaDeMisRescates(
-    uid: _uid,
-    role: CreatorRole.rescatista,
-    porPagina: 10,
-  );
+  late Future<PaginaDeRescates> _activos = _cargarActivos();
+
+  /// Los 10 del carrusel, **por prioridad y no por fecha**.
+  ///
+  /// Mismo problema, y mismo arreglo, que la Jauría del albergue (ver
+  /// albergue_home_screen.dart:_cargarJauria): pedir una página de 10 por
+  /// `creadoEn` y ordenar después en Dart hacía que un animalito en proceso
+  /// de adopción publicado hace meses no entrara nunca en esos 10, aunque
+  /// fuera el que hay que mirar.
+  ///
+  /// Primero los que necesitan atención, y solo se rellena con el resto si
+  /// sobra lugar. El relleno va SIN filtro de estado a propósito: así entran
+  /// también los animalitos legados que no tienen `estadoAdopcion` guardado,
+  /// que un `whereIn` dejaría afuera. Por eso hace falta deduplicar.
+  Future<PaginaDeRescates> _cargarActivos() async {
+    const cuantos = 10;
+    final prioritarios = await _rescatesRepo.paginaDeMisRescates(
+      uid: _uid,
+      role: CreatorRole.rescatista,
+      estados: estadosQueNecesitanAtencion,
+      porPagina: cuantos,
+    );
+    final docs = [...prioritarios.docs];
+    if (docs.length < cuantos) {
+      final resto = await _rescatesRepo.paginaDeMisRescates(
+        uid: _uid,
+        role: CreatorRole.rescatista,
+        porPagina: cuantos,
+      );
+      final vistos = docs.map((d) => d.id).toSet();
+      for (final d in resto.docs) {
+        if (docs.length >= cuantos) break;
+        if (vistos.add(d.id)) docs.add(d);
+      }
+    }
+    docs.sort((a, b) {
+      final pa = prioridadEstado(a.data()['estadoAdopcion'] as String?);
+      final pb = prioridadEstado(b.data()['estadoAdopcion'] as String?);
+      if (pa != pb) return pa.compareTo(pb);
+      final ta = a.data()['creadoEn'] as Timestamp?;
+      final tb = b.data()['creadoEn'] as Timestamp?;
+      if (ta == null || tb == null) return 0;
+      return tb.compareTo(ta);
+    });
+    return (docs: docs, hayMas: false, ultimo: docs.isEmpty ? null : docs.last);
+  }
   final _chatsRepo = ChatsRepository();
   late final Stream<QuerySnapshot> _chatsRescatistaStream = _chatsRepo.mios(
     uid: _uid,
