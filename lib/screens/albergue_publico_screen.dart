@@ -35,9 +35,11 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
   // descargaba TODOS los animales del albergue para mostrar los primeros y
   // un número; con un refugio grande eso es megabytes por visita.
   //
-  // sePuedeAdoptar (domain/reglas_negocio.dart) sigue siendo la única fuente
-  // de qué animal está disponible; acá se traduce a la consulta con
-  // estadosDisponibles, que es la misma lista.
+  // Esta pantalla muestra `estadosEnCuidado` (Rescatado + Regresado), la
+  // misma cifra que el panel del albergue. NO usa `sePuedeAdoptar` /
+  // `estadosDisponibles`, que además incluye 'Hogar de paso': esos
+  // animalitos siguen siendo adoptables en el resto de la app, solo no se
+  // listan acá.
   // ── Paginación ────────────────────────────────────────────────────────
   //
   // Antes esta pantalla traía UNA página de 30 y no tenía forma de pedir la
@@ -86,7 +88,9 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
       final pagina = await _repo.paginaDeMisRescates(
         uid: widget.rescatistaId,
         role: CreatorRole.albergue,
-        estados: estadosDisponibles,
+        // La MISMA lista que el contador de arriba. No estadosDisponibles:
+        // ver el comentario de _totalDisponibles.
+        estados: estadosEnCuidado,
         despuesDe: _cursor,
         porPagina: 30,
       );
@@ -122,12 +126,16 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
   /// mismo que el "En cuidado" del panel del albergue, para que las dos
   /// pantallas no muestren cifras distintas del mismo refugio.
   ///
-  /// Ojo, y queda dicho a propósito: la lista de abajo SÍ sigue trayendo
-  /// `estadosDisponibles`, que incluye 'Hogar de paso', porque esos
-  /// animalitos se pueden adoptar igual y no había que sacarlos del feed.
-  /// O sea que el número y la cantidad de tarjetas pueden no coincidir: con
-  /// 53 en cuidado y 5 en hogar de paso, dice 53 y lista 58. Es
-  /// intencional, no un descuido.
+  /// La lista de abajo usa EXACTAMENTE la misma lista de estados, así que
+  /// el número y la cantidad de tarjetas siempre coinciden: si dice 53, hay
+  /// 53. Hubo un rato en que no era así (el contador dejaba afuera 'Hogar
+  /// de paso' y la lista no) y se corrigió: dos cifras distintas del mismo
+  /// refugio en la misma pantalla se leen como un error, aunque cada una
+  /// conteste algo defendible.
+  ///
+  /// Los animalitos en hogar de paso siguen siendo adoptables en el RESTO
+  /// de la app (`sePuedeAdoptar` no se tocó): solo no se muestran en este
+  /// perfil público.
   ///
   /// De paso llega mucho antes: `contar()` es una agregación del servidor y
   /// no baja ningún documento, mientras que la página baja hasta 31.

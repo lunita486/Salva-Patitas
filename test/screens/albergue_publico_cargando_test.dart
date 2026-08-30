@@ -48,12 +48,20 @@ void main() {
     );
   });
 
-  test('pero la LISTA sigue trayendo los tres, sin sacar hogar de paso', () {
+  // Hubo un rato en que el contador dejaba afuera 'Hogar de paso' y la
+  // lista no, asi que la pantalla decia 53 y mostraba 58 tarjetas. Dos
+  // cifras distintas del mismo refugio en la misma pantalla se leen como un
+  // error, aunque cada una conteste algo defendible.
+  test('la lista usa EXACTAMENTE la misma lista que el contador', () {
     expect(
       fuente,
-      contains('estados: estadosDisponibles'),
-      reason:
-          'los de hogar de paso se pueden adoptar y no habia que sacarlos',
+      isNot(contains('estados: estadosDisponibles')),
+      reason: 'la lista traeria hogar de paso y el contador no: no coinciden',
+    );
+    expect(
+      'estados: estadosEnCuidado'.allMatches(fuente).length,
+      2,
+      reason: 'el contador y la lista tienen que usar la misma constante',
     );
   });
 
@@ -180,10 +188,10 @@ void main() {
       expect(pagina.hayMas, isTrue);
     });
 
-    // El caso real de Eliza: 53 en cuidado + 5 en hogar de paso. El
-    // contador dice 53; la lista de abajo lista 58, porque los de hogar de
-    // paso se siguen pudiendo adoptar. Que no coincidan es a propósito.
-    test('el contador deja afuera hogar de paso; la lista no', () async {
+    // El caso real de Eliza: 53 en cuidado + 5 en hogar de paso. Los dos
+    // numeros tienen que dar 53: si el contador dice 53, hay 53 tarjetas.
+    test('contador y lista dan lo mismo, y dejan afuera hogar de paso',
+        () async {
       await sembrar(48, 'Rescatado');
       await sembrar(5, 'Regresado');
       await sembrar(5, 'Hogar de paso');
@@ -199,24 +207,36 @@ void main() {
         reason: 'el contador tiene que decir lo mismo que el panel',
       );
 
-      // Y la lista, recorrida entera con el cursor, trae los 58.
+      // Y la lista, recorrida entera con el cursor, trae exactamente esos
+      // 53: ni se queda en los 30 de la primera pagina, ni suma los 5 de
+      // hogar de paso.
       final ids = <String>{};
+      final estados = <String>{};
       DocumentSnapshot<Map<String, dynamic>>? cursor;
       while (true) {
         final p = await repo.paginaDeMisRescates(
           uid: 'refugio',
           role: CreatorRole.albergue,
-          estados: estadosDisponibles,
+          estados: estadosEnCuidado,
           despuesDe: cursor,
           porPagina: 30,
         );
         for (final d in p.docs) {
           ids.add(d.id);
+          estados.add(d.data()['estadoAdopcion'] as String);
         }
         if (!p.hayMas) break;
         cursor = p.ultimo;
       }
-      expect(ids.length, 58, reason: 'los 28 de más tienen que ser alcanzables');
+      expect(ids.length, 53, reason: 'la lista no coincide con el contador');
+      // Se mira el ESTADO de cada documento, no su id: los ids que genera
+      // add() son aleatorios, así que buscar "Hogar" en el id era una
+      // assertion que no podía fallar nunca.
+      expect(
+        estados,
+        {'Rescatado', 'Regresado'},
+        reason: 'se coló un estado que no debería listarse acá',
+      );
     });
 
     test('si de verdad no hay ninguno, el número es 0', () async {
