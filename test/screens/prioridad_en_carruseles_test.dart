@@ -187,6 +187,33 @@ void main() {
       expect(f, contains('_cargarActivos()'));
     });
 
+    // "Encontraron hogar" sale de _adoptadosCache, y lo unico que lo llena
+    // es la consulta de adoptados. Si esa consulta viviera solo en
+    // initState, marcar un animalito como Adoptado no lo haria aparecer
+    // hasta recrear la pantalla — y como el panel del albergue es la
+    // pantalla raiz de ese rol, initState no vuelve a correr al cambiar de
+    // pestaña: hacia falta CERRAR SESION. Hallazgo real de Eliza con
+    // Koreananchis.
+    test('la consulta de adoptados vive dentro del refresco, no solo al abrir',
+        () {
+      final f = leer('lib/screens/albergue_home_screen.dart');
+      final refresco = f.substring(
+        f.indexOf('void _refrescarNumeros()'),
+        f.indexOf('Widget build(BuildContext context)'),
+      );
+      expect(
+        refresco,
+        contains("estados: const ['Adoptado']"),
+        reason: 'sin esto, "Encontraron hogar" no se actualiza al cambiar '
+            'un animalito a Adoptado',
+      );
+      expect(
+        refresco,
+        contains('_adoptadosCache = p.docs'),
+        reason: 'la consulta corre pero nadie usa el resultado',
+      );
+    });
+
     // Los contadores se piden una sola vez al abrir; sin esto, cambiar un
     // estado desde el panel no movia ningun numero hasta salir y volver.
     test('cambiar el estado desde el panel refresca los contadores', () {
