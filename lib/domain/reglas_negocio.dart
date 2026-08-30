@@ -106,11 +106,36 @@ final RegExp _formaDeSitioWeb = RegExp(
 /// vez de agregar el ".com". Hallazgo real de Eliza probando el perfil
 /// del aliado.
 final RegExp _tldSoloLetras = RegExp(r'\.([a-zA-Z]+)(?:\/.*)?$');
+
+/// Largo máximo del dominio de primer nivel.
+///
+/// **Por qué un largo y no una lista.** "www.casitahogar" y "a.djsfdsf"
+/// pasaban: los dos tienen forma de dominio y su última parte es solo
+/// letras. Sintácticamente son indistinguibles de "tunegocio.com"; lo único
+/// que los separa de verdad es que "casitahogar" y "djsfdsf" son
+/// demasiado largos para ser un dominio de primer nivel. Hallazgo real de
+/// Eliza probando el perfil del albergue y el del aliado.
+///
+/// Una lista de dominios válidos se descartó a propósito: hay más de 1.500
+/// y se desactualizaría sola, y un dominio que falte en la lista bloquea a
+/// alguien que escribió bien. Rechazar de más es peor que aceptar de más
+/// acá: lo peor que pasa si se cuela uno inventado es que el enlace no
+/// abra.
+///
+/// **6 no es arbitrario, pero tiene un costo y conviene saberlo.** Cubre
+/// los que se usan de verdad en la región (.com, .co, .org, .net, .es,
+/// .ar, .mx, .de, .io, .app, .vet, .pet, .online, .travel, .museum) y deja
+/// afuera "djsfdsf", que tiene 7. El precio es que también deja afuera
+/// dominios reales pero largos, como .website o .company (7) y
+/// .photography (11). Si alguna vez alguien reporta que no puede guardar
+/// un sitio legítimo, el número de acá es lo que hay que subir.
+const _maxLargoTld = 6;
+
 bool esSitioWebValido(String sitioWeb) {
   final texto = sitioWeb.trim();
   if (!_formaDeSitioWeb.hasMatch(texto)) return false;
   final tld = _tldSoloLetras.firstMatch(texto)?.group(1);
-  return tld != null && tld.length >= 2;
+  return tld != null && tld.length >= 2 && tld.length <= _maxLargoTld;
 }
 
 /// Mensajes de aviso para [esEmailValido]/[esSitioWebValido], compartidos

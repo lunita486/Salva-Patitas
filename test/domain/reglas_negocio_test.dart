@@ -427,6 +427,45 @@ void main() {
         expect(esSitioWebValido('sjejdj'), false);
       });
 
+      // ── El TLD demasiado largo para ser real ────────────────────────
+      //
+      // "www.casitahogar" y "a.djsfdsf" pasaban: los dos tienen forma de
+      // dominio y su última parte es solo letras, así que la regla anterior
+      // (solo letras, mínimo 2) los daba por buenos. Sintácticamente son
+      // indistinguibles de "tunegocio.com"; lo único que los separa es que
+      // "casitahogar" y "djsfdsf" son demasiado largos para ser un dominio
+      // de primer nivel. Hallazgo real de Eliza en el perfil del albergue y
+      // en el del aliado.
+      test('escribir el nombre del negocio en vez del TLD es inválido', () {
+        expect(esSitioWebValido('www.casitahogar'), false);
+        expect(esSitioWebValido('a.djsfdsf'), false);
+      });
+
+      test('los TLD que se usan de verdad siguen siendo válidos', () {
+        for (final tld in [
+          'com', 'co', 'org', 'net', 'es', 'ar', 'mx', 'de', 'io', 'app',
+          'vet', 'pet', 'online', 'travel', 'museum',
+        ]) {
+          expect(
+            esSitioWebValido('tunegocio.$tld'),
+            true,
+            reason: '.$tld quedó afuera y es un dominio real',
+          );
+        }
+      });
+
+      test('un dominio compuesto sigue valiendo: manda el último segmento', () {
+        expect(esSitioWebValido('www.casitahogar.com.co'), true);
+      });
+
+      test('el corte es por LARGO, no por una lista de dominios', () {
+        // Un TLD inventado pero corto pasa, y está bien que pase: una lista
+        // de dominios válidos se desactualizaría sola y bloquearía a quien
+        // escribió bien. Acá se prefiere aceptar de más antes que rechazar
+        // de más — lo peor que pasa si se cuela es que el enlace no abra.
+        expect(esSitioWebValido('tunegocio.zzz'), true);
+      });
+
       test('vacío es inválido — mismo criterio que esEmailValido(): el '
           'llamador decide si un campo opcional vacío bloquea el guardado, '
           'acá solo se responde si TIENE forma de sitio web', () {
