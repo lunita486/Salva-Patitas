@@ -340,17 +340,34 @@ class _StatsRescatistaState extends State<_StatsRescatista> {
   // Ver el doc de RescatesRepository.contar() para qué se pierde con esto
   // (dejan de ser números en vivo) y cuándo convendría pasar a un contador
   // guardado en el documento de usuario.
-  late final Future<List<int>> _numeros = Future.wait([
-    RescatesRepository().contar(
-      uid: widget.uid,
-      role: CreatorRole.rescatista,
-    ),
-    RescatesRepository().contar(
-      uid: widget.uid,
-      role: CreatorRole.rescatista,
-      estados: const ['Adoptado'],
-    ),
-  ]);
+  //
+  // Se lanzan en initState y no en el inicializador del campo. Hoy da lo
+  // mismo, porque este widget no está anidado adentro de ningún builder que
+  // espere otra cosa: su build corre en el primer cuadro. Es una defensa,
+  // no un arreglo de algo que hoy ande mal.
+  //
+  // Lo que defiende: `late final _x = consulta(...)` significa "sale la
+  // primera vez que alguien lo lea", así que basta con que mañana alguien
+  // envuelva estas cifras en un StreamBuilder para que la consulta pase a
+  // hacer fila detrás de ese stream, sin que se note al leer el diff. En
+  // albergue_publico_screen.dart pasó exactamente eso.
+  late final Future<List<int>> _numeros;
+
+  @override
+  void initState() {
+    super.initState();
+    _numeros = Future.wait([
+      RescatesRepository().contar(
+        uid: widget.uid,
+        role: CreatorRole.rescatista,
+      ),
+      RescatesRepository().contar(
+        uid: widget.uid,
+        role: CreatorRole.rescatista,
+        estados: const ['Adoptado'],
+      ),
+    ]);
+  }
 
   @override
   Widget build(BuildContext context) {
