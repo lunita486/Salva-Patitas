@@ -31,6 +31,15 @@ exports.onRescateActualizado =
 exports.onPerfilActualizado =
   require('./propagar_copias').onPerfilActualizado;
 
+// Mantiene en usuarios/{uid} los números que muestran los dos perfiles: el
+// del rescatista ("Animales rescatados" / "Adopciones aprobadas") y el
+// público del albergue ("En cuidado" / "Adoptados"). Existen para que esas
+// pantallas lean UN documento —que sí sale del caché local, como ya pasaba
+// con la capacidad del albergue— en vez de pagar un viaje al servidor con
+// count(), que no tiene caché posible. Un solo trigger para los dos roles:
+// ver el comentario largo en contadores_logica.js.
+exports.onRescateContado = require('./contadores').onRescateContado;
+
 const { notificar } = require('./notificar');
 
 // Cloud Functions/Eventarc entrega "al menos una vez": el mismo evento

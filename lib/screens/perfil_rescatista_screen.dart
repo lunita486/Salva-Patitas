@@ -13,6 +13,7 @@ import '../widgets/umbral_estancado_sheet.dart';
 import '../data/creator_role.dart';
 import '../data/firestore_resiliencia.dart';
 import '../data/rescates_repository.dart';
+import '../data/usuarios_repository.dart';
 import 'eliminar_cuenta_dialog.dart';
 
 class PerfilRescatistaScreen extends StatelessWidget {
@@ -330,67 +331,102 @@ class _StatsRescatista extends StatefulWidget {
 }
 
 class _StatsRescatistaState extends State<_StatsRescatista> {
-  // contar() y no misRescates(): antes estos dos números salían de
-  // `snapshot.docs.length` sobre la consulta COMPLETA, o sea que mostrar
-  // "12 animales rescatados" descargaba los 12 documentos... y con 1.000
-  // habría descargado los 1.000, y con 100.000 los 100.000. El costo de
-  // pintar un contador no puede depender de cuántos animales haya.
-  //
-  // Se piden UNA vez, al montar. Es un perfil: se abre, se mira, se sale.
-  // Ver el doc de RescatesRepository.contar() para qué se pierde con esto
-  // (dejan de ser números en vivo) y cuándo convendría pasar a un contador
-  // guardado en el documento de usuario.
-  //
-  // Se lanzan en initState y no en el inicializador del campo. Hoy da lo
-  // mismo, porque este widget no está anidado adentro de ningún builder que
-  // espere otra cosa: su build corre en el primer cuadro. Es una defensa,
-  // no un arreglo de algo que hoy ande mal.
-  //
-  // Lo que defiende: `late final _x = consulta(...)` significa "sale la
-  // primera vez que alguien lo lea", así que basta con que mañana alguien
-  // envuelva estas cifras en un StreamBuilder para que la consulta pase a
-  // hacer fila detrás de ese stream, sin que se note al leer el diff. En
-  // albergue_publico_screen.dart pasó exactamente eso.
-  late final Future<List<int>> _numeros;
+  /// Lo que se muestra mientras el número todavía no se sabe. NO un cero:
+  /// un cero se lee como un dato ya traído. Mismo criterio, y mismo
+  /// carácter, que el perfil público del albergue.
+  static const _cargandoValor = '—';
+
+  /// El documento del perfil, en vivo.
+  ///
+  /// **Acá está el arreglo entero.** Los dos números salían de `count()`,
+  /// que es una agregación y cuya única fuente posible es el servidor
+  /// (`AggregateSource` tiene un solo valor, `server`). O sea: sin caché,
+  /// un viaje de red completo en CADA apertura del perfil. Hasta el APK96
+  /// salían de un stream, que sí entrega primero lo del caché local, y por
+  /// eso el perfil se sentía inmediato; el APK97 ganó no descargar los
+  /// documentos y perdió eso, sin que nos diéramos cuenta.
+  ///
+  /// Un DOCUMENTO normal sí sale del caché. Los mantiene al día el trigger
+  /// `onRescateContado` (functions/contadores.js), así que la
+  /// pantalla no tiene que contar nada: lee dos campos.
+  late final Stream<DocumentSnapshot<Map<String, dynamic>>> _perfil;
+
+  /// El plan B, y solo eso: se usa únicamente si el documento del perfil
+  /// NO trae los contadores.
+  ///
+  /// Pasa en dos casos, los dos transitorios: una cuenta recién creada que
+  /// todavía no publicó nada (el trigger no se despertó nunca), y las
+  /// cuentas viejas hasta que se les corra el backfill. Sin esto, un
+  /// rescatista nuevo vería un guion para siempre en vez del 0 que de
+  /// verdad le corresponde.
+  ///
+  /// Se calcula UNA sola vez, y no se calcula en absoluto cuando los
+  /// contadores existen.
+  Future<List<int>>? _plazoB;
 
   @override
   void initState() {
     super.initState();
-    _numeros = Future.wait([
-      RescatesRepository().contar(
-        uid: widget.uid,
-        role: CreatorRole.rescatista,
-      ),
-      RescatesRepository().contar(
-        uid: widget.uid,
-        role: CreatorRole.rescatista,
-        estados: const ['Adoptado'],
-      ),
-    ]);
+    _perfil = FirebaseFirestore.instance
+        .collection('usuarios')
+        .doc(widget.uid)
+        .snapshots();
   }
+
+  /// El cálculo viejo, con `count()`. Cuenta EXACTAMENTE lo mismo que el
+  /// trigger del servidor: animalitos de este uid publicados como
+  /// rescatista, y cuántos de esos están en 'Adoptado'.
+  Future<List<int>> _contarAMano() => Future.wait([
+    RescatesRepository().contar(uid: widget.uid, role: CreatorRole.rescatista),
+    RescatesRepository().contar(
+      uid: widget.uid,
+      role: CreatorRole.rescatista,
+      estados: const ['Adoptado'],
+    ),
+  ]);
+
+  Widget _fila(String total, String adoptados) => Row(
+    children: [
+      _statTile(total, 'Animales\nrescatados', appTeal),
+      const SizedBox(width: 12),
+      // "Adopciones aprobadas" son animalitos cuyo estadoAdopcion ACTUAL es
+      // 'Adoptado'. NO son las solicitudes con estado 'aprobada': eso suma
+      // los hogares de paso aprobados y nunca resta cuando uno termina, así
+      // que el número no bajaba nunca. Hallazgo real de Eliza: "11
+      // aprobadas" con 1 solo animal adoptado. La definición no cambió al
+      // pasar a contadores guardados.
+      _statTile(adoptados, 'Adopciones\naprobadas', appOrange),
+    ],
+  );
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<List<int>>(
-      future: _numeros,
-      builder: (context, snap) {
-        // Sin datos todavía (o si la consulta falló) se muestra 0, igual que
-        // hacía el StreamBuilder de antes mientras esperaba.
-        final total = snap.data?.elementAtOrNull(0) ?? 0;
-        // Antes contaba solicitudes con estado 'aprobada' — eso suma tanto
-        // adopciones como hogares de paso aprobados, y nunca resta cuando un
-        // hogar de paso termina: la solicitud queda aprobada para siempre
-        // aunque el animal ya no esté adoptado. Hallazgo real de Eliza: "11
-        // aprobadas" con 1 solo animal en estado Adoptado. Ahora cuenta
-        // animales cuyo estadoAdopcion ACTUAL es 'Adoptado'.
-        final adoptados = snap.data?.elementAtOrNull(1) ?? 0;
-        return Row(
-          children: [
-            _statTile('$total', 'Animales\nrescatados', appTeal),
-            const SizedBox(width: 12),
-            _statTile('$adoptados', 'Adopciones\naprobadas', appOrange),
-          ],
-        );
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: _perfil,
+      builder: (context, perfilSnap) {
+        final guardados = contadoresRescatistaDe(perfilSnap.data?.data());
+
+        // El camino normal: los dos números salen del documento, sin
+        // contar nada y sin tocar la red si el documento ya está en caché.
+        if (guardados != null) {
+          return _fila('${guardados.principal}', '${guardados.adoptados}');
+        }
+
+        // Llegó el documento (o falló la lectura) y no trae los
+        // contadores: recién ahí se cuenta a mano.
+        if (perfilSnap.hasData || perfilSnap.hasError) {
+          _plazoB ??= _contarAMano();
+          return FutureBuilder<List<int>>(
+            future: _plazoB,
+            builder: (context, snap) => _fila(
+              snap.hasData ? '${snap.data![0]}' : _cargandoValor,
+              snap.hasData ? '${snap.data![1]}' : _cargandoValor,
+            ),
+          );
+        }
+
+        // Todavía no llegó nada. No se sabe, y no saber no es cero.
+        return _fila(_cargandoValor, _cargandoValor);
       },
     );
   }

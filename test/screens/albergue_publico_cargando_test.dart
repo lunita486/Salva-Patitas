@@ -32,7 +32,10 @@ void main() {
   });
 
   test('el contador de disponibles no cae a 0 mientras carga', () {
-    expect(fuente, contains("s.hasData ? '\${s.data}' : _cargandoValor"));
+    // Ahora los números salen del documento del perfil, y el conteo a mano
+    // quedó como plan B. Lo que se custodia sigue siendo lo mismo: mientras
+    // no se sabe, marcador y no cero. Ver contadores_de_perfil_test.dart.
+    expect(fuente, contains("s.hasData ? '\${s.data![indice]}' : _cargandoValor"));
   });
 
   // El defecto que Eliza comprobó con un albergue de 55: el numero salia de
@@ -94,8 +97,8 @@ void main() {
     );
     expect(
       fuente,
-      contains('_totalDisponibles'),
-      reason: 'tiene que salir de un conteo total, como adoptados',
+      contains('contadoresAlbergueDe(data)'),
+      reason: 'tiene que salir del contador guardado, no de la página',
     );
   });
 
@@ -108,7 +111,7 @@ void main() {
   });
 
   test('el de adoptados tampoco', () {
-    expect(fuente, contains("s.hasData ? '\${s.data}' : _cargandoValor"));
+    expect(fuente, contains('guardado: contadores?.adoptados'));
     expect(
       fuente,
       isNot(contains("'\${s.data ?? 0}'")),

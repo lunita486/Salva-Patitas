@@ -11,6 +11,7 @@ import '../widgets/estado_error_feed.dart';
 import '../widgets/fotos.dart';
 import '../data/creator_role.dart';
 import '../data/rescates_repository.dart';
+import '../data/usuarios_repository.dart';
 
 class AlberguePublicoScreen extends StatefulWidget {
   final String rescatistaId;
@@ -66,31 +67,6 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
     super.initState();
     _scroll.addListener(_alDesplazar);
     _pedirPagina();
-    // Los dos contadores arrancan ACÁ, no cuando el árbol los lee.
-    //
-    // Estaban declarados como `late final _totalX = contar(...)`, y `late`
-    // quiere decir que la consulta no sale al abrir la pantalla sino la
-    // primera vez que alguien lee la variable. Esa lectura está adentro del
-    // StreamBuilder de `_perfilStream`, así que los conteos quedaban
-    // esperando a que llegara `usuarios/{uid}`: dos viajes al servidor
-    // ENCADENADOS donde los pedidos son independientes entre sí.
-    //
-    // Un contador no necesita nada del perfil: le alcanza con el
-    // rescatistaId, que ya viene por parámetro desde el feed. Arrancándolos
-    // acá los viajes se solapan y el número suele estar listo antes de que
-    // llegue el documento del albergue.
-    //
-    // No cambia QUÉ se cuenta ni cuánto da: solo cuándo empieza.
-    _totalDisponibles = RescatesRepository().contar(
-      uid: widget.rescatistaId,
-      role: CreatorRole.albergue,
-      estados: estadosEnCuidado,
-    );
-    _totalAdoptados = RescatesRepository().contar(
-      uid: widget.rescatistaId,
-      role: CreatorRole.albergue,
-      estados: const ['Adoptado'],
-    );
   }
 
   @override
@@ -114,7 +90,7 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
         uid: widget.rescatistaId,
         role: CreatorRole.albergue,
         // La MISMA lista que el contador de arriba. No estadosDisponibles:
-        // ver el comentario de _totalDisponibles.
+        // ver el comentario de _contarAMano.
         estados: estadosEnCuidado,
         despuesDe: _cursor,
         porPagina: 30,
@@ -141,35 +117,85 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
   }
   /// El TOTAL de disponibles, no los de la página.
   ///
-  /// Antes este número salía de `disponibles.length`, o sea de contar los
-  /// documentos de UNA página, que pide 30. Un albergue con 55 disponibles
-  /// mostraba "30", y no por lentitud: estaba mal. Lo introduje al paginar
-  /// esta pantalla. Hallazgo de Eliza, que comprobó un albergue con 55.
+  /// **De dónde salen ahora.** Del MISMO documento `usuarios/{uid}` que ya
+  /// alimenta la capacidad, sin ninguna consulta nueva: los mantiene al día
+  /// el trigger `onRescateContado` (functions/contadores.js).
+  ///
+  /// Esto es el arreglo de la demora. Salían de `count()`, que es una
+  /// agregación y cuya única fuente posible es el servidor
+  /// (`AggregateSource` tiene un solo valor). Sin caché, un viaje de red
+  /// completo en cada apertura. La prueba la trajo Eliza sin buscarla: en
+  /// esta misma pantalla la CAPACIDAD aparecía al instante y estos dos
+  /// tardaban, porque la capacidad es un campo de este documento y estos
+  /// dos no podían serlo. Ahora viajan los tres en el mismo snapshot.
+  ///
+  /// El plan B, y solo eso: se usa únicamente si el documento del perfil NO
+  /// trae los contadores. Pasa en dos casos, los dos transitorios: un
+  /// albergue recién creado que todavía no publicó nada (el trigger no se
+  /// despertó nunca) y las cuentas viejas hasta que se les corra el
+  /// backfill. Sin esto verían un guion para siempre en vez del 0 que de
+  /// verdad les corresponde. Se calcula UNA sola vez, y no se calcula en
+  /// absoluto cuando los contadores existen.
+  Future<List<int>>? _plazoB;
+
+  /// El cálculo viejo, con `count()`. Cuenta EXACTAMENTE lo mismo que el
+  /// trigger del servidor.
   ///
   /// **Cuenta `estadosEnCuidado` (Rescatado + Regresado), NO
   /// `estadosDisponibles`.** Decisión de Eliza: que este número diga lo
   /// mismo que el "En cuidado" del panel del albergue, para que las dos
   /// pantallas no muestren cifras distintas del mismo refugio.
   ///
-  /// La lista de abajo usa EXACTAMENTE la misma lista de estados, así que
-  /// el número y la cantidad de tarjetas siempre coinciden: si dice 53, hay
-  /// 53. Hubo un rato en que no era así (el contador dejaba afuera 'Hogar
-  /// de paso' y la lista no) y se corrigió: dos cifras distintas del mismo
+  /// La grilla de abajo usa EXACTAMENTE la misma lista de estados, así que
+  /// el número y la cantidad de tarjetas coinciden: si dice 54, hay 54.
+  /// Hubo un rato en que no era así (el contador dejaba afuera 'Hogar de
+  /// paso' y la lista no) y se corrigió: dos cifras distintas del mismo
   /// refugio en la misma pantalla se leen como un error, aunque cada una
   /// conteste algo defendible.
   ///
   /// Los animalitos en hogar de paso siguen siendo adoptables en el RESTO
-  /// de la app (`sePuedeAdoptar` no se tocó): solo no se muestran en este
-  /// perfil público.
+  /// de la app (`sePuedeAdoptar` no se tocó): solo no se muestran acá.
   ///
-  /// De paso llega mucho antes: `contar()` es una agregación del servidor y
-  /// no baja ningún documento, mientras que la página baja hasta 31.
+  /// Antes este número salía de `disponibles.length`, o sea de contar los
+  /// documentos de UNA página, que pide 30: un albergue con 55 disponibles
+  /// mostraba "30". Hallazgo de Eliza.
+  Future<List<int>> _contarAMano() => Future.wait([
+    RescatesRepository().contar(
+      uid: widget.rescatistaId,
+      role: CreatorRole.albergue,
+      estados: estadosEnCuidado,
+    ),
+    RescatesRepository().contar(
+      uid: widget.rescatistaId,
+      role: CreatorRole.albergue,
+      estados: const ['Adoptado'],
+    ),
+  ]);
+
+  /// Un chip de contador: el número guardado si está, si no el plan B, y si
+  /// tampoco hay plan B todavía el marcador de carga.
   ///
-  /// Las dos consultas se lanzan en `initState`, no acá: ver el comentario
-  /// largo ahí. Sin inicializador, `late` deja de significar "cuando alguien
-  /// lo lea" y pasa a significar solo "se asigna una vez, en initState".
-  late final Future<int> _totalDisponibles;
-  late final Future<int> _totalAdoptados;
+  /// `_statChip` devuelve un `Expanded`, así que esto tiene que ser hijo
+  /// directo del Row de arriba. El FutureBuilder del medio no molesta:
+  /// no crea un RenderObject, así que el Expanded igual llega al Row.
+  Widget _chipContador({
+    required int? guardado,
+    required int indice,
+    required String label,
+    required Color color,
+  }) {
+    if (guardado != null) return _statChip('$guardado', label, color);
+    final plazoB = _plazoB;
+    if (plazoB == null) return _statChip(_cargandoValor, label, color);
+    return FutureBuilder<List<int>>(
+      future: plazoB,
+      builder: (_, s) => _statChip(
+        s.hasData ? '${s.data![indice]}' : _cargandoValor,
+        label,
+        color,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -177,6 +203,15 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
       stream: _perfilStream,
       builder: (context, userSnap) {
         final data = userSnap.data?.data() as Map<String, dynamic>? ?? {};
+        // Los dos contadores, del MISMO snapshot que la capacidad.
+        final contadores = contadoresAlbergueDe(data);
+        // El plan B se arma solo si el documento YA llegó y no los trae.
+        // Sin la condición de `hasData`, esto dispararía el `count()` en
+        // cada apertura mientras el documento viene en camino, que es
+        // exactamente el viaje que estamos sacando.
+        if (contadores == null && (userSnap.hasData || userSnap.hasError)) {
+          _plazoB ??= _contarAMano();
+        }
         final nombre =
             data['albergueNombre'] as String? ??
             data['displayName'] as String? ??
@@ -317,25 +352,18 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
                       padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
                       child: Row(
                         children: [
-                          FutureBuilder<int>(
-                            future: _totalDisponibles,
-                            builder: (_, s) => _statChip(
-                              s.hasData ? '${s.data}' : _cargandoValor,
-                              'disponibles',
-                              appTeal,
-                            ),
+                          _chipContador(
+                            guardado: contadores?.principal,
+                            indice: 0,
+                            label: 'disponibles',
+                            color: appTeal,
                           ),
                           const SizedBox(width: 10),
-                          // Un contador del lado del servidor: antes salía
-                          // de filtrar en Dart todos los animales del
-                          // albergue.
-                          FutureBuilder<int>(
-                            future: _totalAdoptados,
-                            builder: (_, s) => _statChip(
-                              s.hasData ? '${s.data}' : _cargandoValor,
-                              'adoptados',
-                              const Color(0xFF2196F3),
-                            ),
+                          _chipContador(
+                            guardado: contadores?.adoptados,
+                            indice: 1,
+                            label: 'adoptados',
+                            color: const Color(0xFF2196F3),
                           ),
                           if (capacidad > 0) ...[
                             const SizedBox(width: 10),

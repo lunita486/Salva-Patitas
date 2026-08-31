@@ -77,9 +77,48 @@ service cloud.firestore {
       // del todo pide mover el directorio a una colección pública aparte
       // con solo los campos de vitrina; queda anotado, no hecho.
       allow list: if signedIn() && 'aliado' in resource.data.roles;
+      // Los contadores que muestran los dos perfiles (el del rescatista y
+      // el público del albergue) los mantiene una Cloud Function
+      // (contadores.js), que corre con permisos de admin y no pasa por
+      // estas reglas. La app NO los escribe nunca.
+      //
+      // Sin esta condición, `allow write` dejaba a cada cuenta poner
+      // cualquier valor en cualquier campo de su propio documento (solo
+      // `roles` estaba restringido). Un número inventado ahí no se corrige
+      // solo: el trigger recién lo pisa la próxima vez que esa persona da
+      // de alta, borra o cambia el estado de un animalito, así que podría
+      // quedar mintiendo indefinidamente.
+      //
+      // Se compara el resultado DESEADO contra el actual, y no se pide que
+      // el campo venga ausente, porque en un `update` Firestore arma
+      // `request.resource.data` con el documento ya fusionado: los campos
+      // que la app ni mencionó igual aparecen ahí, con su valor de antes.
+      // Pedir que no estuvieran rompería cualquier guardado del perfil.
       allow write: if signedIn() && uid() == userId &&
         (!('roles' in request.resource.data) ||
-          request.resource.data.roles.hasOnly(['adoptante', 'rescatista', 'albergue', 'aliado']));
+          request.resource.data.roles.hasOnly(['adoptante', 'rescatista', 'albergue', 'aliado'])) &&
+        contadoresIntactos();
+    }
+
+    // true si esta escritura deja los contadores de perfil tal como están.
+    // En un `create` no puede traerlos; en un `update` tiene que dejarlos
+    // con el mismo valor que ya tenían.
+    //
+    // La lista tiene que decir lo mismo que DEFINICIONES en
+    // functions/contadores_logica.js. Hay un test de Dart que compara los
+    // dos archivos, porque nada más los ata.
+    function camposDeContador() {
+      return [
+        'contadorRescatistaTotal', 'contadorRescatistaAdoptados',
+        'contadorAlbergueEnCuidado', 'contadorAlbergueAdoptados'
+      ];
+    }
+
+    function contadoresIntactos() {
+      return resource == null
+        ? !request.resource.data.keys().hasAny(camposDeContador())
+        : !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(camposDeContador());
     }
 
     // ── rescates ──────────────────────────────────────────────────────

@@ -573,6 +573,113 @@ describe('usuarios', () => {
       }),
     );
   });
+
+  // ── Contadores de perfil (rescatista y albergue) ────────────────────
+  //
+  // Los mantiene una Cloud Function (contadores.js) y la app solo los lee.
+  // Antes de esta regla, `allow write` restringía únicamente `roles`:
+  // cualquier cuenta podía escribirse el número que quisiera en su propio
+  // documento, y ese número falso sobrevivía hasta la próxima vez que esa
+  // persona diera de alta, borrara o cambiara el estado de un animalito.
+  // Los contadores dejarían de significar lo que dicen.
+  const CONTADORES = [
+    'contadorRescatistaTotal',
+    'contadorRescatistaAdoptados',
+    'contadorAlbergueEnCuidado',
+    'contadorAlbergueAdoptados',
+  ];
+
+  it('nadie puede inventarse sus propios contadores, de ningún rol', async () => {
+    for (const campo of CONTADORES) {
+      await assertFails(
+        updateDoc(doc(como(ADOPTANTE), 'usuarios', ADOPTANTE), {
+          [campo]: 9999,
+        }),
+      );
+    }
+  });
+
+  it('tampoco al crear el perfil de cero', async () => {
+    await sembrar(async (db) => deleteDoc(doc(db, 'usuarios', ADOPTANTE)));
+    await assertFails(
+      setDoc(doc(como(ADOPTANTE), 'usuarios', ADOPTANTE), {
+        roles: ['rescatista'],
+        contadorRescatistaTotal: 500,
+      }),
+    );
+    await sembrar(async (db) => deleteDoc(doc(db, 'usuarios', ADOPTANTE)));
+    await assertFails(
+      setDoc(doc(como(ADOPTANTE), 'usuarios', ADOPTANTE), {
+        roles: ['albergue'],
+        contadorAlbergueEnCuidado: 500,
+      }),
+    );
+  });
+
+  it('ni pisarlos con otro valor, ni borrarlos', async () => {
+    await sembrar(async (db) => {
+      await setDoc(doc(db, 'usuarios', ADOPTANTE), {
+        roles: ['rescatista', 'albergue'],
+        contadorRescatistaTotal: 7,
+        contadorRescatistaAdoptados: 2,
+        contadorAlbergueEnCuidado: 54,
+        contadorAlbergueAdoptados: 3,
+      });
+    });
+    for (const campo of CONTADORES) {
+      await assertFails(
+        updateDoc(doc(como(ADOPTANTE), 'usuarios', ADOPTANTE), { [campo]: 8 }),
+      );
+      await assertFails(
+        updateDoc(doc(como(ADOPTANTE), 'usuarios', ADOPTANTE), {
+          [campo]: deleteField(),
+        }),
+      );
+    }
+  });
+
+  // El caso positivo, y el que de verdad me preocupaba romper: la regla
+  // NO puede exigir que el campo venga ausente. En un `update` Firestore
+  // arma request.resource.data con el documento ya fusionado, así que los
+  // contadores aparecen ahí aunque la app ni los mencione. Sin este test,
+  // una regla mal escrita bloquearía cualquier guardado del perfil de
+  // alguien que ya tiene contadores.
+  it('y guardar el perfil normal sigue andando con los contadores puestos',
+    async () => {
+      await sembrar(async (db) => {
+        await setDoc(doc(db, 'usuarios', ADOPTANTE), {
+          roles: ['rescatista', 'albergue'],
+          contadorRescatistaTotal: 7,
+          contadorRescatistaAdoptados: 2,
+          contadorAlbergueEnCuidado: 54,
+          contadorAlbergueAdoptados: 3,
+        });
+      });
+      await assertSucceeds(
+        updateDoc(doc(como(ADOPTANTE), 'usuarios', ADOPTANTE), {
+          nombre: 'Rita',
+          ciudad: 'Medellín',
+          capacidadTotal: 60,
+        }),
+      );
+    });
+
+  // El servidor sí puede: es quien los mantiene. Esto no prueba la regla
+  // (el admin no pasa por reglas), sino que el resto de la suite no se
+  // apoye en que el campo sea inescribible por todos.
+  it('el servidor sí los escribe', async () => {
+    await assertSucceeds(
+      sembrar(async (db) =>
+        setDoc(doc(db, 'usuarios', ADOPTANTE), {
+          roles: ['rescatista', 'albergue'],
+          contadorRescatistaTotal: 54,
+          contadorRescatistaAdoptados: 4,
+          contadorAlbergueEnCuidado: 54,
+          contadorAlbergueAdoptados: 3,
+        }),
+      ),
+    );
+  });
 });
 
 describe('preferencias — perfil de adopción (vivienda, niños, mascotas)', () => {

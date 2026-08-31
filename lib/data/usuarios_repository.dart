@@ -3,6 +3,86 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../services/ubicacion_service.dart' show CandidatoUbicacion;
 import 'firestore_resiliencia.dart';
 
+/// Los contadores de perfil guardados en `usuarios/{uid}`.
+///
+/// **Los escribe únicamente el servidor**, desde el trigger de
+/// `functions/contadores.js`. La app solo los lee, y `firestore.rules` lo
+/// hace cumplir: un intento de escribirlos desde acá se rechaza (hay tests
+/// negativos en `test_rules/`).
+///
+/// **Por qué existen.** Dos pantallas muestran números sobre la colección
+/// de animalitos: el perfil del rescatista ("Animales rescatados" /
+/// "Adopciones aprobadas") y el perfil público del albergue ("En cuidado"
+/// / "Adoptados"). Salían de `count()`, que es una agregación y solo puede
+/// leer del SERVIDOR: no hay caché posible, así que cada apertura pagaba
+/// un viaje de red entero.
+///
+/// La prueba más limpia de eso la trajo Eliza sin buscarla: en el perfil
+/// del albergue, la CAPACIDAD aparece al instante y los otros dos números
+/// tardan. Misma pantalla, mismo momento. La capacidad es un campo de este
+/// mismo documento y se sirve del caché; los otros dos no podían.
+///
+/// Guardados acá, viajan en el MISMO snapshot que `capacidadTotal`, sin
+/// una consulta nueva.
+///
+/// Los nombres dicen de qué rol hablan a propósito: una misma cuenta puede
+/// ser rescatista Y albergue a la vez. Tienen que decir lo mismo que
+/// `DEFINICIONES` en `functions/contadores_logica.js`; hay un test que
+/// compara los dos archivos, porque nada más los ata.
+const campoContadorRescatistaTotal = 'contadorRescatistaTotal';
+const campoContadorRescatistaAdoptados = 'contadorRescatistaAdoptados';
+const campoContadorAlbergueEnCuidado = 'contadorAlbergueEnCuidado';
+const campoContadorAlbergueAdoptados = 'contadorAlbergueAdoptados';
+
+/// El par de contadores que trae el documento del perfil, o `null` si ese
+/// documento todavía no los tiene.
+///
+/// `null` NO quiere decir cero: quiere decir que este perfil todavía no
+/// fue sembrado (cuenta recién creada que aún no publicó nada, o cuenta
+/// vieja antes del backfill). Quien llama tiene que distinguir esos dos
+/// casos, porque mostrar un 0 ahí sería afirmar algo que no se sabe.
+///
+/// Es una función y no dos lecturas sueltas en cada pantalla para que la
+/// decisión "¿hay contador guardado o hay que contar a mano?" se pueda
+/// probar sola, y para que las dos pantallas la tomen igual. Si esa rama
+/// se invirtiera, el perfil volvería a pagar un `count()` en cada apertura
+/// sin que se note en la UI.
+({int principal, int adoptados})? contadoresGuardadosDe(
+  Map<String, dynamic>? datos, {
+  required String campoPrincipal,
+  required String campoAdoptados,
+}) {
+  final principal = datos?[campoPrincipal];
+  final adoptados = datos?[campoAdoptados];
+  // `is int` y no `as int?`: un campo escrito a mano desde la consola
+  // podría venir con otro tipo, y en ese caso conviene caer al conteo real
+  // en vez de reventar la pantalla.
+  if (principal is int && adoptados is int) {
+    return (principal: principal, adoptados: adoptados);
+  }
+  return null;
+}
+
+/// Los del perfil del rescatista: "Animales rescatados" (todos los
+/// estados) y "Adopciones aprobadas".
+({int principal, int adoptados})? contadoresRescatistaDe(
+  Map<String, dynamic>? datos,
+) => contadoresGuardadosDe(
+  datos,
+  campoPrincipal: campoContadorRescatistaTotal,
+  campoAdoptados: campoContadorRescatistaAdoptados,
+);
+
+/// Los del perfil público del albergue: "En cuidado" (Rescatado +
+/// Regresado, la misma lista que la grilla) y "Adoptados".
+({int principal, int adoptados})? contadoresAlbergueDe(
+  Map<String, dynamic>? datos,
+) => contadoresGuardadosDe(
+  datos,
+  campoPrincipal: campoContadorAlbergueEnCuidado,
+  campoAdoptados: campoContadorAlbergueAdoptados,
+);
+
 /// Centraliza las escrituras del campo `roles` en `usuarios/{uid}`
 /// (antes se escribía suelto desde ~7 pantallas de debug distintas, sin
 /// validar qué valores eran válidos).
