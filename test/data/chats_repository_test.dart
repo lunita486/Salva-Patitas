@@ -1501,6 +1501,115 @@ void main() {
       );
     });
 
+    // El chat guarda su PROPIA copia de la foto y la especie: la lista de
+    // conversaciones lee esa copia, nunca el animal. Un chat que nace sin
+    // ellas muestra el emoji en vez del animalito, y encima 🐶 para un
+    // gato, porque la lista decide 🐱/🐶 con `especie` y la ausencia cae
+    // al default 'Perro'. Bug real del aviso de fallecimiento, visto en
+    // produccion el 2026-09-02.
+    test(
+      'sin chat previo: el chat nuevo guarda la foto del animalito',
+      () async {
+        await repo.avisarSobreAnimal(
+          adoptanteId: 'ana',
+          adoptanteNombre: 'Ana',
+          rescatistaId: 'refugio1',
+          rescatista: 'Refugio Uno',
+          texto: 'Lamentamos informarte que Rocky falleció.',
+          rescateId: 'r1',
+          animalNombre: 'Rocky',
+          fotoUrl: 'https://storage/rescates/r1/foto1.jpg',
+          especie: 'Perro',
+        );
+
+        final chat = (await firestore.collection('chats').doc('r1_ana').get())
+            .data()!;
+        expect(chat['fotoUrl'], 'https://storage/rescates/r1/foto1.jpg');
+      },
+    );
+
+    test('sin chat previo: un gato queda con su especie, y no con el default '
+        'que le pondria 🐶', () async {
+      await repo.avisarSobreAnimal(
+        adoptanteId: 'ana',
+        adoptanteNombre: 'Ana',
+        rescatistaId: 'refugio1',
+        rescatista: 'Refugio Uno',
+        texto: 'Lamentamos informarte que Michi falleció.',
+        rescateId: 'r-gato',
+        animalNombre: 'Michi',
+        fotoUrl: 'https://storage/rescates/r-gato/foto1.jpg',
+        especie: 'Gato',
+      );
+
+      final chat = (await firestore.collection('chats').doc('r-gato_ana').get())
+          .data()!;
+      expect(chat['especie'], 'Gato');
+    });
+
+    // Dos animalitos distintos, dos chats distintos, cada uno con SU foto.
+    // El caso real: los dos sin nombre, del mismo albergue, y el relleno
+    // que tapaba el hueco buscaba por nombre — a uno le ponia la foto del
+    // otro y en pantalla parecian el mismo animalito.
+    test('dos animalitos: cada chat se queda con su propia foto', () async {
+      for (final r in ['rA', 'rB']) {
+        await repo.avisarSobreAnimal(
+          adoptanteId: 'ana',
+          adoptanteNombre: 'Ana',
+          rescatistaId: 'refugio1',
+          rescatista: 'Refugio Uno',
+          texto: 'Lamentamos informarte que Sin nombre falleció.',
+          rescateId: r,
+          animalNombre: 'Sin nombre',
+          fotoUrl: 'https://storage/rescates/$r/foto1.jpg',
+          especie: 'Perro',
+        );
+      }
+
+      final a = (await firestore.collection('chats').doc('rA_ana').get())
+          .data()!;
+      final b = (await firestore.collection('chats').doc('rB_ana').get())
+          .data()!;
+      expect(a['fotoUrl'], 'https://storage/rescates/rA/foto1.jpg');
+      expect(b['fotoUrl'], 'https://storage/rescates/rB/foto1.jpg');
+      expect(a['fotoUrl'], isNot(b['fotoUrl']));
+    });
+
+    test('con chat previo que ya tenia foto: el aviso NO se la pisa', () async {
+      await firestore.collection('chats').doc('r1_ana').set({
+        'adoptanteId': 'ana',
+        'rescatistaId': 'refugio1',
+        'rescateId': 'r1',
+        'fotoUrl': 'https://storage/la-que-ya-estaba.jpg',
+      });
+
+      await repo.avisarSobreAnimal(
+        adoptanteId: 'ana',
+        adoptanteNombre: 'Ana',
+        rescatistaId: 'refugio1',
+        rescatista: 'Refugio Uno',
+        texto: 'Lamentamos informarte que Rocky falleció.',
+        rescateId: 'r1',
+        animalNombre: 'Rocky',
+        fotoUrl: 'https://storage/rescates/r1/foto1.jpg',
+        especie: 'Perro',
+      );
+
+      expect((await firestore.collection('chats').get()).docs.length, 1);
+      final chat = (await firestore.collection('chats').doc('r1_ana').get())
+          .data()!;
+      expect(chat['fotoUrl'], 'https://storage/la-que-ya-estaba.jpg');
+      final msgs = await firestore
+          .collection('chats')
+          .doc('r1_ana')
+          .collection('mensajes')
+          .get();
+      expect(
+        msgs.docs.single.data()['texto'],
+        'Lamentamos informarte que Rocky falleció.',
+      );
+    });
+
     test(
       'con chat previo: NO crea uno nuevo, escribe en el que ya existía',
       () async {

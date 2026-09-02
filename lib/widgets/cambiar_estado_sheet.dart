@@ -175,10 +175,25 @@ class CambiarEstadoSheet extends StatelessWidget {
     // que el de solicitudes_rescatista_screen.dart:_aprobarSolicitudImpl.
     // Hallazgo real de Eliza: "el usuario no se entera q falleció el
     // animalito".
+    //
+    // De la MISMA lectura salen la foto y la especie del animalito. No es
+    // un dato de más: el chat guarda su propia copia de los dos, y la
+    // lista de conversaciones lee esa copia, nunca el animal. Sin ellos el
+    // chat recién creado nacía sin foto (emoji en vez del animalito) y sin
+    // especie, que cae al default 'Perro' y le pone 🐶 a un gato. El
+    // relleno del cliente que tapaba el hueco busca por NOMBRE de animal,
+    // así que con dos animalitos sin nombre le ponía a uno la foto del
+    // otro. Verificado en producción el 2026-09-02: el chat de
+    // BM0sxb68YL5KNo5b3mdj mostraba la foto de 2b6dVwmGLz5kj1k5uWM2.
     String? creadoPorReal;
+    String? fotoUrlReal;
+    String? especieReal;
     try {
       final rescateDoc = await RescatesRepository().obtener(docId);
-      creadoPorReal = rescateDoc.data()?['creadoPor'] as String?;
+      final datos = rescateDoc.data();
+      creadoPorReal = datos?['creadoPor'] as String?;
+      fotoUrlReal = datos?['fotoUrl'] as String?;
+      especieReal = datos?['especie'] as String?;
     } catch (_) {}
 
     final texto =
@@ -207,6 +222,8 @@ class CambiarEstadoSheet extends StatelessWidget {
         rescateId: docId,
         animalNombre: nombre,
         creadoPor: creadoPorReal,
+        especie: especieReal,
+        fotoUrl: fotoUrlReal,
       );
       if (!ok) todoOk = false;
     }

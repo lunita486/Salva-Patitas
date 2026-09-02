@@ -53,14 +53,13 @@ class _HogaresDePasoScreenState extends State<HogaresDePasoScreen> {
       if (resultado == null || _uid.isEmpty) return;
       final nombreNuevo = resultado['nombre'] ?? '';
       final emailNuevo = resultado['email'] ?? '';
-      // Aviso, no bloqueo. Compara nombre Y email juntos (no el nombre
-      // solo) — dos personas reales pueden compartir nombre, y el email ya
-      // es obligatorio en este formulario justo para no confundirlas.
-      // Antes nada avisaba nada acá, así que tocar "Agregar" y completar
-      // el formulario de nuevo por error (sin ver ninguna confirmación
-      // clara de que ya había funcionado la primera vez) dejaba la misma
-      // persona repetida en la red, sin ninguna forma de fusionar esas
-      // filas después.
+      // Aviso, no bloqueo. La identidad la decide el email (ver
+      // buscarDuplicado): el nombre es texto libre y la misma persona lo
+      // tipea distinto cada vez. Antes nada avisaba nada acá, así que
+      // tocar "Agregar" y completar el formulario de nuevo por error (sin
+      // ver ninguna confirmación clara de que ya había funcionado la
+      // primera vez) dejaba la misma persona repetida en la red, sin
+      // ninguna forma de fusionar esas filas después.
       final duplicado = await _repo.buscarDuplicado(
         albergueId: _uid,
         nombre: nombreNuevo,
@@ -76,8 +75,14 @@ class _HogaresDePasoScreenState extends State<HogaresDePasoScreen> {
             ),
             title: const Text('Posible duplicado'),
             content: Text(
-              'Ya tenés a "$nombreNuevo" con este mismo email en tu red de '
-              'hogares de paso. Si de verdad es una persona distinta, podés agregarla igual.',
+              // El nombre de la fila QUE YA ESTÁ, no el que se acaba de
+              // tipear: con la identidad por email, la fila encontrada
+              // puede llamarse distinto, y nombrar el texto nuevo decía
+              // "ya tenés a X" señalando algo que no existe con ese
+              // nombre.
+              'Ya tenés a "${(duplicado.data()['nombre'] as String?) ?? nombreNuevo}" '
+              'con este mismo email en tu red de hogares de paso. Si de '
+              'verdad es una persona distinta, podés agregarla igual.',
             ),
             actions: [
               TextButton(

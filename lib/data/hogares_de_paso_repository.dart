@@ -27,22 +27,33 @@ class HogaresDePasoRepository {
   Stream<QuerySnapshot<Map<String, dynamic>>> deAlbergue(String albergueId) =>
       _col.where('albergueId', isEqualTo: albergueId).snapshots();
 
-  /// Primera fila de la red de [albergueId] con el mismo [nombre] Y el
-  /// mismo [email] (sin importar mayúsculas/espacios en ninguno de los
-  /// dos) — para avisar de un posible duplicado antes de agregar a mano.
-  /// [agregarManual] no tenía ningún chequeo (a diferencia de
-  /// [registrarAyuda], que sí fusiona por adoptanteId/email): nada impedía
-  /// crear la misma persona varias veces si el albergue tocaba "Agregar" y
-  /// completaba el formulario de nuevo cada vez. Hallazgo real de Eliza,
-  /// con captura mostrando "Pepito Perez" repetido 3 veces.
+  /// Primera fila de la red de [albergueId] que sea la MISMA PERSONA que
+  /// [nombre]/[email] — para fusionar en vez de duplicar, y para avisar de
+  /// un posible duplicado antes de agregar a mano. [agregarManual] no tenía
+  /// ningún chequeo: nada impedía crear la misma persona varias veces si el
+  /// albergue tocaba "Agregar" y completaba el formulario de nuevo cada vez.
+  /// Hallazgo real de Eliza, con captura mostrando "Pepito Perez" repetido
+  /// 3 veces.
   ///
-  /// Compara nombre Y email JUNTOS (no el nombre solo) a propósito — dos
-  /// personas reales pueden compartir nombre, y avisar solo por eso
-  /// hubiera sido un falso positivo molesto. El email es el dato que de
-  /// verdad distingue a una persona de otra con el mismo nombre, y ahora
-  /// es obligatorio en el formulario de alta manual (ver
-  /// _AgregarHogarSheet) exactamente para que esta comparación siempre
-  /// tenga con qué trabajar. Pedido explícito de Eliza.
+  /// **La identidad es el email, y solo el email.** El [nombre] no
+  /// participa cuando hay email: es texto libre que la misma persona tipea
+  /// distinto cada vez. Caso real en producción, 2026-08-31: "Luna" y
+  /// "luna" con `lunita486@gmail.com` quedaron como dos filas con una
+  /// ayuda cada una, en vez de una con dos.
+  ///
+  /// Antes se comparaba nombre Y email juntos. Eso hacía que "Luna" y
+  /// "Luna Perez" con el mismo email fueran dos personas, y sobre todo
+  /// dejaba a este método con un criterio DISTINTO al de [registrarAyuda],
+  /// que fusiona por email solo (después de adoptanteId) desde siempre. La
+  /// misma persona se unificaba o no según hubiera entrado por el camino
+  /// de las cuentas o por el manual. Ahora los dos caminos preguntan lo
+  /// mismo.
+  ///
+  /// **Sin email no deduplica**, a propósito y sin cambios: dos "María"
+  /// distintas son dos personas, y preferimos dos filas que se puedan unir
+  /// a mano antes que fusionar a quienes no lo son. Por eso el email es
+  /// obligatorio en las dos puertas que alimentan la red
+  /// (_AgregarHogarSheet y pedirHogarDePaso del lado del albergue).
   ///
   /// Trae todas las filas propias (roster acotado a un albergue, nunca
   /// miles de filas) y compara en cliente — mismo criterio que
@@ -54,20 +65,14 @@ class HogaresDePasoRepository {
     required String nombre,
     required String email,
   }) async {
-    final nombreBuscado = nombre.trim().toLowerCase();
     final emailBuscado = _normalizarEmail(email);
-    if (nombreBuscado.isEmpty || emailBuscado.isEmpty) return null;
+    if (emailBuscado.isEmpty) return null;
     final snap = await _col.where('albergueId', isEqualTo: albergueId).get();
     for (final d in snap.docs) {
-      final data = d.data();
-      final nombreActual = ((data['nombre'] as String?) ?? '')
-          .trim()
-          .toLowerCase();
-      final emailActual = ((data['email'] as String?) ?? '')
-          .trim()
-          .toLowerCase();
-      if (nombreActual == nombreBuscado && emailActual == emailBuscado)
-        return d;
+      final emailActual = _normalizarEmail(
+        (d.data()['email'] as String?) ?? '',
+      );
+      if (emailActual == emailBuscado) return d;
     }
     return null;
   }

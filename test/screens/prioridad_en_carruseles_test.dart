@@ -58,7 +58,7 @@ void main() {
       final resto = await repo.paginaDeMisRescates(
         uid: 'refugio',
         role: CreatorRole.albergue,
-        estados: const ['Rescatado', 'Regresado', 'Fallecido'],
+        estados: const ['Rescatado', 'Regresado'],
         porPagina: cuantos - docs.length,
       );
       docs.addAll(resto.docs);
@@ -130,12 +130,68 @@ void main() {
     expect(docs.first.id, 'a014');
   });
 
-  test('fallecido va al final, pero no desaparece', () async {
+  // Este test decia lo contrario: que un fallecido iba al final pero no
+  // desaparecia. Estuvo asi a proposito, para que un animalito muerto no se
+  // esfumara del panel.
+  //
+  // Eliza lo reviso y decidio revertirlo: el problema es que ocupaba uno de
+  // los 10 lugares. El limite se aplica en la CONSULTA, asi que tres
+  // fallecidos dejaban el panel mostrando siete vivos, y el sort solo los
+  // mandaba al final cuando el lugar ya estaba gastado. Un fallecido se
+  // sigue alcanzando desde "Ver todas" filtrando por estado.
+  test('un fallecido NO aparece en la Jauria', () async {
     await sembrar(0, 'Fallecido');
     await sembrar(1, 'Rescatado');
     await sembrar(2, 'En proceso de adopción');
     final docs = await jauria();
-    expect(docs.map((d) => d.id).toList(), ['a002', 'a001', 'a000']);
+    expect(docs.map((d) => d.id).toList(), ['a002', 'a001']);
+  });
+
+  // EL punto del cambio: no es solo que no se vea, es que no gaste lugar.
+  test('con 10 vivos y 3 fallecidos, los 10 lugares son de vivos', () async {
+    for (var i = 0; i < 10; i++) {
+      await sembrar(i, 'Rescatado');
+    }
+    // Los fallecidos son los MAS NUEVOS: sin el filtro entrarian primero en
+    // la pagina por fecha y le comerian el lugar a tres vivos.
+    for (var i = 20; i < 23; i++) {
+      await sembrar(i, 'Fallecido');
+    }
+    final docs = await jauria();
+    expect(docs.length, 10);
+    expect(
+      docs.map((d) => d.data()['estadoAdopcion']).toSet(),
+      {'Rescatado'},
+      reason: 'un fallecido ocupo un lugar de los 10',
+    );
+  });
+
+  test('con 7 vivos y 3 fallecidos, se ven los 7 y ninguno mas', () async {
+    for (var i = 0; i < 7; i++) {
+      await sembrar(i, 'Rescatado');
+    }
+    for (var i = 20; i < 23; i++) {
+      await sembrar(i, 'Fallecido');
+    }
+    final docs = await jauria();
+    expect(docs.length, 7, reason: 'se rellenó con fallecidos');
+    expect(docs.map((d) => d.data()['estadoAdopcion']).toSet(), {'Rescatado'});
+  });
+
+  // Lo que NO cambia con esto.
+  test('las prioridades entre los estados VIVOS siguen iguales', () async {
+    await sembrar(0, 'Hogar de paso');
+    await sembrar(1, 'En proceso de adopción');
+    await sembrar(2, 'Regresado');
+    await sembrar(3, 'Rescatado');
+    await sembrar(4, 'Fallecido');
+    final docs = await jauria();
+    expect(
+      docs.map((d) => d.data()['estadoAdopcion']).toList(),
+      ['En proceso de adopción', 'Hogar de paso', 'Rescatado', 'Regresado'],
+      reason: 'En proceso primero, hogar de paso segundo, y entre los de '
+          'igual prioridad manda la fecha (el 3 es mas nuevo que el 2)',
+    );
   });
 
   test('adoptado NUNCA entra: vive en su propia sección', () async {
@@ -180,6 +236,24 @@ void main() {
       final f = leer('lib/screens/albergue_home_screen.dart');
       expect(f, contains('estados: estadosQueNecesitanAtencion'));
       expect(f, contains('_cargarJauria()'));
+    });
+
+    // El helper `jauria()` de arriba es una COPIA de la mecanica de
+    // _cargarJauria. Sin este test, alguien puede devolver 'Fallecido' a la
+    // consulta real y los tests seguirian pasando sobre la copia.
+    test('la consulta real de la Jauría no trae fallecidos', () {
+      final f = leer('lib/screens/albergue_home_screen.dart');
+      expect(
+        f,
+        contains("estados: const ['Rescatado', 'Regresado'],"),
+        reason: 'la consulta de relleno cambio de forma',
+      );
+      expect(
+        f,
+        isNot(contains("'Rescatado', 'Regresado', 'Fallecido'")),
+        reason: 'volvio Fallecido: gasta uno de los 10 lugares, porque el '
+            'limite se aplica en la consulta y no despues del sort',
+      );
     });
 
     test('y el carrusel del rescatista', () {
@@ -244,6 +318,26 @@ void main() {
         );
       }
       expect('CambiarEstadoSheet('.allMatches(f).length, 2);
+    });
+
+    // El MISMO problema en el panel del rescatista, y este llego a
+    // produccion: su carrusel tambien es un .get() pedido una sola vez al
+    // abrir. La escritura sale bien —cambiarEstadoAdopcion es un solo
+    // update y nada del servidor toca estadoAdopcion despues, ver
+    // rescates_repository_test— pero nadie vuelve a preguntar. Eliza puso
+    // un animalito en hogar de paso desde ahi y lo siguio viendo como
+    // Rescatado hasta que otra navegacion provoco el refresco.
+    test('cambiar el estado en el panel del rescatista refresca', () {
+      final f = leer('lib/screens/home_screen.dart');
+      final sheets = 'CambiarEstadoSheet('.allMatches(f).toList();
+      expect(sheets, isNotEmpty, reason: 'no hay ningun sheet de estado');
+      for (final i in sheets) {
+        expect(
+          f.substring(i.end, i.end + 900),
+          contains('.then((_) => _refrescarRescates())'),
+          reason: 'un sheet de estado que no refresca: queda el viejo',
+        );
+      }
     });
 
     // El MISMO problema por la otra puerta, y este si llego a produccion.

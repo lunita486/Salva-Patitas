@@ -533,6 +533,40 @@ void main() {
               'orden entre cerrar y avisar vuelve a poder equivocarse',
         );
       });
+
+      // El chat guarda su PROPIA copia de la foto y la especie del
+      // animalito, y la lista de conversaciones lee esa copia, nunca el
+      // animal. Si el aviso no las manda, el chat nace sin las dos: emoji
+      // en vez de la foto, y 🐶 para un gato, porque la especie ausente cae
+      // al default 'Perro'. Caso real visto en produccion el 2026-09-02.
+      test('le pasa la foto y la especie del animalito al aviso', () {
+        expect(
+          sheet,
+          contains('fotoUrl: fotoUrlReal'),
+          reason: 'el chat nuevo vuelve a nacer sin foto: emoji en la lista',
+        );
+        expect(
+          sheet,
+          contains('especie: especieReal'),
+          reason: 'sin especie, la lista le pone 🐶 a un gato',
+        );
+        // Y que las dos salgan del ANIMAL, no de un dato de la pantalla: el
+        // nombre que ve la hoja puede ser el placeholder "Sin nombre", que
+        // es justo lo que hacia confundibles a dos animalitos distintos.
+        expect(sheet, contains("datos?['fotoUrl']"));
+        expect(sheet, contains("datos?['especie']"));
+      });
+
+      // Las tres salen del MISMO get. Un segundo obtener(docId) seria una
+      // lectura de mas por cada animalito que muere, para un dato que ya
+      // estaba en la mano.
+      test('sin una lectura extra del rescate', () {
+        expect(
+          'obtener(docId)'.allMatches(sheet).length,
+          1,
+          reason: 'creadoPor, fotoUrl y especie salen de la misma lectura',
+        );
+      });
     });
 
     group('aprobarSiDisponible', () {

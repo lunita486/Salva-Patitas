@@ -70,11 +70,24 @@ class _DialogoHogarDePasoState extends State<_DialogoHogarDePaso> {
   }
 
   /// El nombre y las dos fechas son lo mínimo: sin fechas no hay
-  /// recordatorio, que es justo lo que veníamos a arreglar. El contacto
-  /// queda opcional a propósito, porque a veces es la vecina y alcanza con
-  /// saber quién.
+  /// recordatorio, que es justo lo que veníamos a arreglar.
+  ///
+  /// El contacto es obligatorio **solo cuando se pide el email**, o sea del
+  /// lado del albergue. Ahí ese dato no es un extra: es la identidad de la
+  /// persona en la red de hogares. Sin él, [buscarDuplicado] no tiene con
+  /// qué comparar y crea una fila nueva cada vez que la misma persona
+  /// cuida a otro animalito. Medido en producción el 2026-09-02: 5 de 13
+  /// filas de la red sin email. Y el formulario de "Agregar" de
+  /// hogares_de_paso_screen.dart ya lo exigía, así que las dos puertas a
+  /// la MISMA red pedían cosas distintas.
+  ///
+  /// Del lado del rescatista sigue opcional: su campo es "Teléfono o
+  /// email", no alimenta ninguna red, y solo se muestra en la tarjeta.
   bool get _completo =>
-      _nombreCtl.text.trim().isNotEmpty && _desde != null && _hasta != null;
+      _nombreCtl.text.trim().isNotEmpty &&
+      _desde != null &&
+      _hasta != null &&
+      (!widget.pedirEmail || _contactoCtl.text.trim().isNotEmpty);
 
   Future<void> _elegirFecha({required bool esDesde}) async {
     final hoy = DateTime.now();
@@ -180,13 +193,13 @@ class _DialogoHogarDePasoState extends State<_DialogoHogarDePaso> {
               onChanged: (_) => setState(() => _avisoContacto = null),
               decoration: InputDecoration(
                 labelText: widget.pedirEmail
-                    ? 'Email (opcional)'
+                    ? 'Email'
                     : 'Teléfono o email (opcional)',
                 // Mas corto, mismo significado: entraba en dos renglones y
                 // el contador de maxLength (abajo a la derecha, que es donde
                 // Material lo pone) quedaba amontonado contra el.
                 helperText: widget.pedirEmail
-                    ? 'Con el email se suma sola a tu red de hogares'
+                    ? 'Este email se agrega a la red de hogares.'
                     : null,
                 helperMaxLines: 2,
                 errorText: _avisoContacto,

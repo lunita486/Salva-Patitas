@@ -281,6 +281,34 @@ class _AuthWrapperState extends State<AuthWrapper> {
           .doc(user.uid)
           .update({'ultimaVezActiva': FieldValue.serverTimestamp()})
           .catchError((_) {});
+
+      // El token de notificaciones, en el ÚNICO lugar que corre una vez por
+      // sesión con el uid ya resuelto.
+      //
+      // Antes el token se BORRABA de forma confiable y se ESCRIBÍA de forma
+      // oportunista. Lo borran dos caminos seguros: olvidarToken() en cada
+      // cierre de sesión, y el servidor cuando FCM avisa que el token murió
+      // (functions/notificar.js). Lo escribían cuatro caminos que dependen
+      // del azar: inicializar(), que corre ANTES de runApp() y no hace nada
+      // si Auth todavía no restauró la sesión (o sea, en el primer login y
+      // en cualquier cambio de cuenta sin reiniciar la app), y un
+      // postFrameCallback en tres de las cuatro pantallas de inicio — la del
+      // adoptante no lo llama, así que ese rol no tenía NINGÚN punto de
+      // guardado propio.
+      //
+      // Resultado medido en producción el 2026-09-02: 5 de 23 cuentas sin
+      // token, y las cuentas activas más recientemente eran justo las que no
+      // lo tenían. Caso real: a Lucía se le escribieron bien los avisos de
+      // fallecimiento en Firestore y no le llegó ninguna notificación.
+      //
+      // Va acá adentro y no afuera del `if`: este método corre con CADA
+      // snapshot del perfil, y guardarToken() hace un getToken() más una
+      // escritura. Una vez por sesión es lo que hace falta.
+      //
+      // Sin await ni catch por el mismo motivo que las dos escrituras de
+      // arriba: guardarToken() ya se traga sus propios errores, y una cuenta
+      // sin token queda degradada (no recibe push), no rota.
+      NotificacionesService.guardarToken();
     }
   }
 

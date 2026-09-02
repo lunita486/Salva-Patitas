@@ -622,6 +622,16 @@ class _HomeScreenState extends State<HomeScreen>
                 estado: estadoAdopcion,
                 emoji: especie == 'Gato' ? '🐱' : '🐶',
                 fotoUrl: fotoUrl,
+                // El `.then` de abajo no es opcional: este carrusel es un
+                // .get() pedido una sola vez al abrir la pantalla, no un
+                // stream. La escritura sale bien (cambiarEstadoAdopcion es
+                // un solo update, y nada del servidor toca estadoAdopcion
+                // después), pero sin volver a preguntar, la tarjeta se
+                // queda mostrando el estado con el que se cargó la
+                // pantalla. Hallazgo real de Eliza: puso un animalito en
+                // hogar de paso y lo siguió viendo como Rescatado hasta que
+                // otra navegación provocó un refresco. Mismo patrón que los
+                // dos sheets del panel del albergue.
                 onCambiarEstado: estadoAdopcion == 'Fallecido'
                     ? null
                     : () => showModalBottomSheet(
@@ -642,7 +652,7 @@ class _HomeScreenState extends State<HomeScreen>
                           // albergues, decisión de producto).
                           esAlbergue: false,
                         ),
-                      ),
+                      ).then((_) => _refrescarRescates()),
                 // 'Hogar de paso' antes se quedaba afuera de esta condición
                 // sin querer: el rescatista aprobaba un hogar de paso y no
                 // tenía forma de contactar a esa persona (el bug real que

@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:io';
+
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -166,4 +168,72 @@ void main() {
       await expectLater(NotificacionesService.olvidarToken(), completes);
     });
   });
+
+  // ── Quién llama a guardarToken(), y cuándo ───────────────────────────
+  //
+  // El token se borraba de forma confiable (olvidarToken en cada cierre de
+  // sesión, y el servidor cuando FCM avisa que murió) y se escribía de
+  // forma oportunista: inicializar(), que corre antes de runApp() y no hace
+  // nada si Auth todavía no restauró la sesión, más un postFrameCallback en
+  // 3 de las 4 pantallas de inicio. La del adoptante no lo llamaba.
+  //
+  // Medido en producción el 2026-09-02: 5 de 23 cuentas sin token, y las
+  // activas más recientemente eran justo esas. Caso real: los avisos de
+  // fallecimiento de Lucía quedaron bien escritos en Firestore y no le
+  // llegó ninguna notificación.
+  //
+  // Se prueba leyendo el fuente porque el gancho vive en el State privado
+  // de AuthWrapper y arranca desde FirebaseAuth.instance, que no tiene
+  // costura (mismo límite ya documentado más arriba en este archivo y en
+  // auth_helper_test.dart). Mismo patrón que las guardas de
+  // solicitudes_repository_test.dart sobre cambiar_estado_sheet.dart.
+  group(
+    'el guardado del token está atado al comienzo de sesión (main.dart)',
+    () {
+      final fuente = File('lib/main.dart')
+          .readAsStringSync()
+          .split('\n')
+          .where((l) => !l.trimLeft().startsWith('//'))
+          .join('\n');
+
+      // El cuerpo del gancho que corre una vez por sesión con el uid ya
+      // resuelto y el perfil ya existente.
+      final gancho = fuente.substring(
+        fuente.indexOf('void _sincronizarEfectosDeSesion('),
+      );
+
+      test('_sincronizarEfectosDeSesion guarda el token', () {
+        expect(
+          gancho,
+          contains('NotificacionesService.guardarToken()'),
+          reason:
+              'volvió a no haber ningún punto de guardado atado al login: '
+              'una cuenta que cierra sesión y vuelve a entrar sin reiniciar la '
+              'app queda sin token, y sin push',
+        );
+      });
+
+      test('una vez por sesión, no en cada snapshot del perfil', () {
+        // Solo el cuerpo del `if` de la guarda: desde que se marca el uid
+        // hasta el `}` que cierra ese bloque (4 espacios de sangría, el
+        // primero que aparece). Una llamada puesta DESPUÉS de ese `}` corre
+        // con cada snapshot, que es justo lo que hay que impedir.
+        final desdeLaGuarda = gancho.substring(
+          gancho.indexOf('_ultimaVezActivaMarcadaParaUid = user.uid;'),
+        );
+        final cuerpoDeLaGuarda = desdeLaGuarda.substring(
+          0,
+          desdeLaGuarda.indexOf('\n    }'),
+        );
+        expect(
+          cuerpoDeLaGuarda,
+          contains('NotificacionesService.guardarToken()'),
+          reason:
+              'quedó fuera de la guarda: este método corre con CADA '
+              'snapshot del perfil, y guardarToken() hace un getToken() más '
+              'una escritura',
+        );
+      });
+    },
+  );
 }

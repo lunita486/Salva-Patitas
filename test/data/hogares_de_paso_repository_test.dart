@@ -406,7 +406,7 @@ void main() {
         },
       );
 
-      test('nombre o email vacíos nunca cuentan como duplicado', () async {
+      test('sin email no hay duplicado posible', () async {
         await repo.agregarManual(albergueId: 'alb-1', nombre: '', email: '');
 
         expect(
@@ -416,6 +416,7 @@ void main() {
             email: 'x@x.com',
           ),
           isNull,
+          reason: 'la fila sembrada tampoco tiene email',
         );
         expect(
           await repo.buscarDuplicado(
@@ -424,6 +425,54 @@ void main() {
             email: '',
           ),
           isNull,
+          reason: 'sin email no se puede afirmar que sea la misma persona',
+        );
+      });
+
+      // La identidad es el EMAIL, y solo el email. El nombre es texto libre
+      // que la misma persona tipea distinto cada vez, así que no puede
+      // partir a alguien en dos filas. Es además el mismo criterio que
+      // registrarAyuda() usa desde siempre para las personas CON cuenta:
+      // antes los dos caminos respondían distinto a la misma pregunta.
+      test('la identidad es el email: encuentra la fila aunque el nombre '
+          'sea otro', () async {
+        await repo.agregarManual(
+          albergueId: 'alb-1',
+          nombre: 'Luna',
+          email: 'lunita486@gmail.com',
+        );
+
+        final duplicado = await repo.buscarDuplicado(
+          albergueId: 'alb-1',
+          nombre: 'Luna Perez',
+          email: 'LUNITA486@gmail.com',
+        );
+
+        expect(duplicado, isNotNull);
+        expect(
+          duplicado!['nombre'],
+          'Luna',
+          reason: 'devuelve la fila que YA está, con su nombre original',
+        );
+      });
+
+      // El nombre no participa NUNCA cuando hay email, ni siquiera para
+      // descartar: dos nombres que no se parecen en nada, mismo email, son
+      // la misma persona.
+      test('un nombre completamente distinto no impide el cruce', () async {
+        await repo.agregarManual(
+          albergueId: 'alb-1',
+          nombre: 'Pepito Perez',
+          email: 'unico@ejemplo.com',
+        );
+
+        expect(
+          await repo.buscarDuplicado(
+            albergueId: 'alb-1',
+            nombre: 'Karen Cancino',
+            email: 'unico@ejemplo.com',
+          ),
+          isNotNull,
         );
       });
     });
@@ -621,6 +670,45 @@ void main() {
           email: '  MARIA@Correo.com ',
         );
         expect(await red(), hasLength(1));
+      });
+
+      // El caso real de Eliza, con sus datos: el mismo email tipeado con
+      // otras mayúsculas y el nombre escrito distinto son UNA persona que
+      // ayudó dos veces, no dos personas con una ayuda cada una. El nombre
+      // es texto libre; el email es la identidad.
+      test('mismo email, nombre distinto: una sola persona', () async {
+        await repo.sumarAyudaManual(
+          albergueId: 'refugio',
+          nombre: 'Luna',
+          email: 'lunita486@gmail.com',
+        );
+        await repo.sumarAyudaManual(
+          albergueId: 'refugio',
+          nombre: 'Luna Perez',
+          email: ' LUNITA486@gmail.com ',
+        );
+        final filas = await red();
+        expect(filas, hasLength(1), reason: 'un solo hogar, no dos');
+        expect(filas.first['vecesAyudo'], 2, reason: 'los dos animalitos');
+      });
+
+      // Y el caso que ya se veía en producción, con el nombre cambiando
+      // solo de mayúscula: "Luna" y "luna" quedaron como dos filas de una
+      // ayuda cada una el 2026-08-31.
+      test('luna y Luna con el mismo email son una sola fila', () async {
+        await repo.sumarAyudaManual(
+          albergueId: 'refugio',
+          nombre: 'Luna',
+          email: 'lunita486@gmail.com',
+        );
+        await repo.sumarAyudaManual(
+          albergueId: 'refugio',
+          nombre: 'luna',
+          email: 'lunita486@gmail.com',
+        );
+        final filas = await red();
+        expect(filas, hasLength(1));
+        expect(filas.first['vecesAyudo'], 2);
       });
 
       // Sin email no hay forma de afirmar que dos "María" son la misma

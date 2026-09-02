@@ -116,8 +116,18 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
   /// No se puede hacer en una sola consulta: Firestore no sabe ordenar por
   /// una lista de prioridades, solo por un campo.
   ///
-  /// 'Adoptado' queda afuera de las dos: esos viven en su propia sección.
-  /// 'Fallecido' SÍ va, al final, porque si no desaparecería de la pantalla.
+  /// 'Adoptado' y 'Fallecido' quedan afuera de las dos consultas.
+  ///
+  /// 'Fallecido' estuvo dentro un tiempo, al final del orden, para que un
+  /// animalito muerto no desapareciera del panel. Se sacó a pedido de
+  /// Eliza: el problema es que **ocupaba uno de los 10 lugares**. El límite
+  /// se aplica en la consulta, así que tres fallecidos dejaban al panel
+  /// mostrando siete vivos, y el `sort` de abajo solo los mandaba al final
+  /// cuando el lugar ya estaba gastado.
+  ///
+  /// Ahora los 10 son siempre animalitos vivos. Un fallecido se sigue
+  /// alcanzando desde "Ver todas" filtrando por estado; lo que se pierde es
+  /// verlo al abrir el panel.
   Future<PaginaDeRescates> _cargarJauria() async {
     const cuantos = 10;
     final prioritarios = await _rescatesRepo.paginaDeMisRescates(
@@ -131,7 +141,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
       final resto = await _rescatesRepo.paginaDeMisRescates(
         uid: _uid,
         role: CreatorRole.albergue,
-        estados: const ['Rescatado', 'Regresado', 'Fallecido'],
+        estados: const ['Rescatado', 'Regresado'],
         porPagina: cuantos - docs.length,
       );
       docs.addAll(resto.docs);
@@ -153,10 +163,9 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
   void _refrescarNumeros() {
     if (!mounted) return;
     setState(() {
-      // Solo se excluye 'Adoptado' de la Jauría — esos viven en su propia
-      // sección de abajo ("Encontraron hogar"). 'Fallecido' SÍ va en la
-      // Jauría: antes se excluía junto con 'Adoptado' y un animal fallecido
-      // desaparecía de la pantalla por completo.
+      // 'Adoptado' queda afuera de la Jauría: esos viven en su propia
+      // sección de abajo ("Encontraron hogar"). 'Fallecido' también, para
+      // que no gaste uno de los 10 lugares — ver el doc de _cargarJauria().
       _jauria = _cargarJauria();
       _rescatesRepo
           .paginaDeMisRescates(
