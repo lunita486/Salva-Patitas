@@ -155,11 +155,20 @@ class _DialogoHogarDePasoState extends State<_DialogoHogarDePaso> {
               textCapitalization: TextCapitalization.words,
               maxLength: 60,
               onChanged: (_) => setState(() {}),
+              // Sin `isDense`. Con OutlineInputBorder la etiqueta flotante se
+              // dibuja ENCIMA del borde, en un hueco que Flutter le recorta;
+              // `isDense` achica el relleno del campo y, con la letra del
+              // sistema agrandada, la etiqueta ya no entra en ese hueco y se
+              // ve cortada por arriba. Hallazgo de Eliza: "Nombre de la
+              // persona" aparecia con la mitad de arriba comida.
+              //
+              // Se nota solo cuando la etiqueta FLOTA (campo con foco o con
+              // texto): vacio y sin foco va adentro del campo y entra bien.
+              // Por eso el de al lado se veia entero en la misma captura.
               decoration: const InputDecoration(
                 labelText: 'Nombre de la persona',
                 hintText: 'Ej: María González',
                 border: OutlineInputBorder(),
-                isDense: true,
               ),
             ),
             TextField(
@@ -173,13 +182,16 @@ class _DialogoHogarDePasoState extends State<_DialogoHogarDePaso> {
                 labelText: widget.pedirEmail
                     ? 'Email (opcional)'
                     : 'Teléfono o email (opcional)',
+                // Mas corto, mismo significado: entraba en dos renglones y
+                // el contador de maxLength (abajo a la derecha, que es donde
+                // Material lo pone) quedaba amontonado contra el.
                 helperText: widget.pedirEmail
-                    ? 'Con el email se suma sola a tu red de hogares de paso'
+                    ? 'Con el email se suma sola a tu red de hogares'
                     : null,
                 helperMaxLines: 2,
                 errorText: _avisoContacto,
+                // Sin `isDense`, mismo motivo que el campo de arriba.
                 border: const OutlineInputBorder(),
-                isDense: true,
               ),
             ),
             const SizedBox(height: 6),
