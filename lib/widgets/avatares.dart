@@ -175,21 +175,70 @@ class _AvatarUsuarioState extends State<AvatarUsuario> {
     }
   }
 
+  /// El DOCUMENTO de cada perfil, pedido una sola vez por uid en toda la
+  /// sesión.
+  ///
+  /// **Por qué existe.** El feed del adoptante muestra el avatar de quien
+  /// publicó cada animalito. Hasta ahora esa foto viajaba copiada DENTRO de
+  /// cada animalito (`rescatistaFotoBase64`), y para un albergue eso son 85
+  /// KB de base64 por documento: la primera página del perfil de un albergue
+  /// pesaba 2,7 MB, de los cuales 2,6 MB eran el mismo logo repetido 31
+  /// veces. Medido contra producción.
+  ///
+  /// Sacando esa copia, el avatar tiene que salir de `usuarios/{uid}`. Sin
+  /// este mapa serían tantas lecturas como tarjetas se pasen, y como el
+  /// logo vive en ese documento, cada una costaría los mismos 85 KB: sería
+  /// igual o peor que antes. Con el mapa son 3 lecturas por sesión si hay 3
+  /// albergues, se pasen 50 tarjetas o 500.
+  ///
+  /// **Guarda el documento y NO el resultado, a propósito.** El par que
+  /// devuelve [_cargar] depende de `campoLogoNegocio`, que es distinto en
+  /// cada pantalla: las que no lo pasan verían `null` como logo. Cacheando
+  /// el par indexado solo por uid, la primera pantalla que preguntara
+  /// dejaría su respuesta fijada para las demás, y el feed mostraría la
+  /// foto personal en vez del logo del albergue — silencioso y dependiente
+  /// del orden en que se abrieran las pantallas. Guardando el documento,
+  /// cada widget deriva lo suyo del mismo dato.
+  ///
+  /// **Lo que se pierde:** si un albergue cambia su logo, los avatares
+  /// muestran el anterior hasta reiniciar la app. Antes pasaba lo mismo por
+  /// otro motivo (la copia dentro del animalito también quedaba vieja hasta
+  /// que el trigger la propagaba), así que no empeora.
+  static final _perfiles = <String, Future<Map<String, dynamic>?>>{};
+
+  static Future<Map<String, dynamic>?> _pedirPerfil(String id) {
+    return FirebaseFirestore.instance
+        .collection('usuarios')
+        .doc(id)
+        .get()
+        .then<Map<String, dynamic>?>((doc) => doc.data())
+        // Un fallo NO se cachea. Sin esto, una caída de red de un segundo
+        // dejaría ese avatar sin foto por el resto de la sesión: la entrada
+        // fallida quedaría fijada y nadie volvería a preguntar.
+        //
+        // Un documento SIN logo sí se cachea: "este albergue no subió
+        // ninguno" es una respuesta, no un fallo.
+        //
+        // `onError` y NO un try/catch dentro de un `async`: el catch de una
+        // función async que falla antes de su primer `await` corre en el
+        // mismo turno, o sea ANTES de que `??=` guarde la entrada, y
+        // borraría de un mapa donde todavía no está — dejando el fallo
+        // cacheado, justo lo contrario de lo que se busca. `onError`
+        // siempre corre en un microtask posterior a la asignación. Lo
+        // encontró el test del memo.
+        .onError((_, _) {
+          _perfiles.remove(id);
+          return null;
+        });
+  }
+
   Future<(String?, String?)> _cargar() async {
     final id = widget.userId;
     if (id == null || id.isEmpty) return (null, null);
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('usuarios')
-          .doc(id)
-          .get();
-      final data = doc.data();
-      final campo = widget.campoLogoNegocio;
-      final fotoBase64 = campo != null ? (data?[campo] as String?) : null;
-      return (fotoBase64, data?['foto'] as String?);
-    } catch (_) {
-      return (null, null);
-    }
+    final data = await (_perfiles[id] ??= _pedirPerfil(id));
+    final campo = widget.campoLogoNegocio;
+    final fotoBase64 = campo != null ? (data?[campo] as String?) : null;
+    return (fotoBase64, data?['foto'] as String?);
   }
 
   @override

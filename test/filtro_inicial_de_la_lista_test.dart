@@ -26,11 +26,19 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   String leer(String ruta) => File(ruta).readAsStringSync();
 
+  /// El archivo sin NINGÚN espacio. Lo que se custodia acá es qué `extra`
+  /// lleva cada acceso, no cómo lo parte el formateador: cuando esos push
+  /// pasaron a encadenar un `.then` para refrescar al volver, `dart format`
+  /// repartió el `extra:` en varias líneas y estos dos tests se rompieron
+  /// sin que el comportamiento hubiera cambiado en nada.
+  String leerApretado(String ruta) =>
+      leer(ruta).replaceAll(RegExp(r'\s'), '');
+
   test('"Encontraron hogar" abre la lista filtrada por Adoptado', () {
-    final fuente = leer('lib/screens/albergue_home_screen.dart');
+    final fuente = leerApretado('lib/screens/albergue_home_screen.dart');
     expect(
       fuente,
-      contains("extra: (filtroInicial: 'Adoptado', esAlbergue: true)"),
+      contains("extra:(filtroInicial:'Adoptado',esAlbergue:true"),
       reason:
           'sin esto, "Encontraron hogar" y "La Jauría" abren exactamente lo '
           'mismo y la sección de adoptados no lleva a ningún lado propio',
@@ -38,10 +46,10 @@ void main() {
   });
 
   test('"La Jauría" sigue abriendo la lista sin filtro', () {
-    final fuente = leer('lib/screens/albergue_home_screen.dart');
+    final fuente = leerApretado('lib/screens/albergue_home_screen.dart');
     expect(
       fuente,
-      contains('extra: (filtroInicial: null, esAlbergue: true)'),
+      contains('extra:(filtroInicial:null,esAlbergue:true'),
       reason: 'la Jauría muestra todo, no un estado en particular',
     );
   });

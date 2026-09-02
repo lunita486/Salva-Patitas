@@ -235,10 +235,52 @@ void main() {
     // estado desde el panel no movia ningun numero hasta salir y volver.
     test('cambiar el estado desde el panel refresca los contadores', () {
       final f = leer('lib/screens/albergue_home_screen.dart');
+      // Los dos sheets que el panel abre por su cuenta.
+      for (final i in 'CambiarEstadoSheet('.allMatches(f)) {
+        expect(
+          f.substring(i.end, i.end + 900),
+          contains('.then((_) => _refrescarNumeros())'),
+          reason: 'un sheet de cambiar estado que no refresca al cerrarse',
+        );
+      }
+      expect('CambiarEstadoSheet('.allMatches(f).length, 2);
+    });
+
+    // El MISMO problema por la otra puerta, y este si llego a produccion.
+    //
+    // "Ver todas" lleva a mis_rescates_screen, que abre su propia
+    // CambiarEstadoSheet. Al volver, el panel no se reconstruye: su State
+    // sigue vivo debajo, con _jauria, _adoptadosCache y _numeros congelados
+    // en lo que cargo initState. Eliza adoptaba desde ahi y el animalito no
+    // aparecia en "Encontraron hogar", ni se movia el cuadrito azul de
+    // Adoptados, por el resto de la sesion.
+    //
+    // Se recorren TODOS los push en vez de contar cuantos hay: asi, agregar
+    // un quinto acceso a "Ver todas" sin el refresco rompe este test en vez
+    // de pasar desapercibido.
+    test('volver de "Ver todas" tambien refresca', () {
+      final f = leer('lib/screens/albergue_home_screen.dart');
+      final destinos = 'AppRoutes.misRescates'.allMatches(f).toList();
+      expect(destinos, isNotEmpty, reason: 'no hay ningun acceso a Ver todas');
+      for (final d in destinos) {
+        expect(
+          f.substring(d.end, d.end + 300),
+          contains('.then((_) => _refrescarNumeros())'),
+          reason: 'un acceso a "Ver todas" que no refresca al volver: el '
+              'panel se queda con la lista y los numeros viejos',
+        );
+      }
+    });
+
+    // El panel del rescatista nunca tuvo el problema, y es de donde salio
+    // el patron. Si alguien se lo saca, que se entere aca.
+    test('el panel del rescatista sigue haciendo lo mismo', () {
+      final f = leer('lib/screens/home_screen.dart');
+      final d = 'AppRoutes.misRescates'.allMatches(f).toList();
+      expect(d, isNotEmpty);
       expect(
-        '.then((_) => _refrescarNumeros())'.allMatches(f).length,
-        2,
-        reason: 'los DOS sheets de cambiar estado tienen que refrescar',
+        f.substring(d.first.end, d.first.end + 300),
+        contains('.then((_) => _refrescarRescates())'),
       );
     });
   });

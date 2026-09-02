@@ -399,7 +399,6 @@ class _SubirRescateScreenState extends State<SubirRescateScreen>
 
       final nombreDeLaCuenta =
           FirebaseAuth.instance.currentUser?.displayName ?? 'Rescatista';
-      String? fotoPublicadorBase64;
       String? fotoPublicadorUrl;
       // Para cuando llegamos acá, userDocFuture ya viene corriendo desde
       // antes de las fotos — este await casi nunca espera de verdad.
@@ -415,9 +414,17 @@ class _SubirRescateScreenState extends State<SubirRescateScreen>
         creadoPor: widget.esAlbergue ? 'albergue' : 'rescatista',
         nombreDeLaCuenta: nombreDeLaCuenta,
       );
-      if (widget.esAlbergue) {
-        fotoPublicadorBase64 = userDoc.data()?['fotoBase64'] as String?;
-      } else {
+      // El albergue ya no copia su logo adentro del animalito: eran 85 KB de
+      // base64 por documento, y la primera pagina de su perfil publico
+      // llegaba a pesar 2,7 MB con el mismo logo repetido 31 veces. Ahora el
+      // avatar lo resuelve AvatarUsuario leyendo usuarios/{uid}, una vez por
+      // uid. El logo original no se toca: sigue en usuarios/{uid}.fotoBase64,
+      // que es su unica fuente.
+      //
+      // La rama del rescatista NO cambia: su foto siempre fue una URL, que
+      // es lo que esta bien y lo que el albergue deberia imitar el dia que
+      // su logo viva en Storage.
+      if (!widget.esAlbergue) {
         // `usuarios.foto` es la copia que main.dart mantiene al día contra
         // el photoURL de Google; leerla de acá (y no de FirebaseAuth) hace
         // que el trigger pueda refrescar esta misma copia después, porque
@@ -447,8 +454,6 @@ class _SubirRescateScreenState extends State<SubirRescateScreen>
           'descripcion': _descCtl.text.trim(),
           'estadoAdopcion': 'Rescatado',
           'rescatistaNombre': nombrePublicador,
-          if (fotoPublicadorBase64 != null)
-            'rescatistaFotoBase64': fotoPublicadorBase64,
           if (fotoPublicadorUrl != null) 'rescatistaFotoUrl': fotoPublicadorUrl,
           ...ubicacionParaGuardar(
             ciudad: _lugarCtl.text,

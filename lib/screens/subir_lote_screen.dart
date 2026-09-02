@@ -237,7 +237,9 @@ class _SubirLoteScreenState extends State<SubirLoteScreen>
         creadoPor: 'albergue',
         nombreDeLaCuenta: nombre,
       );
-      final fotoAlbergue = userDoc.data()?['fotoBase64'] as String?;
+      // El logo del albergue ya no se copia adentro de cada animalito: eran
+      // ~85 KB de base64 por documento. Lo resuelve AvatarUsuario leyendo
+      // usuarios/{uid}. El original no se toca.
 
       // Cada animal se publica en paralelo, no uno atrás del otro — antes
       // el lote entero esperaba a que el animal 1 terminara (crear doc +
@@ -294,7 +296,6 @@ class _SubirLoteScreenState extends State<SubirLoteScreen>
               // animal del mismo lote).
               if (repetidos.contains(nombreAnimal))
                 'duplicadoConfirmadoEn': FieldValue.serverTimestamp(),
-              if (fotoAlbergue != null) 'rescatistaFotoBase64': fotoAlbergue,
               'edad': 'Adulto',
               'genero': 'No sé',
               'energia': 'Tranquilo',

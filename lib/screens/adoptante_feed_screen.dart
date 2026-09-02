@@ -625,7 +625,6 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                   ],
                   'rescatista': d['rescatistaNombre'] ?? 'Rescatista',
                   'rescatistaId': d['rescatistaId'] ?? '',
-                  'rescatistaFotoBase64': d['rescatistaFotoBase64'],
                   'rescatistaFotoUrl': d['rescatistaFotoUrl'],
                   'rescateId': doc.id,
                   'estadoAdopcion': d['estadoAdopcion'] ?? '',
@@ -1118,7 +1117,6 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
     final urgencia = a['urgencia'] as String? ?? '';
     final creadoPor = a['creadoPor'] as String? ?? '';
     final rescatistaId = a['rescatistaId'] as String? ?? '';
-    final rescatistaFotoBase64 = a['rescatistaFotoBase64'] as String?;
     final rescatistaFotoUrl = a['rescatistaFotoUrl'] as String?;
     final rescateId = a['rescateId'] as String? ?? '';
     final especie = a['especie'] as String? ?? '';
@@ -1697,9 +1695,28 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                             : null,
                         child: Row(
                           children: [
-                            AvatarPersona(
-                              fotoBase64: rescatistaFotoBase64,
-                              fotoUrl: rescatistaFotoUrl,
+                            // AvatarUsuario y no AvatarPersona: lee
+                            // usuarios/{uid} por su cuenta, con un pedido por
+                            // uid en toda la sesion (ver el comentario de
+                            // _perfiles en widgets/avatares.dart), en vez de
+                            // recibir la foto copiada dentro del animalito.
+                            //
+                            // campoLogoNegocio SOLO para albergue: una misma
+                            // cuenta puede ser albergue Y adoptante, y ese
+                            // documento usuarios/{uid} es compartido. Sin la
+                            // condicion, un animalito publicado como
+                            // rescatista mostraria el logo de SU PROPIO
+                            // albergue. Es el mismo bug que el widget ya
+                            // documenta.
+                            //
+                            // La rama del rescatista no cambia: su foto sigue
+                            // saliendo de usuarios.foto, la misma que
+                            // alimentaba rescatistaFotoUrl.
+                            AvatarUsuario(
+                              userId: rescatistaId,
+                              campoLogoNegocio: esCreadoPorAlbergue(creadoPor)
+                                  ? 'fotoBase64'
+                                  : null,
                               inicial: rescatista.isNotEmpty
                                   ? rescatista[0].toUpperCase()
                                   : 'R',

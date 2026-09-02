@@ -9,7 +9,6 @@ import '../widgets/avatares.dart';
 import '../widgets/cambiar_estado_sheet.dart';
 import '../widgets/dialogo_cerrar_sesion.dart';
 import '../widgets/elegir_foto_perfil.dart';
-import '../widgets/estado_error_feed.dart';
 import '../widgets/fondo_decorativo.dart';
 import '../widgets/fotos.dart';
 import '../widgets/resultado_guardado_snackbar.dart';
@@ -38,6 +37,11 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
   // `_panel`) — este aviso lo hace explícito con texto, en vez de dejar
   // que la persona tenga que notar sola el cambio de color.
   static const _pctAvisoCapacidad = 0.9;
+
+  /// Lo que muestran los cuadritos mientras el contador todavía no llegó.
+  /// NO un cero: un cero se lee como un dato ya traído. Mismo criterio, y
+  /// mismo carácter, que los dos perfiles.
+  static const _cargandoValor = '—';
   int _nav = 0;
   final _uid = FirebaseAuth.instance.currentUser?.uid ?? '';
   final _rescatesRepo = RescatesRepository();
@@ -334,22 +338,37 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
           body: FutureBuilder<List<int>>(
             future: _numeros,
             builder: (context, rSnap) {
-              if (rSnap.connectionState == ConnectionState.waiting) {
-                return const Center(
-                  child: CircularProgressIndicator(color: appTeal),
-                );
-              }
-              // Sin esto, un error real (sin conexión, permiso denegado) se
-              // veía igual que "0 animales en cuidado": el panel mentía en
-              // vez de avisar.
-              if (rSnap.hasError) return errorFeedState();
-              final enCuidado = rSnap.data?.elementAtOrNull(0) ?? 0;
-              final enAdopcion = rSnap.data?.elementAtOrNull(1) ?? 0;
-              final adoptados = rSnap.data?.elementAtOrNull(2) ?? 0;
-              final totalActivos = enCuidado + enAdopcion;
-              final pct = capacidad > 0
-                  ? (totalActivos / capacidad).clamp(0.0, 1.0)
-                  : 0.0;
+              // Los tres contadores YA NO bloquean la pantalla.
+              //
+              // Acá había un `if (waiting) return CircularProgressIndicator()`
+              // que envolvía el body ENTERO: hasta que no volvían las tres
+              // consultas no se pintaba nada, ni el encabezado, ni la barra
+              // de capacidad, ni la Jauría. Y son tres `count()`, que es una
+              // agregación: su única fuente posible es el servidor
+              // (`AggregateSource` tiene un solo valor), así que no hay
+              // caché y en cada inicio de sesión se paga el viaje entero, en
+              // frío. Eliza: "cada vez que entro como albergue la Jauría
+              // tarda bastante en aparecer" — y la Jauría no tenía nada que
+              // ver, no podía ni empezar a mostrarse.
+              //
+              // El panel del rescatista nunca lo tuvo: ahí este mismo
+              // FutureBuilder envuelve UN cuadrito (home_screen.dart), no la
+              // pantalla, y el carrusel tiene su propio spinner en su lugar.
+              //
+              // Ahora los números viajan como `int?`: null es "todavía no se
+              // sabe". No es cero, y por eso las piezas que dependen de
+              // ellos esperan mientras el resto del panel ya se ve. Mismo
+              // criterio que el `?? 0` que sacamos de los dos perfiles: un
+              // cero mientras carga se lee como un dato ya traído.
+              //
+              // Nota sobre errores: antes un fallo mostraba `errorFeedState()`
+              // en toda la pantalla. Ahora `rSnap.data` queda en null, así
+              // que los números muestran su marcador en vez de un 0 falso.
+              // Se conserva lo que ese estado protegía (no mentir) y se
+              // pierde el cartel de error a pantalla completa.
+              final enCuidado = rSnap.data?.elementAtOrNull(0);
+              final enAdopcion = rSnap.data?.elementAtOrNull(1);
+              final adoptados = rSnap.data?.elementAtOrNull(2);
 
               return Stack(
                 children: [
@@ -367,8 +386,6 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                             enCuidado,
                             enAdopcion,
                             adoptados,
-                            totalActivos,
-                            pct,
                           )
                         : _nav == 3
                         ? _perfilTab(
@@ -407,19 +424,30 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
     String iniciales,
     String? fotoBase64,
     int capacidad,
-    int enCuidado,
-    int enAdopcion,
-    int adoptados,
-    int totalActivos,
-    double pct,
+    // `null` = todavía no llegó el contador. NO es cero: las piezas que
+    // dependen de estos números esperan, y el resto del panel ya se pinta.
+    int? enCuidado,
+    int? enAdopcion,
+    int? adoptados,
   ) {
+    // Se calculan acá, y solo si hay con qué. Antes venían ya resueltos
+    // desde build(), que era justo lo que obligaba a esperar a las tres
+    // consultas antes de dibujar nada.
+    final totalActivos = enCuidado != null && enAdopcion != null
+        ? enCuidado + enAdopcion
+        : null;
+    final pct = totalActivos != null && capacidad > 0
+        ? (totalActivos / capacidad).clamp(0.0, 1.0)
+        : 0.0;
     // Con capacidades chicas, el % solo no alcanza a avisar con margen: con
     // capacidad=3, no existe ningún totalActivos entero entre el 90% (2.7)
     // y el 100% — se salta directo del "sin aviso" al "ya lleno". Por eso
     // el aviso de abajo se dispara con esta condición O el porcentaje de
     // siempre — alcanza que se cumpla una de las dos (pedido real de
     // Eliza, probando con un albergue de capacidad chica).
-    final lugaresLibres = capacidad > 0 ? capacidad - totalActivos : null;
+    final lugaresLibres = capacidad > 0 && totalActivos != null
+        ? capacidad - totalActivos
+        : null;
     return SingleChildScrollView(
       padding: const EdgeInsets.only(bottom: 100),
       child: Column(
@@ -542,8 +570,10 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                   ],
                 ),
 
-                // Estadística histórica
-                if (adoptados > 0) ...[
+                // Estadística histórica. Mientras el contador no llegó no
+                // se muestra: decir "0 animales ya encontraron hogar" sería
+                // afirmar algo que todavía no se sabe.
+                if ((adoptados ?? 0) > 0) ...[
                   const SizedBox(height: 12),
                   Row(
                     children: [
@@ -564,8 +594,10 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                   ),
                 ],
 
-                // Barra de capacidad
-                if (capacidad > 0) ...[
+                // Barra de capacidad. Necesita `totalActivos`, así que
+                // espera igual que la estadística de arriba; el resto de la
+                // tarjeta (nombre, foto, ciudad) ya se pintó.
+                if (capacidad > 0 && totalActivos != null) ...[
                   const SizedBox(height: 20),
                   // Antes también se mostraba el porcentaje ("67% ocupado") al
                   // lado de "N de M animales" — confundía más de lo que ayudaba
@@ -645,7 +677,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
               children: [
                 _statCard(
                   ctx,
-                  enCuidado,
+                  enCuidado == null ? _cargandoValor : '$enCuidado',
                   'En cuidado',
                   appTeal,
                   Icons.favorite_outline,
@@ -654,7 +686,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                 const SizedBox(width: 10),
                 _statCard(
                   ctx,
-                  adoptados,
+                  adoptados == null ? _cargandoValor : '$adoptados',
                   'Adoptados',
                   const Color(0xFF2196F3),
                   Icons.home_outlined,
@@ -779,10 +811,27 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
             child: _sectionHeader(
               'LA JAURÍA',
               trailing: GestureDetector(
-                onTap: () => context.push(
-                  AppRoutes.misRescates,
-                  extra: (filtroInicial: null, esAlbergue: true),
-                ),
+                // Refrescar AL VOLVER, igual que home_screen.dart hace con
+                // este mismo destino.
+                //
+                // "Ver todas" lleva a mis_rescates_screen, y desde ahí se
+                // puede cambiar el estado de un animalito (esa pantalla
+                // abre su propia CambiarEstadoSheet). Al volver, este panel
+                // no se reconstruye: su State sigue vivo debajo, con
+                // `_jauria`, `_adoptadosCache` y `_numeros` congelados en lo
+                // que cargó `initState`. Resultado: adoptabas desde "Ver
+                // todas" y el animalito no aparecía en "Encontraron hogar",
+                // ni se movían los números de arriba, por el resto de la
+                // sesión. Hallazgo de Eliza.
+                //
+                // El panel del rescatista nunca tuvo el problema porque su
+                // push a esta misma ruta sí llevaba el `.then`.
+                onTap: () => context
+                    .push(
+                      AppRoutes.misRescates,
+                      extra: (filtroInicial: null, esAlbergue: true),
+                    )
+                    .then((_) => _refrescarNumeros()),
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 12,
@@ -837,10 +886,16 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                       // acciones que la tarjeta chica del carrusel no tiene
                       // (sugerencia real de Eliza).
                       trailing: GestureDetector(
-                        onTap: () => ctx.push(
-                          AppRoutes.misRescates,
-                          extra: (filtroInicial: 'Adoptado', esAlbergue: true),
-                        ),
+                        // Mismo motivo que en la cabecera de LA JAURÍA.
+                        onTap: () => ctx
+                            .push(
+                              AppRoutes.misRescates,
+                              extra: (
+                                filtroInicial: 'Adoptado',
+                                esAlbergue: true,
+                              ),
+                            )
+                            .then((_) => _refrescarNumeros()),
                         child: Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 12,
@@ -1182,7 +1237,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
 
   Widget _statCard(
     BuildContext ctx,
-    int valor,
+    String valor,
     String label,
     Color color,
     IconData icono,
@@ -1190,11 +1245,17 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
   ) {
     return Expanded(
       child: GestureDetector(
+        // Los cuadritos de arriba también llevan a "Ver todas", filtrados.
+        // Mismo motivo que en la cabecera de LA JAURÍA: sin el `.then`, el
+        // cuadrito azul de Adoptados se quedaba con el número viejo después
+        // de adoptar desde esa pantalla.
         onTap: () => filtro != null
-            ? ctx.push(
-                AppRoutes.misRescates,
-                extra: (filtroInicial: filtro, esAlbergue: true),
-              )
+            ? ctx
+                  .push(
+                    AppRoutes.misRescates,
+                    extra: (filtroInicial: filtro, esAlbergue: true),
+                  )
+                  .then((_) => _refrescarNumeros())
             : ctx.push(AppRoutes.solicitudesRescatista, extra: true),
         child: Container(
           padding: const EdgeInsets.fromLTRB(12, 14, 12, 14),
@@ -1223,7 +1284,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
               ),
               const SizedBox(height: 10),
               Text(
-                '$valor',
+                valor,
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.bold,
@@ -2017,10 +2078,13 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                 return GestureDetector(
                   onTap: () {
                     if (i == 1) {
-                      context.push(
-                        AppRoutes.misRescates,
-                        extra: (filtroInicial: null, esAlbergue: true),
-                      );
+                      // Mismo motivo que en la cabecera de LA JAURÍA.
+                      context
+                          .push(
+                            AppRoutes.misRescates,
+                            extra: (filtroInicial: null, esAlbergue: true),
+                          )
+                          .then((_) => _refrescarNumeros());
                     } else if (i == 2) {
                       context.push(AppRoutes.solicitudesRescatista, extra: true);
                     } else {

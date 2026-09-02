@@ -137,6 +137,50 @@ describe('cambiosAPropagar — qué copias hay que refrescar', () => {
     );
   });
 
+  // El logo del albergue son ~85 KB de base64. Copiarlo dentro de CADA
+  // animalito hacia que la primera pagina de su perfil publico pesara 2,7 MB,
+  // de los cuales 2,6 MB eran el mismo logo repetido 31 veces (medido contra
+  // produccion). Ahora el avatar del feed sale de usuarios/{uid} via
+  // AvatarUsuario, que pide una sola vez por uid.
+  test('el logo del albergue NO se copia dentro de cada animalito', () => {
+    assert.equal(
+      CAMPOS_PERFIL_A_ANIMAL.fotoBase64,
+      undefined,
+      'volvio a propagarse el blob: cada animalito nuevo suma ~85 KB',
+    );
+    assert.equal(
+      cambiosAPropagar({
+        antes: { albergueNombre: 'Refugio', fotoBase64: 'logoViejo' },
+        despues: { albergueNombre: 'Refugio', fotoBase64: 'logoNuevo' },
+        campos: CAMPOS_PERFIL_A_ANIMAL,
+      }),
+      null,
+      'cambiar el logo ya no reescribe los animalitos',
+    );
+  });
+
+  // Lo que si se sigue copiando, para que sacar el logo no se lleve nada mas
+  // por delante.
+  test('el resto de lo que copia el albergue sigue igual', () => {
+    assert.deepEqual(CAMPOS_PERFIL_A_ANIMAL, {
+      ciudad: 'ubicacion',
+      latitud: 'latitud',
+      longitud: 'longitud',
+      paisCodigo: 'paisCodigo',
+      albergueNombre: 'rescatistaNombre',
+    });
+  });
+
+  // La rama del rescatista es la que esta bien y no se toco: copia una URL,
+  // no bytes. Es a donde deberia ir el albergue el dia que su logo viva en
+  // Storage.
+  test('el rescatista sigue copiando su foto como URL', () => {
+    assert.deepEqual(CAMPOS_PERFIL_A_ANIMAL_RESCATISTA, {
+      nombre: 'rescatistaNombre',
+      foto: 'rescatistaFotoUrl',
+    });
+  });
+
   // Guardar el perfil tocando solo el teléfono no debe reescribir ni los
   // animales ni los chats.
   test('perfil: cambiar un campo que nadie copia (teléfono) no propaga nada', () => {

@@ -70,7 +70,19 @@ const CAMPOS_PERFIL_A_ANIMAL = {
   longitud: 'longitud',
   paisCodigo: 'paisCodigo',
   albergueNombre: 'rescatistaNombre',
-  fotoBase64: 'rescatistaFotoBase64',
+  // `fotoBase64` NO se propaga. El logo de un albergue son ~85 KB de
+  // base64, y copiarlo dentro de cada animalito hacia que la primera
+  // pagina de su perfil publico pesara 2,7 MB: 2,6 MB eran el mismo logo
+  // repetido 31 veces (medido contra produccion). El avatar del feed ahora
+  // sale de usuarios/{uid} via AvatarUsuario, que pide UNA vez por uid.
+  //
+  // Sacarlo de aca no borra las copias que ya existen: valoresDeseados solo
+  // escribe, nunca borra un campo que salga de este mapa (borrar exige
+  // `aBorrar`, que hoy solo usan los chats). Esas copias se limpian aparte.
+  //
+  // Comparar con CAMPOS_PERFIL_A_ANIMAL_RESCATISTA, que copia una URL: esa
+  // es la forma correcta, y es a donde deberia ir el albergue el dia que su
+  // logo viva en Storage.
 };
 
 // Campo del perfil que cada chat de ANIMAL del albergue copia: solo el
