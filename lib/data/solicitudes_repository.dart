@@ -292,14 +292,51 @@ class SolicitudesRepository {
       q = q.where('rescateId', isEqualTo: rescateId);
     }
     final otros = await q.get();
+    return _rechazarEnLote(
+      otros.docs.where((d) => d.id != excluirDocId),
+      'El proceso de adopción ya fue iniciado con otro adoptante.',
+    );
+  }
+
+  /// El motivo con el que se cierra una solicitud cuando el animalito
+  /// falleció.
+  ///
+  /// Uno solo, porque hay DOS caminos que llegan al mismo hecho: intentar
+  /// aprobar una solicitud de un animal ya fallecido
+  /// ([aprobarSiDisponible]) y marcar el animal como fallecido
+  /// ([rechazarPendientesPorFallecimiento]). Con el texto escrito dos
+  /// veces, la misma persona podía recibir dos redacciones distintas de lo
+  /// mismo según por dónde se hubiera cerrado su solicitud.
+  static const motivoFallecido = 'Este animalito ya no está con nosotros.';
+
+  /// Pasa a 'rechazada' los documentos dados, con [motivo], y devuelve lo
+  /// que cerró.
+  ///
+  /// Un solo `WriteBatch` (todo o nada), no uno por uno: si la señal se
+  /// cortaba a mitad de un loop secuencial, algunas quedaban rechazadas y
+  /// otras seguían "pendiente", sin que nadie les avisara — quien llama usa
+  /// la lista devuelta para mandar el aviso por chat, así que una solicitud
+  /// que el batch nunca llegó a cerrar tampoco entra en esa lista y ni se
+  /// entera. Hallazgo de auditoría de código.
+  ///
+  /// **Devolver lo cerrado no es un lujo: es lo que hace imposible avisar
+  /// de menos.** Cerrar y averiguar a quién avisar son la MISMA operación,
+  /// así que no puede pasar que se cierre algo que después no se avise.
+  ///
+  /// Compartido entre [rechazarCompetidoras] y
+  /// [rechazarPendientesPorFallecimiento]: los dos cierran solicitudes
+  /// pendientes y devuelven las afectadas, y solo cambian en a cuáles
+  /// alcanzan y con qué motivo.
+  Future<List<Map<String, dynamic>>> _rechazarEnLote(
+    Iterable<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+    String motivo,
+  ) async {
     final rechazadas = <Map<String, dynamic>>[];
     final batch = _db.batch();
-    for (final doc in otros.docs) {
-      if (doc.id == excluirDocId) continue;
+    for (final doc in docs) {
       batch.update(doc.reference, {
         'estado': 'rechazada',
-        'motivoRechazo':
-            'El proceso de adopción ya fue iniciado con otro adoptante.',
+        'motivoRechazo': motivo,
       });
       rechazadas.add({...doc.data(), 'id': doc.id});
     }
@@ -307,35 +344,65 @@ class SolicitudesRepository {
     return rechazadas;
   }
 
-  // PENDIENTE (post-lanzamiento): falta el hermano de
-  // rechazarOtrasPendientes para el caso "el animalito falleció" — cerrar
-  // TODAS las pendientes de ese rescate y devolver las afectadas, con esta
-  // misma forma. La explicación completa, incluida la trampa del orden
-  // contra el aviso, está en widgets/cambiar_estado_sheet.dart, arriba de
-  // _avisarAdoptanteFallecido.
-
-  /// Todas las solicitudes PENDIENTES de un rescate — de solo lectura, no
-  /// las toca. Mismo filtro que [rechazarCompetidoras], pero sin el
-  /// `batch.update` que las rechaza.
+  /// La consulta de "las solicitudes PENDIENTES de este rescate".
   ///
-  /// Existe porque `adoptanteIdEnProceso` (el campo que usan los avisos
-  /// automáticos, ver `CambiarEstadoSheet` en widgets/cambiar_estado_sheet.dart) solo se completa
-  /// cuando una solicitud se APRUEBA — así que un animal marcado
-  /// 'Fallecido' con solicitudes todavía pendientes (nunca aprobadas)
-  /// dejaba a esas personas sin ningún aviso: no hay error, simplemente no
-  /// hay a quién avisarle según ese campo. Hallazgo real de Eliza: pidió
-  /// adoptar un animal, el rescatista lo marcó fallecido sin aprobar la
-  /// solicitud primero, y nunca le llegó nada.
-  Future<List<Map<String, dynamic>>> pendientesPara({
+  /// Está aparte para que quien la use no pueda mirar un conjunto distinto
+  /// del que se cierra: hoy la usa solo
+  /// [rechazarPendientesPorFallecimiento], y si mañana hiciera falta una
+  /// versión de solo lectura tiene que salir de acá y no de una consulta
+  /// escrita otra vez.
+  Future<QuerySnapshot<Map<String, dynamic>>> _pendientesDe({
+    required String rescateId,
+    required String rescatistaId,
+  }) => _col
+      .where('rescateId', isEqualTo: rescateId)
+      .where('rescatistaId', isEqualTo: rescatistaId)
+      .where('estado', isEqualTo: 'pendiente')
+      .get();
+
+  /// Cierra TODAS las solicitudes pendientes de [rescateId] porque el
+  /// animalito falleció, y devuelve las que cerró.
+  ///
+  /// **El hueco que tapa.** Marcar un animalito como Fallecido avisaba bien
+  /// a todo el mundo, pero las solicitudes que estaban `pendiente` se
+  /// quedaban así: con dos o más adoptantes había que rechazarlas a mano,
+  /// una por una. Y la app ya sabía que no podían seguir vivas: si alguien
+  /// tocaba Aprobar, [aprobarSiDisponible] la rechazaba con este mismo
+  /// motivo. Solo que esperaba a que alguien lo tocara.
+  ///
+  /// **Por qué 'rechazada' y no un estado nuevo.** Se evaluó
+  /// 'cerrada_por_fallecimiento', que es más correcto semánticamente, y se
+  /// descartó: `firestore.rules` solo acepta
+  /// `estado in ['aprobada','rechazada']`, así que habría que cambiar la
+  /// regla, sumarle su caso negativo y desplegar; y las dos pantallas de
+  /// solicitudes pintan tres estados y mandan cualquier otro al `else`, o
+  /// sea que se vería como "⏳ Pendiente", justo lo contrario de lo
+  /// buscado. Decisión de Eliza.
+  ///
+  /// **Por qué devuelve las afectadas, y por qué esto es UNA operación y no
+  /// dos.** El aviso averigua a quién escribirle consultando las
+  /// pendientes. Hubo un método de solo lectura para eso, y si se cerraran
+  /// primero con una llamada aparte esa consulta quedaría vacía y nadie
+  /// recibiría el aviso — que es exactamente el bug que Eliza ya reportó
+  /// una vez ("el usuario no se entera q falleció el animalito"). Cerrando
+  /// y devolviendo en el mismo paso, ese orden no se puede equivocar. Y
+  /// como es una sola lista, tampoco puede haber avisos duplicados.
+  ///
+  /// Solo toca las `pendiente`: una solicitud ya aprobada o ya rechazada
+  /// queda como está.
+  ///
+  /// Sirve igual para rescatista y para albergue: [rescatistaId] es el uid
+  /// del dueño en los dos casos, el mismo campo que ya filtran las demás
+  /// consultas de este repositorio.
+  Future<List<Map<String, dynamic>>> rechazarPendientesPorFallecimiento({
     required String rescateId,
     required String rescatistaId,
   }) async {
-    final q = await _col
-        .where('rescateId', isEqualTo: rescateId)
-        .where('rescatistaId', isEqualTo: rescatistaId)
-        .where('estado', isEqualTo: 'pendiente')
-        .get();
-    return q.docs.map((d) => {...d.data(), 'id': d.id}).toList();
+    final pendientes = await _pendientesDe(
+      rescateId: rescateId,
+      rescatistaId: rescatistaId,
+    );
+    return _rechazarEnLote(pendientes.docs, motivoFallecido);
   }
 
   /// Aprueba [solicitudId] de forma atómica junto con el rescate
@@ -412,7 +479,7 @@ class SolicitudesRepository {
         tx.update(solicitudRef, {
           'estado': 'rechazada',
           'motivoRechazo': estadoAnimal == 'Fallecido'
-              ? 'Este animalito ya no está con nosotros.'
+              ? motivoFallecido
               : 'Este animalito ya no está disponible para adopción.',
         });
         return (aprobada: false, animalEliminado: false);

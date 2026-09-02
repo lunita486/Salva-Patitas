@@ -91,49 +91,6 @@ class CambiarEstadoSheet extends StatelessWidget {
     }
   }
 
-  // ── PENDIENTE: cerrar las solicitudes pendientes al marcar Fallecido ──
-  //
-  // **El hueco.** Hoy, marcar un animalito como Fallecido avisa bien a todo
-  // el mundo, pero las solicitudes de adopción que estaban `pendiente` se
-  // quedan así. Con dos o más adoptantes, quedan todas abiertas y el
-  // rescatista tiene que rechazarlas a mano una por una. Regla que falta:
-  // animal Fallecido => ninguna solicitud puede seguir pendiente.
-  // Hallazgo de Eliza, decidido hacerlo DESPUÉS del lanzamiento.
-  //
-  // **Cómo se decidió hacerlo (opción A).** Cerrarlas como 'rechazada' con
-  // un motivo propio, algo como "Este animalito ya no está con nosotros. 🌈".
-  //
-  // Se evaluó un estado nuevo ('cerrada_por_fallecimiento'), que es más
-  // correcto semánticamente, y se descartó por lo que arrastra:
-  //   · firestore.rules solo acepta `estado in ['aprobada','rechazada']`,
-  //     así que habría que cambiar la regla, sumarle su caso negativo en
-  //     test_rules/ y desplegar;
-  //   · mis_solicitudes_screen y solicitudes_rescatista_screen pintan tres
-  //     estados y mandan cualquier otro al `else`, o sea que se vería como
-  //     "⏳ Pendiente", justo lo contrario de lo buscado.
-  // Y sobre todo: 'rechazada' con motivo es EXACTAMENTE lo que ya hace
-  // SolicitudesRepository.aprobarSiDisponible cuando alguien intenta
-  // aprobar un animal fallecido. Dos caminos para el mismo hecho con
-  // estados distintos sería la incoherencia que venimos sacando.
-  //
-  // **La trampa, y es la parte importante.** El cierre NO puede engancharse
-  // en RescatesRepository.cambiarEstadoAdopcion, ni correr antes del aviso:
-  // _avisarAdoptanteFallecido averigua a quién escribirle CONSULTANDO las
-  // solicitudes pendientes (pendientesPara, más abajo). Cerrarlas primero
-  // deja esa consulta vacía y nadie recibe el aviso, que es exactamente el
-  // bug que Eliza ya reportó una vez ("el usuario no se entera q falleció
-  // el animalito").
-  //
-  // La forma que evita eso: UN método en SolicitudesRepository que cierre
-  // las pendientes Y DEVUELVA las afectadas, con la misma forma que ya
-  // tiene rechazarOtrasPendientes(). Acá REEMPLAZA a la llamada de
-  // pendientesPara en vez de sumarse: una sola lista sirve para avisar y
-  // para cerrar, así que no puede haber mensajes duplicados.
-  //
-  // **Lo que NO hace falta tocar.** La protección contra aprobar un animal
-  // fallecido YA existe y es sólida: aprobarSiDisponible lo verifica dentro
-  // de la transacción. Ver su comentario.
-
   /// Avisa que el animal falleció — al adoptante EN PROCESO (solicitud ya
   /// aprobada) si hay uno, y a TODOS los que todavía tengan una solicitud
   /// PENDIENTE para este animal. Devuelve `false` si algún aviso no se
@@ -169,10 +126,24 @@ class CambiarEstadoSheet extends StatelessWidget {
       porAvisar[adoptanteIdEnProceso!] = 'Adoptante';
     }
     try {
-      final pendientes = await SolicitudesRepository().pendientesPara(
-        rescateId: docId,
-        rescatistaId: miUid,
-      );
+      // Cierra las pendientes Y devuelve las que cerró, en UNA operación.
+      //
+      // UNA sola llamada, no dos. Esta función averigua a quién escribirle
+      // a partir de las solicitudes pendientes: si se cerraran por un lado
+      // y se consultaran por otro, cerrar primero dejaría esa consulta
+      // vacía y nadie recibiría el aviso — el bug que Eliza ya reportó una
+      // vez ("el usuario no se entera q falleció el animalito"). Con una
+      // sola operación que hace las dos cosas, ese orden no se puede
+      // equivocar, y como es una sola lista tampoco puede haber avisos
+      // duplicados.
+      //
+      // Solo toca las `pendiente`: una solicitud ya aprobada o ya
+      // rechazada queda como está.
+      final pendientes = await SolicitudesRepository()
+          .rechazarPendientesPorFallecimiento(
+            rescateId: docId,
+            rescatistaId: miUid,
+          );
       for (final s in pendientes) {
         final id = s['adoptanteId'] as String? ?? '';
         if (id.isEmpty) continue;
@@ -184,9 +155,12 @@ class CambiarEstadoSheet extends StatelessWidget {
         );
       }
     } catch (_) {
-      // Sin señal no se puede saber quién más está esperando — se sigue
-      // igual con quien ya se tenía (el adoptante en proceso, si hay), en
-      // vez de bloquear TODO el aviso por no poder completar la lista.
+      // Sin señal no se puede cerrar ni saber quién más está esperando — se
+      // sigue igual con quien ya se tenía (el adoptante en proceso, si
+      // hay), en vez de bloquear TODO el aviso por no poder completar la
+      // lista. Las que no se hayan podido cerrar siguen protegidas por
+      // aprobarSiDisponible, que rechaza con este mismo motivo si alguien
+      // intenta aprobarlas.
     }
     if (porAvisar.isEmpty) return true;
 

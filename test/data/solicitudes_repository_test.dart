@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -313,70 +315,223 @@ void main() {
       },
     );
 
-    group('pendientesPara — de solo lectura, no toca las solicitudes. Existe '
-        'porque adoptanteIdEnProceso (lo que usaban los avisos automáticos '
-        'antes de este método) solo se completa cuando una solicitud se '
-        'APRUEBA, así que un animal marcado fallecido con solicitudes '
-        'todavía pendientes dejaba a esas personas sin ningún aviso. '
-        'Hallazgo real de Eliza', () {
-      test('trae las solicitudes PENDIENTES de ESE rescate puntual, sin '
-          'tocar su estado ni traer las de otro animal/rescatista', () async {
-        final pendiente1 = await firestore.collection('solicitudes').add({
-          'rescateId': 'r1',
-          'rescatistaId': 'refugio1',
-          'estado': 'pendiente',
-          'adoptanteId': 'ana',
-          'nombre': 'Ana',
-        });
-        final pendiente2 = await firestore.collection('solicitudes').add({
-          'rescateId': 'r1',
-          'rescatistaId': 'refugio1',
-          'estado': 'pendiente',
-          'adoptanteId': 'beto',
-          'nombre': 'Beto',
-        });
-        await firestore.collection('solicitudes').add({
-          'rescateId': 'r1',
-          'rescatistaId': 'refugio1',
-          'estado': 'rechazada',
-          'adoptanteId': 'viejo',
-        });
-        await firestore.collection('solicitudes').add({
-          'rescateId': 'otro-animal',
-          'rescatistaId': 'refugio1',
-          'estado': 'pendiente',
-          'adoptanteId': 'no-es-este-animal',
-        });
-        await firestore.collection('solicitudes').add({
-          'rescateId': 'r1',
-          'rescatistaId': 'otro-refugio',
-          'estado': 'pendiente',
-          'adoptanteId': 'no-es-mi-solicitud',
-        });
+    // ── Cerrar las pendientes cuando el animalito fallece ────────────────
+    //
+    // El hueco: marcar Fallecido avisaba bien a todo el mundo, pero las
+    // solicitudes `pendiente` se quedaban asi. Con dos o mas adoptantes,
+    // habia que rechazarlas a mano una por una. Y la app ya sabia que no
+    // podian seguir vivas: aprobarSiDisponible las rechaza con este mismo
+    // motivo si alguien toca Aprobar; solo esperaba a que alguien lo
+    // tocara.
+    group('rechazarPendientesPorFallecimiento', () {
+      /// Siembra el caso completo: dos pendientes del animal, una aprobada,
+      /// una rechazada, una de otro animal y una de otro dueño.
+      Future<Map<String, DocumentReference>> sembrarTodo() async {
+        final col = firestore.collection('solicitudes');
+        return {
+          'ana': await col.add({
+            'rescateId': 'r1', 'rescatistaId': 'refugio1',
+            'estado': 'pendiente', 'adoptanteId': 'ana', 'nombre': 'Ana',
+          }),
+          'beto': await col.add({
+            'rescateId': 'r1', 'rescatistaId': 'refugio1',
+            'estado': 'pendiente', 'adoptanteId': 'beto', 'nombre': 'Beto',
+          }),
+          'aprobada': await col.add({
+            'rescateId': 'r1', 'rescatistaId': 'refugio1',
+            'estado': 'aprobada', 'adoptanteId': 'cami',
+          }),
+          'rechazada': await col.add({
+            'rescateId': 'r1', 'rescatistaId': 'refugio1',
+            'estado': 'rechazada', 'adoptanteId': 'dani',
+            'motivoRechazo': 'motivo viejo',
+          }),
+          'otroAnimal': await col.add({
+            'rescateId': 'otro-animal', 'rescatistaId': 'refugio1',
+            'estado': 'pendiente', 'adoptanteId': 'eva',
+          }),
+          'otroDueno': await col.add({
+            'rescateId': 'r1', 'rescatistaId': 'otro-refugio',
+            'estado': 'pendiente', 'adoptanteId': 'fabi',
+          }),
+        };
+      }
 
-        final pendientes = await repo.pendientesPara(
+      test('cierra las pendientes de ESE rescate y devuelve las afectadas',
+          () async {
+        final docs = await sembrarTodo();
+
+        final cerradas = await repo.rechazarPendientesPorFallecimiento(
           rescateId: 'r1',
           rescatistaId: 'refugio1',
+        );
+
+        expect(cerradas.length, 2);
+        expect(cerradas.map((c) => c['adoptanteId']), containsAll(['ana', 'beto']));
+        for (final k in ['ana', 'beto']) {
+          final d = await docs[k]!.get();
+          expect(d['estado'], 'rechazada', reason: k);
+          expect(d['motivoRechazo'], SolicitudesRepository.motivoFallecido);
+        }
+      });
+
+      test('NO toca las aprobadas', () async {
+        final docs = await sembrarTodo();
+        await repo.rechazarPendientesPorFallecimiento(
+          rescateId: 'r1', rescatistaId: 'refugio1');
+
+        final d = await docs['aprobada']!.get();
+        expect(d['estado'], 'aprobada');
+        expect((d.data() as Map).containsKey('motivoRechazo'), isFalse);
+      });
+
+      test('NO toca las ya rechazadas, ni les pisa su motivo', () async {
+        final docs = await sembrarTodo();
+        await repo.rechazarPendientesPorFallecimiento(
+          rescateId: 'r1', rescatistaId: 'refugio1');
+
+        final d = await docs['rechazada']!.get();
+        expect(d['estado'], 'rechazada');
+        expect(d['motivoRechazo'], 'motivo viejo');
+      });
+
+      test('NO toca las pendientes de otro animal ni de otro dueño', () async {
+        final docs = await sembrarTodo();
+        await repo.rechazarPendientesPorFallecimiento(
+          rescateId: 'r1', rescatistaId: 'refugio1');
+
+        expect((await docs['otroAnimal']!.get())['estado'], 'pendiente');
+        expect((await docs['otroDueno']!.get())['estado'], 'pendiente');
+      });
+
+      test('sin pendientes, devuelve vacío y no escribe nada', () async {
+        final col = firestore.collection('solicitudes');
+        final aprobada = await col.add({
+          'rescateId': 'r1', 'rescatistaId': 'refugio1',
+          'estado': 'aprobada', 'adoptanteId': 'cami',
+        });
+
+        final cerradas = await repo.rechazarPendientesPorFallecimiento(
+          rescateId: 'r1', rescatistaId: 'refugio1');
+
+        expect(cerradas, isEmpty);
+        expect((await aprobada.get())['estado'], 'aprobada');
+      });
+
+      // EL test que protege contra la trampa del orden. La lista devuelta es
+      // la que se usa para avisar: si cerrara mas de lo que devuelve, alguien
+      // se quedaria sin enterarse de que su animalito fallecio.
+      test('devuelve EXACTAMENTE a quienes hay que avisar', () async {
+        await sembrarTodo();
+
+        // A quienes hay que avisar, leido de la base DIRECTAMENTE y antes
+        // de cerrar. A proposito no pasa por el repositorio: un oraculo que
+        // usara el mismo codigo que se esta probando no probaria nada.
+        final aAvisarAntes = (await firestore
+                .collection('solicitudes')
+                .where('rescateId', isEqualTo: 'r1')
+                .where('rescatistaId', isEqualTo: 'refugio1')
+                .where('estado', isEqualTo: 'pendiente')
+                .get())
+            .docs
+            .map((d) => d['adoptanteId'])
+            .toSet();
+
+        final cerradas = await repo.rechazarPendientesPorFallecimiento(
+          rescateId: 'r1', rescatistaId: 'refugio1');
+
+        expect(
+          cerradas.map((c) => c['adoptanteId']).toSet(),
+          aAvisarAntes,
+          reason: 'cerrar y saber a quien avisar tienen que dar lo mismo, o '
+              'alguien se queda sin aviso',
+        );
+      });
+
+      test('el motivo es el MISMO que usa aprobarSiDisponible', () async {
+        // Dos caminos para el mismo hecho: marcar Fallecido, e intentar
+        // aprobar un animal ya fallecido. Con el texto escrito dos veces, la
+        // misma persona podia recibir dos redacciones distintas.
+        await firestore.collection('rescates').doc('r1').set({
+          'estadoAdopcion': 'Fallecido',
+          'rescatistaId': 'refugio1',
+          'creadoPor': 'albergue',
+        });
+        final sol = await firestore.collection('solicitudes').add({
+          'rescateId': 'r1', 'rescatistaId': 'refugio1',
+          'estado': 'pendiente', 'adoptanteId': 'ana',
+        });
+
+        await repo.aprobarSiDisponible(
+          solicitudId: sol.id,
+          rescateId: 'r1',
+          adoptanteId: 'ana',
+          nuevoEstadoAdopcion: 'En proceso de adopción',
         );
 
         expect(
-          pendientes.map((p) => p['adoptanteId']),
-          containsAll(['ana', 'beto']),
+          (await sol.get())['motivoRechazo'],
+          SolicitudesRepository.motivoFallecido,
         );
-        expect(pendientes.length, 2);
-        // No las tocó: siguen 'pendiente' en la colección real.
-        expect((await pendiente1.get())['estado'], 'pendiente');
-        expect((await pendiente2.get())['estado'], 'pendiente');
       });
 
-      test('sin ninguna solicitud pendiente, devuelve una lista vacía (no '
-          'null ni una excepción)', () async {
-        final pendientes = await repo.pendientesPara(
-          rescateId: 'r1',
-          rescatistaId: 'refugio1',
-        );
+      // Sirve igual para los dos roles: rescatistaId es el uid del dueño en
+      // ambos casos, el mismo campo que filtran las demas consultas.
+      test('funciona igual para rescatista y para albergue', () async {
+        final col = firestore.collection('solicitudes');
+        final delRescatista = await col.add({
+          'rescateId': 'r-resc', 'rescatistaId': 'rita',
+          'estado': 'pendiente', 'adoptanteId': 'ana', 'creadoPor': 'rescatista',
+        });
+        final delAlbergue = await col.add({
+          'rescateId': 'r-alb', 'rescatistaId': 'refugio1',
+          'estado': 'pendiente', 'adoptanteId': 'beto', 'creadoPor': 'albergue',
+        });
 
-        expect(pendientes, isEmpty);
+        expect(
+          (await repo.rechazarPendientesPorFallecimiento(
+            rescateId: 'r-resc', rescatistaId: 'rita')).length,
+          1,
+        );
+        expect(
+          (await repo.rechazarPendientesPorFallecimiento(
+            rescateId: 'r-alb', rescatistaId: 'refugio1')).length,
+          1,
+        );
+        expect((await delRescatista.get())['estado'], 'rechazada');
+        expect((await delAlbergue.get())['estado'], 'rechazada');
+      });
+    });
+
+    // El flujo de Fallecido tiene que CERRAR y avisar con UNA sola llamada.
+    // Hubo un metodo de solo lectura (pendientesPara) que se uso para eso y
+    // ya no existe; si alguien vuelve a partir esto en dos pasos —leer a
+    // quien avisar por un lado, cerrar por el otro— el orden entre los dos
+    // vuelve a poder equivocarse, y cerrar primero deja a todos sin aviso.
+    // Es el bug que Eliza ya reporto una vez.
+    group('el flujo de Fallecido usa una sola operacion', () {
+      final sheet = File('lib/widgets/cambiar_estado_sheet.dart')
+          .readAsStringSync()
+          .split('\n')
+          .where((l) => !l.trimLeft().startsWith('//'))
+          .join('\n');
+
+      test('llama a rechazarPendientesPorFallecimiento', () {
+        expect(sheet, contains('rechazarPendientesPorFallecimiento('));
+      });
+
+      test('una sola vez, y sin una consulta aparte de pendientes', () {
+        expect(
+          'rechazarPendientesPorFallecimiento('.allMatches(sheet).length,
+          1,
+          reason: 'dos llamadas serian dos listas y dos cierres',
+        );
+        expect(
+          sheet,
+          isNot(contains('.pendientesPara(')),
+          reason: 'volvio a existir una lectura aparte de las pendientes: el '
+              'orden entre cerrar y avisar vuelve a poder equivocarse',
+        );
       });
     });
 

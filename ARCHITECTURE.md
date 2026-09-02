@@ -203,9 +203,13 @@ aviso de "falleció", al no poder crear uno, se descartaba en silencio.
 Hallazgo real de Eliza: pidió adoptar un animal, el rescatista lo marcó
 como fallecido, y el aviso nunca le llegó.
 
-El arreglo fue doble: `SolicitudesRepository.pendientesPara()` (de solo
-lectura, no confundir con `rechazarCompetidoras`, que SÍ las modifica)
-trae a todos los que siguen esperando respuesta, no solo al aprobado. Y
+El arreglo fue doble: `SolicitudesRepository.rechazarPendientesPorFallecimiento()`
+cierra todas las solicitudes que seguían esperando respuesta **y devuelve
+las que cerró**, así que esa misma lista es la que recibe el aviso — no solo
+el adoptante ya aprobado. Que sea UNA operación no es cosmético: hubo un
+método de solo lectura para obtener la lista, y con dos pasos separados el
+orden importa, porque cerrar primero deja la consulta vacía y a todos sin
+aviso. Y
 `ChatsRepository.avisarSobreAnimal()` es ahora la única fuente de "avisar
 + crear el chat si hace falta" — `enviarMensajeChat` y el aviso de
 fallecido delegan los dos ahí, así que ninguno puede volver a quedarse
