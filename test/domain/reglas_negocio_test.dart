@@ -419,6 +419,25 @@ void main() {
         expect(esSitioWebValido('http://tunegocio.com'), true);
       });
 
+      // Los cuatro casos que Eliza listó como aceptables, tal cual.
+      // La página web es OPCIONAL, pero eso no lo decide este validador:
+      // lo deciden las pantallas, que preguntan primero si está vacío y
+      // recién entonces validan
+      // (`_webCtl.text.trim().isEmpty || esSitioWebValido(...)`, en
+      // albergue_perfil_screen.dart:173 y aliado_perfil_screen.dart:81).
+      // Un campo vacío nunca llega acá y nunca bloquea el guardado.
+      test('un texto vacío no tiene forma de dominio, y las pantallas lo '
+          'tratan como válido antes de preguntar', () {
+        expect(esSitioWebValido(''), false);
+        expect(esSitioWebValido('   '), false);
+      });
+
+      test('los tres con "www.", con y sin esquema, son válidos', () {
+        expect(esSitioWebValido('www.tunegocio.com'), true);
+        expect(esSitioWebValido('http://www.tunegocio.com'), true);
+        expect(esSitioWebValido('https://www.tunegocio.com'), true);
+      });
+
       test('con una ruta después del dominio también es válido', () {
         expect(esSitioWebValido('tunegocio.com/contacto'), true);
       });
@@ -427,29 +446,56 @@ void main() {
         expect(esSitioWebValido('sjejdj'), false);
       });
 
-      // ── Limitación conocida: la forma no dice si el dominio existe ──
+      // ── Los dos casos que Eliza pidió rechazar ──────────────────────
       //
-      // "www.casitahogar" y "a.djsfdsf" PASAN, y está aceptado. Los dos
-      // tienen estructura de dominio perfectamente válida y su última parte
-      // es solo letras; lo único que los delata es que "djsfdsf" no es un
-      // dominio de primer nivel real, y eso no se puede saber sin conocer
-      // los TLD que existen.
+      // Antes PASABAN, a propósito: el criterio era que rechazar de más era
+      // peor que aceptar de más. Eliza revirtió esa decisión al ver que se
+      // podía guardar cualquier texto como página web.
       //
-      // Estuvo puesto un tope de 6 al largo del TLD, que los rechazaba, y
-      // se revirtió: también dejaba afuera .website y .company (7) o
-      // .photography (11), que son reales. Decisión de Eliza: no inventar
-      // una regla que pueda bloquear dominios legítimos.
-      //
-      // Acá rechazar de más es peor que aceptar de más: si se cuela un
-      // dominio inventado, lo peor que pasa es que el enlace no abra; si se
-      // rechaza uno real, alguien no puede guardar su sitio.
-      //
-      // Este test existe para que la limitación quede AFIRMADA y no
-      // olvidada: si alguien la "arregla", va a tener que venir acá y leer
-      // por qué se decidió así.
-      test('un dominio inexistente con forma válida PASA, y es a propósito', () {
-        expect(esSitioWebValido('www.casitahogar'), true);
-        expect(esSitioWebValido('a.djsfdsf'), true);
+      // Se rechazan SIN lista de TLD y SIN tope al largo del TLD (ese tope
+      // estuvo puesto y se sacó porque dejaba afuera .website, .company y
+      // .photography, que son reales). Las dos reglas nuevas no miran la
+      // extensión: miran "www" y el largo del NOMBRE del dominio.
+      test('"www." seguido de una sola palabra es inválido', () {
+        // "www" es un prefijo de subdominio, no un nombre de dominio: si
+        // está, tienen que venir al menos dos partes más. Es el error de
+        // tipeo realista, escribir el nombre y olvidar la extensión.
+        expect(esSitioWebValido('www.casitahogar'), false);
+        expect(esSitioWebValido('www.refugio'), false);
+      });
+
+      test('un nombre de dominio de una sola letra es inválido', () {
+        expect(esSitioWebValido('a.djsfdsf'), false);
+        expect(esSitioWebValido('a.com'), false);
+        expect(esSitioWebValido('www.a.com'), false);
+      });
+
+      // El costo de esa regla, afirmado para que no se descubra por
+      // sorpresa: "a.djsfdsf" y "x.com" son estructuralmente idénticos
+      // (nombre de una letra, punto, extensión de solo letras), asi que sin
+      // una lista de TLD no hay forma de aceptar uno y rechazar el otro.
+      // Eliza lo aprobó sabiendo el costo: un dominio de una letra es
+      // carísimo y practicamente nunca es el sitio de un albergue o una
+      // veterinaria.
+      test('el costo conocido: los dominios de UNA letra quedan afuera', () {
+        expect(esSitioWebValido('x.com'), false);
+        expect(esSitioWebValido('t.co'), false);
+      });
+
+      // Lo que sigue sin poder detectarse, y no es este arreglo: un dominio
+      // inventado con forma correcta. Para eso haría falta saber si
+      // resuelve, o sea una llamada de red al guardar.
+      test('un dominio inventado pero bien formado sigue pasando', () {
+        expect(esSitioWebValido('www.casitahogar.com'), true);
+      });
+
+      // Con esquema y con ruta, las dos reglas siguen aplicando: se miran
+      // las partes del dominio, no el texto crudo.
+      test('las reglas nuevas no se saltean con esquema ni con ruta', () {
+        expect(esSitioWebValido('https://www.casitahogar'), false);
+        expect(esSitioWebValido('http://a.djsfdsf'), false);
+        expect(esSitioWebValido('www.casitahogar/contacto'), false);
+        expect(esSitioWebValido('https://www.tunegocio.com/contacto'), true);
       });
 
       test('los TLD reales, cortos y largos, son todos válidos', () {

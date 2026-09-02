@@ -107,35 +107,59 @@ final RegExp _formaDeSitioWeb = RegExp(
 /// del aliado.
 final RegExp _tldSoloLetras = RegExp(r'\.([a-zA-Z]+)(?:\/.*)?$');
 
-/// **Limitación conocida y aceptada a propósito.** Esto valida la FORMA, no
-/// la existencia. "a.djsfdsf" y "www.casitahogar" pasan: tienen estructura
-/// de dominio perfectamente válida y su última parte es solo letras. Lo
-/// único que los delata es que "djsfdsf" no es un dominio de primer nivel
-/// real, y eso no se puede saber sin conocer los TLD que existen.
+/// Valida la FORMA de una página web, no que el dominio exista.
 ///
-/// Se probaron y descartaron dos formas de atajarlo:
+/// **Sin lista de TLD, sin tope al largo del TLD y sin ninguna llamada de
+/// red.** Las dos cosas que sí se piden, además de la forma general de
+/// dominio, salen de que "www" y un nombre de una sola letra son señales
+/// de que falta algo, no de que el dominio sea raro:
 ///
-///   · una **lista** de TLD válidos: hay más de 1.500 y se desactualiza
-///     sola, así que uno que falte bloquea a alguien que escribió BIEN;
-///   · un **tope al largo** del TLD (estuvo puesto, en 6): rechazaba
-///     "djsfdsf" pero también .website y .company (7) o .photography (11),
-///     que son reales. Decisión de Eliza: no inventar una regla que pueda
-///     bloquear dominios legítimos.
+///   1. si empieza con `www.`, tienen que venir al menos DOS partes más
+///      (`www.tunegocio.com`). "www" es un prefijo de subdominio, no un
+///      nombre de dominio: nadie escribe su sitio real como "www." seguido
+///      de una sola palabra. Esto rechaza "www.casitahogar", que es el
+///      error de tipeo realista: escribir el nombre del negocio y olvidarse
+///      la extensión.
+///   2. el nombre del dominio (la parte justo antes de la extensión) tiene
+///      que tener al menos 2 caracteres. Esto rechaza "a.djsfdsf".
 ///
-/// El criterio de fondo: acá **rechazar de más es peor que aceptar de
-/// más**. Si se cuela un dominio inventado, lo peor que pasa es que el
-/// enlace no abra. Si se rechaza uno real, alguien no puede guardar su
-/// sitio y no entiende por qué.
+/// **Lo que la regla 2 cuesta, dicho de frente:** los dominios de UNA sola
+/// letra dejan de poder guardarse. "x.com" y "t.co" existen de verdad. Pero
+/// "a.djsfdsf" y "x.com" son estructuralmente idénticos —nombre de una
+/// letra, punto, extensión de solo letras— así que sin una lista de TLD no
+/// hay forma de aceptar uno y rechazar el otro. Decisión de Eliza, sabiendo
+/// el costo: un dominio de una letra es carísimo y prácticamente nunca es
+/// el sitio de un albergue o una veterinaria.
 ///
-/// Lo único que resolvería esto de verdad es consultar si el dominio
+/// **Historia, para que no se vuelva a discutir a ciegas.** Antes esto
+/// aceptaba los dos ejemplos a propósito, con el criterio de que rechazar
+/// de más era peor que aceptar de más. También estuvo puesto un tope de 6
+/// al largo del TLD, y se sacó porque dejaba afuera .website y .company (7)
+/// o .photography (11), que son reales. Ese tope NO volvió: las dos reglas
+/// de arriba no miran la extensión, así que un TLD largo o de cualquier
+/// país sigue siendo válido.
+///
+/// Lo que sigue sin poder detectarse es un dominio inventado con forma
+/// correcta ("www.casitahogar.com" pasa). Para eso haría falta saber si
 /// resuelve, y eso es una llamada de red al guardar, con sus propios
-/// problemas (qué hacer sin señal, cuánto esperar). Queda fuera a
-/// propósito.
+/// problemas. Queda fuera a propósito.
 bool esSitioWebValido(String sitioWeb) {
   final texto = sitioWeb.trim();
   if (!_formaDeSitioWeb.hasMatch(texto)) return false;
   final tld = _tldSoloLetras.firstMatch(texto)?.group(1);
-  return tld != null && tld.length >= 2;
+  if (tld == null || tld.length < 2) return false;
+
+  // Las partes del dominio, ya sin el esquema ni la ruta.
+  final partes = texto
+      .replaceFirst(RegExp(r'^https?:\/\/'), '')
+      .split('/')
+      .first
+      .split('.');
+
+  if (partes.first.toLowerCase() == 'www' && partes.length < 3) return false;
+  // `partes.length - 2` es el nombre del dominio: el anteúltimo, porque el
+  // último es la extensión.
+  return partes[partes.length - 2].length >= 2;
 }
 
 /// Mensajes de aviso para [esEmailValido]/[esSitioWebValido], compartidos
