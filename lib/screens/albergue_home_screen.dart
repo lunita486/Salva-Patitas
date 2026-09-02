@@ -38,6 +38,11 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
   // que la persona tenga que notar sola el cambio de color.
   static const _pctAvisoCapacidad = 0.9;
 
+  /// El alto del carrusel de la Jauría. Está en una constante para que el
+  /// spinner de "todavía cargando" ocupe exactamente lo mismo que las
+  /// tarjetas y la pantalla no salte al reemplazar uno por otro.
+  static const _altoCarruselJauria = 195.0;
+
   /// Lo que muestran los cuadritos mientras el contador todavía no llegó.
   /// NO un cero: un cero se lee como un dato ya traído. Mismo criterio, y
   /// mismo carácter, que los dos perfiles.
@@ -722,8 +727,18 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                 return _sectionHeader(
                   'SOLICITUDES',
                   trailing: GestureDetector(
-                    onTap: () =>
-                        context.push(AppRoutes.solicitudesRescatista, extra: true),
+                    // Refrescar AL VOLVER, igual que los accesos a "Ver
+                    // todas". Desde Solicitudes se APRUEBA, y aprobar
+                    // cambia el estado del animalito (a 'Hogar de paso' o
+                    // 'En proceso de adopción'). Sin esto el panel volvía
+                    // con el estado anterior: Eliza aprobó un hogar de
+                    // paso y la Jauría lo seguía mostrando como Rescatado.
+                    // El feed del adoptante sí lo veía, porque es un
+                    // stream en vivo; la Jauría es un .get() que se pidió
+                    // una sola vez, al abrir.
+                    onTap: () => context
+                        .push(AppRoutes.solicitudesRescatista, extra: true)
+                        .then((_) => _refrescarNumeros()),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 12,
@@ -859,7 +874,35 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
             padding: const EdgeInsets.only(left: 16),
             child: FutureBuilder<PaginaDeRescates>(
               future: _jauria,
-              builder: (_, snap) => _jauriaCarousel([...?snap.data?.docs]),
+              builder: (_, snap) {
+                // Mientras carga NO se afirma que no hay animalitos.
+                //
+                // Sin esta rama, `snap.data` es null durante la espera, la
+                // lista llega vacía y _jauriaCarousel muestra "Aún no
+                // tienes animales publicados" con su botón de publicar el
+                // primero — a un albergue con 66. Se veía al volver de
+                // "Gestionar la jauría": `_refrescarNumeros()` reemplaza
+                // `_jauria`, el FutureBuilder vuelve a `waiting` y aparece
+                // ese cartel hasta que llega la respuesta.
+                //
+                // Es el mismo defecto que ya se corrigió dos veces en esta
+                // app: el `?? 0` de los contadores y el "No hay animales
+                // disponibles por ahora" de la grilla del perfil público.
+                // Decir "no hay" cuando la verdad es "todavía no sé".
+                //
+                // Mismo criterio, y misma forma, que el carrusel del
+                // rescatista (home_screen.dart). La altura es la del
+                // carrusel para que la pantalla no salte al reemplazarlo.
+                if (snap.connectionState == ConnectionState.waiting) {
+                  return const SizedBox(
+                    height: _altoCarruselJauria,
+                    child: Center(
+                      child: CircularProgressIndicator(color: appTeal),
+                    ),
+                  );
+                }
+                return _jauriaCarousel([...?snap.data?.docs]);
+              },
             ),
           ),
 
@@ -1256,7 +1299,10 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                     extra: (filtroInicial: filtro, esAlbergue: true),
                   )
                   .then((_) => _refrescarNumeros())
-            : ctx.push(AppRoutes.solicitudesRescatista, extra: true),
+            // Mismo motivo que la cabecera de SOLICITUDES.
+            : ctx
+                  .push(AppRoutes.solicitudesRescatista, extra: true)
+                  .then((_) => _refrescarNumeros()),
         child: Container(
           padding: const EdgeInsets.fromLTRB(12, 14, 12, 14),
           decoration: BoxDecoration(
@@ -1619,7 +1665,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
     final sorted = rescates;
 
     return SizedBox(
-      height: 195,
+      height: _altoCarruselJauria,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: sorted.length,
@@ -2086,7 +2132,10 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                           )
                           .then((_) => _refrescarNumeros());
                     } else if (i == 2) {
-                      context.push(AppRoutes.solicitudesRescatista, extra: true);
+                      // Mismo motivo que la cabecera de SOLICITUDES.
+                      context
+                          .push(AppRoutes.solicitudesRescatista, extra: true)
+                          .then((_) => _refrescarNumeros());
                     } else {
                       setState(() => _nav = i);
                     }

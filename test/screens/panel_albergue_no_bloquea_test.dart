@@ -137,6 +137,76 @@ void main() {
     });
   });
 
+  // ── La Jauría: cargando no es "no hay" ─────────────────────────────────
+  group('el carrusel de la Jauría', () {
+    // Reproduce la forma real: un FutureBuilder que pinta el carrusel con
+    // `[...?snap.data?.docs]`, y un carrusel que muestra el cartel de vacío
+    // cuando la lista llega vacía.
+    Widget carrusel(Future<List<String>> jauria, {required bool conWaiting}) =>
+        MaterialApp(
+          home: Scaffold(
+            body: FutureBuilder<List<String>>(
+              future: jauria,
+              builder: (_, snap) {
+                if (conWaiting &&
+                    snap.connectionState == ConnectionState.waiting) {
+                  return const CircularProgressIndicator();
+                }
+                final animalitos = [...?snap.data];
+                if (animalitos.isEmpty) {
+                  return const Text('Aún no tienes animales publicados.');
+                }
+                return Column(children: [for (final a in animalitos) Text(a)]);
+              },
+            ),
+          ),
+        );
+
+    testWidgets('el bug: sin la rama de waiting, dice que no hay ninguno', (
+      tester,
+    ) async {
+      final jauria = Completer<List<String>>();
+      await tester.pumpWidget(carrusel(jauria.future, conWaiting: false));
+      await tester.pump();
+
+      expect(
+        find.text('Aún no tienes animales publicados.'),
+        findsOneWidget,
+        reason: 'y el albergue tiene 66',
+      );
+    });
+
+    testWidgets('el arreglo: mientras carga no afirma nada', (tester) async {
+      final jauria = Completer<List<String>>();
+      await tester.pumpWidget(carrusel(jauria.future, conWaiting: true));
+      await tester.pump();
+
+      expect(find.text('Aún no tienes animales publicados.'), findsNothing);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    });
+
+    testWidgets('cuando llegan, se ven los animalitos', (tester) async {
+      final jauria = Completer<List<String>>();
+      await tester.pumpWidget(carrusel(jauria.future, conWaiting: true));
+      jauria.complete(['Naranjita', 'Tigrito']);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Naranjita'), findsOneWidget);
+      expect(find.text('Tigrito'), findsOneWidget);
+      expect(find.text('Aún no tienes animales publicados.'), findsNothing);
+    });
+
+    testWidgets('si de verdad no hay ninguno, ahí sí lo dice', (tester) async {
+      final jauria = Completer<List<String>>();
+      await tester.pumpWidget(carrusel(jauria.future, conWaiting: true));
+      jauria.complete([]);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Aún no tienes animales publicados.'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+    });
+  });
+
   // ── Que la pantalla real siga escrita así ───────────────────────────────
   group('el panel real', () {
     final codigo = File('lib/screens/albergue_home_screen.dart')
@@ -204,6 +274,50 @@ void main() {
         greaterThan(numeros),
         reason: 'la Jauría vive adentro del panel, no encima de los números',
       );
+    });
+
+    // ── La Jauría tampoco afirma "no hay" mientras carga ────────────────
+    //
+    // El carrusel se pinta con `_jauriaCarousel([...?snap.data?.docs])`. Sin
+    // una rama de `waiting`, durante la espera `snap.data` es null, la lista
+    // llega vacía y el carrusel muestra "Aún no tienes animales publicados"
+    // con su botón de publicar el primero, a un albergue con 66.
+    //
+    // Se veía al volver de "Gestionar la jauría": `_refrescarNumeros()`
+    // reemplaza `_jauria`, el FutureBuilder vuelve a `waiting` y aparece ese
+    // cartel hasta que llega la respuesta. Hallazgo de Eliza: "la Jauría
+    // sigue mostrando durante unos segundos el estado anterior".
+    test('la Jauría distingue "cargando" de "no hay animalitos"', () {
+      final desde = codigo.indexOf('future: _jauria');
+      final hasta = codigo.indexOf('_jauriaCarousel([...?snap.data?.docs])');
+      expect(desde, isNot(-1), reason: 'no está el FutureBuilder de la Jauría');
+      expect(
+        hasta,
+        greaterThan(desde),
+        reason: 'el carrusel ya no se pinta desde ese FutureBuilder',
+      );
+      expect(
+        codigo.substring(desde, hasta),
+        contains('ConnectionState.waiting'),
+        reason: 'sin la rama de waiting, la Jauría le dice "Aún no tienes '
+            'animales publicados" a un albergue con 66',
+      );
+    });
+
+    test('y el spinner ocupa lo mismo que el carrusel', () {
+      // Si no, la pantalla salta al reemplazar uno por otro.
+      expect(
+        'height: _altoCarruselJauria'.allMatches(codigo).length,
+        2,
+        reason: 'el spinner y el carrusel tienen que medir igual',
+      );
+    });
+
+    // El cartel de vacío no se fue: sigue estando para cuando de verdad no
+    // hay ninguno.
+    test('cuando de verdad no hay animalitos, el cartel sigue apareciendo', () {
+      expect(codigo, contains('Aún no tienes animales publicados.'));
+      expect(codigo, contains('if (rescates.isEmpty)'));
     });
 
     // El patrón salió de acá; si alguien se lo saca, que se entere.

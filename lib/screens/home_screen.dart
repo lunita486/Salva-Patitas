@@ -471,7 +471,17 @@ class _HomeScreenState extends State<HomeScreen>
             'ESPERAN RESPUESTA',
             'Solicitudes',
             'Ver todas',
-            onAction: () => context.push(AppRoutes.solicitudesRescatista),
+            // Refrescar AL VOLVER, igual que el push a misRescates de más
+            // arriba. Desde Solicitudes se APRUEBA, y aprobar cambia el
+            // estado del animalito (a 'Hogar de paso' o 'En proceso de
+            // adopción'). Sin esto, el panel volvía con el estado anterior:
+            // Eliza aprobó un hogar de paso y su carrusel lo seguía
+            // mostrando como Rescatado. El feed del adoptante sí lo veía,
+            // porque es un stream en vivo; este carrusel es un .get() que
+            // se pidió una sola vez, al abrir.
+            onAction: () => context
+                .push(AppRoutes.solicitudesRescatista)
+                .then((_) => _refrescarRescates()),
           ),
           const SizedBox(height: 12),
           const SolicitudesPreview(role: CreatorRole.rescatista),
@@ -882,7 +892,10 @@ class _HomeScreenState extends State<HomeScreen>
           children: [
             Expanded(
               child: GestureDetector(
-                onTap: () => context.push(AppRoutes.solicitudesRescatista),
+                // Mismo motivo que la cabecera de SOLICITUDES.
+                onTap: () => context
+                    .push(AppRoutes.solicitudesRescatista)
+                    .then((_) => _refrescarRescates()),
                 child: _stat(
                   '$count',
                   'Nuevas\nsolicitudes',
@@ -1047,7 +1060,10 @@ class _HomeScreenState extends State<HomeScreen>
                 Icons.notifications_outlined,
                 'Solicitudes',
                 2,
-                onTap: () => context.push(AppRoutes.solicitudesRescatista),
+                // Mismo motivo que la cabecera de SOLICITUDES.
+                onTap: () => context
+                    .push(AppRoutes.solicitudesRescatista)
+                    .then((_) => _refrescarRescates()),
               ),
               // Antes este badge era su propio StreamBuilder anidado,
               // suscrito de nuevo a los mismos _chatsRescatistaStream /

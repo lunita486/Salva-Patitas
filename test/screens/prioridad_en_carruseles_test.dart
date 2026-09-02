@@ -272,6 +272,38 @@ void main() {
       }
     });
 
+    // La MISMA puerta, por el otro lado, y esta llego a produccion.
+    //
+    // Desde Solicitudes se APRUEBA, y aprobar cambia el estado del
+    // animalito: 'Hogar de paso' o 'En proceso de adopcion'. Sin el
+    // refresco al volver, el panel se quedaba con el estado anterior.
+    // Hallazgo de Eliza probando el flujo de hogar de paso: el adoptante lo
+    // veia como Hogar de paso (el feed es un stream en vivo) y el
+    // rescatista lo seguia viendo como Rescatado (su carrusel es un .get()
+    // pedido una sola vez, al abrir).
+    //
+    // Cuando se agrego el `.then` a los cuatro accesos a "Ver todas", estos
+    // seis quedaron afuera. Por eso se recorren TODOS en vez de contarlos.
+    test('volver de Solicitudes tambien refresca, en los dos paneles', () {
+      for (final (ruta, refresco) in [
+        ('lib/screens/home_screen.dart', '_refrescarRescates'),
+        ('lib/screens/albergue_home_screen.dart', '_refrescarNumeros'),
+      ]) {
+        final f = leer(ruta);
+        final destinos = 'AppRoutes.solicitudesRescatista'.allMatches(f).toList();
+        expect(destinos, isNotEmpty, reason: 'no hay accesos a Solicitudes en $ruta');
+        for (final d in destinos) {
+          expect(
+            f.substring(d.end, d.end + 300),
+            contains('.then((_) => $refresco())'),
+            reason: 'un acceso a Solicitudes que no refresca al volver, en '
+                '$ruta: el panel se queda con el estado anterior del '
+                'animalito que se acaba de aprobar',
+          );
+        }
+      }
+    });
+
     // El panel del rescatista nunca tuvo el problema, y es de donde salio
     // el patron. Si alguien se lo saca, que se entere aca.
     test('el panel del rescatista sigue haciendo lo mismo', () {
