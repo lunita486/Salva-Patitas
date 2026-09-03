@@ -397,6 +397,14 @@ void main() {
         expect(esEmailValido('contacto@negociocom'), false);
       });
 
+      // El caso REAL que se coló a la Red de hogares de paso, donde el
+      // email es la identidad de la persona para buscarDuplicado: los dos
+      // formularios de esa pantalla pedían que no estuviera vacío y nada
+      // más. Medido en producción el 2026-09-03.
+      test('un dominio a medio escribir tampoco pasa: "lunita486@gmail"', () {
+        expect(esEmailValido('lunita486@gmail'), false);
+      });
+
       test('vacío es inválido — el llamador decide si eso bloquea o no, '
           'acá no es su trabajo (email es opcional, un campo vacío es '
           'válido para GUARDAR, no para "tiene forma de email")', () {

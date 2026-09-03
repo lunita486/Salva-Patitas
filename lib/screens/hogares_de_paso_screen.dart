@@ -567,8 +567,22 @@ class _AgregarHogarSheetState extends State<_AgregarHogarSheet> {
   // además del nombre solo, y avisar por nombre solo hubiera sido un falso
   // positivo molesto cada vez que dos personas de confianza distintas
   // comparten nombre. Pedido explícito de Eliza.
+  // Dos reglas separadas a propósito, aunque `esEmailValido('')` ya sea
+  // false: la obligatoriedad la decide esta pantalla (`isNotEmpty`) y la
+  // FORMA la decide reglas_negocio (`esEmailValido`). Mismo reparto que en
+  // los perfiles de Albergue y Aliado, donde el email es opcional y la
+  // primera mitad es justo la contraria. Depender de que el validador de
+  // forma diga que "" no tiene forma de email seria mezclarlas.
+  //
+  // El formato NO se validaba: solo se pedia que no estuviera vacio, asi
+  // que "lunita486@gmail" (sin .com) entro a la red y sigue ahi. Ese campo
+  // es la IDENTIDAD de la persona para buscarDuplicado, asi que un email
+  // mal escrito no queda solo feo: rompe la fusion y deja una fila que no
+  // se va a poder unir nunca.
   bool get _valido =>
-      _nombreCtl.text.trim().isNotEmpty && _emailCtl.text.trim().isNotEmpty;
+      _nombreCtl.text.trim().isNotEmpty &&
+      _emailCtl.text.trim().isNotEmpty &&
+      esEmailValido(_emailCtl.text.trim());
 
   @override
   void dispose() {
@@ -636,7 +650,18 @@ class _AgregarHogarSheetState extends State<_AgregarHogarSheet> {
               controller: _emailCtl,
               keyboardType: TextInputType.emailAddress,
               onChanged: (_) => setState(() {}),
-              decoration: _dec('Email *'),
+              // Mismo aviso que los perfiles de Albergue y Aliado, para que
+              // el mismo error no se explique de dos formas distintas. Solo
+              // aparece si escribio algo: el campo vacio ya lo bloquea el
+              // boton, y decirle "no parece un email" a un campo en blanco
+              // seria un regano gratis.
+              decoration: _dec('Email *').copyWith(
+                errorText:
+                    _emailCtl.text.trim().isNotEmpty &&
+                        !esEmailValido(_emailCtl.text.trim())
+                    ? avisoEmailInvalido
+                    : null,
+              ),
             ),
             const SizedBox(height: 6),
             Text(
@@ -718,7 +743,12 @@ class _EditarContactoSheetState extends State<_EditarContactoSheet> {
   // ninguna validación, así que un contacto agregado con email obligatorio
   // se podía editar para quedar SIN email, perdiendo esa protección en
   // silencio. Hallazgo de auditoría de código.
-  bool get _valido => _emailCtl.text.trim().isNotEmpty;
+  // Y tiene que tener FORMA de email, no solo estar lleno: sin eso, un
+  // contacto agregado con un email valido se podia editar dejandolo en
+  // "lunita486@gmail" y la fusion por email quedaba rota igual. Las dos
+  // reglas van separadas a proposito, ver _AgregarHogarSheet._valido.
+  bool get _valido =>
+      _emailCtl.text.trim().isNotEmpty && esEmailValido(_emailCtl.text.trim());
 
   @override
   void dispose() {
@@ -774,7 +804,18 @@ class _EditarContactoSheetState extends State<_EditarContactoSheet> {
               controller: _emailCtl,
               keyboardType: TextInputType.emailAddress,
               onChanged: (_) => setState(() {}),
-              decoration: _dec('Email *'),
+              // Mismo aviso que los perfiles de Albergue y Aliado, para que
+              // el mismo error no se explique de dos formas distintas. Solo
+              // aparece si escribio algo: el campo vacio ya lo bloquea el
+              // boton, y decirle "no parece un email" a un campo en blanco
+              // seria un regano gratis.
+              decoration: _dec('Email *').copyWith(
+                errorText:
+                    _emailCtl.text.trim().isNotEmpty &&
+                        !esEmailValido(_emailCtl.text.trim())
+                    ? avisoEmailInvalido
+                    : null,
+              ),
             ),
             const SizedBox(height: 20),
             SizedBox(
