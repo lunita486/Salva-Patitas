@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:salva_patitas/screens/solicitudes_rescatista_screen.dart';
 
@@ -85,4 +87,75 @@ void main() {
       });
     },
   );
+
+  // ── Quien puede tocar "Contactar" ────────────────────────────────────
+  //
+  // contactarPersonaEnProceso() solo sabe abrir el chat de alguien que
+  // TIENE cuenta: `adoptanteIdEnProceso`, que se escribe unicamente al
+  // aprobar una solicitud. Un hogar de paso cargado a mano no lo tiene,
+  // porque esa persona ni siquiera usa la app.
+  //
+  // Sin ese dato, la funcion llama a buscarDeAnimal sin rescateId ni
+  // adoptanteId, y cae en su busqueda legada POR NOMBRE acotada solo al
+  // dueno. Con dos animalitos del mismo dueno llamados igual (o dos sin
+  // nombre, que la UI muestra a los dos como "Sin nombre") devuelve uno
+  // cualquiera: Eliza toco Contactar en un hogar de paso manual y se le
+  // abrio el chat de otro animalito, uno ya fallecido. APK108.
+  //
+  // Este test NO copia la condicion: lee las pantallas reales y recorre
+  // TODAS las llamadas, para que una cuarta pantalla que agregue el boton
+  // sin la guarda rompa aca en vez de repetir el bug.
+  group('todas las pantallas que ofrecen "Contactar" exigen que haya alguien '
+      'con cuenta a quien contactar', () {
+    /// Los archivos de lib/ que LLAMAN a la funcion (no el que la define).
+    final llamadores = Directory('lib')
+        .listSync(recursive: true)
+        .whereType<File>()
+        .where((f) => f.path.endsWith('.dart'))
+        .map((f) => (ruta: f.path, fuente: f.readAsStringSync()))
+        .where(
+          (a) =>
+              a.fuente.contains('contactarPersonaEnProceso(') &&
+              !a.fuente.contains('Future<void> contactarPersonaEnProceso('),
+        )
+        .toList();
+
+    test('hay pantallas que lo ofrecen, y son las que esperamos', () {
+      expect(llamadores, isNotEmpty, reason: 'nadie ofrece Contactar');
+      expect(
+        llamadores.map((a) => a.ruta.split('/').last).toSet(),
+        {
+          'home_screen.dart',
+          'albergue_home_screen.dart',
+          'mis_rescates_screen.dart',
+        },
+        reason:
+            'apareció (o desapareció) una pantalla con este botón: '
+            'revisá que la nueva pida adoptanteIdEnProceso',
+      );
+    });
+
+    test('cada llamada está guardada por adoptanteIdEnProceso no vacío', () {
+      for (final a in llamadores) {
+        for (final m in 'contactarPersonaEnProceso('.allMatches(a.fuente)) {
+          // La guarda siempre va ANTES de la llamada: un `if` de early
+          // return, un `if` de lista de widgets, o la condicion de un
+          // ternario.
+          final antes = a.fuente.substring(
+            m.start < 900 ? 0 : m.start - 900,
+            m.start,
+          );
+          expect(
+            antes.contains('adoptanteIdEnProceso') &&
+                (antes.contains('isNotEmpty') || antes.contains('isEmpty')),
+            isTrue,
+            reason:
+                '${a.ruta} ofrece Contactar sin comprobar que exista alguien '
+                'con cuenta: para un hogar de paso manual abre el chat de '
+                'otro animalito',
+          );
+        }
+      }
+    });
+  });
 }

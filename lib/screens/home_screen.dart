@@ -669,9 +669,23 @@ class _HomeScreenState extends State<HomeScreen>
                 // sin querer: el rescatista aprobaba un hogar de paso y no
                 // tenía forma de contactar a esa persona (el bug real que
                 // reportó Eliza).
+                //
+                // Y hace falta que HAYA a quién contactar: `adoptanteIdEnProceso`
+                // solo existe cuando se aprobó una solicitud, así que un hogar
+                // de paso cargado A MANO no lo tiene (esa persona ni siquiera
+                // usa la app). Sin este chequeo el botón aparecía igual, y
+                // contactarPersonaEnProceso llegaba a buscarDeAnimal sin
+                // identificadores: caía en su búsqueda legada POR NOMBRE, que
+                // con dos animalitos del mismo dueño llamados igual devuelve
+                // uno cualquiera. Bug real de Eliza en el APK108: abrió el
+                // chat de otro animalito, uno ya fallecido. Las otras dos
+                // pantallas que muestran este botón (el panel del albergue y
+                // "Gestionar") ya pedían esto; faltaba solo acá.
                 onContactarAdoptante:
                     (estadoAdopcion == 'En proceso de adopción' ||
-                        estadoAdopcion == 'Hogar de paso')
+                            estadoAdopcion == 'Hogar de paso') &&
+                        (data['adoptanteIdEnProceso'] as String? ?? '')
+                            .isNotEmpty
                     ? () => contactarPersonaEnProceso(
                         context,
                         docId: docId,

@@ -1037,6 +1037,83 @@ void main() {
         expect(await repo.buscarDeAnimal(animalNombre: 'Luna'), isNull);
       },
     );
+
+    // ── El límite de la búsqueda por nombre, escrito a propósito ────────
+    //
+    // Acotar por dueño evita traer el chat de OTRA persona, pero no puede
+    // distinguir DOS ANIMALITOS del MISMO dueño que se llaman igual. Y eso
+    // no es raro: la UI muestra a todos los que no tienen nombre como "Sin
+    // nombre" (nombreDeAnimal), y en producción son 53 de 187.
+    //
+    // Por eso ningún llamador puede llegar a esta rama con un animalito
+    // real en la mano: quien ofrece "Contactar" tiene que exigir
+    // `adoptanteIdEnProceso`, que lleva al id determinístico. Lo custodia
+    // solicitudes_rescatista_screen_test.dart. Esto de acá documenta POR
+    // QUÉ hace falta esa guarda.
+    test('buscarDeAnimal por nombre NO distingue dos animalitos del mismo '
+        'dueño con el mismo nombre', () async {
+      await sembrar('chat-del-vivo', {
+        'animalNombre': 'Sin nombre',
+        'rescateId': 'el-vivo',
+        'rescatistaId': 'refugio1',
+        'adoptanteId': 'ana',
+      });
+      await sembrar('chat-del-fallecido', {
+        'animalNombre': 'Sin nombre',
+        'rescateId': 'el-fallecido',
+        'rescatistaId': 'refugio1',
+        'adoptanteId': 'beto',
+        'ultimoMensaje': 'Lamentamos informarte que Sin nombre falleció.',
+      });
+
+      final hallado = await repo.buscarDeAnimal(
+        animalNombre: 'Sin nombre',
+        rescatistaId: 'refugio1',
+      );
+
+      // Devuelve UNO de los dos, y no hay forma de pedirle cuál: no recibió
+      // ningún dato del animalito que se estaba mirando.
+      expect(hallado, isNotNull);
+      expect(
+        hallado!.data()!['rescateId'],
+        anyOf('el-vivo', 'el-fallecido'),
+        reason: 'por nombre no puede saber de cuál de los dos se trata',
+      );
+    });
+
+    // El mismo caso, mirado desde el síntoma: el chat de un animalito ya
+    // fallecido es un destino posible de esa búsqueda. Con rescateId +
+    // adoptanteId, no.
+    test('con rescateId y adoptanteId NO hay confusión posible: el chat del '
+        'fallecido queda afuera', () async {
+      await sembrar('el-vivo_ana', {
+        'animalNombre': 'Sin nombre',
+        'rescateId': 'el-vivo',
+        'rescatistaId': 'refugio1',
+        'adoptanteId': 'ana',
+      });
+      await sembrar('el-fallecido_beto', {
+        'animalNombre': 'Sin nombre',
+        'rescateId': 'el-fallecido',
+        'rescatistaId': 'refugio1',
+        'adoptanteId': 'beto',
+        'ultimoMensaje': 'Lamentamos informarte que Sin nombre falleció.',
+      });
+
+      final hallado = await repo.buscarDeAnimal(
+        rescateId: 'el-vivo',
+        adoptanteId: 'ana',
+        animalNombre: 'Sin nombre',
+        rescatistaId: 'refugio1',
+      );
+
+      expect(hallado!.id, 'el-vivo_ana');
+      expect(
+        hallado.data()!['rescateId'],
+        'el-vivo',
+        reason: 'el id determinístico no puede caer en otro animalito',
+      );
+    });
   });
 
   group('ChatsRepository — escritura de mensajes (antes duplicada entre '
