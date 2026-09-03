@@ -659,7 +659,7 @@ class _AgregarHogarSheetState extends State<_AgregarHogarSheet> {
                 errorText:
                     _emailCtl.text.trim().isNotEmpty &&
                         !esEmailValido(_emailCtl.text.trim())
-                    ? avisoEmailInvalido
+                    ? avisoEmailCorto
                     : null,
               ),
             ),
@@ -813,7 +813,7 @@ class _EditarContactoSheetState extends State<_EditarContactoSheet> {
                 errorText:
                     _emailCtl.text.trim().isNotEmpty &&
                         !esEmailValido(_emailCtl.text.trim())
-                    ? avisoEmailInvalido
+                    ? avisoEmailCorto
                     : null,
               ),
             ),

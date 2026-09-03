@@ -6,6 +6,7 @@ import '../data/chats_repository.dart';
 import '../data/rescates_repository.dart';
 import '../data/solicitudes_repository.dart';
 import '../data/usuarios_repository.dart';
+import '../domain/reglas_negocio.dart';
 import '../theme.dart';
 import '../data/hogares_de_paso_repository.dart';
 import 'pedir_hogar_de_paso.dart';
@@ -239,6 +240,32 @@ class CambiarEstadoSheet extends StatelessWidget {
     ('Fallecido', '🌈', 'Ya no está con nosotros'),
   ];
 
+  /// Los estados que esta hoja ofrece de verdad.
+  ///
+  /// Lo único que se saca es 'Hogar de paso' mientras haya una adopción en
+  /// curso: pasar directo desde ahí la dejaba a medias, con el
+  /// `adoptanteIdEnProceso` del adoptante colgando de un hogar de paso que
+  /// es de otra persona. La forma correcta de terminar esa adopción es
+  /// RECHAZAR la solicitud, que devuelve el animalito a 'Rescatado'; desde
+  /// ahí sí se puede. Pedido explícito de Eliza: no inventar una transición
+  /// especial ni borrar el claim para que entre.
+  ///
+  /// **Solo ese estado.** Se evaluó reutilizar [sePuedeSerHogarDePaso], que
+  /// responde que no para el mismo caso, y se descartó: esa es la pregunta
+  /// del ADOPTANTE ("¿me puedo ofrecer yo?") y también dice que no para
+  /// 'Adoptado', que del lado del dueño SÍ se podía elegir. Habría cambiado
+  /// un comportamiento que nadie pidió. Ver el doc de [hayAdopcionEnCurso].
+  ///
+  /// El estado ACTUAL siempre se muestra: es el que aparece marcado, y
+  /// esconderlo dejaría la hoja sin indicar en qué estado está el
+  /// animalito.
+  Iterable<(String, String, String)> get _estadosOfrecidos => _estados.where(
+    (e) =>
+        e.$1 != 'Hogar de paso' ||
+        e.$1 == estadoActual ||
+        !hayAdopcionEnCurso(estadoActual),
+  );
+
   @override
   Widget build(BuildContext context) => SingleChildScrollView(
     padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
@@ -267,7 +294,7 @@ class CambiarEstadoSheet extends StatelessWidget {
           style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
         ),
         const SizedBox(height: 16),
-        ..._estados.map((e) {
+        ..._estadosOfrecidos.map((e) {
           final sel = e.$1 == estadoActual;
           return GestureDetector(
             onTap: () async {

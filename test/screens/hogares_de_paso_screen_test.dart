@@ -81,11 +81,20 @@ void main() {
           );
         });
 
-        test('avisa con el mismo texto que el resto de la app', () {
+        // El MISMO texto corto que el diálogo de "Pedir hogar de paso",
+        // que es la tercera puerta a esta misma red: el mismo error no
+        // puede explicarse distinto según por dónde se entre. Pedido de
+        // Eliza. El largo (`avisoEmailInvalido`) sigue en los perfiles.
+        test('avisa con el mismo texto corto que el resto del flujo', () {
           expect(
             hoja(clase),
-            contains('avisoEmailInvalido'),
+            contains('avisoEmailCorto'),
             reason: 'sin aviso, el botón se apaga y nadie sabe por qué',
+          );
+          expect(
+            hoja(clase),
+            isNot(contains('avisoEmailInvalido')),
+            reason: 'volvió el mensaje largo a un campo de esta red',
           );
         });
 
@@ -128,6 +137,10 @@ void main() {
 
     test('"ana@mail.com" entra', () {
       expect(esEmailValido('ana@mail.com'), true);
+    });
+
+    test('y el aviso es exactamente "Email inválido"', () {
+      expect(avisoEmailCorto, 'Email inválido');
     });
   });
 }

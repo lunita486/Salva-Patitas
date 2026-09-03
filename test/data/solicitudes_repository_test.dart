@@ -5,6 +5,7 @@ import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:salva_patitas/data/creator_role.dart';
+import 'package:salva_patitas/domain/reglas_negocio.dart';
 import 'package:salva_patitas/data/solicitudes_repository.dart';
 
 // fake_cloud_firestore no simula fallas transitorias de red — para probar
@@ -565,6 +566,73 @@ void main() {
           'obtener(docId)'.allMatches(sheet).length,
           1,
           reason: 'creadoPor, fotoUrl y especie salen de la misma lectura',
+        );
+      });
+    });
+
+    // 'Hogar de paso' no puede ofrecerse mientras hay una adopcion en
+    // curso. La forma correcta de terminar esa adopcion es RECHAZAR la
+    // solicitud, que devuelve el animalito a 'Rescatado'; recien desde ahi
+    // se puede pedir hogar de paso. Sin esto, pasar de 'En proceso de
+    // adopcion' a 'Hogar de paso' dejaba la adopcion a medias y el
+    // adoptanteIdEnProceso del adoptante colgando de un hogar de paso que
+    // es de otra persona. Hallazgo de Eliza en el APK109.
+    //
+    // La regla NO es nueva: es sePuedeSerHogarDePaso, la misma que ya usa
+    // el panel "¿como queres ayudar?" del adoptante. Este grupo custodia
+    // que la hoja la reutilice en vez de escribir otra lista de estados.
+    group('la hoja no ofrece Hogar de paso cuando no corresponde', () {
+      final sheet = File('lib/widgets/cambiar_estado_sheet.dart')
+          .readAsStringSync()
+          .split('\n')
+          .where((l) => !l.trimLeft().startsWith('//'))
+          .join('\n');
+
+      test('usa una regla con nombre, no una lista propia', () {
+        expect(sheet, contains('hayAdopcionEnCurso(estadoActual)'));
+        expect(
+          "'Hogar de paso'".allMatches(sheet).length,
+          lessThanOrEqualTo(3),
+          reason: 'aparecio una lista de estados escrita a mano en la hoja',
+        );
+      });
+
+      test('el estado ACTUAL se sigue mostrando', () {
+        expect(sheet, contains('e.\$1 == estadoActual'));
+      });
+
+      // La regla en si, con los estados reales. Es sePuedeSerHogarDePaso,
+      // que ya tiene sus tests propios en reglas_negocio_test; aca se
+      // comprueban los casos que pidio Eliza para ESTA pantalla.
+      test('la regla bloquea SOLO la adopcion en curso', () {
+        expect(hayAdopcionEnCurso('En proceso de adopción'), isTrue);
+        for (final estado in [
+          'Rescatado',
+          'Regresado',
+          'Hogar de paso',
+          'Adoptado',
+          'Fallecido',
+          null,
+        ]) {
+          expect(hayAdopcionEnCurso(estado), isFalse, reason: '\$estado');
+        }
+      });
+
+      // Rechazar la adopcion devuelve el animalito a 'Rescatado', y desde
+      // ahi la opcion vuelve a estar. Es el camino que reemplaza a la
+      // transicion directa.
+      test('despues de rechazar, desde Rescatado vuelve a poder', () {
+        const despuesDeRechazar = 'Rescatado';
+        expect(hayAdopcionEnCurso(despuesDeRechazar), isFalse);
+      });
+
+      // Lo que NO se hizo: ningun parche que borre el claim para que la
+      // transicion entre.
+      test('no se toca adoptanteIdEnProceso para permitir la transicion', () {
+        expect(
+          sheet,
+          isNot(contains("'adoptanteIdEnProceso': FieldValue.delete()")),
+          reason: 'la hoja no puede limpiar el claim por su cuenta',
         );
       });
     });

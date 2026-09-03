@@ -171,6 +171,17 @@ bool esSitioWebValido(String sitioWeb) {
 /// a decir cosas distintas para el mismo aviso.
 const avisoEmailInvalido =
     'Ese texto no parece un email. Podés dejarlo vacío o escribir uno real.';
+
+/// El mismo aviso, corto. Pedido de Eliza: en los formularios de hogar de
+/// paso (el diálogo de "Pedir hogar de paso" y las dos hojas de la Red) el
+/// texto largo era demasiado para un campo chico, y sobre todo el mismo
+/// error se explicaba distinto según por qué puerta se entrara.
+///
+/// Convive con [avisoEmailInvalido], que siguen usando los perfiles de
+/// Albergue y Aliado. El CRITERIO es el mismo en todos lados
+/// ([esEmailValido]); lo único que cambia es cuánto texto entra en cada
+/// pantalla.
+const avisoEmailCorto = 'Email inválido';
 const avisoSitioWebInvalido =
     'Ese texto no parece una página web. Podés dejarlo vacío o escribir una real.';
 
@@ -275,6 +286,23 @@ bool sePuedeAdoptar(String? estadoAdopcion) =>
 /// muestra Adoptar y le esconde Ser hogar de paso, y no al revés.
 bool sePuedeSerHogarDePaso(String? estadoAdopcion) =>
     sePuedeAdoptar(estadoAdopcion) && estadoAdopcion != 'Hogar de paso';
+
+/// ¿Este animalito tiene una adopción en curso?
+///
+/// Mientras la tenga, su dueño no puede pasarlo a 'Hogar de paso': esa
+/// adopción quedaría a medias y el `adoptanteIdEnProceso` del adoptante
+/// terminaría colgando de un hogar de paso que es de otra persona. La forma
+/// de terminarla es RECHAZAR la solicitud, que devuelve el animalito a
+/// 'Rescatado'; desde ahí sí. Hallazgo de Eliza en el APK109.
+///
+/// **Por qué no alcanza [sePuedeSerHogarDePaso]**, que responde que no para
+/// este mismo estado: esa pregunta es la del ADOPTANTE ("¿me puedo ofrecer
+/// yo?") y también dice que no para 'Adoptado' y 'Hogar de paso'. Del lado
+/// del dueño esos dos SÍ se podían elegir, y bloquearlos sería un cambio de
+/// comportamiento que nadie pidió. Son dos preguntas parecidas con
+/// respuestas distintas, así que son dos funciones.
+bool hayAdopcionEnCurso(String? estadoAdopcion) =>
+    estadoAdopcion == 'En proceso de adopción';
 
 /// Las coordenadas guardadas de un animal, o `null` si no tiene unas
 /// usables. Única fuente de "¿este documento tiene ubicación?".

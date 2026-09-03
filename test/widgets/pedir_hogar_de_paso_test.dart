@@ -58,7 +58,7 @@ void main() {
       tester.widget<TextButton>(find.widgetWithText(TextButton, 'Guardar'));
 
   group('pedirHogarDePaso() — lado ALBERGUE (pedirEmail: true)', () {
-    testWidgets('la etiqueta ya no dice "opcional"', (tester) async {
+    testWidgets('la etiqueta es "Email", sin "opcional"', (tester) async {
       await abrir(tester, pedirEmail: true);
       expect(find.text('Email'), findsOneWidget);
       expect(find.text('Email (opcional)'), findsNothing);
@@ -110,14 +110,19 @@ void main() {
   });
 
   group('pedirHogarDePaso() — lado RESCATISTA (pedirEmail: false)', () {
-    testWidgets('su campo sigue siendo "Teléfono o email (opcional)"', (
+    // La etiqueta es la MISMA que la del albergue: los dos son un campo
+    // Email. Lo único que sigue distinto entre los dos lados es la
+    // obligatoriedad, que es otra regla y no se anuncia en la etiqueta.
+    testWidgets('su campo se llama "Email", igual que el del albergue', (
       tester,
     ) async {
       await abrir(tester, pedirEmail: false);
-      expect(find.text('Teléfono o email (opcional)'), findsOneWidget);
+      expect(find.text('Email'), findsOneWidget);
+      expect(find.text('Email (opcional)'), findsNothing);
+      expect(find.text('Teléfono o email (opcional)'), findsNothing);
     });
 
-    testWidgets('con nombre y fechas, sin contacto, Guardar se habilita', (
+    testWidgets('con nombre y fechas, sin email, Guardar se habilita', (
       tester,
     ) async {
       await abrir(tester, pedirEmail: false);
@@ -127,59 +132,43 @@ void main() {
       expect(
         guardar(tester).onPressed,
         isNotNull,
-        reason: 'el rescatista no tiene red: su contacto no es identidad',
-      );
-    });
-
-    testWidgets('un texto que no es email tampoco lo bloquea', (tester) async {
-      await abrir(tester, pedirEmail: false);
-      await tester.enterText(find.byType(TextField).first, 'La vecina');
-      await tester.enterText(find.byType(TextField).last, '3001234567');
-      await ponerFechas(tester);
-
-      await tester.tap(find.text('Guardar'));
-      await tester.pumpAndSettle();
-
-      expect(
-        find.text('Guardar'),
-        findsNothing,
-        reason: 'se cerró: un teléfono es válido en este campo',
+        reason: 'para el rescatista el email sigue siendo OPCIONAL',
       );
     });
   });
 
-  // ── El campo del RESCATISTA: teléfono O email, pero algo que sirva ────
+  // ── El email del rescatista, con el criterio de siempre ───────────────
   //
-  // Sigue siendo opcional, pero aceptaba cualquier cosa. En producción los
-  // 3 valores que había en `hogarDePasoContacto` escritos por un rescatista
-  // eran "jdhshsbdbdbdbdn", "vwhw" y "vdhs"; los 3 del albergue, que sí
-  // validaba, eran emails de verdad. El campo existe para poder pedirle el
-  // animalito de vuelta a esa persona: un texto que no sirve para
-  // contactarla no cumple ninguna función.
+  // El campo decía "Teléfono o email (opcional)" y no validaba nada: en
+  // producción los 3 valores que había en `hogarDePasoContacto` escritos
+  // por un rescatista eran "jdhshsbdbdbdbdn", "vwhw" y "vdhs"; los 3 del
+  // albergue, que sí validaba, eran emails de verdad.
+  //
+  // Se estandarizó con el del albergue: los dos son un campo Email y los
+  // dos usan esEmailValido. Lo único distinto entre los lados es la
+  // obligatoriedad, que es otra regla.
   //
   // Estos tests manejan el diálogo REAL y miran si se cerró o no, que es lo
-  // único que importa: si se cierra, ese valor se guardó.
-  group('pedirHogarDePaso() — "Teléfono o email" del rescatista', () {
-    /// Escribe [contacto], completa lo obligatorio, toca Guardar y dice si
-    /// el diálogo aceptó el valor.
-    Future<bool> guardaCon(WidgetTester tester, String contacto) async {
+  // único que decide si el valor se guarda.
+  group('pedirHogarDePaso() — el email del rescatista', () {
+    /// Escribe [email], completa lo obligatorio, toca Guardar y dice si el
+    /// diálogo aceptó el valor.
+    Future<bool> guardaCon(WidgetTester tester, String email) async {
       await abrir(tester, pedirEmail: false);
       await tester.enterText(find.byType(TextField).first, 'La vecina');
-      if (contacto.isNotEmpty) {
-        await tester.enterText(find.byType(TextField).last, contacto);
+      if (email.isNotEmpty) {
+        await tester.enterText(find.byType(TextField).last, email);
       }
       await ponerFechas(tester);
       await tester.tap(find.text('Guardar'));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
-      // Si el diálogo se cerró, acepto el valor. Si sigue abierto, lo
-      // rechazo.
+      // Si el diálogo se cerró, aceptó el valor. Si sigue abierto, lo
+      // rechazó.
       return find.text('Guardar').evaluate().isEmpty;
     }
 
-    testWidgets('vacío se acepta: el campo sigue siendo opcional', (
-      tester,
-    ) async {
+    testWidgets('vacío se acepta: el campo es opcional', (tester) async {
       expect(await guardaCon(tester, ''), isTrue);
     });
 
@@ -189,31 +178,12 @@ void main() {
 
     testWidgets('un email a medio escribir se rechaza', (tester) async {
       expect(await guardaCon(tester, 'ana@mail'), isFalse);
-      expect(
-        find.text(avisoEmailInvalido),
-        findsOneWidget,
-        reason: 'escribió una @, así que el aviso es el de email',
-      );
     });
 
-    testWidgets('un teléfono se acepta', (tester) async {
-      expect(await guardaCon(tester, '300 123 4567'), isTrue);
-    });
-
-    testWidgets('con indicativo también', (tester) async {
-      expect(await guardaCon(tester, '+57 300 123 4567'), isTrue);
-    });
-
-    testWidgets('con paréntesis y guiones también', (tester) async {
-      expect(await guardaCon(tester, '(300) 123-4567'), isTrue);
-    });
-
-    testWidgets('menos de 7 dígitos se rechaza', (tester) async {
-      expect(await guardaCon(tester, '123'), isFalse);
-    });
-
-    testWidgets('justo 7 dígitos alcanza: un fijo local', (tester) async {
-      expect(await guardaCon(tester, '2345678'), isTrue);
+    testWidgets('un dominio sin punto tampoco: "lunita486@gmail"', (
+      tester,
+    ) async {
+      expect(await guardaCon(tester, 'lunita486@gmail'), isFalse);
     });
 
     testWidgets('texto sin ninguna forma se rechaza', (tester) async {
@@ -226,15 +196,59 @@ void main() {
       expect(await guardaCon(tester, 'vdhs'), isFalse);
     });
 
-    testWidgets('el aviso del rechazo dice que acepta las DOS cosas, no solo '
-        'email', (tester) async {
+    // Ya no es un campo de teléfono: se estandarizó como Email.
+    testWidgets('un teléfono ya no se acepta', (tester) async {
+      expect(await guardaCon(tester, '300 123 4567'), isFalse);
+    });
+
+    // Que el email se decida con esEmailValido y no con una copia: los dos
+    // valores tienen la MISMA forma para cualquier regla del tipo "tiene
+    // arroba y algo después", y solo esEmailValido los separa.
+    testWidgets('la frontera es exactamente la de esEmailValido', (
+      tester,
+    ) async {
+      expect(esEmailValido('ana@mail.co'), isTrue);
+      expect(esEmailValido('ana@mailco'), isFalse);
+      expect(await guardaCon(tester, 'ana@mail.co'), isTrue);
+      expect(await guardaCon(tester, 'ana@mailco'), isFalse);
+    });
+
+    testWidgets('el aviso es exactamente "Email inválido"', (tester) async {
       await guardaCon(tester, 'verdura');
-      final aviso = tester
-          .widget<TextField>(find.byType(TextField).last)
-          .decoration!
-          .errorText!;
-      expect(aviso, contains('teléfono'));
-      expect(aviso, contains('email'));
+      expect(
+        tester
+            .widget<TextField>(find.byType(TextField).last)
+            .decoration!
+            .errorText,
+        avisoEmailCorto,
+      );
+    });
+
+    // El aviso largo de reglas_negocio sigue existiendo para los perfiles y
+    // la Red de hogares; en ESTE diálogo no se usa más.
+    testWidgets('y no el largo que usan los perfiles', (tester) async {
+      await guardaCon(tester, 'verdura');
+      expect(find.text(avisoEmailInvalido), findsNothing);
+    });
+
+    testWidgets('el albergue muestra el MISMO aviso corto', (tester) async {
+      await abrir(tester, pedirEmail: true);
+      await tester.enterText(find.byType(TextField).first, 'La vecina');
+      await tester.enterText(find.byType(TextField).last, 'verdura');
+      await ponerFechas(tester);
+      await tester.tap(find.text('Guardar'));
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widget<TextField>(find.byType(TextField).last)
+            .decoration!
+            .errorText,
+        avisoEmailCorto,
+        reason:
+            'el mismo error no puede explicarse de dos formas en la '
+            'misma pantalla',
+      );
     });
   });
 }
