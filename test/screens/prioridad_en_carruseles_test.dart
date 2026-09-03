@@ -229,6 +229,125 @@ void main() {
     }
   });
 
+  // ── "Tus rescates activos", el carrusel del RESCATISTA ────────────────
+  //
+  // Misma mecánica que la Jauría pero con una diferencia que importa: su
+  // relleno NO filtra estados en la consulta, para que entren los
+  // animalitos legados sin `estadoAdopcion`. Por eso un Fallecido se
+  // descarta en Dart, y por eso 'Adoptado' sigue entrando (a diferencia de
+  // la Jauría, que lo saca en la consulta porque tiene su propia sección).
+  group('el carrusel del rescatista no muestra fallecidos', () {
+    /// Copia de _cargarActivos (home_screen.dart).
+    Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> activos({
+      int cuantos = 10,
+    }) async {
+      final prio = await repo.paginaDeMisRescates(
+        uid: 'refugio',
+        role: CreatorRole.rescatista,
+        estados: estadosQueNecesitanAtencion,
+        porPagina: cuantos,
+      );
+      final docs = [...prio.docs];
+      if (docs.length < cuantos) {
+        final resto = await repo.paginaDeMisRescates(
+          uid: 'refugio',
+          role: CreatorRole.rescatista,
+          porPagina: cuantos,
+        );
+        final vistos = docs.map((d) => d.id).toSet();
+        for (final d in resto.docs) {
+          if (docs.length >= cuantos) break;
+          if (d.data()['estadoAdopcion'] == 'Fallecido') continue;
+          if (vistos.add(d.id)) docs.add(d);
+        }
+      }
+      docs.sort((a, b) {
+        final pa = prioridadEstado(a.data()['estadoAdopcion'] as String?);
+        final pb = prioridadEstado(b.data()['estadoAdopcion'] as String?);
+        if (pa != pb) return pa.compareTo(pb);
+        final ta = a.data()['creadoEn'] as Timestamp?;
+        final tb = b.data()['creadoEn'] as Timestamp?;
+        if (ta == null || tb == null) return 0;
+        return tb.compareTo(ta);
+      });
+      return docs;
+    }
+
+    Future<Set<String>> estadosEn() async =>
+        (await activos()).map((d) => d.data()['estadoAdopcion'] as String).toSet();
+
+    test('un Rescatado aparece', () async {
+      await sembrar(0, 'Rescatado', rol: 'rescatista');
+      expect(await estadosEn(), {'Rescatado'});
+    });
+
+    test('un Regresado aparece', () async {
+      await sembrar(0, 'Regresado', rol: 'rescatista');
+      expect(await estadosEn(), {'Regresado'});
+    });
+
+    // A diferencia de la Jauría del albergue, acá 'Adoptado' SÍ entra. No
+    // se toca en este cambio.
+    test('un Adoptado sigue apareciendo, como hasta ahora', () async {
+      await sembrar(0, 'Adoptado', rol: 'rescatista');
+      expect(await estadosEn(), {'Adoptado'});
+    });
+
+    test('un Fallecido NO aparece', () async {
+      await sembrar(0, 'Fallecido', rol: 'rescatista');
+      expect(await activos(), isEmpty);
+    });
+
+    test('con estados mezclados, se excluye SOLO el fallecido', () async {
+      await sembrar(0, 'Rescatado', rol: 'rescatista');
+      await sembrar(1, 'Regresado', rol: 'rescatista');
+      await sembrar(2, 'En proceso de adopción', rol: 'rescatista');
+      await sembrar(3, 'Hogar de paso', rol: 'rescatista');
+      await sembrar(4, 'Adoptado', rol: 'rescatista');
+      await sembrar(5, 'Fallecido', rol: 'rescatista');
+
+      expect(await estadosEn(), {
+        'Rescatado',
+        'Regresado',
+        'En proceso de adopción',
+        'Hogar de paso',
+        'Adoptado',
+      });
+    });
+
+    // El punto real: el limite se aplica en la CONSULTA, asi que un
+    // fallecido no solo se veia, ademas le comia el lugar a uno vivo.
+    test('los fallecidos no gastan lugares del carrusel', () async {
+      for (var i = 0; i < 10; i++) {
+        await sembrar(i, 'Rescatado', rol: 'rescatista');
+      }
+      // Los mas NUEVOS son los fallecidos: entrarian primero por fecha.
+      for (var i = 20; i < 23; i++) {
+        await sembrar(i, 'Fallecido', rol: 'rescatista');
+      }
+      final docs = await activos();
+      expect(docs.map((d) => d.data()['estadoAdopcion']).toSet(), {'Rescatado'});
+    });
+
+    // El relleno no filtra estados en la consulta justamente para que estos
+    // entren. Sacar el fallecido no puede llevarselos puestos.
+    test('un animalito legado sin estadoAdopcion sigue entrando', () async {
+      await db.collection('rescates').doc('legado').set({
+        'nombre': 'Sin estado',
+        'rescatistaId': 'refugio',
+        'creadoPor': 'rescatista',
+        'creadoEn': Timestamp.fromDate(DateTime(2026, 1, 1)),
+      });
+      await sembrar(1, 'Fallecido', rol: 'rescatista');
+
+      expect((await activos()).map((d) => d.id), ['legado']);
+    });
+
+    test('sin animalitos, no explota', () async {
+      expect(await activos(), isEmpty);
+    });
+  });
+
   group('las dos pantallas piden por prioridad, no por fecha', () {
     String leer(String r) => File(r).readAsStringSync();
 
@@ -253,6 +372,21 @@ void main() {
         isNot(contains("'Rescatado', 'Regresado', 'Fallecido'")),
         reason: 'volvio Fallecido: gasta uno de los 10 lugares, porque el '
             'limite se aplica en la consulta y no despues del sort',
+      );
+    });
+
+    // El helper `activos()` de mas arriba es una COPIA de _cargarActivos:
+    // prueba la mecanica, pero no puede notar que la pantalla real cambie.
+    // Esto ata las dos cosas. Mismo rol que la guarda de la Jauria de aca
+    // al lado, con la diferencia de que aca el descarte va en Dart y no en
+    // la consulta, para no dejar afuera a los animalitos legados sin
+    // estadoAdopcion.
+    test('el carrusel del rescatista descarta los fallecidos de verdad', () {
+      final f = leer('lib/screens/home_screen.dart');
+      expect(
+        f,
+        contains("if (d.data()['estadoAdopcion'] == 'Fallecido') continue;"),
+        reason: 'volvio a entrar un fallecido en Tus rescates activos',
       );
     });
 

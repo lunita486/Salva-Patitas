@@ -96,9 +96,20 @@ class _HomeScreenState extends State<HomeScreen>
   /// fuera el que hay que mirar.
   ///
   /// Primero los que necesitan atención, y solo se rellena con el resto si
-  /// sobra lugar. El relleno va SIN filtro de estado a propósito: así entran
-  /// también los animalitos legados que no tienen `estadoAdopcion` guardado,
-  /// que un `whereIn` dejaría afuera. Por eso hace falta deduplicar.
+  /// sobra lugar. El relleno va SIN filtro de estado en la CONSULTA a
+  /// propósito: así entran también los animalitos legados que no tienen
+  /// `estadoAdopcion` guardado, que un `whereIn` dejaría afuera. Por eso
+  /// hace falta deduplicar.
+  ///
+  /// Lo único que se descarta es 'Fallecido', y se hace en Dart por ese
+  /// mismo motivo. Es "Tus rescates activos": un animalito que ya no está
+  /// no es algo que quede por hacer, y encima ocupaba uno de los 10 lugares
+  /// (el límite se aplica en la consulta). Mismo criterio que la Jauría del
+  /// albergue, ver albergue_home_screen.dart:_cargarJauria. Se lo sigue
+  /// alcanzando desde "Gestionar" filtrando por estado.
+  ///
+  /// 'Adoptado' NO se toca: sigue entrando igual que hasta ahora, al final
+  /// del orden.
   Future<PaginaDeRescates> _cargarActivos() async {
     const cuantos = 10;
     final prioritarios = await _rescatesRepo.paginaDeMisRescates(
@@ -117,6 +128,7 @@ class _HomeScreenState extends State<HomeScreen>
       final vistos = docs.map((d) => d.id).toSet();
       for (final d in resto.docs) {
         if (docs.length >= cuantos) break;
+        if (d.data()['estadoAdopcion'] == 'Fallecido') continue;
         if (vistos.add(d.id)) docs.add(d);
       }
     }
