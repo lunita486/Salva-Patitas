@@ -3,6 +3,15 @@ import 'package:flutter/material.dart';
 import '../domain/reglas_negocio.dart';
 import '../theme.dart';
 
+/// El aviso del campo "Teléfono o email" cuando lo que escribió no es ni
+/// una cosa ni la otra. Vive acá y no en reglas_negocio porque es el único
+/// campo de la app que acepta los dos: el aviso de email suelto
+/// (`avisoEmailInvalido`) ya está compartido y se sigue usando cuando la
+/// persona escribió una `@`. Mismo tono que ese, sin regaño.
+const _avisoContactoInvalido =
+    'Ese texto no parece un teléfono ni un email. Podés dejarlo vacío o '
+    'escribir uno real.';
+
 /// Los datos de un hogar de paso puesto a mano desde el desplegable de
 /// estado.
 typedef DatosHogarDePaso = ({
@@ -112,6 +121,32 @@ class _DialogoHogarDePasoState extends State<_DialogoHogarDePaso> {
     });
   }
 
+  /// El aviso que corresponde a [contacto], o `null` si sirve para
+  /// contactar a alguien. Solo para el campo del RESCATISTA, que acepta las
+  /// dos cosas.
+  ///
+  /// La `@` decide cuál de las dos quiso escribir, y con eso el aviso puede
+  /// ser el correcto en vez de uno genérico: quien tipeó "ana@mail" se
+  /// equivocó en un email, no en un teléfono.
+  ///
+  /// Para el teléfono alcanza con contar dígitos: 7 es el mínimo que deja
+  /// pasar un fijo local y rechaza cualquier cosa corta. No se valida más
+  /// que eso a propósito, porque este campo solo se muestra como texto en
+  /// la tarjeta del animalito; no alimenta ninguna red ni se usa para
+  /// identificar a nadie (a diferencia del email del albergue).
+  ///
+  /// Sin esto el campo aceptaba cualquier cosa: en producción, los 3
+  /// valores que había en `hogarDePasoContacto` escritos por un rescatista
+  /// eran "jdhshsbdbdbdbdn", "vwhw" y "vdhs". Los 3 del albergue, que sí
+  /// validaba, eran emails de verdad.
+  String? _avisoSiNoSirveParaContactar(String contacto) {
+    if (contacto.contains('@')) {
+      return esEmailValido(contacto) ? null : avisoEmailInvalido;
+    }
+    final digitos = contacto.replaceAll(RegExp(r'[^0-9]'), '');
+    return digitos.length >= 7 ? null : _avisoContactoInvalido;
+  }
+
   void _confirmar() {
     final contacto = _contactoCtl.text.trim();
     // Si escribió algo, tiene que tener forma de email cuando es lo que se
@@ -121,6 +156,16 @@ class _DialogoHogarDePasoState extends State<_DialogoHogarDePaso> {
     if (widget.pedirEmail && contacto.isNotEmpty && !esEmailValido(contacto)) {
       setState(() => _avisoContacto = avisoEmailInvalido);
       return;
+    }
+    // Del lado del rescatista el campo sigue siendo OPCIONAL, pero si
+    // escribió algo tiene que servir para contactar a esa persona: el
+    // sentido del campo es poder pedirle el animalito de vuelta.
+    if (!widget.pedirEmail && contacto.isNotEmpty) {
+      final aviso = _avisoSiNoSirveParaContactar(contacto);
+      if (aviso != null) {
+        setState(() => _avisoContacto = aviso);
+        return;
+      }
     }
     Navigator.pop(context, (
       desde: _desde!,
