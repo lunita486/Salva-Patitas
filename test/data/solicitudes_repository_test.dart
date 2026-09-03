@@ -590,9 +590,16 @@ void main() {
 
       test('usa una regla con nombre, no una lista propia', () {
         expect(sheet, contains('hayAdopcionEnCurso(estadoActual)'));
+        // Las 4 veces que el literal aparece legitimamente:
+        //   1. la entrada de la lista _estados
+        //   2. el filtro de _estadosOfrecidos
+        //   3. el destino, en el onTap
+        //   4. el estado ACTUAL, para no volver a pedir el formulario
+        // Una quinta seria una condicion escrita a mano en vez de una regla
+        // con nombre, que es lo que este test existe para impedir.
         expect(
           "'Hogar de paso'".allMatches(sheet).length,
-          lessThanOrEqualTo(3),
+          lessThanOrEqualTo(4),
           reason: 'aparecio una lista de estados escrita a mano en la hoja',
         );
       });

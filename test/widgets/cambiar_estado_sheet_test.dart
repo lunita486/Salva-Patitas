@@ -21,7 +21,12 @@ import 'package:salva_patitas/widgets/cambiar_estado_sheet.dart';
 /// construirse. Por eso esto puede ser un test de verdad y no una guarda
 /// sobre el fuente.
 void main() {
-  Future<void> abrirCon(WidgetTester tester, String estadoActual) async {
+  Future<void> abrirCon(
+    WidgetTester tester,
+    String estadoActual, {
+    String? adoptanteIdEnProceso,
+    bool esAlbergue = false,
+  }) async {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -29,11 +34,25 @@ void main() {
             docId: 'r1',
             estadoActual: estadoActual,
             nombre: 'Firulais',
+            adoptanteIdEnProceso: adoptanteIdEnProceso,
+            esAlbergue: esAlbergue,
           ),
         ),
       ),
     );
     await tester.pumpAndSettle();
+  }
+
+  /// Toca la opción "Hogar de paso" y dice si apareció el formulario.
+  ///
+  /// El formulario (pedirHogarDePaso) se abre ANTES de tocar Firestore, así
+  /// que este camino no necesita Firebase. El camino contrario sí llega a
+  /// la escritura, pero _actualizarEstado atrapa su propio error y solo
+  /// muestra un aviso: no se escapa nada.
+  Future<bool> abreElFormulario(WidgetTester tester) async {
+    await tester.tap(find.text('Hogar de paso'));
+    await tester.pumpAndSettle();
+    return find.text('Nombre de la persona').evaluate().isNotEmpty;
   }
 
   group('CambiarEstadoSheet — cuándo se ofrece "Hogar de paso"', () {
@@ -98,6 +117,75 @@ void main() {
     ) async {
       await abrirCon(tester, 'Hogar de paso');
       expect(find.text('Hogar de paso'), findsOneWidget);
+    });
+
+    // ── Cuándo se abre el formulario "¿Quién lo va a cuidar?" ─────────
+    //
+    // El desplegable sirve para CAMBIAR de estado. Elegir el estado en el
+    // que el animalito ya está no es un cambio, así que no tiene que
+    // preguntar nada.
+    //
+    // Antes dependía de si había un cuidador CON CUENTA: el que venía de
+    // una solicitud aprobada no preguntaba, y el cargado a mano sí. Ese
+    // segundo caso volvía a mostrar el formulario en blanco, y completarlo
+    // pisaba nombre y fechas, reiniciaba los avisos y le sumaba otra ayuda
+    // en la red al albergue. Hallazgo de Eliza.
+
+    testWidgets('ya en Hogar de paso por una solicitud aprobada: no pregunta '
+        'nada', (tester) async {
+      await abrirCon(
+        tester,
+        'Hogar de paso',
+        adoptanteIdEnProceso: 'una-persona-con-cuenta',
+      );
+      expect(await abreElFormulario(tester), isFalse);
+    });
+
+    // EL caso nuevo: mismo estado de origen, pero cargado a mano. Tiene que
+    // dar lo MISMO que el de arriba.
+    testWidgets('ya en Hogar de paso cargado a mano: tampoco', (tester) async {
+      await abrirCon(tester, 'Hogar de paso');
+      expect(
+        await abreElFormulario(tester),
+        isFalse,
+        reason:
+            'volvió a preguntar quién lo cuida y pisaría los datos que '
+            'ya tiene',
+      );
+    });
+
+    // Y lo mismo del lado del albergue, que además le sumaría otra ayuda a
+    // su red si el formulario se abriera.
+    testWidgets('ni siquiera como albergue', (tester) async {
+      await abrirCon(tester, 'Hogar de paso', esAlbergue: true);
+      expect(await abreElFormulario(tester), isFalse);
+    });
+
+    // Lo que NO puede romperse: empezar un hogar de paso sigue preguntando.
+    testWidgets('desde Rescatado sí pregunta', (tester) async {
+      await abrirCon(tester, 'Rescatado');
+      expect(await abreElFormulario(tester), isTrue);
+    });
+
+    testWidgets('desde Regresado sí pregunta', (tester) async {
+      await abrirCon(tester, 'Regresado');
+      expect(await abreElFormulario(tester), isTrue);
+    });
+
+    // 'Adoptado' no cambia, y lo que hace depende de si quedó un cuidador
+    // con cuenta: `cambiarEstadoAdopcion` solo limpia `adoptanteIdEnProceso`
+    // para Rescatado, Regresado y Fallecido, asi que un animalito adoptado
+    // normalmente lo conserva. Los dos casos, tal como estaban.
+    testWidgets('desde Adoptado sin cuidador con cuenta: pregunta, igual que '
+        'antes', (tester) async {
+      await abrirCon(tester, 'Adoptado');
+      expect(await abreElFormulario(tester), isTrue);
+    });
+
+    testWidgets('desde Adoptado CON cuidador con cuenta: no pregunta, igual '
+        'que antes', (tester) async {
+      await abrirCon(tester, 'Adoptado', adoptanteIdEnProceso: 'alguien');
+      expect(await abreElFormulario(tester), isFalse);
     });
 
     // El camino que reemplaza a la transición directa: rechazar la

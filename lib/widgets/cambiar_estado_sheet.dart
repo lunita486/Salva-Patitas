@@ -309,7 +309,28 @@ class CambiarEstadoSheet extends StatelessWidget {
               // Si YA hay alguien con cuenta cuidándolo (vino de una
               // solicitud aprobada) no se pregunta nada: esos datos ya
               // están y volver a pedirlos los pisaría.
-              if (e.$1 == 'Hogar de paso' && !_hayCuidadorConCuenta) {
+              // `estadoActual != 'Hogar de paso'`: este desplegable sirve
+              // para CAMBIAR de estado, y elegir el estado en el que el
+              // animalito ya está no es un cambio. Sin esa condición, un
+              // hogar de paso cargado a mano volvía a mostrar el formulario
+              // en blanco, y completarlo pisaba `hogarDePasoNombre` y las
+              // dos fechas, reiniciaba los avisos de vencimiento y le sumaba
+              // otra ayuda en la red al albergue. Peor todavía: el nombre se
+              // pisa siempre pero el contacto solo si se escribe uno, así
+              // que el animalito podía quedar con el nombre del cuidador
+              // nuevo y el email del anterior. Hallazgo de Eliza: "1 animal
+              // puede quedar en dos familias?".
+              //
+              // Uno que llegó por una solicitud aprobada ya no preguntaba,
+              // porque tiene `adoptanteIdEnProceso`. Ahora los dos casos se
+              // comportan igual, y igual para rescatista y albergue.
+              //
+              // Cambiar de cuidador no se resuelve acá: sería editar los
+              // datos del hogar de paso, que es otra acción y no existe
+              // todavía.
+              if (e.$1 == 'Hogar de paso' &&
+                  estadoActual != 'Hogar de paso' &&
+                  !_hayCuidadorConCuenta) {
                 final datos = await pedirHogarDePaso(
                   context,
                   pedirEmail: esAlbergue,
