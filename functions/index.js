@@ -3,8 +3,21 @@ const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue, Timestamp } = require('firebase-admin/firestore');
 const { getMessaging } = require('firebase-admin/messaging');
 const { getStorage } = require('firebase-admin/storage');
+const { setGlobalOptions } = require('firebase-functions/v2');
 
 initializeApp();
+
+// Techo de instancias para las 10 funciones. Sin esto todas se despliegan
+// con `maxInstances` sin definir, o sea el máximo de la plataforma: el gasto
+// de cómputo de Functions no tiene tope. `landingAnimales` es el caso que
+// motivó esto — `onRequest` sin auth, alcanzable por cualquiera.
+//
+// Tiene que ir ACÁ, antes de los require() de abajo: esos módulos definen
+// sus funciones al cargarse, leyendo las opciones globales vigentes en ese
+// momento. Puesto después, no las alcanza (comprobado: quedan en
+// ResetValue). 10 está muy por encima del pico real de la app; el efecto de
+// tocar el techo sería que los eventos se encolan, no que se pierdan.
+setGlobalOptions({ maxInstances: 10 });
 
 // Cumplimiento de la política de eliminación de cuenta de Google Play —
 // ver el plan en C:\Users\Eliza\.claude\plans\joyful-waddling-squid.md
