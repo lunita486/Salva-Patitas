@@ -5,7 +5,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
 import '../routing/app_router.dart';
-import '../theme.dart';
 import '../domain/reglas_negocio.dart';
 import '../widgets/cambiar_estado_sheet.dart';
 import '../widgets/dialogos_eliminar_rescate.dart';
@@ -16,6 +15,8 @@ import '../data/rescates_repository.dart';
 import '../data/rescate_fotos_repository.dart';
 import 'compartir_animal.dart';
 import '../widgets/texto_sin_desborde.dart';
+import '../widgets/sp_widgets.dart';
+import '../theme/salva_patitas_theme.dart';
 import 'solicitudes_rescatista_screen.dart' show contactarPersonaEnProceso;
 
 class TodosLosRescatesScreen extends StatefulWidget {
@@ -247,9 +248,7 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
           (snap) {
             if (!mounted) return;
             // La consulta pide _maxNuevos + 1; el sobrante no se muestra.
-            setState(
-              () => _nuevos = snap.docs.take(_maxNuevos).toList(),
-            );
+            setState(() => _nuevos = snap.docs.take(_maxNuevos).toList());
           },
           // Un fallo acá no debe romper la lista histórica, que es lo
           // importante: se queda sin los nuevos y nada más.
@@ -268,7 +267,9 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
     // vez acá: startAfterDocument usa los valores que tenía en este momento,
     // así que sigue sirviendo aunque después ese animalito se borre.
     final anterior = _paginas.isEmpty ? null : _paginas.last;
-    final cursor = (anterior == null || anterior.isEmpty) ? null : anterior.last;
+    final cursor = (anterior == null || anterior.isEmpty)
+        ? null
+        : anterior.last;
     _paginas.add(const []);
     final filtro = _consultaDelFiltro;
     _subsPaginas.add(
@@ -280,7 +281,8 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
             especie: _filtroEspecie,
             // El más restrictivo de los dos cortes: el ancla temporal, o el
             // de "Estancados" si está puesto (siempre más viejo que _t0).
-            creadoAntesDe: filtro.antesDe == null || filtro.antesDe!.isAfter(_t0)
+            creadoAntesDe:
+                filtro.antesDe == null || filtro.antesDe!.isAfter(_t0)
                 ? _t0
                 : filtro.antesDe,
             despuesDe: cursor,
@@ -292,7 +294,8 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
               if (!mounted || indice >= _paginas.length) return;
               // Se pidió una de más solo para saber si hay continuación; esa
               // no se muestra.
-              final llena = snap.docs.length > RescatesRepository.paginaRescatesSize;
+              final llena =
+                  snap.docs.length > RescatesRepository.paginaRescatesSize;
               setState(() {
                 _pidiendo = false;
                 _paginas[indice] = llena
@@ -406,11 +409,11 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
     } catch (_) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
             'No pudimos verificar si se puede eliminar. Revisá tu conexión e intentá de nuevo.',
           ),
-          backgroundColor: msgError,
+          backgroundColor: context.sp.msgError,
         ),
       );
       return;
@@ -439,7 +442,9 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
-          content: Text('Eliminando a ${nombreDeAnimal(nombre, enFrase: true)}…'),
+          content: Text(
+            'Eliminando a ${nombreDeAnimal(nombre, enFrase: true)}…',
+          ),
           duration: const Duration(seconds: 30),
         ),
       );
@@ -466,9 +471,9 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Text('Publicación eliminada'),
-            backgroundColor: msgExito,
+            backgroundColor: context.sp.msgExito,
           ),
         );
     } on TimeoutException {
@@ -486,9 +491,9 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Text('Publicación eliminada'),
-            backgroundColor: msgExito,
+            backgroundColor: context.sp.msgExito,
           ),
         );
     } catch (e) {
@@ -498,7 +503,7 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
         ..showSnackBar(
           SnackBar(
             content: Text(RescatesRepository.mensajeErrorEliminar(e)),
-            backgroundColor: msgError,
+            backgroundColor: context.sp.msgError,
             behavior: SnackBarBehavior.floating,
             duration: const Duration(seconds: 6),
           ),
@@ -538,10 +543,10 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: appBg,
+      backgroundColor: context.sp.bg,
       body: Stack(
         children: [
-          Positioned.fill(child: Container(color: appBg)),
+          const Positioned.fill(child: SpPawBackground()),
           SafeArea(
             child: Column(
               children: [
@@ -558,43 +563,50 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
     );
   }
 
-  Widget _header(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(8, 8, 20, 4),
-    child: Row(
-      children: [
-        IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-          tooltip: 'Volver',
-          onPressed: () => Navigator.pop(context),
-        ),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                widget.esAlbergue ? 'Mis animales' : 'Mis rescates',
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: appInk,
-                  fontFamily: 'Baloo2',
-                ),
-              ),
-              if (widget.esAlbergue && _filtroEstado != null)
-                Text(
-                  _filtroEstado!,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: cicloColor(_filtroEstado!),
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-            ],
+  Widget _header(BuildContext context) {
+    final c = context.sp;
+    final tonoFiltro = _filtroEstado == null
+        ? null
+        : spToneEstado(_filtroEstado!);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+      child: Row(
+        children: [
+          SpRoundButton(
+            icon: Icons.arrow_back_ios_new_rounded,
+            tooltip: 'Volver',
+            onTap: () => Navigator.pop(context),
           ),
-        ),
-      ],
-    ),
-  );
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  widget.esAlbergue ? 'La Jauría' : 'Mis rescates',
+                  style: SpText.screen.copyWith(color: c.ink),
+                ),
+                if (widget.esAlbergue && _filtroEstado != null)
+                  Text(
+                    _filtroEstado!,
+                    style: SpText.label.copyWith(
+                      color: tonoFiltro == null
+                          ? c.inkMuted
+                          : SpToneColors.of(c, tonoFiltro).ink,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          // Huellitas junto al título, como en el prototipo.
+          SpPaw(size: 16, angle: 20, color: c.mintDeep),
+          const SizedBox(width: 4),
+          SpPaw(size: 20, angle: 30, color: c.mint),
+        ],
+      ),
+    );
+  }
 
   // Chips de estado: rescatista siempre, albergue solo sin filtroInicial.
   // Devuelve una lista (0 o 2 widgets) para poder seguir usando el spread
@@ -603,10 +615,10 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
     if (widget.esAlbergue && widget.filtroInicial != null) return const [];
     return [
       SizedBox(
-        height: 40,
+        height: 46,
         child: ListView(
           scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.fromLTRB(16, 2, 16, 6),
           children: [
             // "Todos" limpia los DOS filtros, no solo el de estado
             // (esta fila) — antes solo tocaba _filtroEstado, así
@@ -638,7 +650,7 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
           ],
         ),
       ),
-      const SizedBox(height: 6),
+      const SizedBox(height: 4),
     ];
   }
 
@@ -649,10 +661,10 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
   // tocar de nuevo la especie ya activa — _chip() ya soporta
   // ese toggle.
   Widget _chipsEspecie() => SizedBox(
-    height: 36,
+    height: 46,
     child: ListView(
       scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.fromLTRB(16, 2, 16, 6),
       children: _especiesFiltro
           .map(
             (e) => _chip(
@@ -663,7 +675,7 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                 _filtroEspecie = v;
                 _recargar();
               }),
-              small: true,
+              animal: spEspecie(e).$2,
             ),
           )
           .toList(),
@@ -673,38 +685,37 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
   Widget _listaAnimales(BuildContext context) {
     if (_errorCarga != null && _docs.isEmpty) return errorFeedState();
     if (!_primeraLlego) {
-      return const Center(child: CircularProgressIndicator(color: appTeal));
+      return Center(
+        child: CircularProgressIndicator(color: context.sp.primary),
+      );
     }
     if (_docs.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('🐾', style: TextStyle(fontSize: 48)),
-            const SizedBox(height: 12),
-            Text(
-              _filtroEstado == null
-                  ? 'Aún no has publicado rescates'
-                  : 'No hay animales en estado "$_filtroEstado"',
-              style: TextStyle(fontSize: 15, color: Colors.grey.shade700),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
+      return ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          SpEmpty(
+            title: _filtroEstado == null
+                ? 'Aún no has publicado rescates'
+                : 'No hay animales en estado "$_filtroEstado"',
+            animal: SpAnimalKind.perro,
+          ),
+        ],
       );
     }
     return ListView.separated(
       controller: _scroll,
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
       // Una fila más al final SOLO mientras quede algo por traer: es el
       // indicador de que se está cargando la página siguiente.
       itemCount: _docs.length + (_hayMas ? 1 : 0),
-      separatorBuilder: (_, __) => const SizedBox(height: 12),
+      separatorBuilder: (_, __) => const SizedBox(height: 14),
       itemBuilder: (_, i) {
         if (i >= _docs.length) {
-          return const Padding(
-            padding: EdgeInsets.symmetric(vertical: 20),
-            child: Center(child: CircularProgressIndicator(color: appTeal)),
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 20),
+            child: Center(
+              child: CircularProgressIndicator(color: context.sp.primary),
+            ),
           );
         }
         return _tarjetaAnimal(context, _docs[i].id, _docs[i].data());
@@ -717,6 +728,7 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
     String docId,
     Map<String, dynamic> d,
   ) {
+    final c = context.sp;
     final nombre = nombreDeAnimal(d['nombre'] as String?);
     final especie = d['especie'] ?? '';
     final estado = d['estado'] ?? '';
@@ -740,10 +752,10 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
       estadoAdopcion: estadoAdopcion,
       umbral: _umbralEstancado,
     );
-    final colorEstancado =
-        esEstancadoGrave(diasEsperando: diasEsperando, umbral: _umbralEstancado)
-        ? const Color(0xFFD32F2F)
-        : appOrange;
+    final grave = esEstancadoGrave(
+      diasEsperando: diasEsperando,
+      umbral: _umbralEstancado,
+    );
     // Pregunta real de Eliza: "tengo 3 animalitos en
     // hogar de paso, ¿cómo veo las fechas en que me los
     // regresan?" — hasta ahora esa fecha solo se veía en
@@ -760,31 +772,33 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
               )
               .inDays
         : null;
-    final emoji = especie == 'Gato' ? '🐱' : '🐶';
-    final urgColor = urgencia == 'Alta'
-        ? const Color(0xFFD32F2F)
-        : urgencia == 'Media'
-        ? const Color(0xFFE65100)
-        : appTeal;
+    final hogarNombre = (d['hogarDePasoNombre'] as String?) ?? '';
+    final hogarContacto = (d['hogarDePasoContacto'] as String?) ?? '';
+    void compartir() => compartirAnimal(
+      context: context,
+      nombre: nombre,
+      especie: especie,
+      edad: d['edad'] as String? ?? '',
+      ubicacion: ubicacion,
+      tags: <String>[
+        if (d['okConNinos'] == true) 'Amigable con niños',
+        if (d['okConMascotas'] == true) 'Es sociable',
+        if ((d['energia'] as String?)?.isNotEmpty == true)
+          d['energia'] as String,
+      ],
+      fotoUrl: fotoUrl,
+      paisCodigo: d['paisCodigo'] as String?,
+    );
 
     return Container(
       key: ValueKey(docId),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      padding: const EdgeInsets.all(12),
+      decoration: SpDeco.card(c),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               GestureDetector(
                 // Ver ampliada — mismo visor que ya usa el
@@ -803,127 +817,88 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                         ),
                       ),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  // FotoAnimal en vez de recorte — mismo motivo
-                  // y misma técnica que la tarjeta de "tus
-                  // animales" en home_screen.dart: el recorte
-                  // fijo (topCenter) cortaba animales que no
-                  // quedan cerca del borde superior de la
-                  // foto, mostrando solo fondo acá en la lista
-                  // aunque la foto se viera completa en el
-                  // resto de la app (bug real reportado por
+                  borderRadius: BorderRadius.circular(20),
+                  // FotoAnimal en vez de recorte — el recorte fijo
+                  // (topCenter) cortaba animales que no quedan cerca del
+                  // borde superior de la foto (bug real reportado por
                   // Eliza probando con "Chanchis").
-                  child: fotoUrl != null
-                      ? FotoAnimal(
-                          url: fotoUrl,
-                          width: 64,
-                          height: 64,
-                          // Miniatura de lista: sin fondo borroso, ver FotoAnimal.
-                          fondoBorroso: false,
-                          fallback: Container(
-                            width: 64,
-                            height: 64,
-                            color: const Color(0xFFD8F0E4),
-                            child: Center(
-                              child: Text(
-                                emoji,
-                                style: const TextStyle(fontSize: 32),
-                              ),
-                            ),
-                          ),
-                        )
-                      : Container(
-                          width: 64,
-                          height: 64,
-                          color: const Color(0xFFD8F0E4),
-                          child: Center(
-                            child: Text(
-                              emoji,
-                              style: const TextStyle(fontSize: 32),
-                            ),
-                          ),
-                        ),
+                  child: SizedBox(
+                    width: 84,
+                    height: 84,
+                    child: fotoUrl != null
+                        ? FotoAnimal(
+                            url: fotoUrl,
+                            width: 84,
+                            height: 84,
+                            // Miniatura de lista: sin fondo borroso, ver FotoAnimal.
+                            fondoBorroso: false,
+                            fallback: SpFotoVacia(especie: especie, size: 60),
+                          )
+                        : SpFotoVacia(especie: especie, size: 60),
+                  ),
                 ),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    const SizedBox(height: 2),
                     Text(
                       nombre,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
                         fontSize: 16,
+                        color: c.ink,
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 2),
                     Text(
                       '$especie · $estado',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey.shade700,
+                      style: SpText.caption.copyWith(
+                        color: c.inkMuted,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                    // Ciudad reemplazada por la fecha acá — la ciudad ya no
-                    // se mostraba para albergue (siempre la misma, heredada
-                    // del perfil, ver el comentario de `esDeAlbergue` más
-                    // arriba) y para un rescatista individual pasa casi lo
-                    // mismo en la práctica: la ubicación que se guarda al
-                    // publicar es "CIUDAD" (nivel ciudad, no una dirección
-                    // puntual del rescate), y quien la escribe casi siempre
-                    // pone la suya propia — se repite tarjeta tras tarjeta
-                    // sin sumar nada nuevo. La fecha, en cambio, es distinta
-                    // en cada animal y sí ayuda de un vistazo (¿hace cuánto
-                    // que espera?). Pedido real de Eliza.
+                    // Ciudad reemplazada por la fecha acá: la ubicación se
+                    // repite tarjeta tras tarjeta sin sumar nada nuevo, y la
+                    // fecha es distinta en cada animal (¿hace cuánto que
+                    // espera?). Pedido real de Eliza.
                     if (creadoEnFecha != null) ...[
                       const SizedBox(height: 4),
                       Row(
                         children: [
                           Icon(
-                            Icons.calendar_today,
-                            size: 12,
-                            color: appTeal,
+                            Icons.calendar_today_rounded,
+                            size: 13,
+                            color: c.primary,
                           ),
                           const SizedBox(width: 4),
-                          Text(
-                            '${esDeAlbergue ? 'Ingresó' : 'Rescatado'} el '
-                            // Sin esto, un animal rescatado el año pasado se
-                            // vería "18 ago" en pleno 2027 — indistinguible
-                            // de uno rescatado ayer. Mismo criterio que
-                            // chat_screen.dart: el año solo se agrega cuando
-                            // DIFIERE del actual. Hallazgo real de Eliza.
-                            '${formatearFecha(
-                              creadoEnFecha,
-                              conAnio: creadoEnFecha.year != DateTime.now().year,
-                            )}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey.shade700,
+                          Flexible(
+                            child: Text(
+                              '${esDeAlbergue ? 'Ingresó' : 'Rescatado'} el '
+                              // El año solo se agrega cuando DIFIERE del
+                              // actual — mismo criterio que chat_screen.dart.
+                              // Hallazgo real de Eliza.
+                              '${formatearFecha(creadoEnFecha, conAnio: creadoEnFecha.year != DateTime.now().year)}',
+                              style: SpText.caption.copyWith(color: c.inkMuted),
                             ),
                           ),
                         ],
                       ),
                     ],
+                    if (urgencia != '') ...[
+                      const SizedBox(height: 6),
+                      urgencia == 'Alta'
+                          ? const SpBadge('Prioridad alta')
+                          : _pildora(
+                              'Prioridad ${urgencia.toString().toLowerCase()}',
+                              urgencia == 'Media' ? SpTone.peach : SpTone.mint,
+                            ),
+                    ],
                   ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 5,
-                ),
-                decoration: BoxDecoration(
-                  color: urgColor.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  urgencia,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: urgColor,
-                  ),
                 ),
               ),
             ],
@@ -937,69 +912,35 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
           // que resuelve el aviso vive junto al aviso
           // (pedido explícito de Eliza).
           if (estancado)
-            Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: colorEstancado.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: colorEstancado.withValues(alpha: 0.3),
-                ),
-              ),
+            SpNotice(
+              fondo: grave ? c.dangerSoft : c.accentSoft,
+              tinta: grave ? c.danger : c.accentInk,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.schedule, size: 14, color: colorEstancado),
+                      const Icon(Icons.schedule_rounded),
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(
                           'Lleva $diasEsperando días esperando un hogar',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: colorEstancado,
-                          ),
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 6),
                   GestureDetector(
-                    onTap: () => compartirAnimal(
-                      context: context,
-                      nombre: nombre,
-                      especie: especie,
-                      edad: d['edad'] as String? ?? '',
-                      ubicacion: ubicacion,
-                      tags: <String>[
-                        if (d['okConNinos'] == true) 'Amigable con niños',
-                        if (d['okConMascotas'] == true) 'Es sociable',
-                        if ((d['energia'] as String?)?.isNotEmpty == true)
-                          d['energia'] as String,
-                      ],
-                      fotoUrl: fotoUrl,
-                      paisCodigo: d['paisCodigo'] as String?,
-                    ),
-                    child: Row(
+                    onTap: compartir,
+                    child: const Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
-                          Icons.share_outlined,
-                          size: 13,
-                          color: colorEstancado,
-                        ),
-                        const SizedBox(width: 5),
+                        Icon(Icons.share_outlined, size: 14),
+                        SizedBox(width: 5),
                         Text(
                           'Compartir en redes',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: colorEstancado,
-                          ),
+                          style: TextStyle(fontWeight: FontWeight.w800),
                         ),
                       ],
                     ),
@@ -1010,183 +951,125 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
           if (estadoAdopcion == 'Regresado' &&
               motivoRegreso != null &&
               motivoRegreso.isNotEmpty)
-            Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFEBEE),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: const Color(0xFFD32F2F).withValues(alpha: 0.3),
-                ),
-              ),
+            SpNotice(
+              fondo: c.dangerSoft,
+              tinta: c.danger,
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(
-                    Icons.info_outline,
-                    size: 14,
-                    color: Color(0xFFD32F2F),
-                  ),
+                  const Icon(Icons.info_outline_rounded),
                   const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      'Motivo: $motivoRegreso',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFFD32F2F),
-                      ),
-                    ),
-                  ),
+                  Expanded(child: Text('Motivo: $motivoRegreso')),
                 ],
               ),
             ),
           if (estadoAdopcion == 'Hogar de paso' && fechaFinHogar != null)
-            Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              width: double.infinity,
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: appTeal.withValues(alpha: 0.07),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: appTeal.withValues(alpha: 0.3)),
-              ),
+            SpNotice(
+              fondo: c.butter,
+              tinta: c.butterInk,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Quién lo tiene, cuando es un hogar de paso puesto a
                   // mano: esa persona no tiene cuenta en la app, así que
                   // este texto es la única forma de saber a quién buscar.
-                  if (((d['hogarDePasoNombre'] as String?) ?? '').isNotEmpty)
+                  if (hogarNombre.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 4),
-                      child: TextoSinDesborde(
-                        texto:
-                            '🏡 Con ${d['hogarDePasoNombre']}'
-                            '${((d['hogarDePasoContacto'] as String?) ?? '').isNotEmpty ? ' · ${d['hogarDePasoContacto']}' : ''}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade800,
-                          fontWeight: FontWeight.w600,
-                        ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.home_outlined),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: TextoSinDesborde(
+                              texto:
+                                  'Con $hogarNombre'
+                                  '${hogarContacto.isNotEmpty ? ' · $hogarContacto' : ''}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: c.butterInk,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   if (fechaInicioHogar != null)
-                    Text(
-                      '📅 ${formatearFecha(fechaInicioHogar)} → ${formatearFecha(fechaFinHogar)}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade700,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    Row(
+                      children: [
+                        const Icon(Icons.event_outlined),
+                        const SizedBox(width: 6),
+                        Text(
+                          '${formatearFecha(fechaInicioHogar)} → ${formatearFecha(fechaFinHogar)}',
+                        ),
+                      ],
                     ),
                   const SizedBox(height: 4),
-                  Text(
-                    diasRestantesHogar! < 0
-                        ? '⚠️ Período vencido hace ${diasRestantesHogar.abs()} días'
-                        : diasRestantesHogar == 0
-                        ? '⚠️ El período vence hoy'
-                        : '🕐 $diasRestantesHogar días restantes',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: diasRestantesHogar < 3
-                          ? const Color(0xFFE65100)
-                          : appTeal,
-                    ),
+                  Row(
+                    children: [
+                      Icon(
+                        diasRestantesHogar! <= 0
+                            ? Icons.warning_amber_rounded
+                            : Icons.schedule_rounded,
+                        color: diasRestantesHogar < 3 ? c.accentInk : null,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        diasRestantesHogar < 0
+                            ? 'Período vencido hace ${diasRestantesHogar.abs()} días'
+                            : diasRestantesHogar == 0
+                            ? 'El período vence hoy'
+                            : '$diasRestantesHogar días restantes',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: diasRestantesHogar < 3 ? c.accentInk : null,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
             ),
-          // Estado y botones de acción SIEMPRE en dos filas
-          // separadas, no un solo Wrap compartido — antes,
-          // con "En proceso de adopción" (el texto de
-          // estado más largo de todos), la píldora no
-          // entraba junto a los botones en el ancho del
-          // teléfono y el Wrap los empujaba solo a ESE
-          // estado a una segunda línea — la lista se veía
-          // inconsistente, con esa tarjeta "distinta" a las
-          // demás. Separarlas siempre hace que todas las
-          // tarjetas midan y se vean igual sin importar
-          // cuán largo sea el texto del estado.
-          // spaceBetween en vez de dejarlas pegadas: con un
-          // estado corto ("Hogar de paso") el botón
-          // "Contactar" quedaba flotando cerca del centro,
-          // y con uno largo ("En proceso de adopción")
-          // quedaba pegado al borde derecho de la tarjeta —
-          // dos tarjetas contiguas se veían con un layout
-          // distinto entre sí. Ahora la píldora de estado
-          // siempre queda pegada a la izquierda y
-          // "Contactar" siempre pegado a la derecha, sin
-          // importar cuán largo sea el texto del estado
-          // (sugerencia real de Eliza).
+          // Estado y botones de acción SIEMPRE en dos filas separadas, no un
+          // solo Wrap compartido: con "En proceso de adopción" (el estado
+          // más largo) la píldora no entraba junto a los botones y esa
+          // tarjeta se veía distinta a las demás. La píldora queda a la
+          // izquierda y "Contactar" siempre a la derecha (sugerencia real
+          // de Eliza).
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               // Semantics explícito: sin esto, un lector de
               // pantalla anunciaba el texto del estado y la
               // flechita como dos piezas sueltas en vez de
               // "botón: cambiar estado, [estado actual]".
               // Hallazgo de auditoría de código.
-              Semantics(
-                button: estadoAdopcion != 'Fallecido',
-                label: estadoAdopcion == 'Fallecido'
-                    ? 'Estado: Fallecido'
-                    : 'Cambiar estado, actualmente $estadoAdopcion',
-                child: GestureDetector(
-                  onTap: estadoAdopcion == 'Fallecido'
-                      ? null
-                      : () => showModalBottomSheet(
-                          context: context,
-                          shape: const RoundedRectangleBorder(
-                            borderRadius: BorderRadius.vertical(
-                              top: Radius.circular(20),
+              Expanded(
+                child: Semantics(
+                  button: estadoAdopcion != 'Fallecido',
+                  label: estadoAdopcion == 'Fallecido'
+                      ? 'Estado: Fallecido'
+                      : 'Cambiar estado, actualmente $estadoAdopcion',
+                  child: SpStatus(
+                    estadoAdopcion,
+                    onTap: estadoAdopcion == 'Fallecido'
+                        ? null
+                        : () => showModalBottomSheet(
+                            context: context,
+                            shape: const RoundedRectangleBorder(
+                              borderRadius: BorderRadius.vertical(
+                                top: Radius.circular(20),
+                              ),
+                            ),
+                            builder: (_) => CambiarEstadoSheet(
+                              docId: docId,
+                              estadoActual: estadoAdopcion,
+                              nombre: nombre,
+                              adoptanteIdEnProceso:
+                                  d['adoptanteIdEnProceso'] as String?,
+                              esAlbergue: widget.esAlbergue,
                             ),
                           ),
-                          builder: (_) => CambiarEstadoSheet(
-                            docId: docId,
-                            estadoActual: estadoAdopcion,
-                            nombre: nombre,
-                            adoptanteIdEnProceso:
-                                d['adoptanteIdEnProceso'] as String?,
-                            esAlbergue: widget.esAlbergue,
-                          ),
-                        ),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: cicloColor(estadoAdopcion).withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: cicloColor(
-                          estadoAdopcion,
-                        ).withValues(alpha: 0.3),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          estadoAdopcion,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: cicloColor(estadoAdopcion),
-                          ),
-                        ),
-                        if (estadoAdopcion != 'Fallecido') ...[
-                          const SizedBox(width: 4),
-                          Icon(
-                            Icons.expand_more,
-                            size: 14,
-                            color: cicloColor(estadoAdopcion),
-                          ),
-                        ],
-                      ],
-                    ),
                   ),
                 ),
               ),
@@ -1194,17 +1077,18 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
               // proceso con este animal — antes esta pantalla
               // no tenía NINGUNA forma de escribirle a esa
               // persona (el bug real: Eliza aprobó un hogar
-              // de paso y no encontró cómo contactarla, ni
-              // acá ni en el panel principal, que además solo
-              // habilitaba este botón para "En proceso de
-              // adopción" y dejaba "Hogar de paso" afuera).
+              // de paso y no encontró cómo contactarla).
               if ((estadoAdopcion == 'Hogar de paso' ||
                       estadoAdopcion == 'En proceso de adopción') &&
-                  (d['adoptanteIdEnProceso'] as String? ?? '').isNotEmpty)
+                  (d['adoptanteIdEnProceso'] as String? ?? '').isNotEmpty) ...[
+                const SizedBox(width: 8),
                 Semantics(
                   button: true,
                   label: 'Contactar a quien está en proceso con $nombre',
-                  child: GestureDetector(
+                  child: SpButton(
+                    label: 'Contactar',
+                    icon: Icons.chat_bubble_outline_rounded,
+                    compacto: true,
                     onTap: () => contactarPersonaEnProceso(
                       context,
                       docId: docId,
@@ -1215,58 +1099,26 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
                       adoptanteIdEnProceso:
                           d['adoptanteIdEnProceso'] as String? ?? '',
                     ),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: appOrange,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: const [
-                          Icon(
-                            Icons.chat_bubble_outline,
-                            size: 13,
-                            color: Colors.white,
-                          ),
-                          SizedBox(width: 5),
-                          Text(
-                            'Contactar',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                   ),
                 ),
+              ],
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               // El botón no depende de que haya foto: si no
               // la tiene, compartirAnimal() ya cae solo a
-              // compartir el texto sin imagen — filtrar acá
-              // por fotoUrl != null solo escondía el botón
-              // entero sin necesidad (el bug real que
+              // compartir el texto sin imagen (el bug real que
               // reportó Eliza: "el rescatista no tiene forma
               // de compartir", justo en un animal recién
               // publicado sin foto todavía).
               //
               // 'Adoptado' también se excluye: el mensaje
               // que arma compartirAnimal() dice "necesita un
-              // hogar, ayudalo a encontrar familia" — para
-              // un animal ya adoptado eso es directamente
-              // falso, no solo innecesario (sugerencia real
-              // de Eliza).
+              // hogar" — para un animal ya adoptado eso es
+              // directamente falso (sugerencia real de Eliza).
               //
               // Tampoco si ya está "estancado": ese aviso
               // trae su propio botón "Compartir en redes"
@@ -1275,102 +1127,63 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
               // real de Eliza, la vio en vivo con "Orejas").
               if (estadoAdopcion != 'Fallecido' &&
                   estadoAdopcion != 'Adoptado' &&
-                  !estancado)
-                Tooltip(
-                  message: 'Compartir',
-                  child: GestureDetector(
-                    onTap: () => compartirAnimal(
-                      context: context,
-                      nombre: nombre,
-                      especie: especie,
-                      edad: d['edad'] as String? ?? '',
-                      ubicacion: ubicacion,
-                      tags: <String>[
-                        if (d['okConNinos'] == true) 'Amigable con niños',
-                        if (d['okConMascotas'] == true) 'Es sociable',
-                        if ((d['energia'] as String?)?.isNotEmpty == true)
-                          d['energia'] as String,
-                      ],
-                      fotoUrl: fotoUrl,
-                      paisCodigo: d['paisCodigo'] as String?,
-                    ),
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: appTeal.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: appTeal.withValues(alpha: 0.3),
-                        ),
-                      ),
-                      // Mismo ícono que usa el adoptante para compartir
-                      // (adoptante_feed_screen.dart) — antes eran dos
-                      // íconos de "compartir" distintos para la misma
-                      // acción, uno por rol (sugerencia real de Eliza).
-                      child: const Icon(
-                        Icons.share_outlined,
-                        size: 16,
-                        color: appTeal,
-                      ),
-                    ),
+                  !estancado) ...[
+                // Mismo ícono que usa el adoptante para compartir
+                // (adoptante_feed_screen.dart) (sugerencia real de Eliza).
+                SpMiniButton(
+                  icon: Icons.share_outlined,
+                  tooltip: 'Compartir',
+                  onTap: compartir,
+                ),
+                const SizedBox(width: 6),
+              ],
+              if (estadoAdopcion != 'Adoptado' &&
+                  estadoAdopcion != 'Fallecido') ...[
+                SpMiniButton(
+                  icon: Icons.edit_outlined,
+                  tooltip: 'Editar',
+                  onTap: () => context.push(
+                    AppRoutes.editarRescate,
+                    extra: (docId: docId, data: d),
                   ),
                 ),
-              if (estadoAdopcion != 'Adoptado' && estadoAdopcion != 'Fallecido')
-                Tooltip(
-                  message: 'Editar',
-                  child: GestureDetector(
-                    onTap: () => context.push(
-                      AppRoutes.editarRescate,
-                      extra: (docId: docId, data: d),
-                    ),
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: Colors.grey.shade300),
-                      ),
-                      child: Icon(
-                        Icons.edit_outlined,
-                        size: 16,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-                  ),
+                const SizedBox(width: 6),
+                // Un animal 'Adoptado' o 'Fallecido' no se puede eliminar:
+                // son el único registro de ese desenlace (pedido explícito
+                // de Eliza). Los demás estados ('Hogar de paso', 'En
+                // proceso de adopción', 'Regresado') sí muestran el botón:
+                // son reversibles, así que el chequeo de _eliminarImpl los
+                // bloquea con una explicación en vez de escondérselos.
+                SpMiniButton(
+                  icon: Icons.delete_outline_rounded,
+                  tooltip: 'Eliminar',
+                  danger: true,
+                  onTap: () => _eliminar(context, docId, nombre),
                 ),
-              // Un animal 'Adoptado' o 'Fallecido' no se puede eliminar:
-              // son el único registro de ese desenlace. Borrarlo
-              // perdería para siempre la cuenta de cuántos animalitos
-              // se adoptaron o fallecieron (pedido explícito de Eliza).
-              // Los demás estados ('Hogar de paso', 'En proceso de
-              // adopción', 'Regresado') sí muestran el botón: son
-              // reversibles, así que el chequeo de _eliminarImpl los
-              // bloquea con una explicación en vez de escondérselos.
-              if (estadoAdopcion != 'Adoptado' && estadoAdopcion != 'Fallecido')
-                Tooltip(
-                  message: 'Eliminar',
-                  child: GestureDetector(
-                    onTap: () => _eliminar(context, docId, nombre),
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFEBEE),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: const Color(0xFFD32F2F).withValues(alpha: 0.3),
-                        ),
-                      ),
-                      child: const Icon(
-                        Icons.delete_outline,
-                        size: 16,
-                        color: Color(0xFFD32F2F),
-                      ),
-                    ),
-                  ),
-                ),
+              ],
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  /// Píldora pastel chica (`.pill--peach`, etc.).
+  Widget _pildora(String texto, SpTone tono) {
+    final k = SpToneColors.of(context.sp, tono);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: k.fill,
+        borderRadius: BorderRadius.circular(SpRadius.full),
+      ),
+      child: Text(
+        texto,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+          color: k.ink,
+        ),
       ),
     );
   }
@@ -1380,32 +1193,16 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
     String? valor,
     String? filtroActivo,
     ValueChanged<String?> onTap, {
-    bool small = false,
+    SpAnimalKind? animal,
   }) {
     final activo = filtroActivo == valor;
-    final color = valor == null ? appTeal : cicloColor(valor);
-    return GestureDetector(
-      onTap: () => onTap(activo ? null : valor),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        margin: const EdgeInsets.only(right: 8),
-        padding: EdgeInsets.symmetric(
-          horizontal: small ? 12 : 14,
-          vertical: small ? 5 : 7,
-        ),
-        decoration: BoxDecoration(
-          color: activo ? color : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: activo ? color : Colors.grey.shade300),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: small ? 11 : 12,
-            fontWeight: FontWeight.w600,
-            color: activo ? Colors.white : Colors.grey.shade700,
-          ),
-        ),
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: SpChip(
+        label: label,
+        selected: activo,
+        animal: animal,
+        onTap: () => onTap(activo ? null : valor),
       ),
     );
   }

@@ -298,6 +298,14 @@ extension SpContext on BuildContext {
   SpColors get sp => Theme.of(this).extension<SpColors>()!;
 }
 
+/// Fondos de los avisos de abajo (SnackBar). Reemplazan a msgExito,
+/// msgError y msgAdvertencia de theme.dart con colores del tema.
+extension SpAvisos on SpColors {
+  Color get msgExito => primaryStrong;
+  Color get msgError => danger;
+  Color get msgAdvertencia => accentInk;
+}
+
 /// Espacios (px lógicos).
 class SpSpace {
   static const s1 = 4.0, s2 = 8.0, s3 = 12.0, s4 = 16.0, s6 = 24.0, s8 = 32.0;
@@ -498,6 +506,19 @@ class SpTheme {
       displayColor: c.ink,
     ),
     extensions: [c],
+    // Avisos de abajo: el texto va siempre en el color del fondo, que
+    // contrasta con los tres fondos de aviso (msgExito/msgError/
+    // msgAdvertencia) en claro y en oscuro.
+    snackBarTheme: SnackBarThemeData(
+      backgroundColor: c.ink,
+      contentTextStyle: TextStyle(
+        fontFamily: spFontFamily,
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+        color: c.bg,
+      ),
+      actionTextColor: c.bg,
+    ),
   );
   static ThemeData light() => _base(SpColors.light, Brightness.light);
   static ThemeData dark() => _base(SpColors.dark, Brightness.dark);

@@ -586,9 +586,7 @@ class SpBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.sp;
     return Container(
-      height: 22,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: c.accent,
         borderRadius: BorderRadius.circular(SpRadius.full),
@@ -771,4 +769,152 @@ class SpEmpty extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Chip de filtro (`.sp-chip`): blanco con canto; elegido, verde.
+class SpChip extends StatelessWidget {
+  const SpChip({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.animal,
+  });
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final SpAnimalKind? animal;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.sp;
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        height: 38,
+        padding: EdgeInsets.only(left: animal == null ? 14 : 8, right: 14),
+        decoration: selected
+            ? SpDeco.primary(c, radius: SpRadius.full)
+            : SpDeco.soft(c, radius: SpRadius.full),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (animal != null) ...[
+              SpAnimal(animal!, size: 24),
+              const SizedBox(width: 6),
+            ],
+            Text(
+              label,
+              style: SpText.label.copyWith(
+                fontWeight: FontWeight.w700,
+                color: selected ? c.onPrimary : c.inkMuted,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Botoncito cuadrado 3D de acción (`.mini3d`): compartir, editar, borrar.
+class SpMiniButton extends StatelessWidget {
+  const SpMiniButton({
+    super.key,
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+    this.danger = false,
+  });
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+  final bool danger;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.sp;
+    return Tooltip(
+      message: tooltip,
+      child: SpPressable(
+        onTap: onTap,
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: danger ? c.dangerSoft : c.surfaceSunken,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [BoxShadow(color: c.edge, offset: const Offset(0, 3))],
+          ),
+          child: Icon(icon, size: 17, color: danger ? c.danger : c.inkMuted),
+        ),
+      ),
+    );
+  }
+}
+
+/// Botón redondo blanco con canto (`.sp-iconbtn`), p. ej. volver.
+class SpRoundButton extends StatelessWidget {
+  const SpRoundButton({
+    super.key,
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.sp;
+    return Tooltip(
+      message: tooltip,
+      child: SpPressable(
+        onTap: onTap,
+        child: Container(
+          width: 44,
+          height: 44,
+          decoration: SpDeco.soft(c, radius: SpRadius.full),
+          child: Icon(icon, size: 20, color: c.ink),
+        ),
+      ),
+    );
+  }
+}
+
+/// Recuadro de aviso dentro de una tarjeta (fondo suave + texto del tono).
+class SpNotice extends StatelessWidget {
+  const SpNotice({
+    super.key,
+    required this.fondo,
+    required this.tinta,
+    required this.child,
+  });
+  final Color fondo;
+  final Color tinta;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    margin: const EdgeInsets.only(bottom: 10),
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+    decoration: BoxDecoration(
+      color: fondo,
+      borderRadius: BorderRadius.circular(14),
+    ),
+    child: IconTheme(
+      data: IconThemeData(color: tinta, size: 15),
+      child: DefaultTextStyle.merge(
+        style: TextStyle(
+          color: tinta,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+        child: child,
+      ),
+    ),
+  );
 }

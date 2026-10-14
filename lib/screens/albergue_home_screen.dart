@@ -339,22 +339,16 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            'Foto de perfil actualizada',
-            style: TextStyle(color: context.sp.onPrimary),
-          ),
-          backgroundColor: context.sp.primary,
+          content: const Text('Foto de perfil actualizada'),
+          backgroundColor: context.sp.msgExito,
         ),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          backgroundColor: context.sp.danger,
-          content: Text(
-            'No se pudo subir la foto: $e',
-            style: TextStyle(color: context.sp.surface),
-          ),
+          backgroundColor: context.sp.msgError,
+          content: Text('No se pudo subir la foto: $e'),
         ),
       );
     }
