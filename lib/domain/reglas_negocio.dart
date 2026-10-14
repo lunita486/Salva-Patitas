@@ -96,6 +96,7 @@ final RegExp _formaDeSitioWeb = RegExp(
   r'^(https?:\/\/)?[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?'
   r'(\.[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)+(\/.*)?$',
 );
+
 /// El último segmento (después del último punto, y antes de un posible
 /// `/algo`) tiene que ser solo letras — ningún dominio de primer nivel
 /// real (.com, .org, .co, .net...) lleva números. Sin esto, "www.
@@ -349,7 +350,10 @@ bool hayAdopcionEnCurso(String? estadoAdopcion) =>
 /// mandado por chat "El período de hogar de paso ha vencido, por favor
 /// coordina la devolución". Gana el criterio por fecha: un hogar de paso
 /// que termina hoy no está vencido hasta que hoy termine.
-int diasHastaVencimiento({required DateTime fechaFin, required DateTime ahora}) {
+int diasHastaVencimiento({
+  required DateTime fechaFin,
+  required DateTime ahora,
+}) {
   final fin = DateTime(fechaFin.year, fechaFin.month, fechaFin.day);
   final hoy = DateTime(ahora.year, ahora.month, ahora.day);
   return fin.difference(hoy).inDays;
@@ -404,11 +408,7 @@ bool esEstancado({
 /// Los estados en los que un animal puede considerarse estancado: los que
 /// siguen esperando a alguien. Mismo motivo que [estadosEnCuidado] para que
 /// sea una lista: el filtro "Estancados" ahora se resuelve en la consulta.
-const estadosQuePuedenEstancarse = [
-  'Rescatado',
-  'Hogar de paso',
-  'Regresado',
-];
+const estadosQuePuedenEstancarse = ['Rescatado', 'Hogar de paso', 'Regresado'];
 
 /// El aviso de estancado se pinta más grave (rojo en vez de naranja) al
 /// doble del umbral — única fuente de ese segundo corte, antes solo vivía
@@ -623,4 +623,39 @@ Map<String, Object?> ubicacionParaGuardar({
     if (longitud != null) 'longitud': longitud,
     if (paisCodigo.isNotEmpty) 'paisCodigo': paisCodigo,
   };
+}
+
+// ── Mensaje de rechazo ───────────────────────────────────────────────────────
+// Antes este texto estaba escrito a mano en cuatro lugares (la lista de
+// solicitudes, la vista previa del panel, el respaldo de rechazarSolicitud y
+// lo que ve el adoptante en "Mis solicitudes"). Vive acá una sola vez.
+
+/// El rechazo de siempre, sin datos de contacto. Lo usa el rescatista y es
+/// también lo que se muestra cuando una solicitud vieja no guardó su texto.
+String mensajeRechazoBase(String animalEnFrase) =>
+    'Hola, gracias por tu interés en adoptar a $animalEnFrase. '
+    'Luego de revisar tu solicitud, en esta ocasión no podemos continuar con el proceso. '
+    '¡Esperamos que pronto encuentres a tu compañero perfecto! 🐾';
+
+/// El rechazo de un albergue: deja un camino para seguir (pedido de un
+/// albergue real, "que diga ponte en contacto con nosotros"). Usa el
+/// WhatsApp y el correo del perfil si están; si no hay ninguno, invita a
+/// seguir por el mismo chat, que siempre existe.
+String mensajeRechazoAlbergue(
+  String animalEnFrase, {
+  String? whatsapp,
+  String? correo,
+}) {
+  final w = whatsapp?.trim() ?? '';
+  final c = correo?.trim() ?? '';
+  final contacto = w.isNotEmpty && c.isNotEmpty
+      ? 'escríbenos al WhatsApp $w o al correo $c'
+      : w.isNotEmpty
+      ? 'escríbenos al WhatsApp $w'
+      : c.isNotEmpty
+      ? 'escríbenos al correo $c'
+      : 'escríbenos por aquí';
+  return 'Hola, gracias por tu interés en adoptar a $animalEnFrase. '
+      'Luego de revisar tu solicitud, en esta ocasión no podemos continuar con el proceso. '
+      'Pero no te rindas: $contacto y te ayudamos a encontrar a tu peludo ideal. 🐾';
 }

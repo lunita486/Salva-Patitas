@@ -369,8 +369,7 @@ class _MisSolicitudesScreenState extends State<MisSolicitudesScreen> {
                                   // se ve el nombre del albergue" —ni
                                   // antes ni después de renombrarlo,
                                   // porque nunca se mostraba nada ahí.
-                                  if ((d['rescateId'] as String?)
-                                          ?.isNotEmpty ==
+                                  if ((d['rescateId'] as String?)?.isNotEmpty ==
                                       true)
                                     FutureBuilder<DocumentSnapshot>(
                                       future: RescatesRepository().obtener(
@@ -381,8 +380,7 @@ class _MisSolicitudesScreenState extends State<MisSolicitudesScreen> {
                                             animalSnap.data?.data()
                                                 as Map<String, dynamic>?;
                                         final rescatista =
-                                            rd?['rescatistaNombre']
-                                                as String?;
+                                            rd?['rescatistaNombre'] as String?;
                                         if (rescatista == null ||
                                             rescatista.isEmpty) {
                                           return const SizedBox.shrink();
@@ -727,9 +725,12 @@ class _MisSolicitudesScreenState extends State<MisSolicitudesScreen> {
                                       child: Text(
                                         motivo != null && motivo.isNotEmpty
                                             ? motivo
-                                            : 'Hola, gracias por tu interés en adoptar a ${nombreDeAnimal(animal, enFrase: true)}. '
-                                                  'Luego de revisar tu solicitud, en esta ocasión no podemos continuar con el proceso. '
-                                                  '¡Esperamos que pronto encuentres a tu compañero perfecto! 🐾',
+                                            : mensajeRechazoBase(
+                                                nombreDeAnimal(
+                                                  animal,
+                                                  enFrase: true,
+                                                ),
+                                              ),
                                         style: TextStyle(
                                           fontSize: 12,
                                           color: Colors.grey.shade700,

@@ -154,7 +154,7 @@ void main() {
                 }
                 final animalitos = [...?snap.data];
                 if (animalitos.isEmpty) {
-                  return const Text('Aún no tienes animales publicados.');
+                  return const Text('Aún no tienes animales publicados');
                 }
                 return Column(children: [for (final a in animalitos) Text(a)]);
               },
@@ -170,7 +170,7 @@ void main() {
       await tester.pump();
 
       expect(
-        find.text('Aún no tienes animales publicados.'),
+        find.text('Aún no tienes animales publicados'),
         findsOneWidget,
         reason: 'y el albergue tiene 66',
       );
@@ -181,7 +181,7 @@ void main() {
       await tester.pumpWidget(carrusel(jauria.future, conWaiting: true));
       await tester.pump();
 
-      expect(find.text('Aún no tienes animales publicados.'), findsNothing);
+      expect(find.text('Aún no tienes animales publicados'), findsNothing);
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
     });
 
@@ -193,7 +193,7 @@ void main() {
 
       expect(find.text('Naranjita'), findsOneWidget);
       expect(find.text('Tigrito'), findsOneWidget);
-      expect(find.text('Aún no tienes animales publicados.'), findsNothing);
+      expect(find.text('Aún no tienes animales publicados'), findsNothing);
     });
 
     testWidgets('si de verdad no hay ninguno, ahí sí lo dice', (tester) async {
@@ -202,7 +202,7 @@ void main() {
       jauria.complete([]);
       await tester.pumpAndSettle();
 
-      expect(find.text('Aún no tienes animales publicados.'), findsOneWidget);
+      expect(find.text('Aún no tienes animales publicados'), findsOneWidget);
       expect(find.byType(CircularProgressIndicator), findsNothing);
     });
   });
@@ -316,7 +316,7 @@ void main() {
     // El cartel de vacío no se fue: sigue estando para cuando de verdad no
     // hay ninguno.
     test('cuando de verdad no hay animalitos, el cartel sigue apareciendo', () {
-      expect(codigo, contains('Aún no tienes animales publicados.'));
+      expect(codigo, contains('Aún no tienes animales publicados'));
       expect(codigo, contains('if (rescates.isEmpty)'));
     });
 

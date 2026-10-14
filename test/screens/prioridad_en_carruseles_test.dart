@@ -20,6 +20,13 @@ import 'package:salva_patitas/domain/reglas_negocio.dart';
 ///
 /// El arreglo pide los prioritarios en su propia consulta y solo rellena con
 /// el resto si sobra lugar.
+/// Un acceso del panel del albergue refresca al volver si usa el `.then`
+/// de siempre o `_alVolver` (que refresca, ver su test).
+final refrescaAlVolverAlbergue = anyOf(
+  contains('.then((_) => _refrescarNumeros())'),
+  contains('.then(_alVolver)'),
+);
+
 void main() {
   late FakeFirebaseFirestore db;
   late RescatesRepository repo;
@@ -76,20 +83,23 @@ void main() {
   }
 
   // EL caso de Eliza: 20 rescatados nuevos tapaban a los en proceso viejos.
-  test('un "en proceso" viejo aparece igual, con 20 rescatados más nuevos',
-      () async {
-    await sembrar(0, 'En proceso de adopción'); // el más VIEJO de todos
-    for (var i = 1; i <= 20; i++) {
-      await sembrar(i, 'Rescatado');
-    }
-    final docs = await jauria();
-    expect(docs.length, 10);
-    expect(
-      docs.first.id,
-      'a000',
-      reason: 'el que necesita atención tiene que ir primero, aunque sea viejo',
-    );
-  });
+  test(
+    'un "en proceso" viejo aparece igual, con 20 rescatados más nuevos',
+    () async {
+      await sembrar(0, 'En proceso de adopción'); // el más VIEJO de todos
+      for (var i = 1; i <= 20; i++) {
+        await sembrar(i, 'Rescatado');
+      }
+      final docs = await jauria();
+      expect(docs.length, 10);
+      expect(
+        docs.first.id,
+        'a000',
+        reason:
+            'el que necesita atención tiene que ir primero, aunque sea viejo',
+      );
+    },
+  );
 
   test('los prioritarios van antes que el resto, siempre', () async {
     await sembrar(0, 'Hogar de paso');
@@ -98,8 +108,9 @@ void main() {
       await sembrar(i, 'Rescatado');
     }
     final docs = await jauria();
-    final estados =
-        docs.map((d) => d.data()['estadoAdopcion'] as String).toList();
+    final estados = docs
+        .map((d) => d.data()['estadoAdopcion'] as String)
+        .toList();
     expect(estados[0], 'En proceso de adopción', reason: 'prioridad 0');
     expect(estados[1], 'Hogar de paso', reason: 'prioridad 1');
     expect(estados.skip(2).toSet(), {'Rescatado'});
@@ -114,10 +125,9 @@ void main() {
     }
     final docs = await jauria();
     expect(docs.length, 10);
-    expect(
-      docs.map((d) => d.data()['estadoAdopcion']).toSet(),
-      {'En proceso de adopción'},
-    );
+    expect(docs.map((d) => d.data()['estadoAdopcion']).toSet(), {
+      'En proceso de adopción',
+    });
   });
 
   test('sin prioritarios, se llena entero con el resto', () async {
@@ -189,7 +199,8 @@ void main() {
     expect(
       docs.map((d) => d.data()['estadoAdopcion']).toList(),
       ['En proceso de adopción', 'Hogar de paso', 'Rescatado', 'Regresado'],
-      reason: 'En proceso primero, hogar de paso segundo, y entre los de '
+      reason:
+          'En proceso primero, hogar de paso segundo, y entre los de '
           'igual prioridad manda la fecha (el 3 es mas nuevo que el 2)',
     );
   });
@@ -273,8 +284,9 @@ void main() {
       return docs;
     }
 
-    Future<Set<String>> estadosEn() async =>
-        (await activos()).map((d) => d.data()['estadoAdopcion'] as String).toSet();
+    Future<Set<String>> estadosEn() async => (await activos())
+        .map((d) => d.data()['estadoAdopcion'] as String)
+        .toSet();
 
     test('un Rescatado aparece', () async {
       await sembrar(0, 'Rescatado', rol: 'rescatista');
@@ -326,7 +338,9 @@ void main() {
         await sembrar(i, 'Fallecido', rol: 'rescatista');
       }
       final docs = await activos();
-      expect(docs.map((d) => d.data()['estadoAdopcion']).toSet(), {'Rescatado'});
+      expect(docs.map((d) => d.data()['estadoAdopcion']).toSet(), {
+        'Rescatado',
+      });
     });
 
     // El relleno no filtra estados en la consulta justamente para que estos
@@ -370,7 +384,8 @@ void main() {
       expect(
         f,
         isNot(contains("'Rescatado', 'Regresado', 'Fallecido'")),
-        reason: 'volvio Fallecido: gasta uno de los 10 lugares, porque el '
+        reason:
+            'volvio Fallecido: gasta uno de los 10 lugares, porque el '
             'limite se aplica en la consulta y no despues del sort',
       );
     });
@@ -403,25 +418,28 @@ void main() {
     // pantalla raiz de ese rol, initState no vuelve a correr al cambiar de
     // pestaña: hacia falta CERRAR SESION. Hallazgo real de Eliza con
     // Koreananchis.
-    test('la consulta de adoptados vive dentro del refresco, no solo al abrir',
-        () {
-      final f = leer('lib/screens/albergue_home_screen.dart');
-      final refresco = f.substring(
-        f.indexOf('void _refrescarNumeros()'),
-        f.indexOf('Widget build(BuildContext context)'),
-      );
-      expect(
-        refresco,
-        contains("estados: const ['Adoptado']"),
-        reason: 'sin esto, "Encontraron hogar" no se actualiza al cambiar '
-            'un animalito a Adoptado',
-      );
-      expect(
-        refresco,
-        contains('_adoptadosCache = p.docs'),
-        reason: 'la consulta corre pero nadie usa el resultado',
-      );
-    });
+    test(
+      'la consulta de adoptados vive dentro del refresco, no solo al abrir',
+      () {
+        final f = leer('lib/screens/albergue_home_screen.dart');
+        final refresco = f.substring(
+          f.indexOf('void _refrescarNumeros()'),
+          f.indexOf('Widget build(BuildContext context)'),
+        );
+        expect(
+          refresco,
+          contains("estados: const ['Adoptado']"),
+          reason:
+              'sin esto, "Encontraron hogar" no se actualiza al cambiar '
+              'un animalito a Adoptado',
+        );
+        expect(
+          refresco,
+          contains('_adoptadosCache = p.docs'),
+          reason: 'la consulta corre pero nadie usa el resultado',
+        );
+      },
+    );
 
     // Esa consulta se dispara y no se espera. Sin manejo de error, un
     // fallo de red deja una excepcion asincrona sin capturar: no rompe la
@@ -441,17 +459,36 @@ void main() {
 
     // Los contadores se piden una sola vez al abrir; sin esto, cambiar un
     // estado desde el panel no movia ningun numero hasta salir y volver.
+    // El panel del albergue vuelve por `_alVolver`, que refresca y además
+    // abre otra pestaña si la persona la tocó en la barra de abajo (ver
+    // AlbergueTabBar). Cuenta como refresco solo si `_alVolver` de verdad
+    // llama a `_refrescarNumeros()`: eso lo cuida este test.
+    test('_alVolver del panel del albergue refresca los números', () {
+      final f = leer('lib/screens/albergue_home_screen.dart');
+      final i = f.indexOf('void _alVolver(');
+      expect(i, isNot(-1), reason: 'no existe _alVolver');
+      expect(
+        f.substring(i, f.indexOf('}', i)),
+        contains('_refrescarNumeros()'),
+        reason:
+            '_alVolver ya no refresca: todos los accesos que lo usan '
+            'dejan el panel con números viejos',
+      );
+    });
+
     test('cambiar el estado desde el panel refresca los contadores', () {
       final f = leer('lib/screens/albergue_home_screen.dart');
-      // Los dos sheets que el panel abre por su cuenta.
+      // El sheet que el panel abre por su cuenta.
       for (final i in 'CambiarEstadoSheet('.allMatches(f)) {
         expect(
           f.substring(i.end, i.end + 900),
-          contains('.then((_) => _refrescarNumeros())'),
+          refrescaAlVolverAlbergue,
           reason: 'un sheet de cambiar estado que no refresca al cerrarse',
         );
       }
-      expect('CambiarEstadoSheet('.allMatches(f).length, 2);
+      // Una sola: los dos carruseles (La Jauría y Encontraron hogar) usan la
+      // misma tarjeta, `_tarjetaCarrusel`, desde el rediseño.
+      expect('CambiarEstadoSheet('.allMatches(f).length, 1);
     });
 
     // El MISMO problema en el panel del rescatista, y este llego a
@@ -493,8 +530,9 @@ void main() {
       for (final d in destinos) {
         expect(
           f.substring(d.end, d.end + 300),
-          contains('.then((_) => _refrescarNumeros())'),
-          reason: 'un acceso a "Ver todas" que no refresca al volver: el '
+          refrescaAlVolverAlbergue,
+          reason:
+              'un acceso a "Ver todas" que no refresca al volver: el '
               'panel se queda con la lista y los numeros viejos',
         );
       }
@@ -518,13 +556,22 @@ void main() {
         ('lib/screens/albergue_home_screen.dart', '_refrescarNumeros'),
       ]) {
         final f = leer(ruta);
-        final destinos = 'AppRoutes.solicitudesRescatista'.allMatches(f).toList();
-        expect(destinos, isNotEmpty, reason: 'no hay accesos a Solicitudes en $ruta');
+        final destinos = 'AppRoutes.solicitudesRescatista'
+            .allMatches(f)
+            .toList();
+        expect(
+          destinos,
+          isNotEmpty,
+          reason: 'no hay accesos a Solicitudes en $ruta',
+        );
         for (final d in destinos) {
           expect(
             f.substring(d.end, d.end + 300),
-            contains('.then((_) => $refresco())'),
-            reason: 'un acceso a Solicitudes que no refresca al volver, en '
+            refresco == '_refrescarNumeros'
+                ? refrescaAlVolverAlbergue
+                : contains('.then((_) => $refresco())'),
+            reason:
+                'un acceso a Solicitudes que no refresca al volver, en '
                 '$ruta: el panel se queda con el estado anterior del '
                 'animalito que se acaba de aprobar',
           );

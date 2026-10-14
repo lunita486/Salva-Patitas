@@ -349,6 +349,30 @@ _aprobarSolicitudImpl(String docId, Map<String, dynamic> d) async {
   return (aprobada: true, animalEliminado: false, avisoOk: true);
 }
 
+/// El texto que aparece ya escrito al tocar "Rechazar". Para un albergue
+/// lleva su WhatsApp y su correo del perfil (o, si no tiene ninguno, invita
+/// a seguir por el chat); para un rescatista es el rechazo de siempre. Se
+/// puede editar antes de enviarlo.
+Future<String> textoInicialRechazo(
+  String animalEnFrase, {
+  required bool esAlbergue,
+}) async {
+  if (!esAlbergue) return mensajeRechazoBase(animalEnFrase);
+  try {
+    final k = await UsuariosRepository().contactoAlbergue(
+      FirebaseAuth.instance.currentUser?.uid ?? '',
+    );
+    return mensajeRechazoAlbergue(
+      animalEnFrase,
+      whatsapp: k.whatsapp,
+      correo: k.correo,
+    );
+  } catch (_) {
+    // Sin poder leer el perfil (sin señal): igual queda un camino, el chat.
+    return mensajeRechazoAlbergue(animalEnFrase);
+  }
+}
+
 /// Devuelve `true` si el aviso por chat al adoptante se pudo enviar, o
 /// `null` si [docId] ya se está aprobando/rechazando en este mismo
 /// momento — mismo candado compartido que [aprobarSolicitud], ver ese
@@ -374,9 +398,7 @@ Future<bool> _rechazarSolicitudImpl(
   final animalNombre = d['animalNombre'] as String? ?? '';
   final texto = motivo.trim().isNotEmpty
       ? motivo.trim()
-      : 'Hola, gracias por tu interés en adoptar a ${nombreDeAnimal(animalNombre, enFrase: true)}. '
-            'Luego de revisar tu solicitud, en esta ocasión no podemos continuar con el proceso. '
-            '¡Esperamos que pronto encuentres a tu compañero perfecto! 🐾';
+      : mensajeRechazoBase(nombreDeAnimal(animalNombre, enFrase: true));
   await SolicitudesRepository().rechazar(docId, texto);
   FirebaseAnalytics.instance
       .logEvent(
@@ -1229,9 +1251,7 @@ class _SolicitudesRescatistaScreenState
               child: Text(
                 (d['motivoRechazo'] as String?)?.isNotEmpty == true
                     ? d['motivoRechazo'] as String
-                    : 'Hola, gracias por tu interés en adoptar a ${nombreDeAnimal(animal, enFrase: true)}. '
-                          'Luego de revisar tu solicitud, en esta ocasión no podemos continuar con el proceso. '
-                          '¡Esperamos que pronto encuentres a tu compañero perfecto! 🐾',
+                    : mensajeRechazoBase(nombreDeAnimal(animal, enFrase: true)),
                 style: TextStyle(fontSize: 13, color: c.ink, height: 1.45),
               ),
             ),
@@ -1306,13 +1326,15 @@ class _SolicitudesRescatistaScreenState
                     onTap: procesando
                         ? null
                         : () async {
+                            final inicial = await textoInicialRechazo(
+                              nombreDeAnimal(animal, enFrase: true),
+                              esAlbergue: widget.esAlbergue,
+                            );
+                            if (!context.mounted) return;
                             final motivo = await pedirMotivo(
                               context,
                               titulo: 'Mensaje de rechazo',
-                              textoInicial:
-                                  'Hola, gracias por tu interés en adoptar a ${nombreDeAnimal(animal, enFrase: true)}. '
-                                  'Luego de revisar tu solicitud, en esta ocasión no podemos continuar con el proceso. '
-                                  '¡Esperamos que pronto encuentres a tu compañero perfecto! 🐾',
+                              textoInicial: inicial,
                               maxLines: 5,
                               colorConfirmar: c.danger,
                               radioDialogo: 16,

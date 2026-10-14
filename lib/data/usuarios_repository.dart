@@ -98,6 +98,24 @@ class UsuariosRepository {
 
   static const rolesValidos = {'adoptante', 'rescatista', 'albergue', 'aliado'};
 
+  /// WhatsApp y correo de contacto del albergue (`albergueTelefono`,
+  /// `albergueEmail`), para armar el mensaje de rechazo. Vacíos o ausentes
+  /// vuelven como null: son opcionales en el perfil.
+  Future<({String? whatsapp, String? correo})> contactoAlbergue(
+    String uid,
+  ) async {
+    final d = (await _db.collection('usuarios').doc(uid).get()).data() ?? {};
+    String? limpio(Object? v) {
+      final t = (v as String? ?? '').trim();
+      return t.isEmpty ? null : t;
+    }
+
+    return (
+      whatsapp: limpio(d['albergueTelefono']),
+      correo: limpio(d['albergueEmail']),
+    );
+  }
+
   /// Todos los negocios aliados (`aliadoNombre` cargado), UNA sola vez —
   /// no en vivo.
   ///

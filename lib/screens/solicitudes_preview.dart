@@ -12,7 +12,7 @@ import '../domain/reglas_negocio.dart';
 import '../data/creator_role.dart';
 import '../data/solicitudes_repository.dart';
 import 'solicitudes_rescatista_screen.dart'
-    show aprobarSolicitud, rechazarSolicitud;
+    show aprobarSolicitud, rechazarSolicitud, textoInicialRechazo;
 
 /// Vista previa de las últimas 3 solicitudes pendientes, para el panel del
 /// rescatista y el del albergue — antes esto solo existía en el panel del
@@ -132,6 +132,7 @@ class _SolicitudesPreviewState extends State<SolicitudesPreview> {
                 animal,
                 docId: limited[i].id,
                 data: d,
+                esAlbergue: widget.role == CreatorRole.albergue,
               ),
             );
           }),
@@ -150,6 +151,7 @@ Widget _solicitudDetalle(
   String animal, {
   String? docId,
   Map<String, dynamic>? data,
+  bool esAlbergue = false,
 }) {
   final tipo = data?['tipoSolicitud'] as String? ?? 'adopcion';
   final esHogar = tipo == 'hogar_de_paso';
@@ -458,13 +460,15 @@ Widget _solicitudDetalle(
                               // pintaba su pantalla roja de error. Ver el detalle
                               // completo en pedirMotivo.
                               onTap: () async {
+                                final inicial = await textoInicialRechazo(
+                                  animal,
+                                  esAlbergue: esAlbergue,
+                                );
+                                if (!ctx.mounted) return;
                                 final motivo = await pedirMotivo(
                                   ctx,
                                   titulo: 'Mensaje de rechazo',
-                                  textoInicial:
-                                      'Hola, gracias por tu interés en adoptar a $animal. '
-                                      'Luego de revisar tu solicitud, en esta ocasión no podemos continuar con el proceso. '
-                                      '¡Esperamos que pronto encuentres a tu compañero perfecto! 🐾',
+                                  textoInicial: inicial,
                                   maxLines: 5,
                                   colorConfirmar: ctx.sp.danger,
                                   radioDialogo: 16,

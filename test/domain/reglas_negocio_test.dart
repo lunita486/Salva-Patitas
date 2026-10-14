@@ -328,6 +328,38 @@ void main() {
     });
   });
 
+  group('mensajeRechazoAlbergue()', () {
+    test('con WhatsApp y correo ofrece los dos', () {
+      final m = mensajeRechazoAlbergue(
+        'Toby',
+        whatsapp: '+57 300',
+        correo: 'a@b.org',
+      );
+      expect(m, contains('adoptar a Toby'));
+      expect(m, contains('escríbenos al WhatsApp +57 300 o al correo a@b.org'));
+    });
+
+    test('solo correo', () {
+      final m = mensajeRechazoAlbergue('Toby', correo: 'a@b.org');
+      expect(m, contains('escríbenos al correo a@b.org'));
+      expect(m, isNot(contains('WhatsApp')));
+    });
+
+    test('solo WhatsApp', () {
+      final m = mensajeRechazoAlbergue('Toby', whatsapp: '+57 300');
+      expect(m, contains('escríbenos al WhatsApp +57 300 y te ayudamos'));
+    });
+
+    test('sin ninguno invita a seguir por el chat', () {
+      final m = mensajeRechazoAlbergue('Toby', whatsapp: ' ', correo: '');
+      expect(m, contains('escríbenos por aquí'));
+    });
+
+    test('el base no trae contacto', () {
+      expect(mensajeRechazoBase('Toby'), isNot(contains('escríbenos')));
+    });
+  });
+
   group('whatsappUrl()', () {
     test('vacío o solo espacios da null', () {
       expect(whatsappUrl(''), isNull);
@@ -371,189 +403,177 @@ void main() {
     });
   });
 
-  group(
-    'esEmailValido() — bloquea el guardado del perfil de Aliado, mismo '
-    'criterio que ya tiene la ciudad geocodificada del mismo perfil. '
-    'Hallazgo real de Eliza: "sjejdj" se guardaba igual que un email de '
-    'verdad',
-    () {
-      test('un email con forma real es válido', () {
-        expect(esEmailValido('contacto@negocio.com'), true);
-      });
+  group('esEmailValido() — bloquea el guardado del perfil de Aliado, mismo '
+      'criterio que ya tiene la ciudad geocodificada del mismo perfil. '
+      'Hallazgo real de Eliza: "sjejdj" se guardaba igual que un email de '
+      'verdad', () {
+    test('un email con forma real es válido', () {
+      expect(esEmailValido('contacto@negocio.com'), true);
+    });
 
-      test('espacios alrededor no lo invalidan (se recorta antes)', () {
-        expect(esEmailValido('  contacto@negocio.com  '), true);
-      });
+    test('espacios alrededor no lo invalidan (se recorta antes)', () {
+      expect(esEmailValido('  contacto@negocio.com  '), true);
+    });
 
-      test('sin arroba es inválido', () {
-        expect(esEmailValido('sjejdj'), false);
-      });
+    test('sin arroba es inválido', () {
+      expect(esEmailValido('sjejdj'), false);
+    });
 
-      test('sin dominio (nada después de la arroba) es inválido', () {
-        expect(esEmailValido('contacto@'), false);
-      });
+    test('sin dominio (nada después de la arroba) es inválido', () {
+      expect(esEmailValido('contacto@'), false);
+    });
 
-      test('sin punto en el dominio es inválido', () {
-        expect(esEmailValido('contacto@negociocom'), false);
-      });
+    test('sin punto en el dominio es inválido', () {
+      expect(esEmailValido('contacto@negociocom'), false);
+    });
 
-      // El caso REAL que se coló a la Red de hogares de paso, donde el
-      // email es la identidad de la persona para buscarDuplicado: los dos
-      // formularios de esa pantalla pedían que no estuviera vacío y nada
-      // más. Medido en producción el 2026-09-03.
-      test('un dominio a medio escribir tampoco pasa: "lunita486@gmail"', () {
-        expect(esEmailValido('lunita486@gmail'), false);
-      });
+    // El caso REAL que se coló a la Red de hogares de paso, donde el
+    // email es la identidad de la persona para buscarDuplicado: los dos
+    // formularios de esa pantalla pedían que no estuviera vacío y nada
+    // más. Medido en producción el 2026-09-03.
+    test('un dominio a medio escribir tampoco pasa: "lunita486@gmail"', () {
+      expect(esEmailValido('lunita486@gmail'), false);
+    });
 
-      test('vacío es inválido — el llamador decide si eso bloquea o no, '
-          'acá no es su trabajo (email es opcional, un campo vacío es '
-          'válido para GUARDAR, no para "tiene forma de email")', () {
-        expect(esEmailValido(''), false);
-      });
-    },
-  );
+    test('vacío es inválido — el llamador decide si eso bloquea o no, '
+        'acá no es su trabajo (email es opcional, un campo vacío es '
+        'válido para GUARDAR, no para "tiene forma de email")', () {
+      expect(esEmailValido(''), false);
+    });
+  });
 
-  group(
-    'esSitioWebValido() — mismo criterio que esEmailValido(), para "Página '
-    'web". Hallazgo real de Eliza: "sjejdj" también pasaba acá',
-    () {
-      test('un dominio simple, sin esquema, es válido (lo que sugiere el '
-          'propio campo: "www.tunegocio.com")', () {
-        expect(esSitioWebValido('www.tunegocio.com'), true);
-      });
+  group('esSitioWebValido() — mismo criterio que esEmailValido(), para "Página '
+      'web". Hallazgo real de Eliza: "sjejdj" también pasaba acá', () {
+    test('un dominio simple, sin esquema, es válido (lo que sugiere el '
+        'propio campo: "www.tunegocio.com")', () {
+      expect(esSitioWebValido('www.tunegocio.com'), true);
+    });
 
-      test('con esquema (http o https) también es válido', () {
-        expect(esSitioWebValido('https://tunegocio.com'), true);
-        expect(esSitioWebValido('http://tunegocio.com'), true);
-      });
+    test('con esquema (http o https) también es válido', () {
+      expect(esSitioWebValido('https://tunegocio.com'), true);
+      expect(esSitioWebValido('http://tunegocio.com'), true);
+    });
 
-      // Los cuatro casos que Eliza listó como aceptables, tal cual.
-      // La página web es OPCIONAL, pero eso no lo decide este validador:
-      // lo deciden las pantallas, que preguntan primero si está vacío y
-      // recién entonces validan
-      // (`_webCtl.text.trim().isEmpty || esSitioWebValido(...)`, en
-      // albergue_perfil_screen.dart:173 y aliado_perfil_screen.dart:81).
-      // Un campo vacío nunca llega acá y nunca bloquea el guardado.
-      test('un texto vacío no tiene forma de dominio, y las pantallas lo '
-          'tratan como válido antes de preguntar', () {
-        expect(esSitioWebValido(''), false);
-        expect(esSitioWebValido('   '), false);
-      });
+    // Los cuatro casos que Eliza listó como aceptables, tal cual.
+    // La página web es OPCIONAL, pero eso no lo decide este validador:
+    // lo deciden las pantallas, que preguntan primero si está vacío y
+    // recién entonces validan
+    // (`_webCtl.text.trim().isEmpty || esSitioWebValido(...)`, en
+    // albergue_perfil_screen.dart:173 y aliado_perfil_screen.dart:81).
+    // Un campo vacío nunca llega acá y nunca bloquea el guardado.
+    test('un texto vacío no tiene forma de dominio, y las pantallas lo '
+        'tratan como válido antes de preguntar', () {
+      expect(esSitioWebValido(''), false);
+      expect(esSitioWebValido('   '), false);
+    });
 
-      test('los tres con "www.", con y sin esquema, son válidos', () {
-        expect(esSitioWebValido('www.tunegocio.com'), true);
-        expect(esSitioWebValido('http://www.tunegocio.com'), true);
-        expect(esSitioWebValido('https://www.tunegocio.com'), true);
-      });
+    test('los tres con "www.", con y sin esquema, son válidos', () {
+      expect(esSitioWebValido('www.tunegocio.com'), true);
+      expect(esSitioWebValido('http://www.tunegocio.com'), true);
+      expect(esSitioWebValido('https://www.tunegocio.com'), true);
+    });
 
-      test('con una ruta después del dominio también es válido', () {
-        expect(esSitioWebValido('tunegocio.com/contacto'), true);
-      });
+    test('con una ruta después del dominio también es válido', () {
+      expect(esSitioWebValido('tunegocio.com/contacto'), true);
+    });
 
-      test('sin ningún punto es inválido', () {
-        expect(esSitioWebValido('sjejdj'), false);
-      });
+    test('sin ningún punto es inválido', () {
+      expect(esSitioWebValido('sjejdj'), false);
+    });
 
-      // ── Los dos casos que Eliza pidió rechazar ──────────────────────
-      //
-      // Antes PASABAN, a propósito: el criterio era que rechazar de más era
-      // peor que aceptar de más. Eliza revirtió esa decisión al ver que se
-      // podía guardar cualquier texto como página web.
-      //
-      // Se rechazan SIN lista de TLD y SIN tope al largo del TLD (ese tope
-      // estuvo puesto y se sacó porque dejaba afuera .website, .company y
-      // .photography, que son reales). Las dos reglas nuevas no miran la
-      // extensión: miran "www" y el largo del NOMBRE del dominio.
-      test('"www." seguido de una sola palabra es inválido', () {
-        // "www" es un prefijo de subdominio, no un nombre de dominio: si
-        // está, tienen que venir al menos dos partes más. Es el error de
-        // tipeo realista, escribir el nombre y olvidar la extensión.
-        expect(esSitioWebValido('www.casitahogar'), false);
-        expect(esSitioWebValido('www.refugio'), false);
-      });
+    // ── Los dos casos que Eliza pidió rechazar ──────────────────────
+    //
+    // Antes PASABAN, a propósito: el criterio era que rechazar de más era
+    // peor que aceptar de más. Eliza revirtió esa decisión al ver que se
+    // podía guardar cualquier texto como página web.
+    //
+    // Se rechazan SIN lista de TLD y SIN tope al largo del TLD (ese tope
+    // estuvo puesto y se sacó porque dejaba afuera .website, .company y
+    // .photography, que son reales). Las dos reglas nuevas no miran la
+    // extensión: miran "www" y el largo del NOMBRE del dominio.
+    test('"www." seguido de una sola palabra es inválido', () {
+      // "www" es un prefijo de subdominio, no un nombre de dominio: si
+      // está, tienen que venir al menos dos partes más. Es el error de
+      // tipeo realista, escribir el nombre y olvidar la extensión.
+      expect(esSitioWebValido('www.casitahogar'), false);
+      expect(esSitioWebValido('www.refugio'), false);
+    });
 
-      test('un nombre de dominio de una sola letra es inválido', () {
-        expect(esSitioWebValido('a.djsfdsf'), false);
-        expect(esSitioWebValido('a.com'), false);
-        expect(esSitioWebValido('www.a.com'), false);
-      });
+    test('un nombre de dominio de una sola letra es inválido', () {
+      expect(esSitioWebValido('a.djsfdsf'), false);
+      expect(esSitioWebValido('a.com'), false);
+      expect(esSitioWebValido('www.a.com'), false);
+    });
 
-      // El costo de esa regla, afirmado para que no se descubra por
-      // sorpresa: "a.djsfdsf" y "x.com" son estructuralmente idénticos
-      // (nombre de una letra, punto, extensión de solo letras), asi que sin
-      // una lista de TLD no hay forma de aceptar uno y rechazar el otro.
-      // Eliza lo aprobó sabiendo el costo: un dominio de una letra es
-      // carísimo y practicamente nunca es el sitio de un albergue o una
-      // veterinaria.
-      test('el costo conocido: los dominios de UNA letra quedan afuera', () {
-        expect(esSitioWebValido('x.com'), false);
-        expect(esSitioWebValido('t.co'), false);
-      });
+    // El costo de esa regla, afirmado para que no se descubra por
+    // sorpresa: "a.djsfdsf" y "x.com" son estructuralmente idénticos
+    // (nombre de una letra, punto, extensión de solo letras), asi que sin
+    // una lista de TLD no hay forma de aceptar uno y rechazar el otro.
+    // Eliza lo aprobó sabiendo el costo: un dominio de una letra es
+    // carísimo y practicamente nunca es el sitio de un albergue o una
+    // veterinaria.
+    test('el costo conocido: los dominios de UNA letra quedan afuera', () {
+      expect(esSitioWebValido('x.com'), false);
+      expect(esSitioWebValido('t.co'), false);
+    });
 
-      // Lo que sigue sin poder detectarse, y no es este arreglo: un dominio
-      // inventado con forma correcta. Para eso haría falta saber si
-      // resuelve, o sea una llamada de red al guardar.
-      test('un dominio inventado pero bien formado sigue pasando', () {
-        expect(esSitioWebValido('www.casitahogar.com'), true);
-      });
+    // Lo que sigue sin poder detectarse, y no es este arreglo: un dominio
+    // inventado con forma correcta. Para eso haría falta saber si
+    // resuelve, o sea una llamada de red al guardar.
+    test('un dominio inventado pero bien formado sigue pasando', () {
+      expect(esSitioWebValido('www.casitahogar.com'), true);
+    });
 
-      // Con esquema y con ruta, las dos reglas siguen aplicando: se miran
-      // las partes del dominio, no el texto crudo.
-      test('las reglas nuevas no se saltean con esquema ni con ruta', () {
-        expect(esSitioWebValido('https://www.casitahogar'), false);
-        expect(esSitioWebValido('http://a.djsfdsf'), false);
-        expect(esSitioWebValido('www.casitahogar/contacto'), false);
-        expect(esSitioWebValido('https://www.tunegocio.com/contacto'), true);
-      });
+    // Con esquema y con ruta, las dos reglas siguen aplicando: se miran
+    // las partes del dominio, no el texto crudo.
+    test('las reglas nuevas no se saltean con esquema ni con ruta', () {
+      expect(esSitioWebValido('https://www.casitahogar'), false);
+      expect(esSitioWebValido('http://a.djsfdsf'), false);
+      expect(esSitioWebValido('www.casitahogar/contacto'), false);
+      expect(esSitioWebValido('https://www.tunegocio.com/contacto'), true);
+    });
 
-      test('los TLD reales, cortos y largos, son todos válidos', () {
-        for (final tld in [
-          'com', 'co', 'org', 'net', 'es', 'ar', 'mx', 'de', 'io', 'app',
-          'vet', 'pet', 'online', 'travel', 'museum',
-          // Los largos: son los que un tope por largo dejaba afuera.
-          'website', 'company', 'photography', 'international',
-        ]) {
-          expect(
-            esSitioWebValido('tunegocio.$tld'),
-            true,
-            reason: '.$tld quedó afuera y es un dominio real',
-          );
-        }
-      });
+    test('los TLD reales, cortos y largos, son todos válidos', () {
+      for (final tld in [
+        'com', 'co', 'org', 'net', 'es', 'ar', 'mx', 'de', 'io', 'app',
+        'vet', 'pet', 'online', 'travel', 'museum',
+        // Los largos: son los que un tope por largo dejaba afuera.
+        'website', 'company', 'photography', 'international',
+      ]) {
+        expect(
+          esSitioWebValido('tunegocio.$tld'),
+          true,
+          reason: '.$tld quedó afuera y es un dominio real',
+        );
+      }
+    });
 
-      test('un dominio compuesto sigue valiendo: manda el último segmento', () {
-        expect(esSitioWebValido('www.casitahogar.com.co'), true);
-      });
+    test('un dominio compuesto sigue valiendo: manda el último segmento', () {
+      expect(esSitioWebValido('www.casitahogar.com.co'), true);
+    });
 
-      test(
-        'un TLD con números es inválido, aunque tenga forma de dominio — '
+    test('un TLD con números es inválido, aunque tenga forma de dominio — '
         'ningún dominio de primer nivel real (.com, .org, .co...) lleva '
         'números. Hallazgo real de Eliza probando el perfil del aliado: '
         '"www.veterinariola30" pasaba porque SÍ tiene forma de dominio '
-        '(palabra.palabra), pero "la30" no puede ser un TLD real',
-        () {
-          expect(esSitioWebValido('www.veterinariola30'), false);
-        },
-      );
+        '(palabra.palabra), pero "la30" no puede ser un TLD real', () {
+      expect(esSitioWebValido('www.veterinariola30'), false);
+    });
 
-      test(
-        'un TLD real con números en el nombre ANTES del punto sigue '
-        'siendo válido — el chequeo es solo sobre el último segmento',
-        () {
-          expect(esSitioWebValido('www.tunegocio24horas.com'), true);
-        },
-      );
+    test('un TLD real con números en el nombre ANTES del punto sigue '
+        'siendo válido — el chequeo es solo sobre el último segmento', () {
+      expect(esSitioWebValido('www.tunegocio24horas.com'), true);
+    });
 
-      test('un TLD compuesto (.com.co) sigue siendo válido', () {
-        expect(esSitioWebValido('www.tunegocio.com.co'), true);
-      });
+    test('un TLD compuesto (.com.co) sigue siendo válido', () {
+      expect(esSitioWebValido('www.tunegocio.com.co'), true);
+    });
 
-      test('un TLD de una sola letra es inválido — no existen TLDs de '
-          'menos de 2 caracteres', () {
-        expect(esSitioWebValido('tunegocio.c'), false);
-      });
-    },
-  );
+    test('un TLD de una sola letra es inválido — no existen TLDs de '
+        'menos de 2 caracteres', () {
+      expect(esSitioWebValido('tunegocio.c'), false);
+    });
+  });
 
   group('tiempoRelativo() — antes copiada byte a byte en '
       'solicitudes_preview.dart y solicitudes_rescatista_screen.dart, sin '
@@ -575,257 +595,224 @@ void main() {
     });
   });
 
-  group(
-    'formatearFecha() — "15 jul" o "15 jul 2026" según conAnio. El '
-    'contrato importante NO es esta función (nunca cambió), es que quien '
-    'la llama con una fecha de vida larga (la de ingreso de un animal, no '
-    'un timestamp de chat) decida conAnio comparando contra el año '
-    'actual, no fijándolo en `false` para siempre — hallazgo real de '
-    'Eliza: "el año que viene, ¿cómo distingo una fecha vieja?". Sin esa '
-    'comparación, un animal ingresado el año pasado se ve idéntico a uno '
-    'de ayer. mis_rescates_screen.dart y albergue_home_screen.dart tenían '
-    'exactamente ese bug (conAnio: false fijo); chat_screen.dart ya lo '
-    'hacía bien y es el criterio que las otras dos copiaron.',
-    () {
-      test('conAnio:true (el default) agrega el año', () {
-        expect(formatearFecha(DateTime(2026, 7, 15)), '15 jul 2026');
-      });
+  group('formatearFecha() — "15 jul" o "15 jul 2026" según conAnio. El '
+      'contrato importante NO es esta función (nunca cambió), es que quien '
+      'la llama con una fecha de vida larga (la de ingreso de un animal, no '
+      'un timestamp de chat) decida conAnio comparando contra el año '
+      'actual, no fijándolo en `false` para siempre — hallazgo real de '
+      'Eliza: "el año que viene, ¿cómo distingo una fecha vieja?". Sin esa '
+      'comparación, un animal ingresado el año pasado se ve idéntico a uno '
+      'de ayer. mis_rescates_screen.dart y albergue_home_screen.dart tenían '
+      'exactamente ese bug (conAnio: false fijo); chat_screen.dart ya lo '
+      'hacía bien y es el criterio que las otras dos copiaron.', () {
+    test('conAnio:true (el default) agrega el año', () {
+      expect(formatearFecha(DateTime(2026, 7, 15)), '15 jul 2026');
+    });
 
-      test('conAnio:false lo omite', () {
-        expect(
-          formatearFecha(DateTime(2026, 7, 15), conAnio: false),
-          '15 jul',
-        );
-      });
+    test('conAnio:false lo omite', () {
+      expect(formatearFecha(DateTime(2026, 7, 15), conAnio: false), '15 jul');
+    });
 
-      test(
-        'el patrón correcto para una fecha de vida larga: comparar el año '
+    test('el patrón correcto para una fecha de vida larga: comparar el año '
         'de la fecha contra el año ACTUAL, no contra un valor fijo — año '
-        'igual al de hoy, sin año en el texto',
-        () {
-          final hoy = DateTime.now();
-          final mismoAnio = DateTime(hoy.year, 3, 10);
-          expect(
-            formatearFecha(mismoAnio, conAnio: mismoAnio.year != hoy.year),
-            '10 mar',
-          );
-        },
+        'igual al de hoy, sin año en el texto', () {
+      final hoy = DateTime.now();
+      final mismoAnio = DateTime(hoy.year, 3, 10);
+      expect(
+        formatearFecha(mismoAnio, conAnio: mismoAnio.year != hoy.year),
+        '10 mar',
       );
+    });
 
-      test(
-        'mismo patrón, año DISTINTO al actual: sí muestra el año — es la '
+    test('mismo patrón, año DISTINTO al actual: sí muestra el año — es la '
         'diferencia real entre el bug ("18 ago" para siempre) y el '
-        'arreglo ("18 ago 2026" una vez que estemos en 2027)',
-        () {
-          final hoy = DateTime.now();
-          final anioPasado = DateTime(hoy.year - 1, 8, 18);
-          expect(
-            formatearFecha(anioPasado, conAnio: anioPasado.year != hoy.year),
-            '18 ago ${hoy.year - 1}',
-          );
-        },
+        'arreglo ("18 ago 2026" una vez que estemos en 2027)', () {
+      final hoy = DateTime.now();
+      final anioPasado = DateTime(hoy.year - 1, 8, 18);
+      expect(
+        formatearFecha(anioPasado, conAnio: anioPasado.year != hoy.year),
+        '18 ago ${hoy.year - 1}',
       );
-    },
-  );
+    });
+  });
 
-  group(
-    'sePuedeAdoptar() — el feed de adopción y Favoritos contestaban esta '
-    'MISMA pregunta con dos listas de estados escritas a mano, y se '
-    'contradecían en "Hogar de paso": el mismo animal salía adoptable en '
-    'el feed y "ya no disponible" en Favoritos.',
-    () {
-      test('recién publicado (Rescatado) se puede adoptar', () {
-        expect(sePuedeAdoptar('Rescatado'), true);
-      });
+  group('sePuedeAdoptar() — el feed de adopción y Favoritos contestaban esta '
+      'MISMA pregunta con dos listas de estados escritas a mano, y se '
+      'contradecían en "Hogar de paso": el mismo animal salía adoptable en '
+      'el feed y "ya no disponible" en Favoritos.', () {
+    test('recién publicado (Rescatado) se puede adoptar', () {
+      expect(sePuedeAdoptar('Rescatado'), true);
+    });
 
-      test('sin estado guardado (dato viejo) cuenta como Rescatado', () {
-        expect(sePuedeAdoptar(null), true);
-      });
+    test('sin estado guardado (dato viejo) cuenta como Rescatado', () {
+      expect(sePuedeAdoptar(null), true);
+    });
 
-      test('Regresado se puede adoptar — de hecho es el más urgente', () {
-        expect(sePuedeAdoptar('Regresado'), true);
-      });
+    test('Regresado se puede adoptar — de hecho es el más urgente', () {
+      expect(sePuedeAdoptar('Regresado'), true);
+    });
 
-      // EL caso de la contradicción. Un hogar de paso es temporal,
-      // justamente mientras el animal espera adopción definitiva — y
-      // cuentaComoEnCuidado() ya lo trata así al no contarlo como
-      // capacidad ocupada del albergue.
-      test('Hogar de paso SÍ se puede adoptar (acá se contradecían)', () {
-        expect(sePuedeAdoptar('Hogar de paso'), true);
-      });
+    // EL caso de la contradicción. Un hogar de paso es temporal,
+    // justamente mientras el animal espera adopción definitiva — y
+    // cuentaComoEnCuidado() ya lo trata así al no contarlo como
+    // capacidad ocupada del albergue.
+    test('Hogar de paso SÍ se puede adoptar (acá se contradecían)', () {
+      expect(sePuedeAdoptar('Hogar de paso'), true);
+    });
 
-      test('En proceso de adopción NO — ya hay alguien esperando', () {
-        expect(sePuedeAdoptar('En proceso de adopción'), false);
-      });
+    test('En proceso de adopción NO — ya hay alguien esperando', () {
+      expect(sePuedeAdoptar('En proceso de adopción'), false);
+    });
 
-      test('Adoptado NO', () {
-        expect(sePuedeAdoptar('Adoptado'), false);
-      });
+    test('Adoptado NO', () {
+      expect(sePuedeAdoptar('Adoptado'), false);
+    });
 
-      test('Fallecido NO', () {
-        expect(sePuedeAdoptar('Fallecido'), false);
-      });
-    },
-  );
+    test('Fallecido NO', () {
+      expect(sePuedeAdoptar('Fallecido'), false);
+    });
+  });
 
-  group(
-    'servicioEstaActivo() — se contestaba de dos formas: `== true` en el '
-    'perfil público y en el contador, `?? true` en la lista propia del '
-    'aliado. Un servicio sin el campo se veía activo para su dueño pero '
-    'era invisible para los clientes.',
-    () {
-      test('activo: true está activo', () {
-        expect(servicioEstaActivo({'activo': true}), true);
-      });
+  group('servicioEstaActivo() — se contestaba de dos formas: `== true` en el '
+      'perfil público y en el contador, `?? true` en la lista propia del '
+      'aliado. Un servicio sin el campo se veía activo para su dueño pero '
+      'era invisible para los clientes.', () {
+    test('activo: true está activo', () {
+      expect(servicioEstaActivo({'activo': true}), true);
+    });
 
-      test('activo: false NO está activo (apagarlo es explícito)', () {
-        expect(servicioEstaActivo({'activo': false}), false);
-      });
+    test('activo: false NO está activo (apagarlo es explícito)', () {
+      expect(servicioEstaActivo({'activo': false}), false);
+    });
 
-      // El caso que divergía: un servicio creado antes de que existiera
-      // el campo. Gana "activo" — se publicó y nunca se apagó a propósito.
-      test('sin el campo (servicio viejo) está activo', () {
-        expect(servicioEstaActivo({'nombre': 'Baño'}), true);
-      });
-    },
-  );
+    // El caso que divergía: un servicio creado antes de que existiera
+    // el campo. Gana "activo" — se publicó y nunca se apagó a propósito.
+    test('sin el campo (servicio viejo) está activo', () {
+      expect(servicioEstaActivo({'nombre': 'Baño'}), true);
+    });
+  });
 
-  group(
-    'diasHastaVencimiento / hogarDePasoVencido — el panel del rescatista '
-    'comparaba CON hora y "Mis solicitudes" solo por fecha. Como la fecha '
-    'de fin se guarda a medianoche, el día del vencimiento el adoptante '
-    'leía "vence hoy" mientras al rescatista la app ya le había mandado '
-    '"ha vencido, coordiná la devolución".',
-    () {
-      final ahora = DateTime(2026, 8, 24, 15, 30);
+  group('diasHastaVencimiento / hogarDePasoVencido — el panel del rescatista '
+      'comparaba CON hora y "Mis solicitudes" solo por fecha. Como la fecha '
+      'de fin se guarda a medianoche, el día del vencimiento el adoptante '
+      'leía "vence hoy" mientras al rescatista la app ya le había mandado '
+      '"ha vencido, coordiná la devolución".', () {
+    final ahora = DateTime(2026, 8, 24, 15, 30);
 
-      test('vence dentro de 3 días', () {
-        expect(
-          diasHastaVencimiento(fechaFin: DateTime(2026, 8, 27), ahora: ahora),
-          3,
-        );
-      });
+    test('vence dentro de 3 días', () {
+      expect(
+        diasHastaVencimiento(fechaFin: DateTime(2026, 8, 27), ahora: ahora),
+        3,
+      );
+    });
 
-      test('vence mañana', () {
-        expect(
-          diasHastaVencimiento(fechaFin: DateTime(2026, 8, 25), ahora: ahora),
-          1,
-        );
-      });
+    test('vence mañana', () {
+      expect(
+        diasHastaVencimiento(fechaFin: DateTime(2026, 8, 25), ahora: ahora),
+        1,
+      );
+    });
 
-      // EL caso donde diferían. La fecha de fin llega a medianoche, y son
-      // las 15:30 — con hora, `fechaFin.isAfter(ahora)` daba false y el
-      // rescatista ya lo veía vencido.
-      test('vence HOY: da 0, y NO está vencido todavía', () {
-        final hoy = DateTime(2026, 8, 24);
-        expect(diasHastaVencimiento(fechaFin: hoy, ahora: ahora), 0);
-        expect(hogarDePasoVencido(fechaFin: hoy, ahora: ahora), false);
-      });
+    // EL caso donde diferían. La fecha de fin llega a medianoche, y son
+    // las 15:30 — con hora, `fechaFin.isAfter(ahora)` daba false y el
+    // rescatista ya lo veía vencido.
+    test('vence HOY: da 0, y NO está vencido todavía', () {
+      final hoy = DateTime(2026, 8, 24);
+      expect(diasHastaVencimiento(fechaFin: hoy, ahora: ahora), 0);
+      expect(hogarDePasoVencido(fechaFin: hoy, ahora: ahora), false);
+    });
 
-      test('venció ayer: negativo, y sí está vencido', () {
-        final ayer = DateTime(2026, 8, 23);
-        expect(diasHastaVencimiento(fechaFin: ayer, ahora: ahora), -1);
-        expect(hogarDePasoVencido(fechaFin: ayer, ahora: ahora), true);
-      });
+    test('venció ayer: negativo, y sí está vencido', () {
+      final ayer = DateTime(2026, 8, 23);
+      expect(diasHastaVencimiento(fechaFin: ayer, ahora: ahora), -1);
+      expect(hogarDePasoVencido(fechaFin: ayer, ahora: ahora), true);
+    });
 
-      test('la hora del día no cambia el resultado — a las 00:01 y a las '
-          '23:59 del mismo día, un período que vence hoy sigue sin vencer', () {
-        final hoy = DateTime(2026, 8, 24);
-        expect(
-          hogarDePasoVencido(
-            fechaFin: hoy,
-            ahora: DateTime(2026, 8, 24, 0, 1),
-          ),
-          false,
-        );
-        expect(
-          hogarDePasoVencido(
-            fechaFin: hoy,
-            ahora: DateTime(2026, 8, 24, 23, 59),
-          ),
-          false,
-        );
-      });
-    },
-  );
+    test('la hora del día no cambia el resultado — a las 00:01 y a las '
+        '23:59 del mismo día, un período que vence hoy sigue sin vencer', () {
+      final hoy = DateTime(2026, 8, 24);
+      expect(
+        hogarDePasoVencido(fechaFin: hoy, ahora: DateTime(2026, 8, 24, 0, 1)),
+        false,
+      );
+      expect(
+        hogarDePasoVencido(fechaFin: hoy, ahora: DateTime(2026, 8, 24, 23, 59)),
+        false,
+      );
+    });
+  });
 
-  group(
-    'coordenadasDe() — el feed leía las coordenadas con `as double?` y sin '
-    'descartar (0,0), mientras el servicio de ubicación ya rechazaba (0,0) '
-    'al guardar. El guard estaba solo del lado de la escritura.',
-    () {
-      test('coordenadas normales se devuelven tal cual', () {
-        final c = coordenadasDe({'latitud': 6.24, 'longitud': -75.58});
-        expect(c?.lat, 6.24);
-        expect(c?.lng, -75.58);
-      });
+  group('coordenadasDe() — el feed leía las coordenadas con `as double?` y sin '
+      'descartar (0,0), mientras el servicio de ubicación ya rechazaba (0,0) '
+      'al guardar. El guard estaba solo del lado de la escritura.', () {
+    test('coordenadas normales se devuelven tal cual', () {
+      final c = coordenadasDe({'latitud': 6.24, 'longitud': -75.58});
+      expect(c?.lat, 6.24);
+      expect(c?.lng, -75.58);
+    });
 
-      // El caso que Eliza vio: "Se encuentra a 8875.1 km de ti" en un
-      // animal sin ubicación. (0,0) es lo que devuelve Android cuando el
-      // GPS todavía no tiene lectura.
-      test('(0,0) NO es una ubicación: devuelve null', () {
-        expect(coordenadasDe({'latitud': 0, 'longitud': 0}), isNull);
-      });
+    // El caso que Eliza vio: "Se encuentra a 8875.1 km de ti" en un
+    // animal sin ubicación. (0,0) es lo que devuelve Android cuando el
+    // GPS todavía no tiene lectura.
+    test('(0,0) NO es una ubicación: devuelve null', () {
+      expect(coordenadasDe({'latitud': 0, 'longitud': 0}), isNull);
+    });
 
-      test('sin coordenadas guardadas: null', () {
-        expect(coordenadasDe({'nombre': 'Toby'}), isNull);
-        expect(coordenadasDe({'latitud': 6.24}), isNull);
-      });
+    test('sin coordenadas guardadas: null', () {
+      expect(coordenadasDe({'nombre': 'Toby'}), isNull);
+      expect(coordenadasDe({'latitud': 6.24}), isNull);
+    });
 
-      // Una coordenada legítima PUEDE tener un cero: el meridiano de
-      // Greenwich y el ecuador existen. Solo el par (0,0) es basura.
-      test('un solo cero sí es válido (Greenwich, el ecuador)', () {
-        expect(coordenadasDe({'latitud': 51.47, 'longitud': 0})?.lng, 0);
-        expect(coordenadasDe({'latitud': 0, 'longitud': -78.5})?.lat, 0);
-      });
+    // Una coordenada legítima PUEDE tener un cero: el meridiano de
+    // Greenwich y el ecuador existen. Solo el par (0,0) es basura.
+    test('un solo cero sí es válido (Greenwich, el ecuador)', () {
+      expect(coordenadasDe({'latitud': 51.47, 'longitud': 0})?.lng, 0);
+      expect(coordenadasDe({'latitud': 0, 'longitud': -78.5})?.lat, 0);
+    });
 
-      // El trigger del servidor serializa los enteros de JS como enteros,
-      // y `as double?` sobre un entero revienta — llevándose puesta la
-      // pestaña Adoptar entera, porque el orden por distancia corre dentro
-      // del builder de la lista.
-      test('una coordenada guardada como ENTERO no revienta', () {
-        final c = coordenadasDe({'latitud': 6, 'longitud': -75});
-        expect(c?.lat, 6.0);
-        expect(c?.lng, -75.0);
-      });
-    },
-  );
+    // El trigger del servidor serializa los enteros de JS como enteros,
+    // y `as double?` sobre un entero revienta — llevándose puesta la
+    // pestaña Adoptar entera, porque el orden por distancia corre dentro
+    // del builder de la lista.
+    test('una coordenada guardada como ENTERO no revienta', () {
+      final c = coordenadasDe({'latitud': 6, 'longitud': -75});
+      expect(c?.lat, 6.0);
+      expect(c?.lng, -75.0);
+    });
+  });
 
-  group(
-    'nombreDeAnimal() — la misma pregunta se respondía en 7 lugares con 4 '
-    'respuestas distintas, dos de ellas dentro de la MISMA pantalla.',
-    () {
-      test('con nombre: lo devuelve tal cual', () {
-        expect(nombreDeAnimal('Pacolin'), 'Pacolin');
-        expect(nombreDeAnimal('Pacolin', enFrase: true), 'Pacolin');
-      });
+  group('nombreDeAnimal() — la misma pregunta se respondía en 7 lugares con 4 '
+      'respuestas distintas, dos de ellas dentro de la MISMA pantalla.', () {
+    test('con nombre: lo devuelve tal cual', () {
+      expect(nombreDeAnimal('Pacolin'), 'Pacolin');
+      expect(nombreDeAnimal('Pacolin', enFrase: true), 'Pacolin');
+    });
 
-      test('sin nombre: un solo texto para títulos', () {
-        expect(nombreDeAnimal(null), 'Sin nombre');
-        expect(nombreDeAnimal(''), 'Sin nombre');
-        expect(nombreDeAnimal('   '), 'Sin nombre');
-      });
+    test('sin nombre: un solo texto para títulos', () {
+      expect(nombreDeAnimal(null), 'Sin nombre');
+      expect(nombreDeAnimal(''), 'Sin nombre');
+      expect(nombreDeAnimal('   '), 'Sin nombre');
+    });
 
-      // "Para Sin nombre" no se lee como español. Caso real reportado.
-      test('sin nombre, dentro de una frase: otro texto', () {
-        expect(nombreDeAnimal(null, enFrase: true), 'un animalito');
-        expect(nombreDeAnimal('', enFrase: true), 'un animalito');
-      });
+    // "Para Sin nombre" no se lee como español. Caso real reportado.
+    test('sin nombre, dentro de una frase: otro texto', () {
+      expect(nombreDeAnimal(null, enFrase: true), 'un animalito');
+      expect(nombreDeAnimal('', enFrase: true), 'un animalito');
+    });
 
-      // El texto de pantalla se coló a la base: una pantalla copió a
-      // `solicitudes` el nombre ya resuelto en vez del dato real.
-      test('el literal "Sin nombre" GUARDADO cuenta como no tener nombre', () {
-        expect(nombreDeAnimal('Sin nombre', enFrase: true), 'un animalito');
-        expect(nombreDeAnimal('Sin nombre'), 'Sin nombre');
-      });
+    // El texto de pantalla se coló a la base: una pantalla copió a
+    // `solicitudes` el nombre ya resuelto en vez del dato real.
+    test('el literal "Sin nombre" GUARDADO cuenta como no tener nombre', () {
+      expect(nombreDeAnimal('Sin nombre', enFrase: true), 'un animalito');
+      expect(nombreDeAnimal('Sin nombre'), 'Sin nombre');
+    });
 
-      // Un animal que de verdad se llama así no debe caer en el caso de
-      // arriba: la comparación es exacta, no "contiene".
-      test('un nombre que solo se PARECE al placeholder se respeta', () {
-        expect(nombreDeAnimal('Sin nombre aún'), 'Sin nombre aún');
-      });
-    },
-  );
+    // Un animal que de verdad se llama así no debe caer en el caso de
+    // arriba: la comparación es exacta, no "contiene".
+    test('un nombre que solo se PARECE al placeholder se respeta', () {
+      expect(nombreDeAnimal('Sin nombre aún'), 'Sin nombre aún');
+    });
+  });
 
   group(
     'sePuedeSerHogarDePaso() — el panel "¿cómo querés ayudar?" decidía esto '
@@ -866,8 +853,14 @@ void main() {
       // el caso nuevo acá si mañana se agrega un estado.
       test('nunca hay hogar de paso sin adopción posible', () {
         for (final estado in [
-          'Rescatado', 'Regresado', 'Hogar de paso',
-          'En proceso de adopción', 'Adoptado', 'Fallecido', null, 'inventado',
+          'Rescatado',
+          'Regresado',
+          'Hogar de paso',
+          'En proceso de adopción',
+          'Adoptado',
+          'Fallecido',
+          null,
+          'inventado',
         ]) {
           if (sePuedeSerHogarDePaso(estado)) {
             expect(sePuedeAdoptar(estado), isTrue, reason: '$estado');
