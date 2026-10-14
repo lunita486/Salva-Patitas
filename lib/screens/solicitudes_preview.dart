@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../theme.dart';
+import '../theme/salva_patitas_theme.dart';
+import '../widgets/sp_widgets.dart';
+import '../widgets/solicitud_piezas.dart';
 import '../widgets/avatares.dart';
 import '../widgets/estado_error_feed.dart';
 import '../widgets/fotos.dart';
 import '../widgets/pedir_motivo.dart';
-import '../domain/compatibilidad.dart';
 import '../domain/reglas_negocio.dart';
 import '../data/creator_role.dart';
 import '../data/solicitudes_repository.dart';
@@ -52,7 +53,9 @@ class _SolicitudesPreviewState extends State<SolicitudesPreview> {
       stream: _stream,
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: appTeal));
+          return Center(
+            child: CircularProgressIndicator(color: context.sp.primary),
+          );
         }
         // Sin esto, un error real se veía igual que "No hay solicitudes
         // por ahora" — mismo patrón ya arreglado en favoritos_screen.dart
@@ -68,18 +71,10 @@ class _SolicitudesPreviewState extends State<SolicitudesPreview> {
             return tb.compareTo(ta);
           });
         if (docs.isEmpty) {
-          return Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Center(
-              child: Text(
-                'No hay solicitudes por ahora.',
-                style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
-              ),
-            ),
+          return const SpEmpty(
+            title: 'No hay solicitudes por ahora',
+            subtitle: 'Cuando alguien quiera adoptar, aparecerá aquí.',
+            animal: SpAnimalKind.gato,
           );
         }
         final limited = docs.take(3).toList();
@@ -118,7 +113,7 @@ class _SolicitudesPreviewState extends State<SolicitudesPreview> {
             final ini = nombreCompleto.isNotEmpty
                 ? nombreCompleto[0].toUpperCase()
                 : 'A';
-            final col = i.isEven ? appTeal : appOrange;
+            final col = colorInicialAdoptante(context.sp, i);
             return Padding(
               // Key por doc.id: sin esto, si la lista de pendientes cambia
               // de orden (nueva solicitud, o una se aprueba/rechaza y sale
@@ -147,9 +142,8 @@ class _SolicitudesPreviewState extends State<SolicitudesPreview> {
 }
 
 Widget _solicitudDetalle(
-
   String ini,
-  Color col,
+  (Color, Color) col,
   String nombre,
   String detalle,
   String tiempo,
@@ -171,36 +165,45 @@ Widget _solicitudDetalle(
       ? fechaFin.difference(fechaInicio).inDays + 1
       : null;
   final fotoUrl = data?['fotoUrl'] as String?;
-  final score = data != null ? calcularCompatibilidad(data) : -1;
-  final scoreColor = score >= 80
-      ? appTeal
-      : score >= 60
-      ? const Color(0xFFE65100)
-      : const Color(0xFFB71C1C);
-
-  Widget infoFila(String emoji, String label, String valor) => Padding(
-    padding: const EdgeInsets.only(bottom: 8),
-    child: Row(
-      children: [
-        Text(emoji, style: const TextStyle(fontSize: 15)),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            label,
-            style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+  Widget infoFila(
+    BuildContext ctx,
+    IconData icono,
+    String label,
+    String valor,
+  ) {
+    final c = ctx.sp;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              color: c.primarySoft,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icono, size: 16, color: c.primaryStrong),
           ),
-        ),
-        Text(
-          valor,
-          style: const TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: appInk,
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(fontSize: 13, color: c.inkMuted),
+            ),
           ),
-        ),
-      ],
-    ),
-  );
+          Text(
+            valor,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: c.ink,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   return Builder(
     builder: (ctx) => GestureDetector(
@@ -209,6 +212,7 @@ Widget _solicitudDetalle(
           : () => showModalBottomSheet(
               context: ctx,
               isScrollControlled: true,
+              backgroundColor: ctx.sp.surface,
               shape: const RoundedRectangleBorder(
                 borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
               ),
@@ -228,7 +232,7 @@ Widget _solicitudDetalle(
                           width: 40,
                           height: 4,
                           decoration: BoxDecoration(
-                            color: Colors.grey.shade300,
+                            color: ctx.sp.line,
                             borderRadius: BorderRadius.circular(2),
                           ),
                         ),
@@ -239,7 +243,8 @@ Widget _solicitudDetalle(
                           AvatarUsuario(
                             userId: adoptanteId,
                             inicial: ini,
-                            backgroundColor: col,
+                            backgroundColor: col.$1,
+                            textColor: col.$2,
                             radius: 22,
                           ),
                           const SizedBox(width: 12),
@@ -267,42 +272,14 @@ Widget _solicitudDetalle(
                                         'Para $animal',
                                         style: TextStyle(
                                           fontSize: 12,
-                                          color: Colors.grey.shade700,
+                                          color: ctx.sp.inkMuted,
                                         ),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                     ),
                                     const SizedBox(width: 8),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 3,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: esHogar
-                                            ? appTeal.withValues(alpha: 0.12)
-                                            : appOrange.withValues(alpha: 0.12),
-                                        borderRadius: BorderRadius.circular(20),
-                                        border: Border.all(
-                                          color: esHogar
-                                              ? appTeal.withValues(alpha: 0.4)
-                                              : appOrange.withValues(
-                                                  alpha: 0.4,
-                                                ),
-                                        ),
-                                      ),
-                                      child: Text(
-                                        esHogar
-                                            ? '🏡 Hogar de paso'
-                                            : '🏠 Adopción',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w700,
-                                          color: esHogar ? appTeal : appOrange,
-                                        ),
-                                      ),
-                                    ),
+                                    SolicitudTipoPill(esHogar: esHogar),
                                   ],
                                 ),
                               ],
@@ -314,168 +291,60 @@ Widget _solicitudDetalle(
                           fechaInicio != null &&
                           fechaFin != null) ...[
                         const SizedBox(height: 12),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 10,
-                          ),
-                          decoration: BoxDecoration(
-                            color: appTeal.withValues(alpha: 0.07),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: appTeal.withValues(alpha: 0.3),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.calendar_today,
-                                size: 13,
-                                color: appTeal,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                '${fechaInicio.day}/${fechaInicio.month}/${fechaInicio.year} → ${fechaFin.day}/${fechaFin.month}/${fechaFin.year}',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: appTeal,
-                                ),
-                              ),
-                              const Spacer(),
-                              Text(
-                                '$diasHogar días',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  color: appTeal,
-                                ),
-                              ),
-                            ],
-                          ),
+                        SolicitudFechasHogar(
+                          inicio: fechaInicio,
+                          fin: fechaFin,
+                          dias: diasHogar,
                         ),
                       ],
                       const SizedBox(height: 16),
-                      if (score >= 0)
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 10,
-                          ),
-                          decoration: BoxDecoration(
-                            color: scoreColor.withValues(alpha: 0.08),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: scoreColor.withValues(alpha: 0.35),
-                            ),
-                          ),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                score >= 80
-                                    ? '✅'
-                                    : score >= 60
-                                    ? '⚠️'
-                                    : '❌',
-                                style: const TextStyle(fontSize: 18),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      score >= 80
-                                          ? 'Perfil ideal ($score%)'
-                                          : score >= 60
-                                          ? 'Perfil aceptable ($score%)'
-                                          : 'No recomendado ($score%)',
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w700,
-                                        color: scoreColor,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    if (data != null)
-                                      ...explicarCompatibilidad(data).map(
-                                        (r) => Padding(
-                                          padding: const EdgeInsets.only(
-                                            bottom: 3,
-                                          ),
-                                          child: Row(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                r.$2 ? '✓' : '✗',
-                                                style: TextStyle(
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: r.$2
-                                                      ? appTeal
-                                                      : Colors.red.shade400,
-                                                ),
-                                              ),
-                                              const SizedBox(width: 5),
-                                              Expanded(
-                                                child: Text(
-                                                  r.$1,
-                                                  style: TextStyle(
-                                                    fontSize: 11,
-                                                    color: r.$2
-                                                        ? Colors.grey.shade700
-                                                        : Colors.red.shade600,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                      if (data != null)
+                        SolicitudCompatibilidad(solicitud: data),
                       const SizedBox(height: 20),
                       Text(
                         'Perfil del adoptante',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
-                          color: Colors.grey.shade700,
+                          color: ctx.sp.inkMuted,
                         ),
                       ),
                       const SizedBox(height: 10),
-                      infoFila('🏠', 'Vivienda', data?['vivienda'] ?? '-'),
                       infoFila(
-                        '⏰',
+                        ctx,
+                        Icons.home_outlined,
+                        'Vivienda',
+                        data?['vivienda'] ?? '-',
+                      ),
+                      infoFila(
+                        ctx,
+                        Icons.schedule_rounded,
                         'Horas fuera al día',
                         data?['horasFuera'] ?? '-',
                       ),
                       infoFila(
-                        '👥',
+                        ctx,
+                        Icons.group_outlined,
                         'Personas en casa',
                         data?['integrantes'] ?? '-',
                       ),
                       infoFila(
-                        '👶',
+                        ctx,
+                        Icons.child_care_outlined,
                         'Niños menores de 8 años',
                         (data?['tieneNinos'] as bool? ?? false) ? 'Sí' : 'No',
                       ),
                       infoFila(
-                        '🐾',
+                        ctx,
+                        Icons.pets_rounded,
                         'Otras mascotas',
                         (data?['tieneMascotas'] as bool? ?? false)
                             ? 'Sí'
                             : 'No',
                       ),
                       infoFila(
-                        '📚',
+                        ctx,
+                        Icons.school_outlined,
                         'Experiencia previa',
                         (data?['experienciaPrevia'] as bool? ?? false)
                             ? 'Sí'
@@ -488,7 +357,7 @@ Widget _solicitudDetalle(
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
-                            color: Colors.grey.shade700,
+                            color: ctx.sp.inkMuted,
                           ),
                         ),
                         const SizedBox(height: 6),
@@ -496,14 +365,14 @@ Widget _solicitudDetalle(
                           width: double.infinity,
                           padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
-                            color: Colors.grey.shade50,
+                            color: ctx.sp.surfaceSunken,
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
                             '${data!['motivacion']}',
                             style: TextStyle(
                               fontSize: 13,
-                              color: Colors.grey.shade700,
+                              color: ctx.sp.inkMuted,
                               height: 1.5,
                             ),
                           ),
@@ -513,7 +382,8 @@ Widget _solicitudDetalle(
                       Row(
                         children: [
                           Expanded(
-                            child: GestureDetector(
+                            child: SpButton(
+                              label: 'Aprobar',
                               onTap: () async {
                                 Navigator.pop(ctx);
                                 if (data == null) return;
@@ -529,8 +399,8 @@ Widget _solicitudDetalle(
                                   // aprobarSolicitud en solicitudes_rescatista_screen.dart.
                                   if (resultado == null) {
                                     ScaffoldMessenger.of(ctx).showSnackBar(
-                                      const SnackBar(
-                                        backgroundColor: msgAdvertencia,
+                                      SnackBar(
+                                        backgroundColor: ctx.sp.msgAdvertencia,
                                         content: Text(
                                           'Ya se está procesando esta solicitud.',
                                         ),
@@ -541,7 +411,7 @@ Widget _solicitudDetalle(
                                   if (!resultado.aprobada) {
                                     ScaffoldMessenger.of(ctx).showSnackBar(
                                       SnackBar(
-                                        backgroundColor: msgError,
+                                        backgroundColor: ctx.sp.msgError,
                                         content: Text(
                                           resultado.animalEliminado
                                               ? 'Este animal ya no existe (fue eliminado). La solicitud se rechazó automáticamente.'
@@ -552,8 +422,8 @@ Widget _solicitudDetalle(
                                     );
                                   } else if (!resultado.avisoOk) {
                                     ScaffoldMessenger.of(ctx).showSnackBar(
-                                      const SnackBar(
-                                        backgroundColor: msgAdvertencia,
+                                      SnackBar(
+                                        backgroundColor: ctx.sp.msgAdvertencia,
                                         content: Text(
                                           'Solicitud aprobada, pero no pudimos avisarle al adoptante por chat. Escribile manualmente.',
                                         ),
@@ -564,7 +434,7 @@ Widget _solicitudDetalle(
                                   if (ctx.mounted) {
                                     ScaffoldMessenger.of(ctx).showSnackBar(
                                       SnackBar(
-                                        backgroundColor: msgError,
+                                        backgroundColor: ctx.sp.msgError,
                                         content: Text(
                                           'No se pudo aprobar la solicitud: $e',
                                         ),
@@ -573,29 +443,13 @@ Widget _solicitudDetalle(
                                   }
                                 }
                               },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 14,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: appTeal,
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: const Text(
-                                  'Aprobar',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 15,
-                                  ),
-                                ),
-                              ),
                             ),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
-                            child: GestureDetector(
+                            child: SpButton(
+                              label: 'Rechazar',
+                              peligro: true,
                               // pedirMotivo (widgets/pedir_motivo.dart) es dueño de su propio
                               // TextEditingController. Antes se creaba acá y se liberaba
                               // con .then() sobre el showDialog, que se completa ANTES
@@ -612,7 +466,7 @@ Widget _solicitudDetalle(
                                       'Luego de revisar tu solicitud, en esta ocasión no podemos continuar con el proceso. '
                                       '¡Esperamos que pronto encuentres a tu compañero perfecto! 🐾',
                                   maxLines: 5,
-                                  colorConfirmar: Colors.red,
+                                  colorConfirmar: ctx.sp.danger,
                                   radioDialogo: 16,
                                   radioCampo: 10,
                                 );
@@ -628,8 +482,8 @@ Widget _solicitudDetalle(
                                   if (!ctx.mounted) return;
                                   if (avisoOk == null) {
                                     ScaffoldMessenger.of(ctx).showSnackBar(
-                                      const SnackBar(
-                                        backgroundColor: msgAdvertencia,
+                                      SnackBar(
+                                        backgroundColor: ctx.sp.msgAdvertencia,
                                         content: Text(
                                           'Ya se está procesando esta solicitud.',
                                         ),
@@ -639,8 +493,8 @@ Widget _solicitudDetalle(
                                   }
                                   if (!avisoOk) {
                                     ScaffoldMessenger.of(ctx).showSnackBar(
-                                      const SnackBar(
-                                        backgroundColor: msgAdvertencia,
+                                      SnackBar(
+                                        backgroundColor: ctx.sp.msgAdvertencia,
                                         content: Text(
                                           'Solicitud rechazada, pero no pudimos avisarle al adoptante por chat.',
                                         ),
@@ -651,7 +505,7 @@ Widget _solicitudDetalle(
                                   if (ctx.mounted) {
                                     ScaffoldMessenger.of(ctx).showSnackBar(
                                       SnackBar(
-                                        backgroundColor: msgError,
+                                        backgroundColor: ctx.sp.msgError,
                                         content: Text(
                                           'No se pudo rechazar la solicitud: $e',
                                         ),
@@ -660,26 +514,6 @@ Widget _solicitudDetalle(
                                   }
                                 }
                               },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 14,
-                                ),
-                                decoration: BoxDecoration(
-                                  border: Border.all(
-                                    color: Colors.red.shade300,
-                                  ),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Text(
-                                  'Rechazar',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: Colors.red.shade400,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 15,
-                                  ),
-                                ),
-                              ),
                             ),
                           ),
                         ],
@@ -690,18 +524,8 @@ Widget _solicitudDetalle(
               ),
             ),
       child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
+        padding: const EdgeInsets.all(14),
+        decoration: SpDeco.card(ctx.sp),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -710,7 +534,8 @@ Widget _solicitudDetalle(
                 AvatarUsuario(
                   userId: adoptanteId,
                   inicial: ini,
-                  backgroundColor: col,
+                  backgroundColor: col.$1,
+                  textColor: col.$2,
                   radius: 20,
                 ),
                 const SizedBox(width: 12),
@@ -728,17 +553,14 @@ Widget _solicitudDetalle(
                       const SizedBox(height: 2),
                       Text(
                         detalle,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade700,
-                        ),
+                        style: TextStyle(fontSize: 12, color: ctx.sp.inkMuted),
                       ),
                     ],
                   ),
                 ),
                 Text(
                   tiempo,
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                  style: TextStyle(fontSize: 12, color: ctx.sp.inkMuted),
                 ),
               ],
             ),
@@ -758,7 +580,7 @@ Widget _solicitudDetalle(
                       vertical: 8,
                     ),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFD8F0E4),
+                      color: ctx.sp.surfaceSunken,
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Row(
@@ -777,13 +599,13 @@ Widget _solicitudDetalle(
                                     width: 32,
                                     height: 32,
                                     decoration: BoxDecoration(
-                                      color: Colors.brown.shade300,
+                                      color: ctx.sp.peach,
                                       borderRadius: BorderRadius.circular(6),
                                     ),
-                                    child: const Icon(
+                                    child: Icon(
                                       Icons.pets,
                                       size: 18,
-                                      color: Colors.white,
+                                      color: ctx.sp.peachInk,
                                     ),
                                   ),
                                 )
@@ -791,13 +613,13 @@ Widget _solicitudDetalle(
                                   width: 32,
                                   height: 32,
                                   decoration: BoxDecoration(
-                                    color: Colors.brown.shade300,
+                                    color: ctx.sp.peach,
                                     borderRadius: BorderRadius.circular(6),
                                   ),
-                                  child: const Icon(
+                                  child: Icon(
                                     Icons.pets,
                                     size: 18,
-                                    color: Colors.white,
+                                    color: ctx.sp.peachInk,
                                   ),
                                 ),
                         ),
@@ -818,41 +640,17 @@ Widget _solicitudDetalle(
                   ),
                 ),
                 const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: esHogar
-                        ? appTeal.withValues(alpha: 0.12)
-                        : appOrange.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: esHogar
-                          ? appTeal.withValues(alpha: 0.4)
-                          : appOrange.withValues(alpha: 0.4),
-                    ),
-                  ),
-                  child: Text(
-                    esHogar ? '🏡 Hogar de paso' : '🏠 Adopción',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: esHogar ? appTeal : appOrange,
-                    ),
-                  ),
-                ),
+                SolicitudTipoPill(esHogar: esHogar),
               ],
             ),
             if (docId != null) ...[
               const SizedBox(height: 12),
-              const Text(
+              Text(
                 'Revisar →',
                 style: TextStyle(
                   fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: appTeal,
+                  fontWeight: FontWeight.w800,
+                  color: ctx.sp.primaryStrong,
                 ),
               ),
             ],

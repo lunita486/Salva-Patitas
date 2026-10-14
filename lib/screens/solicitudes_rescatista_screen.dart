@@ -4,12 +4,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:go_router/go_router.dart';
 import '../routing/app_router.dart';
-import '../theme.dart';
 import '../widgets/estado_error_feed.dart';
 import '../widgets/albergue_tab_bar.dart';
+import '../widgets/sp_widgets.dart';
+import '../widgets/solicitud_piezas.dart';
+import '../theme/salva_patitas_theme.dart';
 import '../widgets/fotos.dart';
 import '../widgets/pedir_motivo.dart';
-import '../domain/compatibilidad.dart';
 import '../domain/reglas_negocio.dart';
 import '../data/creator_role.dart';
 import '../data/solicitudes_repository.dart';
@@ -676,7 +677,7 @@ Future<void> verificarVencimientos(
   if (avisados.isNotEmpty) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        backgroundColor: msgAdvertencia,
+        backgroundColor: context.sp.msgAdvertencia,
         duration: const Duration(seconds: 6),
         content: Text(
           avisados.length == 1
@@ -689,7 +690,7 @@ Future<void> verificarVencimientos(
   if (porVencer.isNotEmpty) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        backgroundColor: msgAdvertencia,
+        backgroundColor: context.sp.msgAdvertencia,
         duration: const Duration(seconds: 6),
         content: Text(
           porVencer.length == 1
@@ -813,7 +814,7 @@ class _SolicitudesRescatistaScreenState
       if (!resultado.aprobada) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            backgroundColor: msgError,
+            backgroundColor: context.sp.msgError,
             content: Text(
               resultado.animalEliminado
                   ? 'Este animal ya no existe (fue eliminado). La solicitud se rechazó automáticamente.'
@@ -824,8 +825,8 @@ class _SolicitudesRescatistaScreenState
         );
       } else if (!resultado.avisoOk) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            backgroundColor: msgAdvertencia,
+          SnackBar(
+            backgroundColor: context.sp.msgAdvertencia,
             content: Text(
               'Solicitud aprobada, pero no pudimos avisarle al adoptante por chat. Escribile manualmente.',
             ),
@@ -836,7 +837,7 @@ class _SolicitudesRescatistaScreenState
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            backgroundColor: msgError,
+            backgroundColor: context.sp.msgError,
             content: Text('No se pudo aprobar la solicitud: $e'),
           ),
         );
@@ -864,8 +865,8 @@ class _SolicitudesRescatistaScreenState
         return; // ya se estaba procesando, ver aprobarSolicitud
       if (!avisoOk) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            backgroundColor: msgAdvertencia,
+          SnackBar(
+            backgroundColor: context.sp.msgAdvertencia,
             content: Text(
               'Solicitud rechazada, pero no pudimos avisarle al adoptante por chat.',
             ),
@@ -876,7 +877,7 @@ class _SolicitudesRescatistaScreenState
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            backgroundColor: msgError,
+            backgroundColor: context.sp.msgError,
             content: Text('No se pudo rechazar la solicitud: $e'),
           ),
         );
@@ -888,6 +889,7 @@ class _SolicitudesRescatistaScreenState
 
   @override
   Widget build(BuildContext context) {
+    final c = context.sp;
     return Scaffold(
       // Abierta desde el Panel del albergue: misma barra de abajo, con esta
       // pestaña marcada (ver AlbergueTabBar).
@@ -900,795 +902,431 @@ class _SolicitudesRescatistaScreenState
               ),
             )
           : null,
-      backgroundColor: appBg,
-      body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 10, 20, 12),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-                    tooltip: 'Volver',
-                    onPressed: () => Navigator.pop(context),
+      backgroundColor: c.bg,
+      body: Stack(
+        children: [
+          const Positioned.fill(child: SpPawBackground()),
+          SafeArea(
+            child: Column(
+              children: [
+                const SpScreenHeader(title: 'Solicitudes'),
+                Expanded(
+                  child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                    stream: _solicitudesStream,
+                    builder: (context, snap) {
+                      if (snap.connectionState == ConnectionState.waiting) {
+                        return Center(
+                          child: CircularProgressIndicator(color: c.primary),
+                        );
+                      }
+                      if (snap.hasError) return errorFeedState();
+                      final docs = [...(snap.data?.docs ?? [])]
+                        ..sort((a, b) {
+                          final ta = a.data()['creadoEn'] as Timestamp?;
+                          final tb = b.data()['creadoEn'] as Timestamp?;
+                          if (ta == null) return 1;
+                          if (tb == null) return -1;
+                          return tb.compareTo(ta);
+                        });
+                      if (docs.isEmpty) {
+                        return ListView(
+                          padding: const EdgeInsets.all(16),
+                          children: const [
+                            SpEmpty(
+                              title: 'Aún no tienes solicitudes',
+                              subtitle:
+                                  'Cuando alguien quiera adoptar o ser hogar de paso, aparecerá aquí.',
+                              animal: SpAnimalKind.gato,
+                            ),
+                          ],
+                        );
+                      }
+                      return ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                        itemCount: docs.length,
+                        separatorBuilder: (_, _) => const SizedBox(height: 14),
+                        itemBuilder: (_, i) => _tarjeta(context, docs[i], i),
+                      );
+                    },
                   ),
-                  const Expanded(
-                    child: Text(
-                      'Solicitudes',
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tarjeta(
+    BuildContext context,
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+    int i,
+  ) {
+    final c = context.sp;
+    final d = doc.data();
+    final animal = nombreDeAnimal(d['animalNombre'] as String?);
+    final nombre = d['nombre'] as String? ?? 'Adoptante';
+    final integrantes = d['integrantes'] as String? ?? '';
+    final vivienda = d['vivienda'] as String? ?? '';
+    final mascotas = (d['tieneMascotas'] as bool? ?? false)
+        ? 'con mascotas'
+        : 'sin mascotas';
+    final ninos = (d['tieneNinos'] as bool? ?? false)
+        ? 'con niños'
+        : 'sin niños';
+    final exp = (d['experienciaPrevia'] as bool? ?? false)
+        ? 'con experiencia'
+        : 'sin experiencia';
+    final horas = d['horasFuera'] as String? ?? '';
+    final ts = d['creadoEn'] as Timestamp?;
+    final tiempo = ts != null ? tiempoRelativo(ts.toDate()) : '';
+    final ini = nombre.isNotEmpty ? nombre[0].toUpperCase() : 'A';
+    final (iniFondo, iniTinta) = colorInicialAdoptante(c, i);
+    final fotoUrl = d['fotoUrl'] as String?;
+    final estado = d['estado'] as String? ?? 'pendiente';
+    final tipo = d['tipoSolicitud'] as String? ?? 'adopcion';
+    final esHogar = tipo == 'hogar_de_paso';
+    final fechaInicio = (d['fechaInicioHogar'] as Timestamp?)?.toDate();
+    final fechaFin = (d['fechaFinHogar'] as Timestamp?)?.toDate();
+    // +1: mismo criterio que solicitudes_preview.dart — rango inclusivo de
+    // ambas puntas, para que elegir el mismo día como inicio y fin muestre
+    // "1 día", no "0".
+    final diasHogar = (fechaInicio != null && fechaFin != null)
+        ? fechaFin.difference(fechaInicio).inDays + 1
+        : null;
+    final detalle = [
+      vivienda,
+      if (integrantes.isNotEmpty) '$integrantes personas',
+      ninos,
+      mascotas,
+      exp,
+      if (horas.isNotEmpty) '$horas h fuera/día',
+    ].join(' · ');
+    final procesando = _procesando.contains(doc.id);
+
+    Future<void> irAlChat() async {
+      final adoptanteId = d['adoptanteId'] as String? ?? '';
+      final rescateIdChat = d['rescateId'] as String? ?? '';
+      // buscarDeAnimal traduce a null el
+      // permission-denied de un chat que todavía no
+      // existe (pasa cuando el mensaje automático de
+      // la aprobación no llegó a crearlo) — sin eso
+      // la excepción mataba el onTap y "Ir al chat"
+      // no hacía nada. Con chatId null, ChatScreen
+      // crea el chat.
+      final chatId = (await ChatsRepository().buscarDeAnimal(
+        rescateId: rescateIdChat,
+        adoptanteId: adoptanteId,
+        animalNombre: animal,
+      ))?.id;
+      // `creadoPor` de acá abajo viene de la
+      // SOLICITUD, congelado al momento de
+      // mandarla — mismo problema (y mismo
+      // arreglo) que _aprobarSolicitudImpl/
+      // _rechazarSolicitudImpl de más arriba en
+      // este archivo. Aunque acá no cambia lo que
+      // ESTE botón muestra (el rescatista siempre
+      // ve "Adoptante"), ChatScreen hace merge al
+      // abrirse: un valor viejo acá pisaba de
+      // nuevo el `creadoPor` correcto del chat
+      // para quien lo mire después, del otro
+      // lado. Hallazgo real de Eliza: un animal
+      // de albergue mostraba "Rescatista" en el
+      // chat del adoptante, reportado hace meses
+      // y seguía pasando.
+      var creadoPorVivo = d['creadoPor'] as String?;
+      if (rescateIdChat.isNotEmpty) {
+        try {
+          final rescateDoc = await RescatesRepository().obtener(rescateIdChat);
+          final creadoPorReal = rescateDoc.data()?['creadoPor'] as String?;
+          if (creadoPorReal != null && creadoPorReal.isNotEmpty) {
+            creadoPorVivo = creadoPorReal;
+          }
+        } catch (_) {}
+      }
+      if (!context.mounted) return;
+      context.push(
+        AppRoutes.chat,
+        extra: (
+          esRescatista: true,
+          chatId: chatId,
+          animal: {
+            'nombre': animal,
+            'rescatista':
+                FirebaseAuth.instance.currentUser?.displayName ?? 'Rescatista',
+            'rescatistaId': FirebaseAuth.instance.currentUser?.uid ?? '',
+            'rescateId': rescateIdChat,
+            'adoptanteId': adoptanteId,
+            'adoptanteNombre': d['nombre'] as String? ?? 'Adoptante',
+            'especie': d['especie'] as String? ?? 'Perro',
+            'fotoUrl': d['fotoUrl'] as String?,
+            'tipoSolicitud': d['tipoSolicitud'] as String? ?? 'adopcion',
+            'creadoPor': creadoPorVivo,
+            'edad': '',
+            'ubicacion': '',
+            'descripcion': '',
+            'tags': <String>[],
+          },
+        ),
+      );
+    }
+
+    return Container(
+      key: ValueKey(doc.id),
+      padding: const EdgeInsets.all(14),
+      decoration: SpDeco.card(c),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Animal ──────────────────────────────────────────────────────
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // FotoAnimal en vez de recorte — mismo arreglo que
+              // mis_rescates_screen.dart: el recorte fijo (topCenter) cortaba
+              // animales que no quedan cerca del borde superior de la foto.
+              ClipRRect(
+                borderRadius: BorderRadius.circular(18),
+                child: SizedBox(
+                  width: 64,
+                  height: 64,
+                  child: fotoUrl != null
+                      ? FotoAnimal(
+                          url: fotoUrl,
+                          width: 64,
+                          height: 64,
+                          // Miniatura de lista: sin fondo borroso, ver FotoAnimal.
+                          fondoBorroso: false,
+                          fallback: SpFotoVacia(
+                            especie: d['especie'] as String?,
+                            size: 48,
+                          ),
+                        )
+                      : SpFotoVacia(especie: d['especie'] as String?, size: 48),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            animal,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 17,
+                              color: c.ink,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          tiempo,
+                          style: SpText.caption.copyWith(color: c.inkFaint),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        SolicitudTipoPill(esHogar: esHogar),
+                        SolicitudEstadoPill(estado: estado),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          // ── Adoptante ───────────────────────────────────────────────────
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: iniFondo,
+                  shape: BoxShape.circle,
+                ),
+                child: Text(
+                  ini,
+                  style: TextStyle(
+                    color: iniTinta,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      nombre,
                       style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: appInk,
-                        fontFamily: 'Baloo2',
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                        color: c.ink,
                       ),
+                    ),
+                    Text(
+                      detalle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: SpText.caption.copyWith(color: c.inkMuted),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          if (esHogar && fechaInicio != null && fechaFin != null) ...[
+            const SizedBox(height: 10),
+            SolicitudFechasHogar(
+              inicio: fechaInicio,
+              fin: fechaFin,
+              dias: diasHogar,
+            ),
+          ] else
+            const SizedBox(height: 10),
+          SolicitudCompatibilidad(solicitud: d),
+
+          if (estado == 'rechazada') ...[
+            const SizedBox(height: 12),
+            Text(
+              'Mensaje enviado',
+              style: SpText.caption.copyWith(
+                color: c.inkMuted,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 6),
+            // Burbuja del mensaje que recibió el adoptante (`.bubble--me`).
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: c.primarySoft,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(18),
+                  topRight: Radius.circular(18),
+                  bottomLeft: Radius.circular(18),
+                  bottomRight: Radius.circular(6),
+                ),
+              ),
+              child: Text(
+                (d['motivoRechazo'] as String?)?.isNotEmpty == true
+                    ? d['motivoRechazo'] as String
+                    : 'Hola, gracias por tu interés en adoptar a ${nombreDeAnimal(animal, enFrase: true)}. '
+                          'Luego de revisar tu solicitud, en esta ocasión no podemos continuar con el proceso. '
+                          '¡Esperamos que pronto encuentres a tu compañero perfecto! 🐾',
+                style: TextStyle(fontSize: 13, color: c.ink, height: 1.45),
+              ),
+            ),
+          ],
+
+          if (estado == 'aprobada') ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: SpButton(
+                label: 'Ir al chat',
+                icon: Icons.chat_bubble_outline_rounded,
+                onTap: irAlChat,
+              ),
+            ),
+            // Solo lectura acá: quien acepta el compromiso es el adoptante
+            // (ver mis_solicitudes_screen.dart), el rescatista/albergue solo
+            // ve la constancia.
+            if (tipo == 'adopcion') ...[
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Icon(
+                    d['acuerdoAceptado'] == true
+                        ? Icons.check_circle_rounded
+                        : Icons.hourglass_empty_rounded,
+                    size: 15,
+                    color: d['acuerdoAceptado'] == true
+                        ? c.primaryStrong
+                        : c.inkFaint,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    d['acuerdoAceptado'] == true
+                        ? 'Compromiso de adopción aceptado'
+                        : 'Compromiso de adopción: aún no aceptado',
+                    style: SpText.caption.copyWith(
+                      color: d['acuerdoAceptado'] == true
+                          ? c.primaryStrong
+                          : c.inkMuted,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
               ),
-            ),
-            const SizedBox(height: 4),
-            Expanded(
-              child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                stream: _solicitudesStream,
-                builder: (context, snap) {
-                  if (snap.connectionState == ConnectionState.waiting) {
-                    return const Center(
-                      child: CircularProgressIndicator(color: appTeal),
-                    );
-                  }
-                  if (snap.hasError) return errorFeedState();
-                  final docs = [...(snap.data?.docs ?? [])]
-                    ..sort((a, b) {
-                      final ta = a.data()['creadoEn'] as Timestamp?;
-                      final tb = b.data()['creadoEn'] as Timestamp?;
-                      if (ta == null) return 1;
-                      if (tb == null) return -1;
-                      return tb.compareTo(ta);
-                    });
-                  if (docs.isEmpty) {
-                    return Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.inbox_outlined,
-                            size: 64,
-                            color: Colors.grey.shade300,
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'Aún no tienes solicitudes',
-                            style: TextStyle(
-                              color: Colors.grey.shade700,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-                  return ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 40),
-                    itemCount: docs.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 10),
-                    itemBuilder: (_, i) {
-                      final d = docs[i].data();
-                      final animal = nombreDeAnimal(
-                        d['animalNombre'] as String?,
-                      );
-                      final nombre = d['nombre'] as String? ?? 'Adoptante';
-                      final integrantes = d['integrantes'] as String? ?? '';
-                      final vivienda = d['vivienda'] as String? ?? '';
-                      final mascotas = (d['tieneMascotas'] as bool? ?? false)
-                          ? 'con mascotas'
-                          : 'sin mascotas';
-                      final ninos = (d['tieneNinos'] as bool? ?? false)
-                          ? 'con niños'
-                          : 'sin niños';
-                      final exp = (d['experienciaPrevia'] as bool? ?? false)
-                          ? 'con experiencia'
-                          : 'sin experiencia';
-                      final horas = d['horasFuera'] as String? ?? '';
-                      final ts = d['creadoEn'] as Timestamp?;
-                      final tiempo = ts != null
-                          ? tiempoRelativo(ts.toDate())
-                          : '';
-                      final ini = nombre.isNotEmpty
-                          ? nombre[0].toUpperCase()
-                          : 'A';
-                      final col = i.isEven ? appTeal : appOrange;
-                      final fotoUrl = d['fotoUrl'] as String?;
-                      final estado = d['estado'] as String? ?? 'pendiente';
-                      final tipo = d['tipoSolicitud'] as String? ?? 'adopcion';
-                      final esHogar = tipo == 'hogar_de_paso';
-                      final fechaInicioTs = d['fechaInicioHogar'] as Timestamp?;
-                      final fechaFinTs = d['fechaFinHogar'] as Timestamp?;
-                      final fechaInicio = fechaInicioTs?.toDate();
-                      final fechaFin = fechaFinTs?.toDate();
-                      // +1: mismo criterio que solicitudes_preview.dart —
-                      // rango inclusivo de ambas puntas, para que elegir el
-                      // mismo día como inicio y fin muestre "1 día", no "0".
-                      final diasHogar =
-                          (fechaInicio != null && fechaFin != null)
-                          ? fechaFin.difference(fechaInicio).inDays + 1
-                          : null;
-                      final score = calcularCompatibilidad(d);
-                      final scoreColor = score >= 80
-                          ? appTeal
-                          : score >= 60
-                          ? const Color(0xFFE65100)
-                          : const Color(0xFFB71C1C);
-                      final estadoColor = estado == 'aprobada'
-                          ? appTeal
-                          : estado == 'rechazada'
-                          ? const Color(0xFFB71C1C)
-                          : const Color(0xFFE65100);
-                      final estadoLabel = estado == 'aprobada'
-                          ? '✅  Aprobada'
-                          : estado == 'rechazada'
-                          ? '❌  Rechazada'
-                          : '⏳  Pendiente';
-                      final detalle = [
-                        vivienda,
-                        if (integrantes.isNotEmpty) '$integrantes personas',
-                        ninos,
-                        mascotas,
-                        exp,
-                        if (horas.isNotEmpty) '$horas h fuera/día',
-                      ].join(' · ');
+            ],
+          ],
 
-                      return Container(
-                        key: ValueKey(docs[i].id),
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.05),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // ── Fila principal: animal ──────────────────────────
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                // Foto del animal
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(12),
-                                  // FotoAnimal en vez de recorte — mismo arreglo
-                                  // que mis_rescates_screen.dart: el recorte fijo
-                                  // (topCenter) cortaba animales que no quedan
-                                  // cerca del borde superior de la foto.
-                                  child: fotoUrl != null
-                                      ? FotoAnimal(
-                                          url: fotoUrl,
-                                          width: 64,
-                                          height: 64,
-                                          // Miniatura de lista: sin fondo borroso, ver FotoAnimal.
-                                          fondoBorroso: false,
-                                          fallback: Container(
-                                            width: 64,
-                                            height: 64,
-                                            color: const Color(0xFFD8F0E4),
-                                            child: const Center(
-                                              child: Icon(
-                                                Icons.pets,
-                                                color: appTeal,
-                                                size: 30,
-                                              ),
-                                            ),
-                                          ),
-                                        )
-                                      : Container(
-                                          width: 64,
-                                          height: 64,
-                                          color: const Color(0xFFD8F0E4),
-                                          child: const Center(
-                                            child: Icon(
-                                              Icons.pets,
-                                              color: appTeal,
-                                              size: 30,
-                                            ),
-                                          ),
-                                        ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              animal,
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 17,
-                                                color: appInk,
-                                              ),
-                                            ),
-                                          ),
-                                          Text(
-                                            tiempo,
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              color: Colors.grey.shade400,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Row(
-                                        children: [
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 9,
-                                              vertical: 4,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: esHogar
-                                                  ? appTeal.withValues(
-                                                      alpha: 0.12,
-                                                    )
-                                                  : appOrange.withValues(
-                                                      alpha: 0.12,
-                                                    ),
-                                              borderRadius:
-                                                  BorderRadius.circular(20),
-                                              border: Border.all(
-                                                color: esHogar
-                                                    ? appTeal.withValues(
-                                                        alpha: 0.4,
-                                                      )
-                                                    : appOrange.withValues(
-                                                        alpha: 0.4,
-                                                      ),
-                                              ),
-                                            ),
-                                            child: Text(
-                                              esHogar
-                                                  ? '🏡 Hogar de paso'
-                                                  : '🏠 Adopción',
-                                              style: TextStyle(
-                                                fontSize: 10,
-                                                fontWeight: FontWeight.w700,
-                                                color: esHogar
-                                                    ? appTeal
-                                                    : appOrange,
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 6),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 9,
-                                              vertical: 4,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: estadoColor.withValues(
-                                                alpha: 0.1,
-                                              ),
-                                              borderRadius:
-                                                  BorderRadius.circular(20),
-                                              border: Border.all(
-                                                color: estadoColor.withValues(
-                                                  alpha: 0.4,
-                                                ),
-                                              ),
-                                            ),
-                                            child: Text(
-                                              estadoLabel,
-                                              style: TextStyle(
-                                                fontSize: 10,
-                                                fontWeight: FontWeight.w700,
-                                                color: estadoColor,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-
-                            // ── Fila adoptante ──────────────────────────────────
-                            const SizedBox(height: 12),
-                            Row(
-                              children: [
-                                CircleAvatar(
-                                  backgroundColor: col,
-                                  radius: 14,
-                                  child: Text(
-                                    ini,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        nombre,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                      Text(
-                                        detalle,
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: Colors.grey.shade700,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-
-                            if (esHogar &&
-                                fechaInicio != null &&
-                                fechaFin != null) ...[
-                              const SizedBox(height: 10),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 8,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: appTeal.withValues(alpha: 0.07),
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(
-                                    color: appTeal.withValues(alpha: 0.3),
-                                  ),
-                                ),
-                                child: Row(
-                                  children: [
-                                    const Icon(
-                                      Icons.calendar_today,
-                                      size: 13,
-                                      color: appTeal,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      '${fechaInicio.day}/${fechaInicio.month}/${fechaInicio.year} → ${fechaFin.day}/${fechaFin.month}/${fechaFin.year}',
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                        color: appTeal,
-                                      ),
-                                    ),
-                                    const Spacer(),
-                                    Text(
-                                      '$diasHogar días',
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w700,
-                                        color: appTeal,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                            const SizedBox(height: 10),
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 10,
-                              ),
-                              decoration: BoxDecoration(
-                                color: scoreColor.withValues(alpha: 0.07),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: scoreColor.withValues(alpha: 0.35),
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  Text(
-                                    score >= 80
-                                        ? '✅'
-                                        : score >= 60
-                                        ? '⚠️'
-                                        : '❌',
-                                    style: const TextStyle(fontSize: 18),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          score >= 80
-                                              ? 'Perfil ideal ($score%)'
-                                              : score >= 60
-                                              ? 'Perfil aceptable ($score%)'
-                                              : 'No recomendado ($score%)',
-                                          style: TextStyle(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w700,
-                                            color: scoreColor,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 8),
-                                        ...explicarCompatibilidad(d).map(
-                                          (r) => Padding(
-                                            padding: const EdgeInsets.only(
-                                              bottom: 3,
-                                            ),
-                                            child: Row(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  r.$2 ? '✓' : '✗',
-                                                  style: TextStyle(
-                                                    fontSize: 11,
-                                                    fontWeight: FontWeight.bold,
-                                                    color: r.$2
-                                                        ? appTeal
-                                                        : Colors.red.shade400,
-                                                  ),
-                                                ),
-                                                const SizedBox(width: 5),
-                                                Expanded(
-                                                  child: Text(
-                                                    r.$1,
-                                                    style: TextStyle(
-                                                      fontSize: 11,
-                                                      color: r.$2
-                                                          ? Colors.grey.shade700
-                                                          : Colors.red.shade600,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            if (estado == 'rechazada') ...[
-                              const SizedBox(height: 10),
-                              Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFFFF8F0),
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(
-                                    color: const Color(
-                                      0xFFE65100,
-                                    ).withValues(alpha: 0.3),
-                                  ),
-                                ),
-                                child: Text(
-                                  (d['motivoRechazo'] as String?)?.isNotEmpty ==
-                                          true
-                                      ? d['motivoRechazo'] as String
-                                      : 'Hola, gracias por tu interés en adoptar a ${nombreDeAnimal(animal, enFrase: true)}. '
-                                            'Luego de revisar tu solicitud, en esta ocasión no podemos continuar con el proceso. '
-                                            '¡Esperamos que pronto encuentres a tu compañero perfecto! 🐾',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey.shade700,
-                                    height: 1.5,
-                                  ),
-                                ),
-                              ),
-                            ],
-                            if (estado == 'aprobada') ...[
-                              const SizedBox(height: 10),
-                              GestureDetector(
-                                onTap: () async {
-                                  final adoptanteId =
-                                      d['adoptanteId'] as String? ?? '';
-                                  final rescateIdChat =
-                                      d['rescateId'] as String? ?? '';
-                                  // buscarDeAnimal traduce a null el
-                                  // permission-denied de un chat que todavía no
-                                  // existe (pasa cuando el mensaje automático de
-                                  // la aprobación no llegó a crearlo) — sin eso
-                                  // la excepción mataba el onTap y "Ir al chat"
-                                  // no hacía nada. Con chatId null, ChatScreen
-                                  // crea el chat.
-                                  final chatId =
-                                      (await ChatsRepository().buscarDeAnimal(
-                                        rescateId: rescateIdChat,
-                                        adoptanteId: adoptanteId,
-                                        animalNombre: animal,
-                                      ))?.id;
-                                  // `creadoPor` de acá abajo viene de la
-                                  // SOLICITUD, congelado al momento de
-                                  // mandarla — mismo problema (y mismo
-                                  // arreglo) que _aprobarSolicitudImpl/
-                                  // _rechazarSolicitudImpl de más arriba en
-                                  // este archivo. Aunque acá no cambia lo que
-                                  // ESTE botón muestra (el rescatista siempre
-                                  // ve "Adoptante"), ChatScreen hace merge al
-                                  // abrirse: un valor viejo acá pisaba de
-                                  // nuevo el `creadoPor` correcto del chat
-                                  // para quien lo mire después, del otro
-                                  // lado. Hallazgo real de Eliza: un animal
-                                  // de albergue mostraba "Rescatista" en el
-                                  // chat del adoptante, reportado hace meses
-                                  // y seguía pasando.
-                                  var creadoPorVivo = d['creadoPor'] as String?;
-                                  if (rescateIdChat.isNotEmpty) {
-                                    try {
-                                      final rescateDoc =
-                                          await RescatesRepository().obtener(
-                                            rescateIdChat,
-                                          );
-                                      final creadoPorReal =
-                                          rescateDoc.data()?['creadoPor']
-                                              as String?;
-                                      if (creadoPorReal != null &&
-                                          creadoPorReal.isNotEmpty) {
-                                        creadoPorVivo = creadoPorReal;
-                                      }
-                                    } catch (_) {}
-                                  }
-                                  if (!context.mounted) return;
-                                  context.push(
-                                    AppRoutes.chat,
-                                    extra: (
-                                      esRescatista: true,
-                                      chatId: chatId,
-                                      animal: {
-                                        'nombre': animal,
-                                        'rescatista':
-                                            FirebaseAuth
-                                                .instance
-                                                .currentUser
-                                                ?.displayName ??
-                                            'Rescatista',
-                                        'rescatistaId':
-                                            FirebaseAuth
-                                                .instance
-                                                .currentUser
-                                                ?.uid ??
-                                            '',
-                                        'rescateId': rescateIdChat,
-                                        'adoptanteId': adoptanteId,
-                                        'adoptanteNombre':
-                                            d['nombre'] as String? ??
-                                            'Adoptante',
-                                        'especie':
-                                            d['especie'] as String? ?? 'Perro',
-                                        'fotoUrl': d['fotoUrl'] as String?,
-                                        'tipoSolicitud':
-                                            d['tipoSolicitud'] as String? ??
-                                            'adopcion',
-                                        'creadoPor': creadoPorVivo,
-                                        'edad': '',
-                                        'ubicacion': '',
-                                        'descripcion': '',
-                                        'tags': <String>[],
-                                      },
-                                    ),
-                                  );
-                                },
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 10,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: appTeal,
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: const Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(
-                                        Icons.chat_bubble_outline,
-                                        size: 15,
-                                        color: Colors.white,
-                                      ),
-                                      SizedBox(width: 6),
-                                      Text(
-                                        'Ir al chat',
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w700,
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              // Solo lectura acá: quien acepta el compromiso es
-                              // el adoptante (ver mis_solicitudes_screen.dart),
-                              // el rescatista/albergue solo ve la constancia.
-                              if ((d['tipoSolicitud'] as String? ??
-                                      'adopcion') ==
-                                  'adopcion') ...[
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    Icon(
-                                      d['acuerdoAceptado'] == true
-                                          ? Icons.check_circle
-                                          : Icons.hourglass_empty,
-                                      size: 13,
-                                      color: d['acuerdoAceptado'] == true
-                                          ? appTeal
-                                          : Colors.grey.shade400,
-                                    ),
-                                    const SizedBox(width: 5),
-                                    Text(
-                                      d['acuerdoAceptado'] == true
-                                          ? 'Compromiso de adopción aceptado'
-                                          : 'Compromiso de adopción: aún no aceptado',
-                                      style: TextStyle(
-                                        fontSize: 11.5,
-                                        color: d['acuerdoAceptado'] == true
-                                            ? appTeal
-                                            : Colors.grey.shade700,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ],
-                            if (estado == 'pendiente') ...[
-                              const SizedBox(height: 12),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: GestureDetector(
-                                      onTap: _procesando.contains(docs[i].id)
-                                          ? null
-                                          : () => _aprobar(docs[i].id, d),
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          vertical: 10,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color:
-                                              _procesando.contains(docs[i].id)
-                                              ? appTeal.withValues(alpha: 0.5)
-                                              : appTeal,
-                                          borderRadius: BorderRadius.circular(
-                                            10,
-                                          ),
-                                        ),
-                                        child: _procesando.contains(docs[i].id)
-                                            ? const SizedBox(
-                                                height: 16,
-                                                width: 16,
-                                                child: Center(
-                                                  child: SizedBox(
-                                                    height: 14,
-                                                    width: 14,
-                                                    child:
-                                                        CircularProgressIndicator(
-                                                          color: Colors.white,
-                                                          strokeWidth: 2,
-                                                        ),
-                                                  ),
-                                                ),
-                                              )
-                                            : const Text(
-                                                'Aprobar',
-                                                textAlign: TextAlign.center,
-                                                style: TextStyle(
-                                                  color: Colors.white,
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 13,
-                                                ),
-                                              ),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: GestureDetector(
-                                      // Antes se podía abrir este diálogo aunque ya
-                                      // se estuviera aprobando/rechazando esta misma
-                                      // tarjeta (con Aprobar, o con un Rechazar
-                                      // anterior) — mismo _procesando que ya usaba
-                                      // Aprobar, para que los dos botones se
-                                      // bloqueen entre sí.
-                                      // pedirMotivo (widgets/pedir_motivo.dart) es dueño de su
-                                      // propio TextEditingController. Antes se
-                                      // creaba acá y se liberaba con .then() sobre
-                                      // el showDialog, que se completa ANTES de que
-                                      // el diálogo termine de cerrarse — el campo
-                                      // se desmontaba sobre un controller ya
-                                      // destruido y Flutter pintaba su pantalla
-                                      // roja de error. Ver el detalle completo en
-                                      // pedirMotivo.
-                                      onTap: _procesando.contains(docs[i].id)
-                                          ? null
-                                          : () async {
-                                              final motivo = await pedirMotivo(
-                                                context,
-                                                titulo: 'Mensaje de rechazo',
-                                                textoInicial:
-                                                    'Hola, gracias por tu interés en adoptar a ${nombreDeAnimal(animal, enFrase: true)}. '
-                                                    'Luego de revisar tu solicitud, en esta ocasión no podemos continuar con el proceso. '
-                                                    '¡Esperamos que pronto encuentres a tu compañero perfecto! 🐾',
-                                                maxLines: 5,
-                                                colorConfirmar: Colors.red,
-                                                radioDialogo: 16,
-                                                radioCampo: 10,
-                                              );
-                                              if (motivo == null) return;
-                                              _rechazar(docs[i].id, d, motivo);
-                                            },
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          vertical: 10,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          border: Border.all(
-                                            color:
-                                                _procesando.contains(docs[i].id)
-                                                ? Colors.red.shade100
-                                                : Colors.red.shade300,
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            10,
-                                          ),
-                                        ),
-                                        child: Text(
-                                          'Rechazar',
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(
-                                            color:
-                                                _procesando.contains(docs[i].id)
-                                                ? Colors.red.shade200
-                                                : Colors.red.shade400,
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 13,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ],
-                        ),
-                      );
-                    },
-                  );
-                },
-              ),
+          if (estado == 'pendiente') ...[
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: SpButton(
+                    label: 'Aprobar',
+                    cargando: procesando,
+                    onTap: () => _aprobar(doc.id, d),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: SpButton(
+                    label: 'Rechazar',
+                    peligro: true,
+                    // Antes se podía abrir este diálogo aunque ya se
+                    // estuviera aprobando/rechazando esta misma tarjeta —
+                    // mismo _procesando que ya usaba Aprobar, para que los
+                    // dos botones se bloqueen entre sí.
+                    // pedirMotivo (widgets/pedir_motivo.dart) es dueño de su
+                    // propio TextEditingController; ver el detalle completo
+                    // en pedirMotivo.
+                    onTap: procesando
+                        ? null
+                        : () async {
+                            final motivo = await pedirMotivo(
+                              context,
+                              titulo: 'Mensaje de rechazo',
+                              textoInicial:
+                                  'Hola, gracias por tu interés en adoptar a ${nombreDeAnimal(animal, enFrase: true)}. '
+                                  'Luego de revisar tu solicitud, en esta ocasión no podemos continuar con el proceso. '
+                                  '¡Esperamos que pronto encuentres a tu compañero perfecto! 🐾',
+                              maxLines: 5,
+                              colorConfirmar: c.danger,
+                              radioDialogo: 16,
+                              radioCampo: 10,
+                            );
+                            if (motivo == null) return;
+                            _rechazar(doc.id, d, motivo);
+                          },
+                  ),
+                ),
+              ],
             ),
           ],
-        ),
+        ],
       ),
     );
   }

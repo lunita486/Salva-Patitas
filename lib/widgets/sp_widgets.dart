@@ -659,7 +659,9 @@ class SpStatus extends StatelessWidget {
 }
 
 /// Botón 3D. Verde por defecto; [suave] lo hace blanco con canto
-/// (secundario); [tone] lo pinta del pastel indicado.
+/// (secundario) y [peligro] blanco con texto rojo (Rechazar). Con
+/// [cargando] muestra un spinner y no se puede tocar; con [onTap] null se
+/// ve apagado.
 class SpButton extends StatelessWidget {
   const SpButton({
     super.key,
@@ -667,30 +669,42 @@ class SpButton extends StatelessWidget {
     required this.onTap,
     this.icon,
     this.suave = false,
+    this.peligro = false,
     this.compacto = false,
+    this.cargando = false,
   });
   final String label;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final IconData? icon;
   final bool suave;
+  final bool peligro;
   final bool compacto;
+  final bool cargando;
 
   @override
   Widget build(BuildContext context) {
     final c = context.sp;
-    final fg = suave ? c.ink : c.onPrimary;
-    return SpPressable(
-      onTap: onTap,
-      child: Container(
-        height: compacto ? 34 : 48,
-        padding: EdgeInsets.symmetric(horizontal: compacto ? 12 : 18),
-        decoration: suave
-            ? SpDeco.soft(c, radius: compacto ? 12 : SpRadius.md)
-            : SpDeco.primary(c, radius: compacto ? 12 : SpRadius.md),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
+    final blanco = suave || peligro;
+    final fg = peligro ? c.danger : (suave ? c.ink : c.onPrimary);
+    final activo = onTap != null && !cargando;
+    final radio = compacto ? 12.0 : SpRadius.md;
+    final caja = Container(
+      height: compacto ? 34 : 48,
+      padding: EdgeInsets.symmetric(horizontal: compacto ? 12 : 18),
+      decoration: blanco
+          ? SpDeco.soft(c, radius: radio)
+          : SpDeco.primary(c, radius: radio),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          if (cargando)
+            SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2, color: fg),
+            )
+          else ...[
             if (icon != null) ...[
               Icon(icon, size: compacto ? 15 : 18, color: fg),
               const SizedBox(width: 6),
@@ -708,10 +722,55 @@ class SpButton extends StatelessWidget {
               ),
             ),
           ],
-        ),
+        ],
       ),
     );
+    if (!activo) {
+      return Opacity(opacity: cargando ? 1 : .5, child: caja);
+    }
+    return SpPressable(onTap: onTap!, child: caja);
   }
+}
+
+/// Píldora chica con ícono (`.pill`): tipo y estado de una solicitud, etc.
+class SpPill extends StatelessWidget {
+  const SpPill(
+    this.label, {
+    super.key,
+    required this.fondo,
+    required this.tinta,
+    this.icon,
+  });
+  final String label;
+  final Color fondo;
+  final Color tinta;
+  final IconData? icon;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+    decoration: BoxDecoration(
+      color: fondo,
+      borderRadius: BorderRadius.circular(SpRadius.full),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (icon != null) ...[
+          Icon(icon, size: 14, color: tinta),
+          const SizedBox(width: 5),
+        ],
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: tinta,
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 /// Estado vacío (`.sp-empty`): siempre con un animalito 3D.
@@ -917,4 +976,64 @@ class SpNotice extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// Encabezado de pantalla (`.screenhead`): volver, título grande, una línea
+/// opcional debajo y huellitas a la derecha.
+class SpScreenHeader extends StatelessWidget {
+  const SpScreenHeader({
+    super.key,
+    required this.title,
+    this.subtitle,
+    this.subtitleColor,
+    this.onBack,
+  });
+  final String title;
+  final String? subtitle;
+  final Color? subtitleColor;
+
+  /// Sin esto, el botón hace `Navigator.pop`.
+  final VoidCallback? onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.sp;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+      child: Row(
+        children: [
+          SpRoundButton(
+            icon: Icons.arrow_back_ios_new_rounded,
+            tooltip: 'Volver',
+            onTap: onBack ?? () => Navigator.pop(context),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: SpText.screen.copyWith(color: c.ink),
+                ),
+                if (subtitle != null)
+                  Text(
+                    subtitle!,
+                    style: SpText.label.copyWith(
+                      color: subtitleColor ?? c.inkMuted,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          SpPaw(size: 16, angle: 20, color: c.mintDeep),
+          const SizedBox(width: 4),
+          SpPaw(size: 20, angle: 30, color: c.mint),
+        ],
+      ),
+    );
+  }
 }

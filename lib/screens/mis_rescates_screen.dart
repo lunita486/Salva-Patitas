@@ -573,47 +573,15 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
   }
 
   Widget _header(BuildContext context) {
-    final c = context.sp;
     final tonoFiltro = _filtroEstado == null
         ? null
         : spToneEstado(_filtroEstado!);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
-      child: Row(
-        children: [
-          SpRoundButton(
-            icon: Icons.arrow_back_ios_new_rounded,
-            tooltip: 'Volver',
-            onTap: () => Navigator.pop(context),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  widget.esAlbergue ? 'La Jauría' : 'Mis rescates',
-                  style: SpText.screen.copyWith(color: c.ink),
-                ),
-                if (widget.esAlbergue && _filtroEstado != null)
-                  Text(
-                    _filtroEstado!,
-                    style: SpText.label.copyWith(
-                      color: tonoFiltro == null
-                          ? c.inkMuted
-                          : SpToneColors.of(c, tonoFiltro).ink,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          // Huellitas junto al título, como en el prototipo.
-          SpPaw(size: 16, angle: 20, color: c.mintDeep),
-          const SizedBox(width: 4),
-          SpPaw(size: 20, angle: 30, color: c.mint),
-        ],
-      ),
+    return SpScreenHeader(
+      title: widget.esAlbergue ? 'La Jauría' : 'Mis rescates',
+      subtitle: widget.esAlbergue ? _filtroEstado : null,
+      subtitleColor: tonoFiltro == null
+          ? null
+          : SpToneColors.of(context.sp, tonoFiltro).ink,
     );
   }
 
