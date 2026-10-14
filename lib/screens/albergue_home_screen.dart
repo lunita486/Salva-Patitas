@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -22,7 +24,10 @@ import '../data/solicitudes_repository.dart';
 import 'package:go_router/go_router.dart';
 import '../routing/app_router.dart';
 import 'solicitudes_rescatista_screen.dart'
-    show verificarVencimientos, verificarSeguimientoPostAdopcion, contactarPersonaEnProceso;
+    show
+        verificarVencimientos,
+        verificarSeguimientoPostAdopcion,
+        contactarPersonaEnProceso;
 import 'solicitudes_preview.dart';
 import 'eliminar_cuenta_dialog.dart';
 
@@ -65,6 +70,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
       .collection('usuarios')
       .doc(_uid)
       .snapshots();
+
   /// Los tres números del panel, contados del lado del servidor.
   ///
   /// Antes salían de filtrar en Dart el stream COMPLETO de rescates del
@@ -216,6 +222,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
       ]);
     });
   }
+
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _solicitudesStream =
       _solicitudesRepo.paraOwner(
         uid: _uid,
@@ -234,10 +241,28 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
   late final Stream<QuerySnapshot> _consultasEnviadasStream = _chatsRepo
       .consultasEnviadas(uid: _uid);
 
+  /// Solicitudes pendientes, para el Perfil y el encabezado de SOLICITUDES
+  /// del Panel. `_solicitudesStream`
+  /// es un stream de Firestore de tipo broadcast: quien se suscribe tarde
+  /// (el Perfil, o el Panel al volver de otra pestaña) no
+  /// recibe la última foto y se quedaba en "—" para siempre. Por eso el
+  /// número se guarda acá, escuchado una sola vez desde el inicio.
+  int? _pendientes;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _subPendientes;
+
+  @override
+  void dispose() {
+    _subPendientes?.cancel();
+    super.dispose();
+  }
+
   @override
   void initState() {
     _refrescarNumeros();
     super.initState();
+    _subPendientes = _solicitudesStream.listen((snap) {
+      if (mounted) setState(() => _pendientes = snap.docs.length);
+    }, onError: (_) {});
     _verificarVencimientos();
     _verificarSeguimientoPostAdopcion();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -388,6 +413,9 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                 children: [
                   const Positioned.fill(child: LeafOverlay()),
                   SafeArea(
+                    // El Perfil dibuja su encabezado por detrás de la barra
+                    // de estado (si no, quedaba una franja "cortada" arriba).
+                    top: _nav != 3,
                     child: _nav == 0
                         ? _panel(
                             context,
@@ -409,6 +437,9 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                             ciudad,
                             iniciales,
                             fotoBase64,
+                            enCuidado,
+                            enAdopcion,
+                            adoptados,
                           )
                         : const SizedBox.shrink(),
                   ),
@@ -729,10 +760,12 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
           // ── Solicitudes ───────────────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: StreamBuilder<QuerySnapshot>(
-              stream: _solicitudesStream,
-              builder: (context, snap) {
-                final count = snap.data?.docs.length ?? 0;
+            // El conteo sale de `_pendientes` (ver su doc), no de un
+            // StreamBuilder propio: al volver de otra pestaña este se
+            // suscribía tarde y mostraba "Ver todas" con solicitudes nuevas.
+            child: Builder(
+              builder: (context) {
+                final count = _pendientes ?? 0;
                 return _sectionHeader(
                   'SOLICITUDES',
                   trailing: GestureDetector(
@@ -990,6 +1023,39 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
 
   // ── Perfil tab ───────────────────────────────────────────────────────────────
 
+  /// Un número de la tarjeta del perfil (animalitos, adoptados, solicitudes).
+  /// `Expanded` para que los tres ocupen lo mismo en cualquier ancho.
+  Widget _perfilNumero(
+    String valor,
+    String etiqueta,
+    IconData icono,
+    Color color,
+  ) {
+    return Expanded(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icono, color: color, size: 20),
+          const SizedBox(height: 4),
+          Text(
+            valor,
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            etiqueta,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 12, color: Color(0xFF666666)),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _perfilTab(
     BuildContext ctx,
     String nombre,
@@ -997,152 +1063,203 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
     String ciudad,
     String iniciales,
     String? fotoBase64,
+    int? enCuidado,
+    int? enAdopcion,
+    int? adoptados,
   ) {
     final user = FirebaseAuth.instance.currentUser;
-    return SingleChildScrollView(
-      child: Column(
-        children: [
-          // Header verde — mismo estilo que el perfil de aliado
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.fromLTRB(24, 36, 24, 32),
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0xFF0A5C40), appTeal],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-            ),
+    // "Animalitos activos" = los que el albergue está cuidando ahora, igual
+    // que la barra de capacidad del panel (en cuidado + en adopción).
+    final activos = enCuidado != null && enAdopcion != null
+        ? enCuidado + enAdopcion
+        : null;
+    // Encabezado claro (menta → fondo) con borde inferior curvo: el verde
+    // queda como acento (nombre, íconos) en vez de una franja sólida. Todo
+    // está compactado para que el perfil entre casi sin scroll.
+    final arriba = MediaQuery.of(ctx).padding.top;
+    return Container(
+      color: appBg,
+      child: LayoutBuilder(
+        builder: (context, box) => SingleChildScrollView(
+          child: ConstrainedBox(
+            // Ocupa al menos toda la pantalla: así el fondo liso llega hasta la
+            // barra de abajo y no se ve el corte de las patitas decorativas.
+            constraints: BoxConstraints(minHeight: box.maxHeight),
             child: Column(
               children: [
-                GestureDetector(
-                  onTap: _uploadFotoPerfil,
-                  child: Stack(
-                    clipBehavior: Clip.none,
+                Container(
+                  width: double.infinity,
+                  padding: EdgeInsets.fromLTRB(24, arriba + 24, 24, 24),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFBFEFD8), appBg],
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                    ),
+                    borderRadius: const BorderRadius.vertical(
+                      bottom: Radius.circular(40),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: appTeal.withValues(alpha: 0.10),
+                        blurRadius: 20,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: Column(
                     children: [
-                      Container(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.5),
-                            width: 3,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.2),
-                              blurRadius: 16,
-                              offset: const Offset(0, 6),
+                      GestureDetector(
+                        onTap: _uploadFotoPerfil,
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Container(
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 5,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: appTeal.withValues(alpha: 0.30),
+                                    blurRadius: 24,
+                                    offset: const Offset(0, 10),
+                                  ),
+                                ],
+                              ),
+                              child: AvatarPersona(
+                                fotoBase64: fotoBase64,
+                                fotoUrl: user?.photoURL,
+                                inicial: iniciales,
+                                radius: 72,
+                                backgroundColor: appTeal.withValues(
+                                  alpha: 0.15,
+                                ),
+                                textColor: appTeal,
+                              ),
+                            ),
+                            Positioned(
+                              bottom: 6,
+                              right: 6,
+                              child: Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: appOrange,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: Colors.white,
+                                    width: 3,
+                                  ),
+                                ),
+                                child: const Icon(
+                                  Icons.camera_alt,
+                                  color: Colors.white,
+                                  size: 19,
+                                ),
+                              ),
                             ),
                           ],
                         ),
-                        child: AvatarPersona(
-                          fotoBase64: fotoBase64,
-                          fotoUrl: user?.photoURL,
-                          inicial: iniciales,
-                          radius: 52,
-                          backgroundColor: Colors.white.withValues(alpha: 0.2),
-                          textColor: Colors.white,
-                        ),
                       ),
-                      Positioned(
-                        bottom: 0,
-                        right: 0,
-                        child: Container(
-                          width: 32,
-                          height: 32,
-                          decoration: BoxDecoration(
-                            color: appTeal,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 2.5),
-                          ),
-                          child: const Icon(
-                            Icons.camera_alt,
-                            color: Colors.white,
-                            size: 16,
+                      const SizedBox(height: 14),
+                      Text(
+                        nombre,
+                        style: const TextStyle(
+                          fontSize: 25,
+                          fontWeight: FontWeight.w800,
+                          color: appDark,
+                          letterSpacing: -0.3,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      if (tipo.isNotEmpty || ciudad.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Wrap(
+                          alignment: WrapAlignment.center,
+                          spacing: 14,
+                          children: [
+                            if (tipo.isNotEmpty)
+                              _perfilChip(Icons.home_work_outlined, tipo),
+                            if (ciudad.isNotEmpty)
+                              _perfilChip(Icons.place_outlined, ciudad),
+                          ],
+                        ),
+                      ],
+                      const SizedBox(height: 18),
+                      // Números del albergue: los mismos contadores del panel.
+                      Container(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: IntrinsicHeight(
+                          child: Row(
+                            children: [
+                              _perfilNumero(
+                                activos == null ? _cargandoValor : '$activos',
+                                'En el albergue',
+                                Icons.pets,
+                                appTeal,
+                              ),
+                              const VerticalDivider(width: 1),
+                              _perfilNumero(
+                                adoptados == null
+                                    ? _cargandoValor
+                                    : '$adoptados',
+                                'Adoptados',
+                                Icons.home_outlined,
+                                const Color(0xFF2196F3),
+                              ),
+                              const VerticalDivider(width: 1),
+                              _perfilNumero(
+                                _pendientes == null
+                                    ? _cargandoValor
+                                    : '$_pendientes',
+                                'Solicitudes',
+                                Icons.mail_outline,
+                                appOrange,
+                              ),
+                            ],
                           ),
                         ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
-                Text(
-                  nombre,
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                if (tipo.isNotEmpty || ciudad.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    [
-                      if (tipo.isNotEmpty) tipo,
-                      if (ciudad.isNotEmpty) ciudad,
-                    ].join(' · '),
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.white.withValues(alpha: 0.8),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              children: [
-                _infoTile(Icons.email_outlined, 'Correo', user?.email ?? '-'),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: () => ctx.push(AppRoutes.alberguePerfil),
-                    icon: const Icon(Icons.edit_outlined, size: 18),
-                    label: const Text('Editar perfil del albergue'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: appTeal,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
+                // Correo, editar y aviso en UNA sola tarjeta con separadores, en
+                // vez de tres bloques sueltos: ocupa la mitad del alto.
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+                  // Tres tarjetas "en relieve": degradado blanco → menta muy
+                  // claro, borde inferior más oscuro y sombra doble (cercana +
+                  // difusa). Así cada opción se ve como un botón que sobresale.
+                  child: Column(
+                    children: [
+                      _perfilFila(
+                        Icons.email_outlined,
+                        user?.email ?? '-',
+                        appTeal,
+                        etiqueta: 'Correo',
                       ),
-                      elevation: 0,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                GestureDetector(
-                  onTap: () => _configurarUmbralEstancado(ctx),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 16,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.schedule, color: appOrange, size: 20),
-                        const SizedBox(width: 12),
-                        const Expanded(
-                          child: Text(
-                            'Aviso sin adoptar',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        Icon(Icons.chevron_right, color: Colors.grey.shade400),
-                      ],
-                    ),
+                      const SizedBox(height: 12),
+                      _perfilFila(
+                        Icons.edit_outlined,
+                        'Editar perfil del albergue',
+                        appTeal,
+                        onTap: () => ctx.push(AppRoutes.alberguePerfil),
+                      ),
+                      const SizedBox(height: 12),
+                      _perfilFila(
+                        Icons.schedule,
+                        'Aviso sin adoptar',
+                        appOrange,
+                        onTap: () => _configurarUmbralEstancado(ctx),
+                      ),
+                    ],
                   ),
                 ),
                 // Acá NO va "Gestionar mis roles", y es a propósito.
@@ -1169,41 +1286,34 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                 // Si estás por volver a poner este botón: no alcanza con
                 // ponerlo. Hay que hacer que la hoja o el enrutado permitan
                 // salir, o vuelve a no hacer nada.
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () => mostrarDialogoCerrarSesion(ctx),
-                    icon: const Icon(Icons.logout, size: 18),
-                    label: const Text('Cerrar sesión'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.red.shade400,
-                      side: BorderSide(color: Colors.red.shade200),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
+                const SizedBox(height: 14),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextButton.icon(
+                          onPressed: () => mostrarDialogoCerrarSesion(ctx),
+                          icon: const Icon(Icons.logout, size: 18),
+                          label: const Text('Cerrar sesión'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.red.shade400,
+                          ),
+                        ),
                       ),
-                    ),
+                      Expanded(
+                        child: TextButton.icon(
+                          onPressed: () => mostrarEliminarCuentaDialog(ctx),
+                          icon: const Icon(Icons.delete_outline, size: 18),
+                          label: const Text('Eliminar cuenta'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.red.shade700,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () => mostrarEliminarCuentaDialog(ctx),
-                    icon: const Icon(Icons.delete_outline, size: 18),
-                    label: const Text('Eliminar mi cuenta'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.red.shade700,
-                      side: BorderSide(color: Colors.red.shade200),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
                 GestureDetector(
                   onTap: () => launchUrl(
                     Uri.parse(
@@ -1212,13 +1322,13 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                     mode: LaunchMode.externalApplication,
                   ),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    padding: const EdgeInsets.fromLTRB(0, 4, 0, 16),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Icon(
                           Icons.shield_outlined,
-                          size: 16,
+                          size: 15,
                           color: Colors.grey.shade500,
                         ),
                         const SizedBox(width: 6),
@@ -1237,53 +1347,105 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
               ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _infoTile(IconData icono, String label, String valor) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(14),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.04),
-          blurRadius: 6,
-          offset: const Offset(0, 2),
-        ),
-      ],
-    ),
-    child: Row(
-      children: [
-        Icon(icono, size: 20, color: appTeal),
-        const SizedBox(width: 14),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                color: Colors.grey.shade700,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              valor,
-              style: const TextStyle(
-                fontSize: 14,
-                color: appInk,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ],
-    ),
+  /// Tipo o ciudad del albergue con su ícono, debajo del nombre.
+  Widget _perfilChip(IconData icono, String texto) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Icon(icono, size: 16, color: appTeal),
+      const SizedBox(width: 4),
+      Text(texto, style: TextStyle(fontSize: 14, color: Colors.grey.shade800)),
+    ],
   );
+
+  /// Una fila de la tarjeta del perfil. Con [onTap] lleva flecha; sin él es
+  /// solo informativa (el correo).
+  Widget _perfilFila(
+    IconData icono,
+    String texto,
+    Color color, {
+    String? etiqueta,
+    VoidCallback? onTap,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Colors.white, Color(0xFFF2FBF6)],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border(
+          bottom: BorderSide(color: color.withValues(alpha: 0.35), width: 3),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: color.withValues(alpha: 0.22),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
+          ),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.07),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(18),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(icono, size: 18, color: color),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (etiqueta != null)
+                        Text(
+                          etiqueta,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      Text(
+                        texto,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (onTap != null)
+                  Icon(Icons.chevron_right, color: Colors.grey.shade400),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   // ── Widgets ──────────────────────────────────────────────────────────────────
 
@@ -1365,7 +1527,9 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
   }
 
   Widget _subirLoteCard(BuildContext ctx) => GestureDetector(
-    onTap: () => ctx.push(AppRoutes.subirLote),
+    // Al volver se refresca la Jauría: el panel la pide una sola vez, y sin
+    // esto lo recién subido no aparecía hasta pasar por "Gestionar".
+    onTap: () => ctx.push(AppRoutes.subirLote).then((_) => _refrescarNumeros()),
     child: Container(
       width: double.infinity,
       padding: const EdgeInsets.all(18),
@@ -1479,7 +1643,9 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
   );
 
   Widget _subirUnoCard(BuildContext ctx) => GestureDetector(
-    onTap: () => ctx.push(AppRoutes.subirRescate, extra: true),
+    onTap: () => ctx
+        .push(AppRoutes.subirRescate, extra: true)
+        .then((_) => _refrescarNumeros()),
     child: Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
@@ -1631,7 +1797,9 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
             ),
             const SizedBox(height: 10),
             GestureDetector(
-              onTap: () => context.push(AppRoutes.subirRescate, extra: true),
+              onTap: () => context
+                  .push(AppRoutes.subirRescate, extra: true)
+                  .then((_) => _refrescarNumeros()),
               child: Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 14,
