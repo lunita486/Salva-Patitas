@@ -6,11 +6,11 @@ import 'package:go_router/go_router.dart';
 import '../data/chats_repository.dart';
 import '../data/solicitudes_repository.dart';
 import '../routing/app_router.dart';
-import '../theme.dart';
 import '../widgets/avatares.dart';
 import '../widgets/albergue_tab_bar.dart';
 import '../widgets/estado_error_feed.dart';
-import '../widgets/fondo_decorativo.dart';
+import '../widgets/sp_widgets.dart';
+import '../theme/salva_patitas_theme.dart';
 import '../widgets/fotos.dart';
 import '../domain/reglas_negocio.dart';
 
@@ -61,50 +61,28 @@ class _AdoptanteChatsScreenState extends State<AdoptanteChatsScreen> {
               onTap: AlbergueTabBar.volverAlPanel(context, AlbergueTab.chats),
             )
           : null,
-      backgroundColor: appBg,
+      backgroundColor: context.sp.bg,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          const LeafOverlay(),
+          const SpPawBackground(),
           SafeArea(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-                  child: Row(
-                    children: [
-                      Tooltip(
-                        message: 'Volver',
-                        child: GestureDetector(
-                          onTap: () => Navigator.pop(context),
-                          child: const Icon(
-                            Icons.arrow_back_ios_new,
-                            size: 20,
-                            color: appInk,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      const Text(
-                        'Conversaciones',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: appInk,
-                          fontFamily: 'Baloo2',
-                        ),
-                      ),
-                    ],
-                  ),
+                const SpScreenHeader(
+                  title: 'Chats',
+                  subtitle: 'Tus conversaciones',
                 ),
                 Expanded(
                   child: StreamBuilder<QuerySnapshot>(
                     stream: _chatsStream,
                     builder: (context, snap) {
                       if (snap.connectionState == ConnectionState.waiting) {
-                        return const Center(
-                          child: CircularProgressIndicator(color: appTeal),
+                        return Center(
+                          child: CircularProgressIndicator(
+                            color: context.sp.primary,
+                          ),
                         );
                       }
                       if (snap.hasError) return errorFeedState();
@@ -208,41 +186,22 @@ class _AdoptanteChatsScreenState extends State<AdoptanteChatsScreen> {
     }
 
     if (docs.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.chat_bubble_outline,
-              size: 64,
-              color: Colors.grey.shade300,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Aún no tienes conversaciones',
-              style: TextStyle(
-                color: Colors.grey.shade700,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 40),
-              child: Text(
-                widget.esRescatista
-                    ? 'Cuando un adoptante inicie un chat sobre uno de tus animales, aparecerá aquí'
-                    : 'Cuando te interese un animal, toca "Chatear" para iniciar una conversación',
-                style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ],
-        ),
+      return ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          SpEmpty(
+            title: 'Aún no tienes conversaciones',
+            subtitle: widget.esRescatista
+                ? 'Cuando un adoptante inicie un chat sobre uno de tus animales, aparecerá aquí'
+                : 'Cuando te interese un animal, toca "Chatear" para iniciar una conversación',
+            animal: SpAnimalKind.gato,
+          ),
+        ],
       );
     }
+    final c = context.sp;
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(0, 4, 0, 20),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
       itemCount: docs.length,
       itemBuilder: (_, i) {
         final d = docs[i].data() as Map<String, dynamic>;
@@ -306,7 +265,6 @@ class _AdoptanteChatsScreenState extends State<AdoptanteChatsScreen> {
           esRescatista: widget.esRescatista,
           soloConsultas: widget.soloConsultas,
         );
-        final emoji = especie == 'Gato' ? '🐱' : '🐶';
         final inicial = nombreMostrar.isNotEmpty
             ? nombreMostrar[0].toUpperCase()
             : 'A';
@@ -319,10 +277,10 @@ class _AdoptanteChatsScreenState extends State<AdoptanteChatsScreen> {
             ? miNombre[0].toUpperCase()
             : 'A';
         final avatarColors = [
-          appOrange,
-          appTeal,
-          const Color(0xFF7C6FCD),
-          const Color(0xFF4CAF50),
+          c.peachInk,
+          c.primaryStrong,
+          c.lilacInk,
+          c.skyInk,
         ];
         final avatarColor =
             avatarColors[nombreMostrar.length % avatarColors.length];
@@ -349,19 +307,26 @@ class _AdoptanteChatsScreenState extends State<AdoptanteChatsScreen> {
                 onBackgroundImageError: (_, _) {},
                 radius: 28,
               )
-            : CircleAvatar(
-                backgroundColor: appTeal.withValues(alpha: 0.15),
+            : esConsultaRow
+            ? CircleAvatar(
+                backgroundColor: c.primarySoft,
                 radius: 28,
-                child: esConsultaRow
-                    ? Text(
-                        inicial,
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: appTeal,
-                        ),
-                      )
-                    : Text(emoji, style: const TextStyle(fontSize: 26)),
+                child: Text(
+                  inicial,
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: c.primaryStrong,
+                  ),
+                ),
+              )
+            // Animal sin foto: su animalito 3D sobre el pastel de su especie.
+            : ClipOval(
+                child: SizedBox(
+                  width: 56,
+                  height: 56,
+                  child: SpFotoVacia(especie: especie, size: 42),
+                ),
               );
 
         return GestureDetector(
@@ -400,8 +365,9 @@ class _AdoptanteChatsScreenState extends State<AdoptanteChatsScreen> {
             ),
           ),
           child: Container(
-            color: Colors.white.withValues(alpha: noLeidos > 0 ? 0.7 : 0.4),
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(14),
+            decoration: SpDeco.card(c, radius: 22),
             child: Row(
               children: [
                 Stack(
@@ -446,6 +412,7 @@ class _AdoptanteChatsScreenState extends State<AdoptanteChatsScreen> {
                             : inicial,
                         radius: 12,
                         backgroundColor: avatarColor,
+                        textColor: c.surface,
                         campoLogoNegocio: tipoSolicitud == 'consulta_aliado'
                             ? ChatsRepository.campoLogoAdoptante(d)
                             : (soyAdoptanteAqui
@@ -467,9 +434,10 @@ class _AdoptanteChatsScreenState extends State<AdoptanteChatsScreen> {
                               nombreMostrar,
                               overflow: TextOverflow.ellipsis,
                               maxLines: 1,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
                                 fontSize: 15,
+                                color: c.ink,
                               ),
                             ),
                           ),
@@ -477,8 +445,8 @@ class _AdoptanteChatsScreenState extends State<AdoptanteChatsScreen> {
                           Container(
                             width: 8,
                             height: 8,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF4CAF50),
+                            decoration: BoxDecoration(
+                              color: c.primary,
                               shape: BoxShape.circle,
                             ),
                           ),
@@ -487,7 +455,8 @@ class _AdoptanteChatsScreenState extends State<AdoptanteChatsScreen> {
                             ultimaHora,
                             style: TextStyle(
                               fontSize: 12,
-                              color: Colors.grey.shade400,
+                              fontWeight: FontWeight.w600,
+                              color: c.inkMuted,
                             ),
                           ),
                         ],
@@ -508,10 +477,7 @@ class _AdoptanteChatsScreenState extends State<AdoptanteChatsScreen> {
                             tipoSolicitud == 'consulta_aliado'
                                 ? 'Con '
                                 : 'Sobre ',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.grey.shade700,
-                            ),
+                            style: TextStyle(fontSize: 13, color: c.inkMuted),
                           ),
                           Flexible(
                             child: Text(
@@ -520,8 +486,8 @@ class _AdoptanteChatsScreenState extends State<AdoptanteChatsScreen> {
                               maxLines: 1,
                               style: TextStyle(
                                 fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.grey.shade700,
+                                fontWeight: FontWeight.w700,
+                                color: c.inkMuted,
                               ),
                             ),
                           ),
@@ -537,9 +503,7 @@ class _AdoptanteChatsScreenState extends State<AdoptanteChatsScreen> {
                                   : 'Inicia la conversación',
                               style: TextStyle(
                                 fontSize: 13,
-                                color: noLeidos > 0
-                                    ? appInk
-                                    : Colors.grey.shade700,
+                                color: noLeidos > 0 ? c.ink : c.inkMuted,
                                 fontWeight: noLeidos > 0
                                     ? FontWeight.w600
                                     : FontWeight.normal,
@@ -556,18 +520,18 @@ class _AdoptanteChatsScreenState extends State<AdoptanteChatsScreen> {
                                 minWidth: 20,
                                 minHeight: 20,
                               ),
-                              decoration: const BoxDecoration(
-                                color: appOrange,
+                              decoration: BoxDecoration(
+                                color: c.accent,
                                 shape: BoxShape.circle,
                               ),
                               alignment: Alignment.center,
                               child: Text(
                                 noLeidos > 99 ? '99+' : '$noLeidos',
                                 textAlign: TextAlign.center,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 11,
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
+                                  color: c.onAccent,
+                                  fontWeight: FontWeight.w800,
                                 ),
                               ),
                             ),

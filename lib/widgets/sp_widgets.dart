@@ -1037,3 +1037,13 @@ class SpScreenHeader extends StatelessWidget {
     );
   }
 }
+
+/// Tono pastel por tipo de negocio aliado. Mismos grupos que
+/// `aliadoTipoColorPastel` (theme.dart), con los colores del tema.
+SpTone spToneAliado(String tipo) => switch (tipo) {
+  'Veterinaria' => SpTone.mint,
+  'Tienda de mascotas' => SpTone.peach,
+  'Spa canino' => SpTone.lilac,
+  'Peluquería canina' => SpTone.butter,
+  _ => SpTone.sky,
+};

@@ -3,12 +3,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:go_router/go_router.dart';
-import '../theme.dart';
 import '../domain/reglas_negocio.dart';
 import '../routing/app_router.dart';
 import '../widgets/avatares.dart';
 import '../widgets/fotos.dart';
 import '../widgets/texto_sin_desborde.dart';
+import '../widgets/sp_widgets.dart';
+import '../theme/salva_patitas_theme.dart';
 import '../data/chats_repository.dart';
 import '../data/creator_role.dart';
 import '../data/firestore_resiliencia.dart';
@@ -215,7 +216,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 rescatistaId: widget.animal['rescatistaId'] as String? ?? '',
                 rescatista:
                     widget.animal['rescatista'] as String? ?? 'Rescatista',
-                creadoPor: widget.animal['creadoPor'] as String? ?? 'rescatista',
+                creadoPor:
+                    widget.animal['creadoPor'] as String? ?? 'rescatista',
                 solicitudId: widget.animal['solicitudId'] as String?,
                 animalNombre: widget.animal['nombre'] as String?,
                 especie: widget.animal['especie'] as String?,
@@ -327,8 +329,8 @@ class _ChatScreenState extends State<ChatScreen> {
       // sePerdioLaEscritura() en data/firestore_resiliencia.dart.
       if (!sePerdioLaEscritura(e)) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            backgroundColor: msgAdvertencia,
+          SnackBar(
+            backgroundColor: context.sp.msgAdvertencia,
             content: Text('Sin conexión. Se enviará cuando vuelva.'),
           ),
         );
@@ -336,8 +338,8 @@ class _ChatScreenState extends State<ChatScreen> {
       }
       _msgCtl.text = trimmed;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          backgroundColor: msgError,
+        SnackBar(
+          backgroundColor: context.sp.msgError,
           content: Text('No se pudo enviar el mensaje. Intentá de nuevo.'),
         ),
       );
@@ -444,28 +446,29 @@ class _ChatScreenState extends State<ChatScreen> {
     return formatearFecha(d, conAnio: d.year != ahora.year);
   }
 
-  Widget _separadorFecha(String label) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 10),
-    child: Row(
-      children: [
-        const SizedBox(width: 16),
-        Expanded(child: Divider(color: Colors.grey.shade300, thickness: 1)),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10),
+  Widget _separadorFecha(String label) {
+    final c = context.sp;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          decoration: BoxDecoration(
+            color: c.surfaceSunken,
+            borderRadius: BorderRadius.circular(SpRadius.full),
+          ),
           child: Text(
             label,
             style: TextStyle(
               fontSize: 11,
-              color: Colors.grey.shade700,
-              fontWeight: FontWeight.w500,
+              color: c.inkMuted,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ),
-        Expanded(child: Divider(color: Colors.grey.shade300, thickness: 1)),
-        const SizedBox(width: 16),
-      ],
-    ),
-  );
+      ),
+    );
+  }
 
   Widget _burbujaMensaje(Map<String, dynamic> d) {
     // La regla de qué lado va cada burbuja (y por qué son dos caminos según
@@ -481,27 +484,29 @@ class _ChatScreenState extends State<ChatScreen> {
     );
     final text = d['texto'] as String? ?? '';
     final time = d['hora'] as String? ?? '';
+    final c = context.sp;
     return Align(
       alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         constraints: BoxConstraints(
           maxWidth: MediaQuery.of(context).size.width * 0.72,
         ),
-        margin: const EdgeInsets.symmetric(vertical: 4),
+        margin: const EdgeInsets.only(top: 4, bottom: 7),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        // `.bubble--me` (verde suave, canto menta) y `.bubble--them`
+        // (blanca, canto gris), igual que el prototipo.
         decoration: BoxDecoration(
-          color: isMine ? appOrange : Colors.white,
+          color: isMine ? c.primarySoft : c.surface,
           borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(18),
-            topRight: const Radius.circular(18),
-            bottomLeft: Radius.circular(isMine ? 18 : 4),
-            bottomRight: Radius.circular(isMine ? 4 : 18),
+            topLeft: const Radius.circular(20),
+            topRight: const Radius.circular(20),
+            bottomLeft: Radius.circular(isMine ? 20 : 6),
+            bottomRight: Radius.circular(isMine ? 6 : 20),
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.06),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
+              color: isMine ? c.mintDeep : c.edge,
+              offset: const Offset(0, 3),
             ),
           ],
         ),
@@ -512,20 +517,15 @@ class _ChatScreenState extends State<ChatScreen> {
           children: [
             Text(
               text,
-              style: TextStyle(
-                fontSize: 14,
-                color: isMine ? Colors.white : appInk,
-                height: 1.4,
-              ),
+              style: TextStyle(fontSize: 14, color: c.ink, height: 1.4),
             ),
             const SizedBox(height: 4),
             Text(
               time,
               style: TextStyle(
-                fontSize: 10,
-                color: isMine
-                    ? Colors.white.withValues(alpha: 0.7)
-                    : Colors.grey.shade400,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: c.inkMuted,
               ),
             ),
           ],
@@ -534,25 +534,25 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  Widget _estadoBadge(String label, Color bg, Color fg) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-    decoration: BoxDecoration(
-      color: bg,
-      borderRadius: BorderRadius.circular(20),
-    ),
-    child: Text(
-      label,
-      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: fg),
-    ),
-  );
+  Widget _estadoBadge(String label, Color bg, Color fg, IconData icono) =>
+      SpPill(label, fondo: bg, tinta: fg, icon: icono);
 
   Widget _estadoBadgeTipo(String tipo) {
+    final c = context.sp;
     final esHogar = tipo == 'hogar_de_paso';
-    return _estadoBadge(
-      esHogar ? '🏡 Hogar de paso' : '🏠 En adopción',
-      esHogar ? const Color(0xFFD8F0E4) : const Color(0xFFF9DDD5),
-      esHogar ? appTeal : const Color(0xFF8B3A1F),
-    );
+    return esHogar
+        ? _estadoBadge(
+            'Hogar de paso',
+            c.sky,
+            c.skyInk,
+            Icons.night_shelter_outlined,
+          )
+        : _estadoBadge(
+            'En adopción',
+            c.butter,
+            c.butterInk,
+            Icons.home_outlined,
+          );
   }
 
   @override
@@ -573,7 +573,7 @@ class _ChatScreenState extends State<ChatScreen> {
         ? widget.animal['fotoBase64'] as String?
         : null;
     final rescatista = (widget.animal['rescatista'] as String?) ?? 'Rescatista';
-    final emoji = widget.animal['especie'] == 'Gato' ? '🐱' : '🐶';
+    final c = context.sp;
     // El encabezado muestra a la CONTRAPARTE: el rescatista chatea con el
     // adoptante y viceversa. Antes mostraba siempre al rescatista, así que
     // el propio rescatista veía su nombre y rótulo en el encabezado, como
@@ -607,21 +607,21 @@ class _ChatScreenState extends State<ChatScreen> {
         : (esAlbergue ? 'Albergue' : 'Rescatista');
 
     return Scaffold(
-      backgroundColor: appBg,
+      backgroundColor: c.bg,
       body: SafeArea(
         child: Column(
           children: [
             // ── Header ─────────────────────────────────────────────────────────
-            Container(
-              color: Colors.white,
-              padding: const EdgeInsets.fromLTRB(8, 10, 16, 10),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
               child: Row(
                 children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+                  SpRoundButton(
+                    icon: Icons.arrow_back_ios_new_rounded,
                     tooltip: 'Volver',
-                    onPressed: () => Navigator.pop(context),
+                    onTap: () => Navigator.pop(context),
                   ),
+                  const SizedBox(width: 12),
                   FutureBuilder<(String?, String?)>(
                     future: _fotoContraparte,
                     // esConsulta && !esRescatista: yo contacté al negocio, la
@@ -639,8 +639,8 @@ class _ChatScreenState extends State<ChatScreen> {
                           ? contraparte[0].toUpperCase()
                           : '?',
                       radius: 20,
-                      backgroundColor: appOrange,
-                      textColor: Colors.white,
+                      backgroundColor: c.lilac,
+                      textColor: c.lilacInk,
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -655,16 +655,16 @@ class _ChatScreenState extends State<ChatScreen> {
                         TextoSinDesborde(
                           texto: contraparte,
                           separacion: 6,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: appInk,
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: c.ink,
                           ),
                           despues: Container(
                             width: 8,
                             height: 8,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF34C759),
+                            decoration: BoxDecoration(
+                              color: c.primary,
                               shape: BoxShape.circle,
                             ),
                           ),
@@ -673,8 +673,9 @@ class _ChatScreenState extends State<ChatScreen> {
                         Text(
                           rotuloContraparte,
                           style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.grey.shade700,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: c.inkMuted,
                           ),
                         ),
                       ],
@@ -689,19 +690,9 @@ class _ChatScreenState extends State<ChatScreen> {
             GestureDetector(
               onTap: () => _abrirFicha(context),
               child: Container(
-                margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.05),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
+                margin: const EdgeInsets.fromLTRB(16, 6, 16, 4),
+                padding: const EdgeInsets.all(10),
+                decoration: SpDeco.card(c, radius: 22),
                 child: Row(
                   children: [
                     Builder(
@@ -714,41 +705,44 @@ class _ChatScreenState extends State<ChatScreen> {
                         final inicial = nombre.isNotEmpty
                             ? nombre[0].toUpperCase()
                             : '?';
-                        final fallback = Container(
-                          width: 48,
-                          height: 48,
-                          color: const Color(0xFFD8F0E4),
-                          child: Center(
-                            child: esConsulta
-                                ? Text(
-                                    inicial,
-                                    style: const TextStyle(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.bold,
-                                      color: appTeal,
-                                    ),
-                                  )
-                                : Text(
-                                    emoji,
-                                    style: const TextStyle(fontSize: 26),
+                        final fallback = esConsulta
+                            ? Container(
+                                width: 56,
+                                height: 56,
+                                color: c.primarySoft,
+                                alignment: Alignment.center,
+                                child: Text(
+                                  inicial,
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w800,
+                                    color: c.primaryStrong,
                                   ),
-                          ),
-                        );
+                                ),
+                              )
+                            : SizedBox(
+                                width: 56,
+                                height: 56,
+                                child: SpFotoVacia(
+                                  especie: widget.animal['especie'] as String?,
+                                  size: 44,
+                                ),
+                              );
                         return ClipRRect(
-                          borderRadius: BorderRadius.circular(10),
+                          borderRadius: BorderRadius.circular(18),
                           child: fotoUrl != null
                               ? FotoUrl(
                                   url: fotoUrl,
-                                  width: 48,
-                                  height: 48,
+                                  width: 56,
+                                  height: 56,
                                   alignment: Alignment.topCenter,
                                   fallback: fallback,
                                 )
                               : fotoBase64 != null
                               ? FotoSegura(
                                   base64: fotoBase64,
-                                  width: 48,
-                                  height: 48,
+                                  width: 56,
+                                  height: 56,
                                   fallback: fallback,
                                 )
                               : fallback,
@@ -765,10 +759,10 @@ class _ChatScreenState extends State<ChatScreen> {
                                     'consulta_aliado'
                                 ? 'Conversando con $nombre'
                                 : 'Conversando sobre $nombre${edad.isNotEmpty ? " · $edad" : ""}',
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: appInk,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              color: c.ink,
                             ),
                           ),
                           const SizedBox(height: 4),
@@ -785,20 +779,18 @@ class _ChatScreenState extends State<ChatScreen> {
                               Widget badgeFor(String? estadoReal) {
                                 if (estadoReal == 'Fallecido') {
                                   return _estadoBadge(
-                                    '🌈 Falleció',
-                                    cicloColor(
-                                      'Fallecido',
-                                    ).withValues(alpha: 0.12),
-                                    cicloColor('Fallecido'),
+                                    'Falleció',
+                                    c.surfaceSunken,
+                                    c.inkMuted,
+                                    Icons.favorite_border_rounded,
                                   );
                                 }
                                 if (estadoReal == 'Adoptado') {
                                   return _estadoBadge(
-                                    '✅ Adoptado',
-                                    cicloColor(
-                                      'Adoptado',
-                                    ).withValues(alpha: 0.12),
-                                    cicloColor('Adoptado'),
+                                    'Adoptado',
+                                    c.primarySoft,
+                                    c.primaryStrong,
+                                    Icons.check_rounded,
                                   );
                                 }
                                 return _estadoBadgeTipo(tipo);
@@ -838,10 +830,10 @@ class _ChatScreenState extends State<ChatScreen> {
                         ],
                       ),
                     ),
-                    const Icon(
-                      Icons.chevron_right,
-                      color: Color(0xFFCCCCCC),
-                      size: 20,
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      color: c.inkFaint,
+                      size: 22,
                     ),
                   ],
                 ),
@@ -856,16 +848,16 @@ class _ChatScreenState extends State<ChatScreen> {
                 future: _chatListo,
                 builder: (context, listo) {
                   if (listo.connectionState != ConnectionState.done) {
-                    return const Center(
-                      child: CircularProgressIndicator(color: appTeal),
+                    return Center(
+                      child: CircularProgressIndicator(color: c.primary),
                     );
                   }
                   return StreamBuilder<QuerySnapshot>(
                     stream: _chatsRepo.mensajes(_chatId),
                     builder: (context, snap) {
                       if (snap.connectionState == ConnectionState.waiting) {
-                        return const Center(
-                          child: CircularProgressIndicator(color: appTeal),
+                        return Center(
+                          child: CircularProgressIndicator(color: c.primary),
                         );
                       }
                       if (snap.hasError) {
@@ -875,22 +867,27 @@ class _ChatScreenState extends State<ChatScreen> {
                           child: Text(
                             'No se pudieron cargar los mensajes.\nSalí y volvé a entrar al chat.',
                             textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.grey.shade700,
-                            ),
+                            style: TextStyle(fontSize: 13, color: c.inkMuted),
                           ),
                         );
                       }
                       final docs = snap.data?.docs ?? [];
                       if (docs.isEmpty) {
                         return Center(
-                          child: Text(
-                            'Sé el primero en escribir 🐾',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.grey.shade700,
-                            ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const SpAnimal(SpAnimalKind.perro, size: 72),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Sé el primero en escribir',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: c.inkMuted,
+                                ),
+                              ),
+                            ],
                           ),
                         );
                       }
@@ -971,17 +968,13 @@ class _ChatScreenState extends State<ChatScreen> {
             const SizedBox(height: 8),
 
             // ── Input bar ───────────────────────────────────────────────────────
-            Container(
-              color: Colors.white,
-              padding: const EdgeInsets.fromLTRB(16, 10, 12, 14),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
               child: Row(
                 children: [
                   Expanded(
                     child: Container(
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF4F4F4),
-                        borderRadius: BorderRadius.circular(24),
-                      ),
+                      decoration: SpDeco.soft(c, radius: SpRadius.full),
                       child: TextField(
                         controller: _msgCtl,
                         textInputAction: TextInputAction.send,
@@ -997,35 +990,38 @@ class _ChatScreenState extends State<ChatScreen> {
                         decoration: InputDecoration(
                           hintText: 'Escribe un mensaje...',
                           hintStyle: TextStyle(
-                            color: Colors.grey.shade400,
-                            fontSize: 14,
+                            color: c.inkFaint,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
                           ),
                           border: InputBorder.none,
                           contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 10,
+                            horizontal: 18,
+                            vertical: 15,
                           ),
                           counterText: '',
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 10),
                   Tooltip(
                     message: 'Enviar mensaje',
-                    child: GestureDetector(
+                    child: SpPressable(
                       onTap: () => _send(_msgCtl.text),
+                      // Botón verde 3D (`.composer__send`).
                       child: Container(
-                        width: 44,
-                        height: 44,
-                        decoration: const BoxDecoration(
-                          color: appOrange,
-                          shape: BoxShape.circle,
+                        width: 52,
+                        height: 52,
+                        decoration: SpDeco.primary(
+                          c,
+                          radius: 18,
+                          gradient: true,
                         ),
-                        child: const Icon(
+                        child: Icon(
                           Icons.send_rounded,
-                          color: Colors.white,
-                          size: 20,
+                          color: c.onPrimary,
+                          size: 22,
                         ),
                       ),
                     ),
