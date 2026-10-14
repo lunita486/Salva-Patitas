@@ -295,7 +295,9 @@ class SpColors extends ThemeExtension<SpColors> {
 }
 
 extension SpContext on BuildContext {
-  SpColors get sp => Theme.of(this).extension<SpColors>()!;
+  // Sin el `!`: un widget montado fuera de SpTheme (los tests de widgets
+  // arman su propio MaterialApp) cae a los colores claros en vez de romper.
+  SpColors get sp => Theme.of(this).extension<SpColors>() ?? SpColors.light;
 }
 
 /// Fondos de los avisos de abajo (SnackBar). Reemplazan a msgExito,
@@ -509,6 +511,32 @@ class SpTheme {
     // Avisos de abajo: el texto va siempre en el color del fondo, que
     // contrasta con los tres fondos de aviso (msgExito/msgError/
     // msgAdvertencia) en claro y en oscuro.
+    // Campos de texto hundidos (`SpDeco.sunken`): gris menta claro dentro de
+    // las tarjetas blancas, sin borde, y verde al escribir. Lo toman todos los
+    // TextField que no pongan su propio estilo.
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: c.surfaceSunken,
+      hintStyle: TextStyle(
+        fontFamily: spFontFamily,
+        color: c.inkFaint,
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(SpRadius.md),
+        borderSide: BorderSide.none,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(SpRadius.md),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(SpRadius.md),
+        borderSide: BorderSide(color: c.primary, width: 2),
+      ),
+    ),
     snackBarTheme: SnackBarThemeData(
       backgroundColor: c.ink,
       contentTextStyle: TextStyle(

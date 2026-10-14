@@ -9,13 +9,13 @@ import '../theme.dart';
 // estilo para las dos (Eliza las comparó una al lado de la otra y pidió
 // que se vean igual) — texto oscuro en vez del gris apagado que tenía
 // albergue, que es lo que a ella más le gustó de las dos.
+// Sin color propio: toma el texto principal del tema.
 Widget perfilLabel(String texto) => Text(
   texto,
   style: const TextStyle(
     fontSize: 11,
-    fontWeight: FontWeight.w700,
+    fontWeight: FontWeight.w800,
     letterSpacing: 1.1,
-    color: appDark,
   ),
 );
 
@@ -42,25 +42,9 @@ Widget perfilCampo(
   autofocus: autofocus,
   maxLength: maxLength,
   onChanged: onChanged,
-  decoration: InputDecoration(
-    hintText: hint,
-    hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
-    filled: true,
-    fillColor: Colors.white,
-    border: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
-      borderSide: BorderSide.none,
-    ),
-    enabledBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
-      borderSide: BorderSide.none,
-    ),
-    focusedBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
-      borderSide: const BorderSide(color: appTeal, width: 2),
-    ),
-    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-  ),
+  // Fondo, bordes y colores vienen del tema (inputDecorationTheme de
+  // SpTheme): así este campo se ve igual que todos los demás de la app.
+  decoration: InputDecoration(hintText: hint),
 );
 
 /// Una fila de contacto (teléfono, dirección, email, web) de los perfiles

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
+import '../theme/salva_patitas_theme.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../services/ubicacion_service.dart';
-import '../theme.dart';
 import 'aviso_ubicacion.dart';
 
 // ─── Ciudad ─────────────────────────────────────────────────────────────────
@@ -125,6 +125,7 @@ class _CampoCiudadState extends State<CampoCiudad> {
   void _detectarSiSePuede() {
     if (!_detectando) _detectar();
   }
+
   // Mismo motivo que subir_rescate_screen.dart/editar_rescate_screen.dart:
   // un SnackBar de _avisar (8s) queda visible sobre la pantalla de ATRÁS si
   // se sale de este perfil antes de que se cierre solo — un solo
@@ -227,38 +228,23 @@ class _CampoCiudadState extends State<CampoCiudad> {
     focusNode: widget.focusNode,
     maxLength: widget.maxLength,
     onChanged: widget.onChanged,
+    // Fondo y bordes del tema (inputDecorationTheme), como perfilCampo.
     decoration: InputDecoration(
       hintText: widget.hint,
-      hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
-      filled: true,
-      fillColor: Colors.white,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide.none,
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide.none,
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: appTeal, width: 2),
-      ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       suffixIcon: Tooltip(
         message: 'Detectar mi ciudad actual',
         child: IconButton(
           onPressed: _detectando ? null : _detectar,
           icon: _detectando
-              ? const SizedBox(
+              ? SizedBox(
                   width: 18,
                   height: 18,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: appTeal,
+                    color: context.sp.primary,
                   ),
                 )
-              : const Icon(Icons.my_location, color: appTeal),
+              : Icon(Icons.my_location, color: context.sp.primary),
         ),
       ),
     ),

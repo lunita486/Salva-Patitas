@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/salva_patitas_theme.dart';
 import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 
 import 'campos_perfil.dart';
@@ -202,10 +203,7 @@ class _SelectorPais extends StatelessWidget {
     return Container(
       height: 52,
       padding: const EdgeInsets.symmetric(horizontal: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-      ),
+      decoration: SpDeco.sunken(context.sp),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<Pais>(
           value: pais,

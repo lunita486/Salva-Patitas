@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../theme.dart';
 import '../widgets/boton_cambiar_rol.dart';
 import '../widgets/campo_ciudad.dart';
 import '../widgets/campo_pais_telefono.dart';
@@ -11,7 +10,8 @@ import '../widgets/campos_perfil.dart';
 import '../widgets/confirmar_ciudad_resuelta.dart';
 import '../widgets/elegir_foto_perfil.dart';
 import '../widgets/estado_error_feed.dart';
-import '../widgets/fondo_decorativo.dart';
+import '../widgets/sp_widgets.dart';
+import '../theme/salva_patitas_theme.dart';
 import '../widgets/fotos.dart';
 import '../widgets/resultado_guardado_snackbar.dart';
 import '../domain/reglas_negocio.dart';
@@ -115,8 +115,7 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
         _paisPerfil = data['paisCodigo'] as String? ?? '';
         _tieneCoordenadas = _latPerfil != null && _lngPerfil != null;
         _tienePais = _paisPerfil.isNotEmpty;
-        _capacidadCtl.text =
-            (data['capacidadTotal'] as int?)?.toString() ?? '';
+        _capacidadCtl.text = (data['capacidadTotal'] as int?)?.toString() ?? '';
         _telefonoCtl.text = data['albergueTelefono'] as String? ?? '';
         _direccionCtl.text = data['albergueDireccion'] as String? ?? '';
         _emailCtl.text = data['albergueEmail'] as String? ?? '';
@@ -168,8 +167,7 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
       // reportó que "sjejdj" se guardaba como email sin ningún aviso. Esta
       // pantalla, con los mismos dos campos, nunca la recibió: Eliza pudo
       // guardar "lacasita" como email del albergue.
-      (_emailCtl.text.trim().isEmpty ||
-          esEmailValido(_emailCtl.text.trim())) &&
+      (_emailCtl.text.trim().isEmpty || esEmailValido(_emailCtl.text.trim())) &&
       (_webCtl.text.trim().isEmpty || esSitioWebValido(_webCtl.text.trim()));
 
   Future<void> _guardar() async {
@@ -371,14 +369,16 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
   @override
   Widget build(BuildContext context) {
     if (_cargando) {
-      return const Scaffold(
-        backgroundColor: appBg,
-        body: Center(child: CircularProgressIndicator(color: appTeal)),
+      return Scaffold(
+        backgroundColor: context.sp.bg,
+        body: Center(
+          child: CircularProgressIndicator(color: context.sp.primary),
+        ),
       );
     }
     if (_errorCarga) {
       return Scaffold(
-        backgroundColor: appBg,
+        backgroundColor: context.sp.bg,
         body: SafeArea(
           child: Column(
             children: [
@@ -406,24 +406,10 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
                               'No pudimos cargar tu perfil. Revisá tu conexión e intentá de nuevo.',
                         ),
                         const SizedBox(height: 12),
-                        ElevatedButton(
-                          onPressed: _reintentarCarga,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: appTeal,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 28,
-                              vertical: 14,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            elevation: 0,
-                          ),
-                          child: const Text(
-                            'Reintentar',
-                            style: TextStyle(fontWeight: FontWeight.w600),
-                          ),
+                        SpButton(
+                          label: 'Reintentar',
+                          icon: Icons.refresh_rounded,
+                          onTap: _reintentarCarga,
                         ),
                       ],
                     ),
@@ -435,362 +421,312 @@ class _AlberguePerfilScreenState extends State<AlberguePerfilScreen> {
         ),
       );
     }
+    final c = context.sp;
+    final puedeVolver = Navigator.canPop(context);
+    Widget aviso(String texto) => Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Text(
+        texto,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: c.danger,
+        ),
+      ),
+    );
+    Widget ayuda(String texto) =>
+        Text(texto, style: SpText.caption.copyWith(color: c.inkMuted));
+
     return Scaffold(
-      backgroundColor: appBg,
+      backgroundColor: c.bg,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          const LeafOverlay(),
+          const SpPawBackground(),
           SafeArea(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
+              padding: const EdgeInsets.only(bottom: 32),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SizedBox(height: 24),
-                  Builder(
-                    builder: (ctx) => Navigator.canPop(ctx)
-                        ? IconButton(
-                            icon: const Icon(
-                              Icons.arrow_back_ios_new,
-                              size: 20,
-                            ),
-                            tooltip: 'Volver',
-                            onPressed: () => Navigator.pop(ctx),
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                          )
-                        : const SizedBox.shrink(),
+                  // Al crear el perfil por primera vez no hay a dónde volver.
+                  SpScreenHeader(
+                    title: puedeVolver
+                        ? 'Editar perfil'
+                        : 'Configura tu albergue',
+                    subtitle: 'Esto aparece en tu perfil oficial',
+                    conVolver: puedeVolver,
                   ),
-                  const SizedBox(height: 16),
-
-                  // Header
-                  const Text(
-                    'Configura tu albergue',
-                    style: TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.bold,
-                      color: appInk,
-                      fontFamily: 'Baloo2',
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Esta información aparecerá en tu perfil oficial.',
-                    style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
-                  ),
-                  const SizedBox(height: 32),
-
-                  // Logo / foto del albergue
-                  Center(
-                    child: Builder(
-                      builder: (_) {
-                        final fotoBytes = bytesFotoSegura(_fotoBase64);
-                        return GestureDetector(
-                          onTap: _pickFoto,
-                          child: Stack(
-                            clipBehavior: Clip.none,
-                            children: [
-                              Container(
-                                width: 96,
-                                height: 96,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: Colors.white,
-                                  border: Border.all(
-                                    color: appTeal,
-                                    width: 2.5,
-                                  ),
-                                  image: fotoBytes != null
-                                      ? DecorationImage(
-                                          image: MemoryImage(fotoBytes),
-                                          fit: BoxFit.cover,
-                                          onError: (_, _) {},
-                                        )
-                                      : null,
-                                ),
-                                child: fotoBytes == null
-                                    ? const Icon(
-                                        Icons.add_a_photo_outlined,
-                                        color: appTeal,
-                                        size: 32,
-                                      )
-                                    : null,
-                              ),
-                              if (fotoBytes != null)
-                                Positioned(
-                                  bottom: 0,
-                                  right: 0,
-                                  child: Container(
-                                    width: 30,
-                                    height: 30,
-                                    decoration: BoxDecoration(
-                                      color: appTeal,
-                                      shape: BoxShape.circle,
-                                      border: Border.all(
-                                        color: Colors.white,
-                                        width: 2,
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // ── Logo del albergue ──────────────────────────────
+                        Center(
+                          child: Builder(
+                            builder: (_) {
+                              final fotoBytes = bytesFotoSegura(_fotoBase64);
+                              return GestureDetector(
+                                onTap: _pickFoto,
+                                child: Stack(
+                                  clipBehavior: Clip.none,
+                                  children: [
+                                    Container(
+                                      width: 112,
+                                      height: 112,
+                                      padding: const EdgeInsets.all(4),
+                                      decoration: SpDeco.soft(
+                                        c,
+                                        radius: SpRadius.full,
+                                      ),
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: c.mint,
+                                          image: fotoBytes != null
+                                              ? DecorationImage(
+                                                  image: MemoryImage(fotoBytes),
+                                                  fit: BoxFit.cover,
+                                                  onError: (_, _) {},
+                                                )
+                                              : null,
+                                        ),
+                                        child: fotoBytes == null
+                                            ? const Center(
+                                                child: SpAnimal(
+                                                  SpAnimalKind.huella,
+                                                  size: 56,
+                                                ),
+                                              )
+                                            : null,
                                       ),
                                     ),
-                                    child: const Icon(
-                                      Icons.edit,
-                                      color: Colors.white,
-                                      size: 14,
+                                    Positioned(
+                                      right: -2,
+                                      bottom: 2,
+                                      child: Container(
+                                        width: 38,
+                                        height: 38,
+                                        decoration: SpDeco.primary(
+                                          c,
+                                          radius: SpRadius.full,
+                                        ),
+                                        child: Icon(
+                                          fotoBytes == null
+                                              ? Icons.add_a_photo_outlined
+                                              : Icons.photo_camera_rounded,
+                                          size: 18,
+                                          color: c.onPrimary,
+                                        ),
+                                      ),
                                     ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Center(
+                          child: ayuda(
+                            _fotoBase64 == null
+                                ? 'Agrega el logo de tu albergue (opcional)'
+                                : 'Toca para cambiar el logo',
+                          ),
+                        ),
+
+                        // ── Datos del albergue ─────────────────────────────
+                        const SizedBox(height: SpSpace.s6),
+                        const SpSectionTitle('Datos del albergue'),
+                        const SizedBox(height: SpSpace.s3),
+                        SpCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              perfilLabel('NOMBRE DEL ALBERGUE *'),
+                              const SizedBox(height: 8),
+                              perfilCampo(
+                                _nombreCtl,
+                                'ej. Centro de Bienestar Animal La Perla',
+                                autofocus: true,
+                                maxLength: 50,
+                                // Igual que la ciudad y el email/web de esta
+                                // misma pantalla: sin esto, escribir en un
+                                // campo OBLIGATORIO no vuelve a evaluar
+                                // _completo, así que Guardar sigue
+                                // deshabilitado hasta tocar por casualidad
+                                // alguno de los campos que sí lo tienen.
+                                onChanged: (_) => setState(() {}),
+                              ),
+                              const SizedBox(height: 12),
+
+                              perfilLabel('TIPO DE ORGANIZACIÓN *'),
+                              const SizedBox(height: 10),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 10,
+                                children: _tipos
+                                    .map(
+                                      (t) => SpChip(
+                                        label: t,
+                                        selected: t == (_tipo ?? ''),
+                                        onTap: () => setState(() => _tipo = t),
+                                      ),
+                                    )
+                                    .toList(),
+                              ),
+                              const SizedBox(height: 20),
+
+                              perfilLabel('CAPACIDAD TOTAL DE ANIMALES *'),
+                              const SizedBox(height: 8),
+                              perfilCampo(
+                                _capacidadCtl,
+                                'ej. 220',
+                                tipo: TextInputType.number,
+                                formato: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                ],
+                                // Sin esto, un número gigante desborda el
+                                // rango de int.tryParse(), que devuelve null
+                                // y por _completo eso se lee como "capacidad
+                                // 0" — Guardar se queda deshabilitado para
+                                // siempre, sin ningún aviso. Hallazgo real de
+                                // Eliza. 6 dígitos (hasta 999.999) alcanza de
+                                // sobra para cualquier albergue real.
+                                maxLength: 6,
+                                // Mismo motivo que el nombre y la ciudad.
+                                onChanged: (_) => setState(() {}),
+                              ),
+                              // Por qué Guardar está apagado, dicho en el
+                              // lugar donde se puede arreglar: `_completo`
+                              // exige capacidad > 0. Hallazgo real de Eliza:
+                              // puso capacidad 0 y creyó que el problema era
+                              // la dirección.
+                              if (_capacidadCtl.text.trim().isNotEmpty &&
+                                  (int.tryParse(_capacidadCtl.text.trim()) ??
+                                          0) <=
+                                      0)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 6),
+                                  child: aviso(
+                                    'La capacidad tiene que ser mayor que 0 para poder guardar.',
                                   ),
                                 ),
+                              ayuda(
+                                'Cuántos animales puede albergar tu organización.',
+                              ),
+                              const SizedBox(height: 20),
+
+                              perfilLabel('CIUDAD *'),
+                              const SizedBox(height: 8),
+                              CampoCiudad(
+                                controller: _ciudadCtl,
+                                hint: 'ej. Medellín, Bogotá, Santiago',
+                                maxLength: 50,
+                                // Igual que aliado_perfil_screen.dart: sin
+                                // esto, escribir la ciudad no vuelve a evaluar
+                                // _completo.
+                                onChanged: (_) => setState(() {}),
+                              ),
                             ],
                           ),
-                        );
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Center(
-                    child: Text(
-                      _fotoBase64 == null
-                          ? 'Agrega el logo de tu albergue (opcional)'
-                          : 'Toca para cambiar',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade700,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 28),
+                        ),
 
-                  // Nombre
-                  perfilLabel('NOMBRE DEL ALBERGUE *'),
-                  const SizedBox(height: 8),
-                  perfilCampo(
-                    _nombreCtl,
-                    'ej. Centro de Bienestar Animal La Perla',
-                    autofocus: true,
-                    maxLength: 50,
-                    // Igual que la ciudad y el email/web de esta misma
-                    // pantalla: sin esto, escribir en un campo OBLIGATORIO
-                    // no vuelve a evaluar _completo, así que Guardar sigue
-                    // deshabilitado hasta tocar por casualidad alguno de
-                    // los campos que sí lo tienen.
-                    onChanged: (_) => setState(() {}),
-                  ),
-                  const SizedBox(height: 24),
-
-                  // Tipo
-                  perfilLabel('TIPO DE ORGANIZACIÓN *'),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: _tipos.map((t) {
-                      final sel = t == (_tipo ?? '');
-                      return GestureDetector(
-                        onTap: () => setState(() => _tipo = t),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 150),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 9,
-                          ),
-                          decoration: BoxDecoration(
-                            color: sel ? appInk : Colors.white,
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: sel ? appInk : Colors.grey.shade300,
-                            ),
-                          ),
-                          child: Text(
-                            t,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: sel ? Colors.white : Colors.grey.shade700,
-                            ),
+                        // ── Contacto ───────────────────────────────────────
+                        const SizedBox(height: SpSpace.s6),
+                        const SpSectionTitle('Contacto'),
+                        const SizedBox(height: 4),
+                        Padding(
+                          padding: const EdgeInsets.only(left: 26),
+                          child: ayuda(
+                            'Opcional. El WhatsApp y el correo también van en el mensaje cuando rechazas una solicitud.',
                           ),
                         ),
-                      );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 24),
+                        const SizedBox(height: SpSpace.s3),
+                        SpCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Se guarda tal cual lo escriba la persona; al
+                              // mostrarlo en el perfil público se arma como
+                              // link directo a WhatsApp (wa.me).
+                              perfilLabel('TELÉFONO / WHATSAPP'),
+                              const SizedBox(height: 8),
+                              CampoTelefono(controller: _telefonoCtl),
+                              const SizedBox(height: 20),
 
-                  // Capacidad
-                  perfilLabel('CAPACIDAD TOTAL DE ANIMALES *'),
-                  const SizedBox(height: 8),
-                  perfilCampo(
-                    _capacidadCtl,
-                    'ej. 220',
-                    tipo: TextInputType.number,
-                    formato: [FilteringTextInputFormatter.digitsOnly],
-                    // Sin esto, un número gigante (los dígitos no tienen
-                    // otro límite: el formato de arriba solo exige que
-                    // SEAN dígitos) desborda el rango de int.tryParse(),
-                    // que devuelve null y por _completo (más abajo) eso se
-                    // lee como "capacidad 0" — Guardar se queda deshabilitado
-                    // para siempre, sin ningún aviso de por qué. Hallazgo
-                    // real de Eliza: escribió una fila larga de dígitos y
-                    // el botón no se habilitaba nunca. 6 dígitos (hasta
-                    // 999.999) alcanza de sobra para cualquier albergue real.
-                    maxLength: 6,
-                    // Mismo motivo que el nombre y la ciudad — es un campo
-                    // obligatorio, y sin esto corregir la capacidad no
-                    // vuelve a habilitar Guardar.
-                    onChanged: (_) => setState(() {}),
-                  ),
-                  const SizedBox(height: 6),
-                  // Por qué Guardar está apagado, dicho en el lugar donde
-                  // se puede arreglar. `_completo` exige capacidad > 0 (un
-                  // albergue con capacidad 0 hace desaparecer el panel de
-                  // capacidad entero de su propio dashboard, ver el
-                  // comentario de _completo), pero eso antes no se
-                  // explicaba en ningún lado: el botón simplemente no se
-                  // encendía y no había forma de saber cuál de los cuatro
-                  // campos obligatorios faltaba. Hallazgo real de Eliza:
-                  // puso capacidad 0, después escribió en Dirección, y
-                  // creyó que el problema era la dirección.
-                  if (_capacidadCtl.text.trim().isNotEmpty &&
-                      (int.tryParse(_capacidadCtl.text.trim()) ?? 0) <= 0)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: Text(
-                        'La capacidad tiene que ser mayor que 0 para poder guardar.',
-                        style: TextStyle(fontSize: 12, color: msgError),
-                      ),
-                    ),
-                  Text(
-                    'Cuántos animales puede albergar tu organización.',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                  ),
-                  const SizedBox(height: 24),
-
-                  // Ciudad
-                  perfilLabel('CIUDAD *'),
-                  const SizedBox(height: 8),
-                  CampoCiudad(
-                    controller: _ciudadCtl,
-                    hint: 'ej. Medellín, Bogotá, Santiago',
-                    maxLength: 50,
-                    // Igual que aliado_perfil_screen.dart: sin esto, escribir
-                    // la ciudad no vuelve a evaluar _completo, así que el
-                    // botón Guardar seguía deshabilitado hasta tocar OTRO
-                    // campo cualquiera.
-                    onChanged: (_) => setState(() {}),
-                  ),
-                  const SizedBox(height: 24),
-
-                  // Teléfono/WhatsApp (opcional) — se guarda tal cual lo
-                  // escriba la persona; al mostrarlo en el perfil público se
-                  // limpia y arma como link directo a WhatsApp (wa.me), no
-                  // solo un número para copiar a mano.
-                  perfilLabel('TELÉFONO / WHATSAPP (OPCIONAL)'),
-                  const SizedBox(height: 8),
-                  CampoTelefono(controller: _telefonoCtl),
-                  const SizedBox(height: 24),
-
-                  // Dirección (opcional)
-                  perfilLabel('DIRECCIÓN (OPCIONAL)'),
-                  const SizedBox(height: 8),
-                  perfilCampo(
-                    _direccionCtl,
-                    'ej. Calle 10 #43-12, El Poblado',
-                    maxLength: 100,
-                  ),
-                  const SizedBox(height: 24),
-
-                  // Email (opcional)
-                  perfilLabel('EMAIL (OPCIONAL)'),
-                  const SizedBox(height: 8),
-                  perfilCampo(
-                    _emailCtl,
-                    'ej. contacto@tuAlbergue.org',
-                    tipo: TextInputType.emailAddress,
-                    maxLength: 100,
-                    onChanged: (_) => setState(() {}),
-                  ),
-                  // Opcional de verdad (vacío no bloquea), pero un texto sin
-                  // forma de email sí — ver el comentario de _completo.
-                  if (_emailCtl.text.trim().isNotEmpty &&
-                      !esEmailValido(_emailCtl.text.trim()))
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text(
-                        avisoEmailInvalido,
-                        style: TextStyle(fontSize: 12, color: msgError),
-                      ),
-                    ),
-                  const SizedBox(height: 24),
-
-                  // Página web (opcional)
-                  perfilLabel('PÁGINA WEB (OPCIONAL)'),
-                  const SizedBox(height: 8),
-                  perfilCampo(
-                    _webCtl,
-                    'ej. www.tuAlbergue.org',
-                    tipo: TextInputType.url,
-                    maxLength: 150,
-                    onChanged: (_) => setState(() {}),
-                  ),
-                  if (_webCtl.text.trim().isNotEmpty &&
-                      !esSitioWebValido(_webCtl.text.trim()))
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text(
-                        avisoSitioWebInvalido,
-                        style: TextStyle(fontSize: 12, color: msgError),
-                      ),
-                    ),
-                  const SizedBox(height: 24),
-
-                  // "Aviso de animal sin adoptar" se sacó de este formulario —
-                  // vive ahora en la pantalla de Perfil del albergue (no en
-                  // "Editar perfil"), en el mismo lugar y con el mismo estilo
-                  // que ya usa perfil_rescatista_screen.dart para lo mismo.
-                  // Pedido real de Eliza: estandarizar dónde vive ese ajuste
-                  // entre los dos roles.
-                  const SizedBox(height: 12),
-
-                  // Botón
-                  ListenableBuilder(
-                    listenable: Listenable.merge([
-                      _nombreCtl,
-                      _ciudadCtl,
-                      _capacidadCtl,
-                    ]),
-                    builder: (_, _) => SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: (_completo && !_guardando) ? _guardar : null,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: appInk,
-                          foregroundColor: Colors.white,
-                          disabledBackgroundColor: Colors.grey.shade300,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          elevation: 0,
-                        ),
-                        child: _guardando
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : Text(
-                                Navigator.canPop(context)
-                                    ? 'Guardar cambios'
-                                    : 'Crear perfil del albergue',
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                              perfilLabel('DIRECCIÓN'),
+                              const SizedBox(height: 8),
+                              perfilCampo(
+                                _direccionCtl,
+                                'ej. Calle 10 #43-12, El Poblado',
+                                maxLength: 100,
                               ),
-                      ),
+                              const SizedBox(height: 12),
+
+                              perfilLabel('EMAIL'),
+                              const SizedBox(height: 8),
+                              perfilCampo(
+                                _emailCtl,
+                                'ej. contacto@tuAlbergue.org',
+                                tipo: TextInputType.emailAddress,
+                                maxLength: 100,
+                                onChanged: (_) => setState(() {}),
+                              ),
+                              // Opcional de verdad (vacío no bloquea), pero
+                              // un texto sin forma de email sí — ver el
+                              // comentario de _completo.
+                              if (_emailCtl.text.trim().isNotEmpty &&
+                                  !esEmailValido(_emailCtl.text.trim()))
+                                aviso(avisoEmailInvalido),
+                              const SizedBox(height: 12),
+
+                              perfilLabel('PÁGINA WEB'),
+                              const SizedBox(height: 8),
+                              perfilCampo(
+                                _webCtl,
+                                'ej. www.tuAlbergue.org',
+                                tipo: TextInputType.url,
+                                maxLength: 150,
+                                onChanged: (_) => setState(() {}),
+                              ),
+                              if (_webCtl.text.trim().isNotEmpty &&
+                                  !esSitioWebValido(_webCtl.text.trim()))
+                                aviso(avisoSitioWebInvalido),
+                            ],
+                          ),
+                        ),
+
+                        // "Aviso de animal sin adoptar" se sacó de este
+                        // formulario — vive en la pestaña Perfil del albergue,
+                        // en el mismo lugar que perfil_rescatista_screen.dart
+                        // (pedido real de Eliza: estandarizar entre roles).
+                        const SizedBox(height: SpSpace.s6),
+
+                        ListenableBuilder(
+                          listenable: Listenable.merge([
+                            _nombreCtl,
+                            _ciudadCtl,
+                            _capacidadCtl,
+                          ]),
+                          builder: (_, _) => SizedBox(
+                            width: double.infinity,
+                            child: SpButton(
+                              label: puedeVolver
+                                  ? 'Guardar cambios'
+                                  : 'Crear perfil del albergue',
+                              icon: Icons.check_rounded,
+                              cargando: _guardando,
+                              onTap: (_completo && !_guardando)
+                                  ? _guardar
+                                  : null,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 40),
                 ],
               ),
             ),
