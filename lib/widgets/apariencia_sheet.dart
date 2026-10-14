@@ -1,9 +1,9 @@
 // Hoja "Apariencia" del Perfil (`.sheet` + `.looks` del prototipo):
-// Sistema · Claro · Oscuro.
+// Claro · Oscuro (sin "Sistema", pedido de Eliza).
 //
 // Por ahora solo se puede elegir Claro: el modo oscuro todavía no está
 // revisado pantalla por pantalla, y dejar elegirlo mostraría pantallas a
-// medio pasar. Sistema y Oscuro se ven, con "Pronto", pero no se tocan.
+// medio pasar. Oscuro se ve, con "Pronto", pero no se toca.
 // Cuando el oscuro esté listo, alcanza con habilitarlos acá y guardar la
 // elección (MaterialApp ya tiene SpTheme.light/dark).
 import 'package:flutter/material.dart';
@@ -53,21 +53,12 @@ Future<void> mostrarApariencia(BuildContext context) {
               style: TextStyle(fontSize: 14, color: c.inkMuted),
             ),
             const SizedBox(height: 16),
-            // Las tres tarjetas del mismo alto, aunque solo dos lleven
+            // Las dos tarjetas del mismo alto, aunque solo una lleve
             // "Pronto".
             const IntrinsicHeight(
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Expanded(
-                    child: _Look(
-                      titulo: 'Sistema',
-                      detalle: 'Igual que tu celular',
-                      dibujo: _Dibujo.mitad,
-                      disponible: false,
-                    ),
-                  ),
-                  SizedBox(width: 10),
                   Expanded(
                     child: _Look(
                       titulo: 'Claro',
@@ -100,7 +91,7 @@ Future<void> mostrarApariencia(BuildContext context) {
   );
 }
 
-enum _Dibujo { mitad, claro, oscuro }
+enum _Dibujo { claro, oscuro }
 
 class _Look extends StatelessWidget {
   const _Look({
@@ -216,27 +207,6 @@ class _Miniatura extends StatelessWidget {
     final contenido = switch (dibujo) {
       _Dibujo.claro => pantalla(claro),
       _Dibujo.oscuro => pantalla(oscuro),
-      // Mitad clara y mitad oscura, como el prototipo.
-      _Dibujo.mitad => Stack(
-        children: [
-          Positioned.fill(child: pantalla(claro)),
-          // La mitad derecha: la misma pantallita en oscuro, recortada.
-          Positioned(
-            left: 30,
-            top: 0,
-            right: 0,
-            bottom: 0,
-            child: ClipRect(
-              child: OverflowBox(
-                alignment: Alignment.centerRight,
-                minWidth: 60,
-                maxWidth: 60,
-                child: pantalla(oscuro),
-              ),
-            ),
-          ),
-        ],
-      ),
     };
     return Container(
       width: 64,

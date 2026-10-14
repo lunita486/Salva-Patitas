@@ -127,7 +127,9 @@ void main() {
         {
           'home_screen.dart',
           'albergue_home_screen.dart',
-          'mis_rescates_screen.dart',
+          // La tarjeta de La Jauría / Mis rescates (antes dentro de
+          // mis_rescates_screen.dart).
+          'tarjeta_jauria.dart',
         },
         reason:
             'apareció (o desapareció) una pantalla con este botón: '

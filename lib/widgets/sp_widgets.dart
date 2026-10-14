@@ -885,11 +885,16 @@ class SpMiniButton extends StatelessWidget {
     required this.tooltip,
     required this.onTap,
     this.danger = false,
+    this.destacado = false,
   });
   final IconData icon;
   final String tooltip;
   final VoidCallback onTap;
   final bool danger;
+
+  /// Coral, para llamar la atención (p. ej. compartir a un animalito que
+  /// lleva mucho esperando).
+  final bool destacado;
 
   @override
   Widget build(BuildContext context) {
@@ -902,11 +907,28 @@ class SpMiniButton extends StatelessWidget {
           width: 36,
           height: 36,
           decoration: BoxDecoration(
-            color: danger ? c.dangerSoft : c.surfaceSunken,
+            color: destacado
+                ? c.accent
+                : danger
+                ? c.dangerSoft
+                : c.surfaceSunken,
             borderRadius: BorderRadius.circular(12),
-            boxShadow: [BoxShadow(color: c.edge, offset: const Offset(0, 3))],
+            boxShadow: [
+              BoxShadow(
+                color: destacado ? c.accentInk : c.edge,
+                offset: const Offset(0, 3),
+              ),
+            ],
           ),
-          child: Icon(icon, size: 17, color: danger ? c.danger : c.inkMuted),
+          child: Icon(
+            icon,
+            size: 17,
+            color: destacado
+                ? c.onAccent
+                : danger
+                ? c.danger
+                : c.inkMuted,
+          ),
         ),
       ),
     );
