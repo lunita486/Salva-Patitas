@@ -12,6 +12,7 @@ import '../widgets/dialogo_cerrar_sesion.dart';
 import '../widgets/elegir_foto_perfil.dart';
 import '../widgets/sp_widgets.dart';
 import '../widgets/albergue_tab_bar.dart';
+import '../widgets/apariencia_sheet.dart';
 import '../theme/salva_patitas_theme.dart';
 import '../widgets/fotos.dart';
 import '../widgets/resultado_guardado_snackbar.dart';
@@ -1033,9 +1034,9 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                 const SizedBox(height: SpSpace.s6),
                 _sectionHeader('Cuenta'),
                 const SizedBox(height: SpSpace.s3),
-                // La fila "Apariencia" (claro/oscuro) del prototipo NO va todavía:
-                // hasta revisar el modo oscuro pantalla por pantalla, la app queda
-                // en claro y no se ofrece cambiarlo.
+                // "Apariencia" ya está, pero por ahora solo deja elegir Claro:
+                // el modo oscuro se habilita cuando esté revisado (ver
+                // widgets/apariencia_sheet.dart).
                 SpCard(
                   padding: const EdgeInsets.symmetric(vertical: 4),
                   child: Column(
@@ -1058,6 +1059,14 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                         sub: 'Recordatorio a los $umbralDias días',
                         tono: SpTone.peach,
                         onTap: () => _configurarUmbralEstancado(ctx),
+                      ),
+                      _perfilDivisor(),
+                      _perfilFila(
+                        Icons.dark_mode_outlined,
+                        'Apariencia',
+                        sub: 'Claro',
+                        tono: SpTone.lilac,
+                        onTap: () => mostrarApariencia(ctx),
                       ),
                       _perfilDivisor(),
                       _perfilFila(
