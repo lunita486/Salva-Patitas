@@ -12,6 +12,7 @@ import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'firebase_options.dart';
 import 'theme.dart';
+import 'theme/salva_patitas_theme.dart';
 import 'data/auth_helper.dart';
 import 'domain/resolucion_perfil.dart';
 import 'routing/app_router.dart';
@@ -158,20 +159,11 @@ class PatitasApp extends StatelessWidget {
       // una base coherente con la marca a cualquier widget de Material que
       // NO tenga un color propio puesto (ej. Checkbox/Radio/Switch, que hoy
       // casi no se usan en la app — bajo riesgo de que algo se vea distinto).
-      theme: ThemeData(
-        useMaterial3: true,
-        scaffoldBackgroundColor: appBg,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: appTeal,
-          primary: appTeal,
-          secondary: appOrange,
-          surface: Colors.white,
-        ),
-        textTheme: ThemeData.light().textTheme.apply(
-          bodyColor: appInk,
-          displayColor: appInk,
-        ),
-      ),
+      // Tema 3D "plastilina" del rediseño (lib/theme/salva_patitas_theme.dart):
+      // colores SpColors, fuente Plus Jakarta Sans empaquetada. Solo modo
+      // claro por ahora; el modo oscuro se conecta cuando todas las
+      // pantallas usen estos colores en vez de los escritos a mano.
+      theme: SpTheme.light(),
       routerConfig: appRouter,
     );
   }

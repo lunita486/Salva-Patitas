@@ -11,7 +11,8 @@ import '../widgets/avatares.dart';
 import '../widgets/cambiar_estado_sheet.dart';
 import '../widgets/dialogo_cerrar_sesion.dart';
 import '../widgets/elegir_foto_perfil.dart';
-import '../widgets/fondo_decorativo.dart';
+import '../widgets/sp_widgets.dart';
+import '../theme/salva_patitas_theme.dart';
 import '../widgets/fotos.dart';
 import '../widgets/resultado_guardado_snackbar.dart';
 import '../widgets/umbral_estancado_sheet.dart';
@@ -373,7 +374,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
             .join();
 
         return Scaffold(
-          backgroundColor: appBg,
+          backgroundColor: context.sp.bg,
           body: FutureBuilder<List<int>>(
             future: _numeros,
             builder: (context, rSnap) {
@@ -411,7 +412,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
 
               return Stack(
                 children: [
-                  const Positioned.fill(child: LeafOverlay()),
+                  const Positioned.fill(child: SpPawBackground()),
                   SafeArea(
                     // El Perfil dibuja su encabezado por detrás de la barra
                     // de estado (si no, quedaba una franja "cortada" arriba).
@@ -493,462 +494,373 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
     final lugaresLibres = capacidad > 0 && totalActivos != null
         ? capacidad - totalActivos
         : null;
+    final c = ctx.sp;
+    final avisoCapacidad =
+        pct >= _pctAvisoCapacidad ||
+        (lugaresLibres != null && lugaresLibres <= 1);
     return SingleChildScrollView(
-      padding: const EdgeInsets.only(bottom: 100),
+      padding: const EdgeInsets.fromLTRB(
+        SpSpace.screen,
+        SpSpace.s2,
+        SpSpace.screen,
+        24,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (chipCambiarRol(context) case final boton?)
-            Align(
-              alignment: Alignment.centerRight,
-              child: Padding(
-                padding: const EdgeInsets.only(right: 16, top: 8),
-                child: boton,
-              ),
-            ),
-
-          // ── Hero card ────────────────────────────────────────────────────────
-          Container(
-            width: double.infinity,
-            margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF0A5C40), appTeal],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: [
-                BoxShadow(
-                  color: appTeal.withValues(alpha: 0.35),
-                  blurRadius: 20,
-                  offset: const Offset(0, 8),
+          // ── Saludo ───────────────────────────────────────────────────────────
+          // La campanita del prototipo no va: la app no tiene notificaciones
+          // en pantalla. En su lugar queda el botón de cambiar rol (solo debug).
+          Row(
+            children: [
+              // AvatarPersona (widgets/avatares.dart), no un CircleAvatar
+              // armado a mano: con onBackgroundImageError vacío, si la foto
+              // fallaba al cargar quedaba un círculo vacío en vez de caer a
+              // las iniciales. Hallazgo de auditoría de código.
+              Container(
+                decoration: SpDeco.soft(c, radius: SpRadius.full),
+                child: AvatarPersona(
+                  fotoBase64: fotoBase64,
+                  fotoUrl: FirebaseAuth.instance.currentUser?.photoURL,
+                  inicial: iniciales,
+                  radius: 22,
+                  backgroundColor: c.mint,
+                  textColor: c.primaryStrong,
                 ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+              ),
+              const SizedBox(width: SpSpace.s3),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Avatar
-                    Container(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.4),
-                          width: 2.5,
-                        ),
-                      ),
-                      // AvatarPersona (widgets/avatares.dart), no un
-                      // CircleAvatar armado a mano: con
-                      // onBackgroundImageError vacío, si la foto fallaba al
-                      // cargar quedaba un círculo vacío en vez de caer a
-                      // las iniciales. AvatarPersona ya resuelve el mismo
-                      // orden de prioridad (logo propio → foto de Google →
-                      // iniciales) que antes se armaba acá a mano. Hallazgo
-                      // de auditoría de código.
-                      child: AvatarPersona(
-                        fotoBase64: fotoBase64,
-                        fotoUrl: FirebaseAuth.instance.currentUser?.photoURL,
-                        inicial: iniciales,
-                        radius: 28,
-                        backgroundColor: Colors.white.withValues(alpha: 0.2),
-                        textColor: Colors.white,
-                      ),
+                    Text(
+                      'Hola de nuevo',
+                      style: SpText.label.copyWith(color: c.inkMuted),
                     ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Hola 👋',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.white.withValues(alpha: 0.75),
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            nombre,
-                            style: const TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                              fontFamily: 'Baloo2',
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          if (tipo.isNotEmpty || ciudad.isNotEmpty) ...[
-                            const SizedBox(height: 3),
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.location_on,
-                                  size: 12,
-                                  color: Colors.white.withValues(alpha: 0.7),
-                                ),
-                                const SizedBox(width: 3),
-                                Expanded(
-                                  child: Text(
-                                    [
-                                      if (tipo.isNotEmpty) tipo,
-                                      if (ciudad.isNotEmpty) ciudad,
-                                    ].join(' · '),
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.white.withValues(
-                                        alpha: 0.75,
-                                      ),
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ],
-                      ),
+                    Text(
+                      nombre,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: SpText.section.copyWith(color: c.ink),
                     ),
                   ],
                 ),
+              ),
+              ?chipCambiarRol(context),
+            ],
+          ),
 
-                // Estadística histórica. Mientras el contador no llegó no
-                // se muestra: decir "0 animales ya encontraron hogar" sería
-                // afirmar algo que todavía no se sabe.
-                if ((adoptados ?? 0) > 0) ...[
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.emoji_events_outlined,
-                        size: 13,
-                        color: Colors.amber,
+          // ── Héroe ────────────────────────────────────────────────────────────
+          const SizedBox(height: 46),
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(
+                  SpSpace.s4,
+                  SpSpace.s6,
+                  SpSpace.s4,
+                  SpSpace.s4,
+                ),
+                decoration: SpDeco.primary(
+                  c,
+                  radius: SpRadius.xl,
+                  gradient: true,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Tu albergue hoy',
+                      style: SpText.label.copyWith(
+                        color: c.onPrimary.withValues(alpha: .85),
+                        fontWeight: FontWeight.w700,
                       ),
-                      const SizedBox(width: 5),
-                      Text(
-                        '${adoptados == 1 ? '1 animal' : '$adoptados animales'} ya encontraron hogar',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.white.withValues(alpha: 0.85),
+                    ),
+                    const SizedBox(height: 2),
+                    SizedBox(
+                      width: 180,
+                      child: Text(
+                        totalActivos == 1
+                            ? '1 patita en cuidado'
+                            : '${totalActivos ?? _cargandoValor} patitas en cuidado',
+                        style: SpText.screen.copyWith(color: c.onPrimary),
+                      ),
+                    ),
+                    // Barra de capacidad. Necesita `totalActivos`, así que
+                    // espera; el resto del héroe ya se pintó.
+                    //
+                    // Antes también se mostraba el porcentaje ("67% ocupado")
+                    // — confundía más de lo que ayudaba (Eliza esperaba ver el
+                    // 90% del umbral interno reflejado acá). El umbral sigue
+                    // por dentro: define cuándo la barra se pone coral y
+                    // cuándo aparece el aviso.
+                    if (capacidad > 0 && totalActivos != null) ...[
+                      const SizedBox(height: SpSpace.s4),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Capacidad', style: _heroMeta(c)),
+                          Text(
+                            '$totalActivos de $capacidad',
+                            style: _heroMeta(c),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: SpSpace.s2),
+                      _barraCapacidad(c, pct),
+                      if (avisoCapacidad) ...[
+                        const SizedBox(height: SpSpace.s3),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: .55),
+                            borderRadius: BorderRadius.circular(SpRadius.md),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(
+                                Icons.warning_amber_rounded,
+                                size: 16,
+                                color: c.accentInk,
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  pct >= 1.0
+                                      ? 'Llegaste al límite de capacidad. Considerá frenar nuevos ingresos.'
+                                      : 'Cerca del límite de capacidad. Considerá acelerar adopciones.',
+                                  style: SpText.caption.copyWith(
+                                    color: c.onPrimary,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
+                      ],
+                    ],
+                  ],
+                ),
+              ),
+              // Huellitas blancas translúcidas dentro del héroe.
+              Positioned(
+                left: 170,
+                top: 70,
+                child: SpPaw(
+                  size: 30,
+                  angle: -35,
+                  color: Colors.white.withValues(alpha: .34),
+                ),
+              ),
+              Positioned(
+                left: 210,
+                top: 46,
+                child: SpPaw(
+                  size: 26,
+                  angle: -25,
+                  color: Colors.white.withValues(alpha: .34),
+                ),
+              ),
+              // Los tres animalitos 3D, asomándose por arriba del héroe.
+              const Positioned(
+                right: 4,
+                top: -34,
+                width: 168,
+                height: 128,
+                child: Stack(
+                  children: [
+                    Positioned(
+                      left: 92,
+                      top: 0,
+                      child: SpAnimal(SpAnimalKind.conejo, size: 66),
+                    ),
+                    Positioned(
+                      left: 6,
+                      top: 30,
+                      child: SpAnimal(SpAnimalKind.gato, size: 78),
+                    ),
+                    Positioned(
+                      left: 62,
+                      top: 40,
+                      child: SpAnimal(SpAnimalKind.perro, size: 84),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          // ── Mini cifras ──────────────────────────────────────────────────────
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              _statCard(
+                ctx,
+                enCuidado == null ? _cargandoValor : '$enCuidado',
+                'En cuidado',
+                SpTone.mint,
+                SpAnimalKind.huella,
+                'En cuidado',
+              ),
+              const SizedBox(width: SpSpace.s3),
+              _statCard(
+                ctx,
+                adoptados == null ? _cargandoValor : '$adoptados',
+                'Adoptados',
+                SpTone.butter,
+                SpAnimalKind.casa,
+                'Adoptado',
+              ),
+              const SizedBox(width: SpSpace.s3),
+              // Mismo `_pendientes` que la píldora de Solicitudes (ver su doc).
+              _statCard(
+                ctx,
+                _pendientes == null ? _cargandoValor : '$_pendientes',
+                'Solicitudes',
+                SpTone.lilac,
+                SpAnimalKind.gato,
+                null,
+              ),
+            ],
+          ),
+
+          // ── Agregar animales ─────────────────────────────────────────────────
+          const SizedBox(height: SpSpace.s6),
+          _sectionHeader('Agregar animales'),
+          const SizedBox(height: SpSpace.s3),
+          Row(
+            children: [
+              Expanded(child: _subirLoteCard(ctx)),
+              const SizedBox(width: SpSpace.s3),
+              Expanded(child: _subirUnoCard(ctx)),
+            ],
+          ),
+
+          // ── Solicitudes ──────────────────────────────────────────────────────
+          const SizedBox(height: SpSpace.s6),
+          // El conteo sale de `_pendientes` (ver su doc), no de un
+          // StreamBuilder propio: al volver de otra pestaña este se
+          // suscribía tarde y mostraba "Ver todas" con solicitudes nuevas.
+          Builder(
+            builder: (context) {
+              final count = _pendientes ?? 0;
+              // Refrescar AL VOLVER, igual que los accesos a "Ver todas".
+              // Desde Solicitudes se APRUEBA, y aprobar cambia el estado del
+              // animalito (a 'Hogar de paso' o 'En proceso de adopción'). Sin
+              // esto el panel volvía con el estado anterior: Eliza aprobó un
+              // hogar de paso y la Jauría lo seguía mostrando como Rescatado.
+              // El feed del adoptante sí lo veía, porque es un stream en
+              // vivo; la Jauría es un .get() que se pidió una sola vez.
+              void abrir() => context
+                  .push(AppRoutes.solicitudesRescatista, extra: true)
+                  .then((_) => _refrescarNumeros());
+              return _sectionHeader(
+                'Solicitudes',
+                trailing: count > 0
+                    ? SpCountPill(
+                        count == 1 ? '1 pendiente' : '$count pendientes',
+                        onTap: abrir,
+                      )
+                    : SpLink('Ver todas', onTap: abrir),
+              );
+            },
+          ),
+          const SizedBox(height: SpSpace.s3),
+          const SolicitudesPreview(role: CreatorRole.albergue),
+
+          // ── Red de hogares de paso ───────────────────────────────────────────
+          const SizedBox(height: SpSpace.s3),
+          SpCard(
+            padding: const EdgeInsets.all(SpSpace.s3),
+            onTap: () => ctx.push(AppRoutes.hogaresDePaso),
+            child: Row(
+              children: [
+                const SpBigTile(tone: SpTone.butter, animal: SpAnimalKind.casa),
+                const SizedBox(width: SpSpace.s3),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Red de hogares de paso',
+                        style: SpText.headline.copyWith(
+                          color: c.ink,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      Text(
+                        'Familias temporales cerca de ti',
+                        style: SpText.caption.copyWith(color: c.inkMuted),
                       ),
                     ],
                   ),
-                ],
-
-                // Barra de capacidad. Necesita `totalActivos`, así que
-                // espera igual que la estadística de arriba; el resto de la
-                // tarjeta (nombre, foto, ciudad) ya se pintó.
-                if (capacidad > 0 && totalActivos != null) ...[
-                  const SizedBox(height: 20),
-                  // Antes también se mostraba el porcentaje ("67% ocupado") al
-                  // lado de "N de M animales" — confundía más de lo que ayudaba
-                  // (Eliza esperaba ver el 90% del umbral interno reflejado acá,
-                  // en vez del porcentaje real de ocupación). El umbral del 90%
-                  // sigue existiendo por dentro (define cuándo la barra se pone
-                  // roja y cuándo aparece el aviso), solo se dejó de mostrar el
-                  // número.
-                  Text(
-                    '$totalActivos de $capacidad animales',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.white.withValues(alpha: 0.8),
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: LinearProgressIndicator(
-                      value: pct == 0 ? 0.01 : pct,
-                      minHeight: 8,
-                      backgroundColor: Colors.white.withValues(alpha: 0.2),
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        pct >= 0.9 ? Colors.red.shade300 : Colors.white,
-                      ),
-                    ),
-                  ),
-                  if (pct >= _pctAvisoCapacidad ||
-                      (lugaresLibres != null && lugaresLibres <= 1)) ...[
-                    const SizedBox(height: 10),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(
-                            Icons.warning_amber_rounded,
-                            size: 14,
-                            color: Colors.amber.shade200,
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              pct >= 1.0
-                                  ? 'Llegaste al límite de capacidad. Considerá frenar nuevos ingresos.'
-                                  : 'Cerca del límite de capacidad. Considerá acelerar adopciones.',
-                              style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ],
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 20),
-
-          // ── Stats ─────────────────────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                _statCard(
-                  ctx,
-                  enCuidado == null ? _cargandoValor : '$enCuidado',
-                  'En cuidado',
-                  appTeal,
-                  Icons.favorite_outline,
-                  'En cuidado',
                 ),
-                const SizedBox(width: 10),
-                _statCard(
-                  ctx,
-                  adoptados == null ? _cargandoValor : '$adoptados',
-                  'Adoptados',
-                  const Color(0xFF2196F3),
-                  Icons.home_outlined,
-                  'Adoptado',
-                ),
+                Icon(Icons.chevron_right_rounded, color: c.inkFaint),
               ],
             ),
           ),
 
-          const SizedBox(height: 20),
-
-          // ── CTAs ──────────────────────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(
-              children: [
-                _subirLoteCard(ctx),
-                const SizedBox(height: 10),
-                _subirUnoCard(ctx),
-              ],
+          // ── Jauría ───────────────────────────────────────────────────────────
+          const SizedBox(height: SpSpace.s6),
+          _sectionHeader(
+            'La Jauría',
+            // Refrescar AL VOLVER, igual que home_screen.dart hace con este
+            // mismo destino.
+            //
+            // "Gestionar" lleva a mis_rescates_screen, y desde ahí se puede
+            // cambiar el estado de un animalito (esa pantalla abre su propia
+            // CambiarEstadoSheet). Al volver, este panel no se reconstruye:
+            // su State sigue vivo debajo, con `_jauria`, `_adoptadosCache` y
+            // `_numeros` congelados en lo que cargó `initState`. Resultado:
+            // adoptabas desde ahí y el animalito no aparecía en "Encontraron
+            // hogar", ni se movían los números de arriba, por el resto de la
+            // sesión. Hallazgo de Eliza.
+            trailing: SpLink(
+              'Gestionar',
+              onTap: () => context
+                  .push(
+                    AppRoutes.misRescates,
+                    extra: (filtroInicial: null, esAlbergue: true),
+                  )
+                  .then((_) => _refrescarNumeros()),
             ),
           ),
-
-          const SizedBox(height: 28),
-
-          // ── Solicitudes ───────────────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            // El conteo sale de `_pendientes` (ver su doc), no de un
-            // StreamBuilder propio: al volver de otra pestaña este se
-            // suscribía tarde y mostraba "Ver todas" con solicitudes nuevas.
-            child: Builder(
-              builder: (context) {
-                final count = _pendientes ?? 0;
-                return _sectionHeader(
-                  'SOLICITUDES',
-                  trailing: GestureDetector(
-                    // Refrescar AL VOLVER, igual que los accesos a "Ver
-                    // todas". Desde Solicitudes se APRUEBA, y aprobar
-                    // cambia el estado del animalito (a 'Hogar de paso' o
-                    // 'En proceso de adopción'). Sin esto el panel volvía
-                    // con el estado anterior: Eliza aprobó un hogar de
-                    // paso y la Jauría lo seguía mostrando como Rescatado.
-                    // El feed del adoptante sí lo veía, porque es un
-                    // stream en vivo; la Jauría es un .get() que se pidió
-                    // una sola vez, al abrir.
-                    onTap: () => context
-                        .push(AppRoutes.solicitudesRescatista, extra: true)
-                        .then((_) => _refrescarNumeros()),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: count > 0
-                            ? appOrange.withValues(alpha: 0.1)
-                            : appTeal.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: count > 0
-                              ? appOrange.withValues(alpha: 0.3)
-                              : appTeal.withValues(alpha: 0.3),
-                        ),
-                      ),
-                      child: Text(
-                        count > 0 ? '$count pendientes' : 'Ver todas',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: count > 0 ? appOrange : appTeal,
-                        ),
-                      ),
-                    ),
+          const SizedBox(height: SpSpace.s3),
+          FutureBuilder<PaginaDeRescates>(
+            future: _jauria,
+            builder: (_, snap) {
+              // Mientras carga NO se afirma que no hay animalitos.
+              //
+              // Sin esta rama, `snap.data` es null durante la espera, la
+              // lista llega vacía y _jauriaCarousel muestra "Aún no tienes
+              // animales publicados" con su botón de publicar el primero — a
+              // un albergue con 66. Se veía al volver de "Gestionar":
+              // `_refrescarNumeros()` reemplaza `_jauria`, el FutureBuilder
+              // vuelve a `waiting` y aparecía ese cartel hasta que llegaba la
+              // respuesta. Decir "no hay" cuando la verdad es "todavía no sé".
+              //
+              // La altura es la del carrusel para que la pantalla no salte al
+              // reemplazarlo.
+              if (snap.connectionState == ConnectionState.waiting) {
+                return SizedBox(
+                  height: _altoCarruselJauria,
+                  child: Center(
+                    child: CircularProgressIndicator(color: c.primary),
                   ),
                 );
-              },
-            ),
-          ),
-          const SizedBox(height: 12),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
-            child: SolicitudesPreview(role: CreatorRole.albergue),
+              }
+              return _jauriaCarousel([...?snap.data?.docs]);
+            },
           ),
 
-          const SizedBox(height: 20),
-
-          // ── Red de hogares de paso ───────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: GestureDetector(
-              onTap: () => ctx.push(AppRoutes.hogaresDePaso),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 14,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: appTeal.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Text('🫶', style: TextStyle(fontSize: 18)),
-                    ),
-                    const SizedBox(width: 12),
-                    const Expanded(
-                      child: Text(
-                        'Red de hogares de paso',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    Icon(Icons.chevron_right, color: Colors.grey.shade400),
-                  ],
-                ),
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 20),
-
-          // ── Jauría ────────────────────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: _sectionHeader(
-              'LA JAURÍA',
-              trailing: GestureDetector(
-                // Refrescar AL VOLVER, igual que home_screen.dart hace con
-                // este mismo destino.
-                //
-                // "Ver todas" lleva a mis_rescates_screen, y desde ahí se
-                // puede cambiar el estado de un animalito (esa pantalla
-                // abre su propia CambiarEstadoSheet). Al volver, este panel
-                // no se reconstruye: su State sigue vivo debajo, con
-                // `_jauria`, `_adoptadosCache` y `_numeros` congelados en lo
-                // que cargó `initState`. Resultado: adoptabas desde "Ver
-                // todas" y el animalito no aparecía en "Encontraron hogar",
-                // ni se movían los números de arriba, por el resto de la
-                // sesión. Hallazgo de Eliza.
-                //
-                // El panel del rescatista nunca tuvo el problema porque su
-                // push a esta misma ruta sí llevaba el `.then`.
-                onTap: () => context
-                    .push(
-                      AppRoutes.misRescates,
-                      extra: (filtroInicial: null, esAlbergue: true),
-                    )
-                    .then((_) => _refrescarNumeros()),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: appTeal.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: appTeal.withValues(alpha: 0.3)),
-                  ),
-                  child: const Text(
-                    'Gestionar',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: appTeal,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.only(left: 16),
-            child: FutureBuilder<PaginaDeRescates>(
-              future: _jauria,
-              builder: (_, snap) {
-                // Mientras carga NO se afirma que no hay animalitos.
-                //
-                // Sin esta rama, `snap.data` es null durante la espera, la
-                // lista llega vacía y _jauriaCarousel muestra "Aún no
-                // tienes animales publicados" con su botón de publicar el
-                // primero — a un albergue con 66. Se veía al volver de
-                // "Gestionar la jauría": `_refrescarNumeros()` reemplaza
-                // `_jauria`, el FutureBuilder vuelve a `waiting` y aparece
-                // ese cartel hasta que llega la respuesta.
-                //
-                // Es el mismo defecto que ya se corrigió dos veces en esta
-                // app: el `?? 0` de los contadores y el "No hay animales
-                // disponibles por ahora" de la grilla del perfil público.
-                // Decir "no hay" cuando la verdad es "todavía no sé".
-                //
-                // Mismo criterio, y misma forma, que el carrusel del
-                // rescatista (home_screen.dart). La altura es la del
-                // carrusel para que la pantalla no salte al reemplazarlo.
-                if (snap.connectionState == ConnectionState.waiting) {
-                  return const SizedBox(
-                    height: _altoCarruselJauria,
-                    child: Center(
-                      child: CircularProgressIndicator(color: appTeal),
-                    ),
-                  );
-                }
-                return _jauriaCarousel([...?snap.data?.docs]);
-              },
-            ),
-          ),
-
-          // ── Ya encontraron hogar ──────────────────────────────────────────
+          // ── Ya encontraron hogar ─────────────────────────────────────────────
           Builder(
             builder: (_) {
               final adoptadosDocs = _adoptadosCache;
@@ -956,70 +868,67 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SizedBox(height: 28),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: _sectionHeader(
-                      'ENCONTRARON HOGAR 🏡',
-                      // "Gestionar" (no "Ver todos") y verde (no el azul suelto
-                      // que no es de la paleta) — mismo texto y color que el
-                      // botón gemelo de "LA JAURÍA" de arriba, que hace
-                      // exactamente el mismo tipo de navegación. "Ver todos" era
-                      // engañoso: la fila de acá abajo YA muestra todos los
-                      // adoptados sin límite, nada queda escondido — lo que este
-                      // botón realmente ofrece es ir a editar/compartir/eliminar,
-                      // acciones que la tarjeta chica del carrusel no tiene
-                      // (sugerencia real de Eliza).
-                      trailing: GestureDetector(
-                        // Mismo motivo que en la cabecera de LA JAURÍA.
-                        onTap: () => ctx
-                            .push(
-                              AppRoutes.misRescates,
-                              extra: (
-                                filtroInicial: 'Adoptado',
-                                esAlbergue: true,
-                              ),
-                            )
-                            .then((_) => _refrescarNumeros()),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: appTeal.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: appTeal.withValues(alpha: 0.3),
+                  const SizedBox(height: SpSpace.s6),
+                  _sectionHeader(
+                    'Encontraron hogar',
+                    // "Gestionar" (no "Ver todos"): la fila de abajo YA
+                    // muestra todos los adoptados sin límite; lo que este
+                    // enlace ofrece es ir a editar/compartir/eliminar,
+                    // acciones que la tarjeta chica del carrusel no tiene
+                    // (sugerencia real de Eliza).
+                    trailing: SpLink(
+                      'Gestionar',
+                      // Mismo motivo que en la cabecera de La Jauría.
+                      onTap: () => ctx
+                          .push(
+                            AppRoutes.misRescates,
+                            extra: (
+                              filtroInicial: 'Adoptado',
+                              esAlbergue: true,
                             ),
-                          ),
-                          child: const Text(
-                            'Gestionar',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: appTeal,
-                            ),
-                          ),
-                        ),
-                      ),
+                          )
+                          .then((_) => _refrescarNumeros()),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  Padding(
-                    padding: const EdgeInsets.only(left: 16),
-                    child: _adoptadosCarousel(adoptadosDocs),
-                  ),
+                  const SizedBox(height: SpSpace.s3),
+                  _adoptadosCarousel(adoptadosDocs),
                 ],
               );
             },
           ),
-
-          const SizedBox(height: 20),
         ],
       ),
     );
   }
+
+  TextStyle _heroMeta(SpColors c) =>
+      SpText.label.copyWith(color: c.onPrimary, fontWeight: FontWeight.w700);
+
+  /// Barra de capacidad hundida con relleno blanco (`.sp-progress`). Pasa a
+  /// coral desde el 90%, el mismo umbral que antes la ponía roja.
+  Widget _barraCapacidad(SpColors c, double pct) => Container(
+    height: 14,
+    decoration: BoxDecoration(
+      color: c.onPrimary.withValues(alpha: .16),
+      borderRadius: BorderRadius.circular(SpRadius.full),
+    ),
+    alignment: Alignment.centerLeft,
+    child: FractionallySizedBox(
+      widthFactor: pct < .04 ? .04 : pct,
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: pct >= 0.9
+                ? [c.accentSoft, c.accent]
+                : [Colors.white, c.mintLight],
+          ),
+          borderRadius: BorderRadius.circular(SpRadius.full),
+        ),
+      ),
+    ),
+  );
 
   // ── Perfil tab ───────────────────────────────────────────────────────────────
 
@@ -1453,16 +1362,20 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
     BuildContext ctx,
     String valor,
     String label,
-    Color color,
-    IconData icono,
+    SpTone tono,
+    SpAnimalKind animal,
     String? filtro,
   ) {
     return Expanded(
-      child: GestureDetector(
-        // Los cuadritos de arriba también llevan a "Ver todas", filtrados.
-        // Mismo motivo que en la cabecera de LA JAURÍA: sin el `.then`, el
-        // cuadrito azul de Adoptados se quedaba con el número viejo después
-        // de adoptar desde esa pantalla.
+      child: SpMiniStat(
+        tone: tono,
+        animal: animal,
+        value: valor,
+        label: label,
+        // Las mini cifras también llevan a "Ver todas", filtradas. Mismo
+        // motivo que en la cabecera de La Jauría: sin el `.then`, Adoptados
+        // se quedaba con el número viejo después de adoptar desde esa
+        // pantalla.
         onTap: () => filtro != null
             ? ctx
                   .push(
@@ -1470,225 +1383,69 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                     extra: (filtroInicial: filtro, esAlbergue: true),
                   )
                   .then((_) => _refrescarNumeros())
-            // Mismo motivo que la cabecera de SOLICITUDES.
+            // Mismo motivo que la cabecera de Solicitudes.
             : ctx
                   .push(AppRoutes.solicitudesRescatista, extra: true)
                   .then((_) => _refrescarNumeros()),
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(12, 14, 12, 14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.05),
-                blurRadius: 8,
-                offset: const Offset(0, 3),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(icono, size: 17, color: color),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                valor,
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: color,
-                  height: 1,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 10,
-                  color: Colors.grey.shade700,
-                  fontWeight: FontWeight.w600,
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
 
-  Widget _subirLoteCard(BuildContext ctx) => GestureDetector(
+  Widget _subirLoteCard(BuildContext ctx) => SpActionTile(
+    tone: SpTone.peach,
+    title: 'Subir lote',
+    subtitle: 'Varios a la vez',
+    art: const Stack(
+      children: [
+        Positioned(
+          left: 58,
+          top: -2,
+          child: SpAnimal(SpAnimalKind.conejo, size: 50),
+        ),
+        Positioned(
+          left: -4,
+          top: 16,
+          child: SpAnimal(SpAnimalKind.gato, size: 58),
+        ),
+        Positioned(
+          left: 40,
+          top: 20,
+          child: SpAnimal(SpAnimalKind.perro, size: 62),
+        ),
+      ],
+    ),
     // Al volver se refresca la Jauría: el panel la pide una sola vez, y sin
     // esto lo recién subido no aparecía hasta pasar por "Gestionar".
     onTap: () => ctx.push(AppRoutes.subirLote).then((_) => _refrescarNumeros()),
-    child: Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF0A5C40), appTeal],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: appTeal.withValues(alpha: 0.35),
-            blurRadius: 12,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          // Icono apilado: 3 animalitos distintos (antes eran 3 patitas
-          // blancas idénticas — "lindo, con colorcito", pedido real de
-          // Eliza) — el emoji de cada uno ya trae su propio color, no hace
-          // falta pintarlo a mano.
-          SizedBox(
-            width: 52,
-            height: 52,
-            child: Stack(
-              children: [
-                Positioned(
-                  left: 0,
-                  bottom: 0,
-                  child: Container(
-                    width: 36,
-                    height: 36,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.9),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Text('🐶', style: TextStyle(fontSize: 19)),
-                  ),
-                ),
-                Positioned(
-                  right: 0,
-                  bottom: 0,
-                  child: Container(
-                    width: 28,
-                    height: 28,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.85),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Text('🐱', style: TextStyle(fontSize: 15)),
-                  ),
-                ),
-                Positioned(
-                  top: 0,
-                  left: 8,
-                  child: Container(
-                    width: 24,
-                    height: 24,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.8),
-                      borderRadius: BorderRadius.circular(7),
-                    ),
-                    child: const Text('🐰', style: TextStyle(fontSize: 13)),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 16),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Subir lote',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  'Sube varios animales a la vez',
-                  style: TextStyle(fontSize: 12, color: Color(0xFFAAD9C4)),
-                ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(
-              Icons.arrow_forward_ios,
-              color: Colors.white,
-              size: 14,
-            ),
-          ),
-        ],
-      ),
-    ),
   );
 
-  Widget _subirUnoCard(BuildContext ctx) => GestureDetector(
-    onTap: () => ctx
-        .push(AppRoutes.subirRescate, extra: true)
-        .then((_) => _refrescarNumeros()),
-    child: Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          // Mismo círculo naranja con "+" que usa el rescatista en su propio
-          // "Subir un rescate" (home_screen.dart, _ctaCard) — Eliza lo vio ahí
-          // y pidió el mismo acá, en vez del combo con emoji que había antes.
-          Container(
-            width: 44,
-            height: 44,
-            decoration: const BoxDecoration(
-              color: appOrange,
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.add, color: Colors.white, size: 24),
-          ),
-          const SizedBox(width: 18),
-          const Text(
-            'Subir uno solo',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              color: appInk,
+  Widget _subirUnoCard(BuildContext ctx) {
+    final c = ctx.sp;
+    return SpActionTile(
+      tone: SpTone.lilac,
+      title: 'Subir uno',
+      subtitle: 'Paso a paso',
+      // El "+" verde 3D girado del prototipo (`.sp-plus3d`).
+      art: Align(
+        alignment: Alignment.topLeft,
+        child: Padding(
+          padding: const EdgeInsets.only(left: 6, top: 6),
+          child: Transform.rotate(
+            angle: -0.14,
+            child: Container(
+              width: 60,
+              height: 60,
+              decoration: SpDeco.primary(c, radius: 20, gradient: true),
+              child: Icon(Icons.add_rounded, size: 34, color: c.onPrimary),
             ),
           ),
-          const Spacer(),
-          Icon(Icons.chevron_right, color: Colors.grey.shade400),
-        ],
+        ),
       ),
-    ),
-  );
+      onTap: () => ctx
+          .push(AppRoutes.subirRescate, extra: true)
+          .then((_) => _refrescarNumeros()),
+    );
+  }
 
   // Antes copiado byte a byte en las dos tarjetas de animal de este archivo
   // (la de "La Jauría" y la de "Ya encontraron hogar") — hallazgo de
@@ -1761,28 +1518,8 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
     );
   }
 
-  Widget _sectionHeader(String label, {Widget? trailing}) => Row(
-    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-    children: [
-      // Expanded + ellipsis: sin esto, un título largo (ej. "YA ENCONTRARON
-      // HOGAR 🏡") empujaba el botón "Gestionar" fuera de pantalla en vez
-      // de acortarse — el botón quedaba cortado (bug real reportado por
-      // Eliza probando en el celular).
-      Expanded(
-        child: Text(
-          label,
-          overflow: TextOverflow.ellipsis,
-          maxLines: 1,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: appInk,
-          ),
-        ),
-      ),
-      if (trailing != null) ...[const SizedBox(width: 8), trailing],
-    ],
-  );
+  Widget _sectionHeader(String label, {Widget? trailing}) =>
+      SpSectionTitle(label, trailing: trailing);
 
   Widget _jauriaCarousel(List<QueryDocumentSnapshot> rescates) {
     if (rescates.isEmpty) {
@@ -2264,251 +2001,86 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
   // ── Bottom nav ───────────────────────────────────────────────────────────────
 
   Widget _bottomNav(int pendientes) {
-    final items = [
-      _NavItem(Icons.dashboard_outlined, Icons.dashboard, 'Panel'),
-      _NavItem(Icons.pets_outlined, Icons.pets, 'Jauría'),
-      _NavItem(
-        Icons.assignment_outlined,
-        Icons.assignment,
-        'Solicitudes',
-        badge: pendientes,
-      ),
-    ];
-    // 'Perfil' se agrega al final, después de 'Chats' — mismo orden que en
-    // el resto de la app (Rescatista, Aliado): Perfil siempre es el último ícono.
+    // 'Perfil' va al final, después de 'Chats' — mismo orden que en el resto
+    // de la app (Rescatista, Aliado): Perfil siempre es el último ícono.
     const perfilIndex = 3;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.07),
-            blurRadius: 12,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              ...List.generate(items.length, (i) {
-                final item = items[i];
-                final active = _nav == i;
-                return GestureDetector(
-                  onTap: () {
-                    if (i == 1) {
-                      // Mismo motivo que en la cabecera de LA JAURÍA.
-                      context
-                          .push(
-                            AppRoutes.misRescates,
-                            extra: (filtroInicial: null, esAlbergue: true),
-                          )
-                          .then((_) => _refrescarNumeros());
-                    } else if (i == 2) {
-                      // Mismo motivo que la cabecera de SOLICITUDES.
-                      context
-                          .push(AppRoutes.solicitudesRescatista, extra: true)
-                          .then((_) => _refrescarNumeros());
-                    } else {
-                      setState(() => _nav = i);
-                    }
-                  },
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          Icon(
-                            active ? item.iconActive : item.icon,
-                            color: active ? appTeal : Colors.grey.shade400,
-                            size: 24,
-                          ),
-                          if (item.badge > 0)
-                            Positioned(
-                              top: -4,
-                              right: -6,
-                              child: Container(
-                                padding: const EdgeInsets.all(3),
-                                constraints: const BoxConstraints(
-                                  minWidth: 16,
-                                  minHeight: 16,
-                                ),
-                                decoration: const BoxDecoration(
-                                  color: appOrange,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Text(
-                                  item.badge > 9 ? '9+' : '${item.badge}',
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    fontSize: 9,
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        item.label,
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: active ? appTeal : Colors.grey.shade400,
-                          fontWeight: active
-                              ? FontWeight.w700
-                              : FontWeight.normal,
-                        ),
-                      ),
-                    ],
+    return SpTabBar(
+      children: [
+        SpTabItem(
+          icon: Icons.dashboard_rounded,
+          label: 'Panel',
+          active: _nav == 0,
+          onTap: () => setState(() => _nav = 0),
+        ),
+        SpTabItem(
+          icon: Icons.pets_rounded,
+          label: 'Jauría',
+          active: false,
+          // Mismo motivo que en la cabecera de La Jauría.
+          onTap: () => context
+              .push(
+                AppRoutes.misRescates,
+                extra: (filtroInicial: null, esAlbergue: true),
+              )
+              .then((_) => _refrescarNumeros()),
+        ),
+        SpTabItem(
+          icon: Icons.assignment_outlined,
+          label: 'Solicitudes',
+          active: false,
+          badge: pendientes,
+          // Mismo motivo que la cabecera de Solicitudes.
+          onTap: () => context
+              .push(AppRoutes.solicitudesRescatista, extra: true)
+              .then((_) => _refrescarNumeros()),
+        ),
+        StreamBuilder<QuerySnapshot>(
+          stream: _chatsUnreadStream,
+          builder: (_, snap) {
+            return StreamBuilder<QuerySnapshot>(
+              stream: _consultasEnviadasStream,
+              builder: (_, consultaSnap) {
+                final unread = contarMensajesSinLeer(
+                  recibidos: snap.data?.docs,
+                  consultasEnviadas: consultaSnap.data?.docs,
+                  esAlbergue: true,
+                  uid: _uid,
+                );
+                return SpTabItem(
+                  icon: Icons.chat_bubble_outline_rounded,
+                  label: 'Chats',
+                  active: false,
+                  badge: unread,
+                  onTap: () => context.push(
+                    AppRoutes.adoptanteChats,
+                    extra: (
+                      esRescatista: true,
+                      soloConsultas: false,
+                      esAlbergue: true,
+                    ),
                   ),
                 );
-              }),
-              StreamBuilder<QuerySnapshot>(
-                stream: _chatsUnreadStream,
-                builder: (_, snap) {
-                  return StreamBuilder<QuerySnapshot>(
-                    stream: _consultasEnviadasStream,
-                    builder: (_, consultaSnap) {
-                      final unread = contarMensajesSinLeer(
-                        recibidos: snap.data?.docs,
-                        consultasEnviadas: consultaSnap.data?.docs,
-                        esAlbergue: true,
-                        uid: _uid,
-                      );
-                      return GestureDetector(
-                        onTap: () => context.push(
-                          AppRoutes.adoptanteChats,
-                          extra: (
-                            esRescatista: true,
-                            soloConsultas: false,
-                            esAlbergue: true,
-                          ),
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                Icon(
-                                  Icons.chat_bubble_outline,
-                                  color: Colors.grey.shade400,
-                                  size: 24,
-                                ),
-                                if (unread > 0)
-                                  Positioned(
-                                    top: -4,
-                                    right: -6,
-                                    child: Container(
-                                      padding: const EdgeInsets.all(3),
-                                      constraints: const BoxConstraints(
-                                        minWidth: 16,
-                                        minHeight: 16,
-                                      ),
-                                      decoration: const BoxDecoration(
-                                        color: appOrange,
-                                        shape: BoxShape.circle,
-                                      ),
-                                      child: Text(
-                                        unread > 9 ? '9+' : '$unread',
-                                        textAlign: TextAlign.center,
-                                        style: const TextStyle(
-                                          fontSize: 9,
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Chats',
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: Colors.grey.shade400,
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  );
-                },
-              ),
-              GestureDetector(
-                onTap: () => context.push(
-                  AppRoutes.aliados,
-                  extra: (esRescatista: true, esAlbergue: true),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.store_outlined,
-                      color: Colors.grey.shade400,
-                      size: 24,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Negocios',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: Colors.grey.shade400,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Builder(
-                builder: (_) {
-                  final active = _nav == perfilIndex;
-                  return GestureDetector(
-                    onTap: () => setState(() => _nav = perfilIndex),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          active ? Icons.person : Icons.person_outline,
-                          color: active ? appTeal : Colors.grey.shade400,
-                          size: 24,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Perfil',
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: active ? appTeal : Colors.grey.shade400,
-                            fontWeight: active
-                                ? FontWeight.w700
-                                : FontWeight.normal,
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ],
+              },
+            );
+          },
+        ),
+        SpTabItem(
+          icon: Icons.storefront_outlined,
+          label: 'Negocios',
+          active: false,
+          onTap: () => context.push(
+            AppRoutes.aliados,
+            extra: (esRescatista: true, esAlbergue: true),
           ),
         ),
-      ),
+        SpTabItem(
+          icon: Icons.person_outline_rounded,
+          label: 'Perfil',
+          active: _nav == perfilIndex,
+          onTap: () => setState(() => _nav = perfilIndex),
+        ),
+      ],
     );
   }
-}
-
-class _NavItem {
-  final IconData icon;
-  final IconData iconActive;
-  final String label;
-  final int badge;
-  const _NavItem(this.icon, this.iconActive, this.label, {this.badge = 0});
 }

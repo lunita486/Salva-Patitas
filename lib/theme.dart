@@ -7,7 +7,8 @@ import 'package:flutter/material.dart';
 
 // ─── Constantes de color ──────────────────────────────────────────────────────
 
-const appBg = Color(0xFFDFFBEC);
+// Fondo plano del rediseño 3D (SpColors.light.bg). Antes 0xFFDFFBEC.
+const appBg = Color(0xFFF4F8F6);
 const appDark = Color(0xFF162416);
 const appTeal = Color(0xFF1F8A62);
 const appOrange = Color(0xFFD84E18);
