@@ -17,20 +17,27 @@ const spFontFamily = 'PlusJakartaSans';
 
 @immutable
 class SpColors extends ThemeExtension<SpColors> {
-  final Color bg; // Fondo de pantalla, casi blanco con un toque menta. Plano; las piezas 3D y las huellitas decorativas van encima.
+  final Color
+  bg; // Fondo de pantalla, casi blanco con un toque menta. Plano; las piezas 3D y las huellitas decorativas van encima.
   final Color surface; // Tarjetas, listas, barra de pestañas.
-  final Color surfaceSunken; // Campos, burbuja del chevron, estados presionados.
+  final Color
+  surfaceSunken; // Campos, burbuja del chevron, estados presionados.
   final Color line; // Divisores de 1px.
   final Color edge; // Canto 3D bajo tarjetas, chips y botones secundarios.
   final Color ink; // Texto principal y cifras.
   final Color inkMuted; // Texto secundario (≥5.4:1 sobre surface y bg).
   final Color inkFaint; // Solo íconos inactivos y chevrons.
-  final Color primary; // El verde nuevo: esmeralda menta, vivo y fresco. Relleno de botón principal, héroe y pestaña activa. Texto encima: on-primary (oscuro).
-  final Color primaryLight; // Arriba del degradado del héroe y brillo de piezas verdes.
+  final Color
+  primary; // El verde nuevo: esmeralda menta, vivo y fresco. Relleno de botón principal, héroe y pestaña activa. Texto encima: on-primary (oscuro).
+  final Color
+  primaryLight; // Arriba del degradado del héroe y brillo de piezas verdes.
   final Color primaryEdge; // Canto 3D bajo piezas verdes.
-  final Color primaryStrong; // Texto y enlaces verdes sobre surface o primary-soft (Ver todas, Gestionar).
-  final Color onPrimary; // Texto e íconos sobre primary: verde casi negro (6:1 / 9.2:1). Más moderno que el blanco.
-  final Color primarySoft; // Fondo de chips seleccionados y estados verdes suaves.
+  final Color
+  primaryStrong; // Texto y enlaces verdes sobre surface o primary-soft (Ver todas, Gestionar).
+  final Color
+  onPrimary; // Texto e íconos sobre primary: verde casi negro (6:1 / 9.2:1). Más moderno que el blanco.
+  final Color
+  primarySoft; // Fondo de chips seleccionados y estados verdes suaves.
   final Color mintLight; // Brillo de baldosas menta.
   final Color mint; // Baldosa menta (huellita, En cuidado).
   final Color mintDeep; // Sombra de baldosas menta.
@@ -46,14 +53,51 @@ class SpColors extends ThemeExtension<SpColors> {
   final Color butter; // Baldosa mantequilla (casa, adoptados, hogares de paso).
   final Color butterDeep; // Sombra de la baldosa mantequilla.
   final Color butterInk; // Texto sobre butter.
-  final Color accent; // Coral para insignias Nuevo/Urgente y punto de notificación.
+  final Color
+  accent; // Coral para insignias Nuevo/Urgente y punto de notificación.
   final Color accentSoft; // Fondo de insignia suave.
   final Color accentInk; // Texto sobre accent-soft.
   final Color onAccent; // Texto sobre accent (insignia Nuevo).
   final Color danger; // Solo acciones destructivas y errores.
   final Color dangerSoft; // Fondo de errores.
 
-  const SpColors({required this.bg, required this.surface, required this.surfaceSunken, required this.line, required this.edge, required this.ink, required this.inkMuted, required this.inkFaint, required this.primary, required this.primaryLight, required this.primaryEdge, required this.primaryStrong, required this.onPrimary, required this.primarySoft, required this.mintLight, required this.mint, required this.mintDeep, required this.peach, required this.peachDeep, required this.peachInk, required this.lilac, required this.lilacDeep, required this.lilacInk, required this.sky, required this.skyDeep, required this.skyInk, required this.butter, required this.butterDeep, required this.butterInk, required this.accent, required this.accentSoft, required this.accentInk, required this.onAccent, required this.danger, required this.dangerSoft});
+  const SpColors({
+    required this.bg,
+    required this.surface,
+    required this.surfaceSunken,
+    required this.line,
+    required this.edge,
+    required this.ink,
+    required this.inkMuted,
+    required this.inkFaint,
+    required this.primary,
+    required this.primaryLight,
+    required this.primaryEdge,
+    required this.primaryStrong,
+    required this.onPrimary,
+    required this.primarySoft,
+    required this.mintLight,
+    required this.mint,
+    required this.mintDeep,
+    required this.peach,
+    required this.peachDeep,
+    required this.peachInk,
+    required this.lilac,
+    required this.lilacDeep,
+    required this.lilacInk,
+    required this.sky,
+    required this.skyDeep,
+    required this.skyInk,
+    required this.butter,
+    required this.butterDeep,
+    required this.butterInk,
+    required this.accent,
+    required this.accentSoft,
+    required this.accentInk,
+    required this.onAccent,
+    required this.danger,
+    required this.dangerSoft,
+  });
 
   static const light = SpColors(
     bg: Color(0xFFF4F8F6),
@@ -132,43 +176,79 @@ class SpColors extends ThemeExtension<SpColors> {
   );
 
   @override
-  SpColors copyWith({Color? bg, Color? surface, Color? surfaceSunken, Color? line, Color? edge, Color? ink, Color? inkMuted, Color? inkFaint, Color? primary, Color? primaryLight, Color? primaryEdge, Color? primaryStrong, Color? onPrimary, Color? primarySoft, Color? mintLight, Color? mint, Color? mintDeep, Color? peach, Color? peachDeep, Color? peachInk, Color? lilac, Color? lilacDeep, Color? lilacInk, Color? sky, Color? skyDeep, Color? skyInk, Color? butter, Color? butterDeep, Color? butterInk, Color? accent, Color? accentSoft, Color? accentInk, Color? onAccent, Color? danger, Color? dangerSoft}) => SpColors(
-      bg: bg ?? this.bg,
-      surface: surface ?? this.surface,
-      surfaceSunken: surfaceSunken ?? this.surfaceSunken,
-      line: line ?? this.line,
-      edge: edge ?? this.edge,
-      ink: ink ?? this.ink,
-      inkMuted: inkMuted ?? this.inkMuted,
-      inkFaint: inkFaint ?? this.inkFaint,
-      primary: primary ?? this.primary,
-      primaryLight: primaryLight ?? this.primaryLight,
-      primaryEdge: primaryEdge ?? this.primaryEdge,
-      primaryStrong: primaryStrong ?? this.primaryStrong,
-      onPrimary: onPrimary ?? this.onPrimary,
-      primarySoft: primarySoft ?? this.primarySoft,
-      mintLight: mintLight ?? this.mintLight,
-      mint: mint ?? this.mint,
-      mintDeep: mintDeep ?? this.mintDeep,
-      peach: peach ?? this.peach,
-      peachDeep: peachDeep ?? this.peachDeep,
-      peachInk: peachInk ?? this.peachInk,
-      lilac: lilac ?? this.lilac,
-      lilacDeep: lilacDeep ?? this.lilacDeep,
-      lilacInk: lilacInk ?? this.lilacInk,
-      sky: sky ?? this.sky,
-      skyDeep: skyDeep ?? this.skyDeep,
-      skyInk: skyInk ?? this.skyInk,
-      butter: butter ?? this.butter,
-      butterDeep: butterDeep ?? this.butterDeep,
-      butterInk: butterInk ?? this.butterInk,
-      accent: accent ?? this.accent,
-      accentSoft: accentSoft ?? this.accentSoft,
-      accentInk: accentInk ?? this.accentInk,
-      onAccent: onAccent ?? this.onAccent,
-      danger: danger ?? this.danger,
-      dangerSoft: dangerSoft ?? this.dangerSoft,
-      );
+  SpColors copyWith({
+    Color? bg,
+    Color? surface,
+    Color? surfaceSunken,
+    Color? line,
+    Color? edge,
+    Color? ink,
+    Color? inkMuted,
+    Color? inkFaint,
+    Color? primary,
+    Color? primaryLight,
+    Color? primaryEdge,
+    Color? primaryStrong,
+    Color? onPrimary,
+    Color? primarySoft,
+    Color? mintLight,
+    Color? mint,
+    Color? mintDeep,
+    Color? peach,
+    Color? peachDeep,
+    Color? peachInk,
+    Color? lilac,
+    Color? lilacDeep,
+    Color? lilacInk,
+    Color? sky,
+    Color? skyDeep,
+    Color? skyInk,
+    Color? butter,
+    Color? butterDeep,
+    Color? butterInk,
+    Color? accent,
+    Color? accentSoft,
+    Color? accentInk,
+    Color? onAccent,
+    Color? danger,
+    Color? dangerSoft,
+  }) => SpColors(
+    bg: bg ?? this.bg,
+    surface: surface ?? this.surface,
+    surfaceSunken: surfaceSunken ?? this.surfaceSunken,
+    line: line ?? this.line,
+    edge: edge ?? this.edge,
+    ink: ink ?? this.ink,
+    inkMuted: inkMuted ?? this.inkMuted,
+    inkFaint: inkFaint ?? this.inkFaint,
+    primary: primary ?? this.primary,
+    primaryLight: primaryLight ?? this.primaryLight,
+    primaryEdge: primaryEdge ?? this.primaryEdge,
+    primaryStrong: primaryStrong ?? this.primaryStrong,
+    onPrimary: onPrimary ?? this.onPrimary,
+    primarySoft: primarySoft ?? this.primarySoft,
+    mintLight: mintLight ?? this.mintLight,
+    mint: mint ?? this.mint,
+    mintDeep: mintDeep ?? this.mintDeep,
+    peach: peach ?? this.peach,
+    peachDeep: peachDeep ?? this.peachDeep,
+    peachInk: peachInk ?? this.peachInk,
+    lilac: lilac ?? this.lilac,
+    lilacDeep: lilacDeep ?? this.lilacDeep,
+    lilacInk: lilacInk ?? this.lilacInk,
+    sky: sky ?? this.sky,
+    skyDeep: skyDeep ?? this.skyDeep,
+    skyInk: skyInk ?? this.skyInk,
+    butter: butter ?? this.butter,
+    butterDeep: butterDeep ?? this.butterDeep,
+    butterInk: butterInk ?? this.butterInk,
+    accent: accent ?? this.accent,
+    accentSoft: accentSoft ?? this.accentSoft,
+    accentInk: accentInk ?? this.accentInk,
+    onAccent: onAccent ?? this.onAccent,
+    danger: danger ?? this.danger,
+    dangerSoft: dangerSoft ?? this.dangerSoft,
+  );
 
   @override
   SpColors lerp(ThemeExtension<SpColors>? other, double t) {
@@ -221,16 +301,17 @@ extension SpContext on BuildContext {
 /// Espacios (px lógicos).
 class SpSpace {
   static const s1 = 4.0, s2 = 8.0, s3 = 12.0, s4 = 16.0, s6 = 24.0, s8 = 32.0;
+
   /// Margen lateral de todas las pantallas.
   static const screen = 16.0;
 }
 
 /// Radios.
 class SpRadius {
-  static const sm = 12.0;   // baldosas de ícono
-  static const md = 16.0;   // botones, campos
-  static const lg = 24.0;   // tarjetas
-  static const xl = 28.0;   // héroe, accesos grandes
+  static const sm = 12.0; // baldosas de ícono
+  static const md = 16.0; // botones, campos
+  static const lg = 24.0; // tarjetas
+  static const xl = 28.0; // héroe, accesos grandes
   static const full = 999.0;
 }
 
@@ -242,11 +323,16 @@ class SpToneColors {
   const SpToneColors(this.fill, this.deep, this.ink, this.highlight);
   static SpToneColors of(SpColors c, SpTone t) {
     switch (t) {
-      case SpTone.mint:   return SpToneColors(c.mint, c.mintDeep, c.primaryStrong, c.mintLight);
-      case SpTone.peach:  return SpToneColors(c.peach, c.peachDeep, c.peachInk, c.surface);
-      case SpTone.lilac:  return SpToneColors(c.lilac, c.lilacDeep, c.lilacInk, c.surface);
-      case SpTone.sky:    return SpToneColors(c.sky, c.skyDeep, c.skyInk, c.surface);
-      case SpTone.butter: return SpToneColors(c.butter, c.butterDeep, c.butterInk, c.surface);
+      case SpTone.mint:
+        return SpToneColors(c.mint, c.mintDeep, c.primaryStrong, c.mintLight);
+      case SpTone.peach:
+        return SpToneColors(c.peach, c.peachDeep, c.peachInk, c.surface);
+      case SpTone.lilac:
+        return SpToneColors(c.lilac, c.lilacDeep, c.lilacInk, c.surface);
+      case SpTone.sky:
+        return SpToneColors(c.sky, c.skyDeep, c.skyInk, c.surface);
+      case SpTone.butter:
+        return SpToneColors(c.butter, c.butterDeep, c.butterInk, c.surface);
     }
   }
 }
@@ -257,54 +343,106 @@ class SpToneColors {
 ///  3) sombra difusa suave.
 /// Al presionar: bajar 4px (Transform.translate) y quitar las sombras.
 class SpDeco {
+  /// Blanco de los brillos 3D y de las huellitas sobre el verde. Es igual en
+  /// claro y en oscuro (es luz, no fondo), por eso no está en SpColors.
+  static const shine = Color(0xFFFFFFFF);
+
   static bool _dark(SpColors c) => c.bg.computeLuminance() < .2;
 
   /// Tarjeta blanca tipo plastilina.
-  static BoxDecoration card(SpColors c, {double radius = SpRadius.lg}) => BoxDecoration(
+  static BoxDecoration card(SpColors c, {double radius = SpRadius.lg}) =>
+      BoxDecoration(
         color: c.surface,
         borderRadius: BorderRadius.circular(radius),
-        border: Border(top: BorderSide(color: Colors.white.withValues(alpha: _dark(c) ? .06 : .9), width: 2)),
+        border: Border(
+          top: BorderSide(
+            color: Colors.white.withValues(alpha: _dark(c) ? .06 : .9),
+            width: 2,
+          ),
+        ),
         boxShadow: [
           BoxShadow(color: c.edge, offset: const Offset(0, 4)),
-          BoxShadow(color: (_dark(c) ? Colors.black : const Color(0xFF145038)).withValues(alpha: _dark(c) ? .6 : .22), offset: const Offset(0, 14), blurRadius: 28, spreadRadius: -10),
+          BoxShadow(
+            color: (_dark(c) ? Colors.black : const Color(0xFF145038))
+                .withValues(alpha: _dark(c) ? .6 : .22),
+            offset: const Offset(0, 14),
+            blurRadius: 28,
+            spreadRadius: -10,
+          ),
         ],
       );
 
   /// Botón principal / pestaña activa / héroe verde.
-  static BoxDecoration primary(SpColors c, {double radius = SpRadius.md, bool gradient = false}) => BoxDecoration(
-        color: gradient ? null : c.primary,
-        gradient: gradient ? LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [c.primaryLight, c.primary], stops: const [0, .65]) : null,
-        borderRadius: BorderRadius.circular(radius),
-        border: Border(top: BorderSide(color: Colors.white.withValues(alpha: .3), width: 2)),
-        boxShadow: [
-          BoxShadow(color: c.primaryEdge, offset: const Offset(0, 4)),
-          BoxShadow(color: c.primary.withValues(alpha: .45), offset: const Offset(0, 10), blurRadius: 18, spreadRadius: -6),
-        ],
-      );
+  static BoxDecoration primary(
+    SpColors c, {
+    double radius = SpRadius.md,
+    bool gradient = false,
+  }) => BoxDecoration(
+    color: gradient ? null : c.primary,
+    gradient: gradient
+        ? LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [c.primaryLight, c.primary],
+            stops: const [0, .65],
+          )
+        : null,
+    borderRadius: BorderRadius.circular(radius),
+    border: Border(
+      top: BorderSide(color: Colors.white.withValues(alpha: .3), width: 2),
+    ),
+    boxShadow: [
+      BoxShadow(color: c.primaryEdge, offset: const Offset(0, 4)),
+      BoxShadow(
+        color: c.primary.withValues(alpha: .45),
+        offset: const Offset(0, 10),
+        blurRadius: 18,
+        spreadRadius: -6,
+      ),
+    ],
+  );
 
   /// Botón secundario, chips, buscador.
-  static BoxDecoration soft(SpColors c, {double radius = SpRadius.md}) => BoxDecoration(
+  static BoxDecoration soft(SpColors c, {double radius = SpRadius.md}) =>
+      BoxDecoration(
         color: c.surface,
         borderRadius: BorderRadius.circular(radius),
         boxShadow: [BoxShadow(color: c.edge, offset: const Offset(0, 4))],
       );
 
   /// Baldosa pastel con degradado radial (mini cifras, accesos, fotos sin imagen).
-  static BoxDecoration tone(SpColors c, SpTone t, {double radius = SpRadius.lg}) {
+  static BoxDecoration tone(
+    SpColors c,
+    SpTone t, {
+    double radius = SpRadius.lg,
+  }) {
     final k = SpToneColors.of(c, t);
     return BoxDecoration(
-      gradient: RadialGradient(center: const Alignment(-.45, -.7), radius: 1.3, colors: [k.highlight, k.fill, k.deep], stops: const [0, .45, 1.2]),
+      gradient: RadialGradient(
+        center: const Alignment(-.45, -.7),
+        radius: 1.3,
+        colors: [k.highlight, k.fill, k.deep],
+        stops: const [0, .45, 1.2],
+      ),
       borderRadius: BorderRadius.circular(radius),
-      border: Border(top: BorderSide(color: Colors.white.withValues(alpha: .7), width: 2)),
+      border: Border(
+        top: BorderSide(color: Colors.white.withValues(alpha: .7), width: 2),
+      ),
       boxShadow: [
         BoxShadow(color: k.deep, offset: const Offset(0, 4)),
-        BoxShadow(color: k.deep.withValues(alpha: .6), offset: const Offset(0, 12), blurRadius: 22, spreadRadius: -12),
+        BoxShadow(
+          color: k.deep.withValues(alpha: .6),
+          offset: const Offset(0, 12),
+          blurRadius: 22,
+          spreadRadius: -12,
+        ),
       ],
     );
   }
 
   /// Campo de texto hundido.
-  static BoxDecoration sunken(SpColors c, {double radius = SpRadius.md}) => BoxDecoration(
+  static BoxDecoration sunken(SpColors c, {double radius = SpRadius.md}) =>
+      BoxDecoration(
         color: c.surfaceSunken,
         borderRadius: BorderRadius.circular(radius),
       );
@@ -312,31 +450,55 @@ class SpDeco {
 
 /// Tipografía: Plus Jakarta Sans.
 class SpText {
-  static TextStyle _b(double size, double height, FontWeight w, [double ls = 0]) =>
-      TextStyle(fontFamily: spFontFamily, fontSize: size, height: height / size, fontWeight: w, letterSpacing: ls * size);
-  static final display  = _b(28, 34, FontWeight.w800, -.02);
-  static final screen   = _b(26, 32, FontWeight.w800, -.02); // título de pantalla
-  static final title    = _b(22, 28, FontWeight.w700, -.01);
-  static final stat     = _b(24, 28, FontWeight.w800, -.02);
-  static final section  = _b(19, 24, FontWeight.w800, -.01); // títulos con huellita
+  static TextStyle _b(
+    double size,
+    double height,
+    FontWeight w, [
+    double ls = 0,
+  ]) => TextStyle(
+    fontFamily: spFontFamily,
+    fontSize: size,
+    height: height / size,
+    fontWeight: w,
+    letterSpacing: ls * size,
+  );
+  static final display = _b(28, 34, FontWeight.w800, -.02);
+  static final screen = _b(26, 32, FontWeight.w800, -.02); // título de pantalla
+  static final title = _b(22, 28, FontWeight.w700, -.01);
+  static final stat = _b(24, 28, FontWeight.w800, -.02);
+  static final section = _b(
+    19,
+    24,
+    FontWeight.w800,
+    -.01,
+  ); // títulos con huellita
   static final headline = _b(17, 24, FontWeight.w600);
-  static final body     = _b(15, 22, FontWeight.w500);
-  static final label    = _b(13, 18, FontWeight.w600);
-  static final caption  = _b(12, 16, FontWeight.w500);
+  static final body = _b(15, 22, FontWeight.w500);
+  static final label = _b(13, 18, FontWeight.w600);
+  static final caption = _b(12, 16, FontWeight.w500);
 }
 
 class SpTheme {
   static ThemeData _base(SpColors c, Brightness b) => ThemeData(
-        useMaterial3: true,
-        brightness: b,
-        scaffoldBackgroundColor: c.bg,
-        colorScheme: ColorScheme.fromSeed(seedColor: c.primary, brightness: b).copyWith(
-          primary: c.primary, onPrimary: c.onPrimary, surface: c.surface, onSurface: c.ink, error: c.danger,
+    useMaterial3: true,
+    brightness: b,
+    scaffoldBackgroundColor: c.bg,
+    colorScheme: ColorScheme.fromSeed(seedColor: c.primary, brightness: b)
+        .copyWith(
+          primary: c.primary,
+          onPrimary: c.onPrimary,
+          surface: c.surface,
+          onSurface: c.ink,
+          error: c.danger,
         ),
-        fontFamily: spFontFamily,
-        textTheme: ThemeData(brightness: b).textTheme.apply(fontFamily: spFontFamily, bodyColor: c.ink, displayColor: c.ink),
-        extensions: [c],
-      );
+    fontFamily: spFontFamily,
+    textTheme: ThemeData(brightness: b).textTheme.apply(
+      fontFamily: spFontFamily,
+      bodyColor: c.ink,
+      displayColor: c.ink,
+    ),
+    extensions: [c],
+  );
   static ThemeData light() => _base(SpColors.light, Brightness.light);
   static ThemeData dark() => _base(SpColors.dark, Brightness.dark);
 }

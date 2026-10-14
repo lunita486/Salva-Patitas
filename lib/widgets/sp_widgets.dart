@@ -535,3 +535,240 @@ class SpTabBar extends StatelessWidget {
     );
   }
 }
+
+/// Tono pastel y animalito según la especie: perros durazno, gatos lila,
+/// el resto cielo (DISENO.md).
+(SpTone, SpAnimalKind) spEspecie(String? especie) => switch (especie) {
+  'Gato' => (SpTone.lilac, SpAnimalKind.gato),
+  'Perro' || null => (SpTone.peach, SpAnimalKind.perro),
+  _ => (SpTone.sky, SpAnimalKind.conejo),
+};
+
+/// Tono de la píldora de estado de un animalito. Mismos grupos que
+/// `cicloColor` (theme.dart), pero con los colores del tema.
+SpTone? spToneEstado(String estado) => switch (estado) {
+  'Hogar de paso' => SpTone.butter,
+  'En proceso de adopción' => SpTone.lilac,
+  'Adoptado' => SpTone.sky,
+  'Regresado' || 'Estancados' => SpTone.peach,
+  'Fallecido' => null,
+  _ => SpTone.mint,
+};
+
+/// Lugar de la foto cuando el animalito no tiene foto (o no cargó): baldosa
+/// pastel con el animalito 3D de su especie.
+class SpFotoVacia extends StatelessWidget {
+  const SpFotoVacia({super.key, required this.especie, this.size = 72});
+  final String? especie;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final (tone, animal) = spEspecie(especie);
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        gradient: SpDeco.tone(context.sp, tone).gradient,
+      ),
+      child: SpAnimal(animal, size: size),
+    );
+  }
+}
+
+/// Insignia coral (`.sp-badge`): "Nuevo", "Urgente".
+class SpBadge extends StatelessWidget {
+  const SpBadge(this.label, {super.key});
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.sp;
+    return Container(
+      height: 22,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: c.accent,
+        borderRadius: BorderRadius.circular(SpRadius.full),
+        boxShadow: [
+          BoxShadow(
+            color: c.accentInk.withValues(alpha: .5),
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+          color: c.onAccent,
+        ),
+      ),
+    );
+  }
+}
+
+/// Píldora de estado con chevron (`.sp-status`). Sin [onTap] (Fallecido) se
+/// ve igual pero sin flecha.
+class SpStatus extends StatelessWidget {
+  const SpStatus(this.estado, {super.key, this.onTap, this.height = 32});
+  final String estado;
+  final VoidCallback? onTap;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.sp;
+    final tone = spToneEstado(estado);
+    final k = tone == null ? null : SpToneColors.of(c, tone);
+    final box = Container(
+      height: height,
+      padding: const EdgeInsets.symmetric(horizontal: SpSpace.s3),
+      decoration: BoxDecoration(
+        color: k?.fill ?? c.surfaceSunken,
+        borderRadius: BorderRadius.circular(SpRadius.full),
+        boxShadow: [
+          BoxShadow(color: k?.deep ?? c.edge, offset: const Offset(0, 2)),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              estado,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: SpText.caption.copyWith(
+                color: k?.ink ?? c.inkMuted,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          if (onTap != null)
+            Icon(
+              Icons.expand_more_rounded,
+              size: 16,
+              color: k?.ink ?? c.inkMuted,
+            ),
+        ],
+      ),
+    );
+    return onTap == null ? box : GestureDetector(onTap: onTap, child: box);
+  }
+}
+
+/// Botón 3D. Verde por defecto; [suave] lo hace blanco con canto
+/// (secundario); [tone] lo pinta del pastel indicado.
+class SpButton extends StatelessWidget {
+  const SpButton({
+    super.key,
+    required this.label,
+    required this.onTap,
+    this.icon,
+    this.suave = false,
+    this.compacto = false,
+  });
+  final String label;
+  final VoidCallback onTap;
+  final IconData? icon;
+  final bool suave;
+  final bool compacto;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.sp;
+    final fg = suave ? c.ink : c.onPrimary;
+    return SpPressable(
+      onTap: onTap,
+      child: Container(
+        height: compacto ? 34 : 48,
+        padding: EdgeInsets.symmetric(horizontal: compacto ? 12 : 18),
+        decoration: suave
+            ? SpDeco.soft(c, radius: compacto ? 12 : SpRadius.md)
+            : SpDeco.primary(c, radius: compacto ? 12 : SpRadius.md),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, size: compacto ? 15 : 18, color: fg),
+              const SizedBox(width: 6),
+            ],
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: compacto ? 12 : 15,
+                  fontWeight: FontWeight.w800,
+                  color: fg,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Estado vacío (`.sp-empty`): siempre con un animalito 3D.
+class SpEmpty extends StatelessWidget {
+  const SpEmpty({
+    super.key,
+    required this.title,
+    this.subtitle,
+    this.animal = SpAnimalKind.perro,
+    this.action,
+  });
+  final String title;
+  final String? subtitle;
+  final SpAnimalKind animal;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.sp;
+    return SpCard(
+      child: Row(
+        children: [
+          SpAnimal(animal, size: 72),
+          const SizedBox(width: SpSpace.s4),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: c.ink,
+                  ),
+                ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle!,
+                    style: SpText.label.copyWith(
+                      color: c.inkMuted,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+                if (action != null) ...[
+                  const SizedBox(height: SpSpace.s3),
+                  action!,
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../theme.dart';
 import '../widgets/boton_cambiar_rol.dart';
 import '../domain/reglas_negocio.dart';
 import '../widgets/avatares.dart';
@@ -47,7 +46,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
   /// El alto del carrusel de la Jauría. Está en una constante para que el
   /// spinner de "todavía cargando" ocupe exactamente lo mismo que las
   /// tarjetas y la pantalla no salte al reemplazar uno por otro.
-  static const _altoCarruselJauria = 195.0;
+  static const _altoCarruselJauria = 250.0;
 
   /// Lo que muestran los cuadritos mientras el contador todavía no llegó.
   /// NO un cero: un cero se lee como un dato ya traído. Mismo criterio, y
@@ -339,17 +338,23 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
       });
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Foto de perfil actualizada'),
-          backgroundColor: msgExito,
+        SnackBar(
+          content: Text(
+            'Foto de perfil actualizada',
+            style: TextStyle(color: context.sp.onPrimary),
+          ),
+          backgroundColor: context.sp.primary,
         ),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          backgroundColor: msgError,
-          content: Text('No se pudo subir la foto: $e'),
+          backgroundColor: context.sp.danger,
+          content: Text(
+            'No se pudo subir la foto: $e',
+            style: TextStyle(color: context.sp.surface),
+          ),
         ),
       );
     }
@@ -618,7 +623,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                             vertical: 10,
                           ),
                           decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: .55),
+                            color: SpDeco.shine.withValues(alpha: .55),
                             borderRadius: BorderRadius.circular(SpRadius.md),
                           ),
                           child: Row(
@@ -656,7 +661,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                 child: SpPaw(
                   size: 30,
                   angle: -35,
-                  color: Colors.white.withValues(alpha: .34),
+                  color: SpDeco.shine.withValues(alpha: .34),
                 ),
               ),
               Positioned(
@@ -665,7 +670,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                 child: SpPaw(
                   size: 26,
                   angle: -25,
-                  color: Colors.white.withValues(alpha: .34),
+                  color: SpDeco.shine.withValues(alpha: .34),
                 ),
               ),
               // Los tres animalitos 3D, asomándose por arriba del héroe.
@@ -922,7 +927,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
             end: Alignment.bottomCenter,
             colors: pct >= 0.9
                 ? [c.accentSoft, c.accent]
-                : [Colors.white, c.mintLight],
+                : [SpDeco.shine, c.mintLight],
           ),
           borderRadius: BorderRadius.circular(SpRadius.full),
         ),
@@ -958,7 +963,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
           Text(
             etiqueta,
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 12, color: Color(0xFF666666)),
+            style: SpText.caption.copyWith(color: context.sp.inkMuted),
           ),
         ],
       ),
@@ -986,8 +991,9 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
     // queda como acento (nombre, íconos) en vez de una franja sólida. Todo
     // está compactado para que el perfil entre casi sin scroll.
     final arriba = MediaQuery.of(ctx).padding.top;
+    final c = ctx.sp;
     return Container(
-      color: appBg,
+      color: c.bg,
       child: LayoutBuilder(
         builder: (context, box) => SingleChildScrollView(
           child: ConstrainedBox(
@@ -1000,8 +1006,8 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                   width: double.infinity,
                   padding: EdgeInsets.fromLTRB(24, arriba + 24, 24, 24),
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFFBFEFD8), appBg],
+                    gradient: LinearGradient(
+                      colors: [c.mint, c.bg],
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
                     ),
@@ -1010,7 +1016,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: appTeal.withValues(alpha: 0.10),
+                        color: c.primary.withValues(alpha: 0.10),
                         blurRadius: 20,
                         offset: const Offset(0, 8),
                       ),
@@ -1026,13 +1032,10 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                             Container(
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: Colors.white,
-                                  width: 5,
-                                ),
+                                border: Border.all(color: c.surface, width: 5),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: appTeal.withValues(alpha: 0.30),
+                                    color: c.primary.withValues(alpha: 0.30),
                                     blurRadius: 24,
                                     offset: const Offset(0, 10),
                                   ),
@@ -1043,10 +1046,8 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                                 fotoUrl: user?.photoURL,
                                 inicial: iniciales,
                                 radius: 72,
-                                backgroundColor: appTeal.withValues(
-                                  alpha: 0.15,
-                                ),
-                                textColor: appTeal,
+                                backgroundColor: c.mint,
+                                textColor: c.primaryStrong,
                               ),
                             ),
                             Positioned(
@@ -1056,16 +1057,16 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                                 width: 40,
                                 height: 40,
                                 decoration: BoxDecoration(
-                                  color: appOrange,
+                                  color: c.primary,
                                   shape: BoxShape.circle,
                                   border: Border.all(
-                                    color: Colors.white,
+                                    color: c.surface,
                                     width: 3,
                                   ),
                                 ),
-                                child: const Icon(
+                                child: Icon(
                                   Icons.camera_alt,
-                                  color: Colors.white,
+                                  color: c.onPrimary,
                                   size: 19,
                                 ),
                               ),
@@ -1076,10 +1077,10 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                       const SizedBox(height: 14),
                       Text(
                         nombre,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 25,
                           fontWeight: FontWeight.w800,
-                          color: appDark,
+                          color: c.ink,
                           letterSpacing: -0.3,
                         ),
                         textAlign: TextAlign.center,
@@ -1101,10 +1102,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                       // Números del albergue: los mismos contadores del panel.
                       Container(
                         padding: const EdgeInsets.symmetric(vertical: 14),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
+                        decoration: SpDeco.card(c, radius: 20),
                         child: IntrinsicHeight(
                           child: Row(
                             children: [
@@ -1112,7 +1110,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                                 activos == null ? _cargandoValor : '$activos',
                                 'En el albergue',
                                 Icons.pets,
-                                appTeal,
+                                c.primaryStrong,
                               ),
                               const VerticalDivider(width: 1),
                               _perfilNumero(
@@ -1121,7 +1119,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                                     : '$adoptados',
                                 'Adoptados',
                                 Icons.home_outlined,
-                                const Color(0xFF2196F3),
+                                c.butterInk,
                               ),
                               const VerticalDivider(width: 1),
                               _perfilNumero(
@@ -1130,7 +1128,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                                     : '$_pendientes',
                                 'Solicitudes',
                                 Icons.mail_outline,
-                                appOrange,
+                                c.lilacInk,
                               ),
                             ],
                           ),
@@ -1151,21 +1149,21 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                       _perfilFila(
                         Icons.email_outlined,
                         user?.email ?? '-',
-                        appTeal,
+                        c.primaryStrong,
                         etiqueta: 'Correo',
                       ),
                       const SizedBox(height: 12),
                       _perfilFila(
                         Icons.edit_outlined,
                         'Editar perfil del albergue',
-                        appTeal,
+                        c.primaryStrong,
                         onTap: () => ctx.push(AppRoutes.alberguePerfil),
                       ),
                       const SizedBox(height: 12),
                       _perfilFila(
                         Icons.schedule,
                         'Aviso sin adoptar',
-                        appOrange,
+                        c.accentInk,
                         onTap: () => _configurarUmbralEstancado(ctx),
                       ),
                     ],
@@ -1206,7 +1204,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                           icon: const Icon(Icons.logout, size: 18),
                           label: const Text('Cerrar sesión'),
                           style: TextButton.styleFrom(
-                            foregroundColor: Colors.red.shade400,
+                            foregroundColor: c.danger,
                           ),
                         ),
                       ),
@@ -1216,7 +1214,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                           icon: const Icon(Icons.delete_outline, size: 18),
                           label: const Text('Eliminar cuenta'),
                           style: TextButton.styleFrom(
-                            foregroundColor: Colors.red.shade700,
+                            foregroundColor: c.danger,
                           ),
                         ),
                       ),
@@ -1238,14 +1236,14 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                         Icon(
                           Icons.shield_outlined,
                           size: 15,
-                          color: Colors.grey.shade500,
+                          color: c.inkFaint,
                         ),
                         const SizedBox(width: 6),
                         Text(
                           'Política de Privacidad',
                           style: TextStyle(
                             fontSize: 13,
-                            color: Colors.grey.shade700,
+                            color: c.inkMuted,
                             decoration: TextDecoration.underline,
                           ),
                         ),
@@ -1265,9 +1263,9 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
   Widget _perfilChip(IconData icono, String texto) => Row(
     mainAxisSize: MainAxisSize.min,
     children: [
-      Icon(icono, size: 16, color: appTeal),
+      Icon(icono, size: 16, color: context.sp.primaryStrong),
       const SizedBox(width: 4),
-      Text(texto, style: TextStyle(fontSize: 14, color: Colors.grey.shade800)),
+      Text(texto, style: TextStyle(fontSize: 14, color: context.sp.inkMuted)),
     ],
   );
 
@@ -1280,32 +1278,13 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
     String? etiqueta,
     VoidCallback? onTap,
   }) {
+    final c = context.sp;
     return Container(
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Colors.white, Color(0xFFF2FBF6)],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-        ),
-        borderRadius: BorderRadius.circular(18),
-        border: Border(
-          bottom: BorderSide(color: color.withValues(alpha: 0.35), width: 3),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: color.withValues(alpha: 0.22),
-            blurRadius: 18,
-            offset: const Offset(0, 10),
-          ),
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.07),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      // Tarjeta 3D del tema: brillo arriba, canto abajo y sombra suave, así
+      // cada opción se ve como un botón que sobresale.
+      decoration: SpDeco.card(c, radius: 18),
       child: Material(
-        color: Colors.transparent,
+        type: MaterialType.transparency,
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(18),
@@ -1330,24 +1309,22 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                       if (etiqueta != null)
                         Text(
                           etiqueta,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade600,
-                          ),
+                          style: TextStyle(fontSize: 12, color: c.inkMuted),
                         ),
                       Text(
                         texto,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
+                          color: c.ink,
                         ),
                       ),
                     ],
                   ),
                 ),
                 if (onTap != null)
-                  Icon(Icons.chevron_right, color: Colors.grey.shade400),
+                  Icon(Icons.chevron_right_rounded, color: c.inkFaint),
               ],
             ),
           ),
@@ -1487,26 +1464,23 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
             ),
             child: Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 5),
-              decoration: BoxDecoration(
-                color: appOrange,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Row(
+              height: 30,
+              decoration: SpDeco.primary(ctx.sp, radius: 12),
+              child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(
-                    Icons.chat_bubble_outline,
-                    size: 11,
-                    color: Colors.white,
+                    Icons.chat_bubble_outline_rounded,
+                    size: 13,
+                    color: ctx.sp.onPrimary,
                   ),
-                  SizedBox(width: 4),
+                  const SizedBox(width: 4),
                   Text(
                     'Contactar',
                     style: TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: ctx.sp.onPrimary,
                     ),
                   ),
                 ],
@@ -1523,47 +1497,16 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
 
   Widget _jauriaCarousel(List<QueryDocumentSnapshot> rescates) {
     if (rescates.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Aún no tienes animales publicados.',
-              style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
-            ),
-            const SizedBox(height: 10),
-            GestureDetector(
-              onTap: () => context
-                  .push(AppRoutes.subirRescate, extra: true)
-                  .then((_) => _refrescarNumeros()),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 9,
-                ),
-                decoration: BoxDecoration(
-                  color: appTeal,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.add, color: Colors.white, size: 16),
-                    SizedBox(width: 4),
-                    Text(
-                      'Publicar el primero',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
+      return SpEmpty(
+        title: 'Aún no tienes animales publicados',
+        animal: SpAnimalKind.perro,
+        action: SpButton(
+          label: 'Publicar el primero',
+          icon: Icons.add_rounded,
+          compacto: true,
+          onTap: () => context
+              .push(AppRoutes.subirRescate, extra: true)
+              .then((_) => _refrescarNumeros()),
         ),
       );
     }
@@ -1571,259 +1514,19 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
     // `rescates` ordenado por prioridad de estado (en proceso de adopción →
     // hogar de paso → rescatado → fallecido) con empate por fecha. Antes
     // este widget volvía a ordenar TODO de nuevo, solo por fecha —
-    // pisando ese orden en silencio. Con pocos animales de estados
-    // distintos podía coincidir por casualidad (el más nuevo también era
-    // el de mayor prioridad, como en la captura de Eliza), pero en
-    // general el orden por prioridad nunca llegaba a verse. Hallazgo real
-    // de Eliza: "no está organizado la jauría como en el rescatista".
+    // pisando ese orden en silencio. Hallazgo real de Eliza: "no está
+    // organizado la jauría como en el rescatista".
     final sorted = rescates;
 
     return SizedBox(
       height: _altoCarruselJauria,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
+        clipBehavior: Clip.none,
         itemCount: sorted.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 10),
-        itemBuilder: (ctx, i) {
-          final d = sorted[i].data() as Map<String, dynamic>;
-          final docId = sorted[i].id;
-          final nombre = nombreDeAnimal(d['nombre'] as String?);
-          final especie = d['especie'] as String? ?? 'Perro';
-          final edad = d['edad'] as String? ?? '';
-          final fotoUrl = d['fotoUrl'] as String?;
-          final estadoAdopcion = d['estadoAdopcion'] as String? ?? 'Rescatado';
-          final ts = d['creadoEn'] as Timestamp?;
-          final urgencia = d['urgencia'] as String? ?? '';
-          final emoji = especie == 'Gato' ? '🐱' : '🐶';
-          final esNuevo =
-              ts != null && DateTime.now().difference(ts.toDate()).inHours < 24;
-          // El año solo se agrega cuando DIFIERE del actual — mismo
-          // criterio que mis_rescates_screen.dart y chat_screen.dart. Sin
-          // esto, un animal de hace más de un año se ve indistinguible de
-          // uno de ayer. Hallazgo real de Eliza, probando ya entrado 2027.
-          final fechaStr = ts != null
-              ? formatearFecha(
-                  ts.toDate(),
-                  conAnio: ts.toDate().year != DateTime.now().year,
-                )
-              : '';
-          final estadoColor = cicloColor(estadoAdopcion);
-
-          return Container(
-            // Sin esto, aprobar una solicitud (o cualquier cambio que
-            // mueva a este animal de posición dentro del orden por
-            // prioridad) hacía que Flutter reutilizara por POSICIÓN la
-            // tarjeta de otro animal para este lugar — la foto vieja se
-            // veía un instante, un parpadeo. Mismo arreglo que
-            // home_screen.dart:_misRescatesCarousel. Hallazgo real de
-            // Eliza.
-            key: ValueKey(docId),
-            width: 128,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            clipBehavior: Clip.hardEdge,
-            child: Stack(
-              children: [
-                Column(
-                  children: [
-                    Expanded(
-                      // FotoAnimal en vez de recorte — mismo caso "Tobyiii" que
-                      // el feed del adoptante: esta tarjeta del panel de
-                      // albergue es grande y el recorte fijo podía dejar
-                      // afuera al animal entero en fotos verticales.
-                      child: fotoUrl != null
-                          ? FotoAnimal(
-                              url: fotoUrl,
-                              width: double.infinity,
-                              fallback: Container(
-                                width: double.infinity,
-                                color: const Color(0xFFD8F0E4),
-                                child: Center(
-                                  child: Text(
-                                    emoji,
-                                    style: const TextStyle(fontSize: 36),
-                                  ),
-                                ),
-                              ),
-                            )
-                          : Container(
-                              width: double.infinity,
-                              color: const Color(0xFFD8F0E4),
-                              child: Center(
-                                child: Text(
-                                  emoji,
-                                  style: const TextStyle(fontSize: 36),
-                                ),
-                              ),
-                            ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            nombre,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: appInk,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            [
-                              if (edad.isNotEmpty) edad,
-                              if (fechaStr.isNotEmpty) fechaStr,
-                            ].join(' · '),
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: Colors.grey.shade700,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 6),
-                          // ── Chip de estado tappable ──────────────────
-                          // Semantics explícito — hallazgo de auditoría de código
-                          // (mismo arreglo que en mis_rescates_screen.dart).
-                          Semantics(
-                            button: estadoAdopcion != 'Fallecido',
-                            label: estadoAdopcion == 'Fallecido'
-                                ? 'Estado: Fallecido'
-                                : 'Cambiar estado, actualmente $estadoAdopcion',
-                            child: GestureDetector(
-                              onTap: estadoAdopcion == 'Fallecido'
-                                  ? null
-                                  : () => showModalBottomSheet(
-                                      context: ctx,
-                                      shape: const RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.vertical(
-                                          top: Radius.circular(20),
-                                        ),
-                                      ),
-                                      builder: (_) => CambiarEstadoSheet(
-                                        docId: docId,
-                                        estadoActual: estadoAdopcion,
-                                        nombre: nombre,
-                                        adoptanteIdEnProceso:
-                                            d['adoptanteIdEnProceso']
-                                                as String?,
-                                        esAlbergue: true,
-                                      ),
-                                    ).then((_) => _refrescarNumeros()),
-                              child: Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: estadoColor.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: estadoColor.withValues(alpha: 0.35),
-                                  ),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        estadoAdopcion,
-                                        style: TextStyle(
-                                          fontSize: 9,
-                                          fontWeight: FontWeight.w700,
-                                          color: estadoColor,
-                                        ),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    Icon(
-                                      Icons.expand_more,
-                                      size: 11,
-                                      color: estadoColor,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                          // Antes el albergue no tenía NINGUNA forma de contactar
-                          // a quien tiene el animal en "Hogar de paso" o "En
-                          // proceso de adopción" — este botón solo existía en el
-                          // panel del rescatista (home_screen.dart), nunca acá.
-                          _botonContactar(
-                            ctx,
-                            docId: docId,
-                            nombre: nombre,
-                            especie: especie,
-                            fotoUrl: fotoUrl,
-                            d: d,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                if (urgencia == 'Alta')
-                  Positioned(
-                    top: 6,
-                    left: 6,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 7,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFD32F2F),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Text(
-                        'URGENTE',
-                        style: TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-                if (esNuevo)
-                  Positioned(
-                    top: 6,
-                    right: 6,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 7,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: appOrange,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Text(
-                        'Nuevo',
-                        style: TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          );
-        },
+        separatorBuilder: (_, _) => const SizedBox(width: SpSpace.s3),
+        itemBuilder: (ctx, i) =>
+            _tarjetaCarrusel(ctx, sorted[i], deLaJauria: true),
       ),
     );
   }
@@ -1838,162 +1541,167 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
       });
 
     return SizedBox(
-      height: 160,
+      height: 214,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
+        clipBehavior: Clip.none,
         itemCount: sorted.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 10),
-        itemBuilder: (ctx, i) {
-          final d = sorted[i].data() as Map<String, dynamic>;
-          final docId = sorted[i].id;
-          final nombre = nombreDeAnimal(d['nombre'] as String?);
-          final especie = d['especie'] as String? ?? 'Perro';
-          final fotoUrl = d['fotoUrl'] as String?;
-          final estadoAdopcion = d['estadoAdopcion'] as String? ?? 'Adoptado';
-          final emoji = especie == 'Gato' ? '🐱' : '🐶';
-          final estadoColor = cicloColor(estadoAdopcion);
+        separatorBuilder: (_, _) => const SizedBox(width: SpSpace.s3),
+        itemBuilder: (ctx, i) =>
+            _tarjetaCarrusel(ctx, sorted[i], deLaJauria: false),
+      ),
+    );
+  }
 
-          return Container(
-            key: ValueKey(docId),
-            width: 128,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            clipBehavior: Clip.hardEdge,
-            child: Stack(
-              children: [
-                Column(
-                  children: [
-                    Expanded(
-                      // FotoAnimal en vez de recorte — mismo motivo que la
-                      // otra tarjeta de arriba (caso "Tobyiii").
-                      child: fotoUrl != null
-                          ? FotoAnimal(
-                              url: fotoUrl,
-                              width: double.infinity,
-                              fallback: Container(
-                                width: double.infinity,
-                                color: const Color(0xFFD8F0E4),
-                                child: Center(
-                                  child: Text(
-                                    emoji,
-                                    style: const TextStyle(fontSize: 32),
-                                  ),
-                                ),
-                              ),
-                            )
-                          : Container(
-                              width: double.infinity,
-                              color: const Color(0xFFD8F0E4),
-                              child: Center(
-                                child: Text(
-                                  emoji,
-                                  style: const TextStyle(fontSize: 32),
-                                ),
-                              ),
-                            ),
+  /// Tarjeta de un animalito en los carruseles del panel (`.sp-pet2`).
+  /// La de "Encontraron hogar" ([deLaJauria] = false) no lleva edad, fecha
+  /// ni insignias, y su estado se puede tocar siempre.
+  Widget _tarjetaCarrusel(
+    BuildContext ctx,
+    QueryDocumentSnapshot doc, {
+    required bool deLaJauria,
+  }) {
+    final c = ctx.sp;
+    final d = doc.data() as Map<String, dynamic>;
+    final docId = doc.id;
+    final nombre = nombreDeAnimal(d['nombre'] as String?);
+    final especie = d['especie'] as String? ?? 'Perro';
+    final edad = d['edad'] as String? ?? '';
+    final fotoUrl = d['fotoUrl'] as String?;
+    final estadoAdopcion =
+        d['estadoAdopcion'] as String? ??
+        (deLaJauria ? 'Rescatado' : 'Adoptado');
+    final ts = d['creadoEn'] as Timestamp?;
+    final urgencia = d['urgencia'] as String? ?? '';
+    final esNuevo =
+        ts != null && DateTime.now().difference(ts.toDate()).inHours < 24;
+    // El año solo se agrega cuando DIFIERE del actual — mismo criterio que
+    // mis_rescates_screen.dart y chat_screen.dart. Sin esto, un animal de
+    // hace más de un año se ve indistinguible de uno de ayer. Hallazgo real
+    // de Eliza, probando ya entrado 2027.
+    final fechaStr = ts != null
+        ? formatearFecha(
+            ts.toDate(),
+            conAnio: ts.toDate().year != DateTime.now().year,
+          )
+        : '';
+    // En la Jauría, Fallecido no se puede cambiar. En "Encontraron hogar"
+    // sí siempre: si un adoptado era devuelto, no había forma de cambiarle
+    // el estado desde el panel (había que ir a "Gestionar").
+    final sePuedeCambiar = !deLaJauria || estadoAdopcion != 'Fallecido';
+
+    return Container(
+      // Sin esto, aprobar una solicitud (o cualquier cambio que mueva a este
+      // animal de posición dentro del orden por prioridad) hacía que Flutter
+      // reutilizara por POSICIÓN la tarjeta de otro animal para este lugar —
+      // la foto vieja se veía un instante, un parpadeo. Mismo arreglo que
+      // home_screen.dart:_misRescatesCarousel. Hallazgo real de Eliza.
+      key: ValueKey(docId),
+      width: 152,
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.all(SpSpace.s2),
+      decoration: SpDeco.card(c, radius: SpRadius.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // FotoAnimal en vez de recorte — mismo caso "Tobyiii" que
+                  // el feed del adoptante: el recorte fijo podía dejar
+                  // afuera al animal entero en fotos verticales.
+                  if (fotoUrl != null)
+                    FotoAnimal(
+                      url: fotoUrl,
+                      width: double.infinity,
+                      fallback: SpFotoVacia(especie: especie),
+                    )
+                  else
+                    SpFotoVacia(especie: especie),
+                  if (deLaJauria && urgencia == 'Alta')
+                    const Positioned(
+                      top: 8,
+                      left: 8,
+                      child: SpBadge('Urgente'),
                     ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            nombre,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: appInk,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 6),
-                          // Mismo chip tappable que _jauriaCarousel — antes acá
-                          // solo había un ícono fijo, así que si un animal
-                          // "Adoptado" era devuelto no había forma de cambiarle
-                          // el estado desde el panel (había que ir a "Gestionar").
-                          Semantics(
-                            button: true,
-                            label:
-                                'Cambiar estado, actualmente $estadoAdopcion',
-                            child: GestureDetector(
-                              onTap: () => showModalBottomSheet(
-                                context: ctx,
-                                shape: const RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.vertical(
-                                    top: Radius.circular(20),
-                                  ),
-                                ),
-                                builder: (_) => CambiarEstadoSheet(
-                                  docId: docId,
-                                  estadoActual: estadoAdopcion,
-                                  nombre: nombre,
-                                  adoptanteIdEnProceso:
-                                      d['adoptanteIdEnProceso'] as String?,
-                                  esAlbergue: true,
-                                ),
-                              ).then((_) => _refrescarNumeros()),
-                              child: Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: estadoColor.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: estadoColor.withValues(alpha: 0.35),
-                                  ),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        estadoAdopcion,
-                                        style: TextStyle(
-                                          fontSize: 9,
-                                          fontWeight: FontWeight.w700,
-                                          color: estadoColor,
-                                        ),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    Icon(
-                                      Icons.expand_more,
-                                      size: 11,
-                                      color: estadoColor,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                          _botonContactar(
-                            ctx,
-                            docId: docId,
-                            nombre: nombre,
-                            especie: especie,
-                            fotoUrl: fotoUrl,
-                            d: d,
-                          ),
-                        ],
+                  if (deLaJauria && esNuevo)
+                    const Positioned(top: 8, right: 8, child: SpBadge('Nuevo')),
+                ],
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 10, 4, 0),
+            child: Text(
+              nombre,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+                color: c.ink,
+              ),
+            ),
+          ),
+          if (deLaJauria)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 0, 4, 0),
+              child: Text(
+                [
+                  if (edad.isNotEmpty) edad,
+                  if (fechaStr.isNotEmpty) fechaStr,
+                ].join(' · '),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: SpText.caption.copyWith(color: c.inkMuted),
+              ),
+            ),
+          const SizedBox(height: SpSpace.s2),
+          // Semantics explícito — hallazgo de auditoría de código (mismo
+          // arreglo que en mis_rescates_screen.dart).
+          Semantics(
+            button: sePuedeCambiar,
+            label: sePuedeCambiar
+                ? 'Cambiar estado, actualmente $estadoAdopcion'
+                : 'Estado: $estadoAdopcion',
+            child: SpStatus(
+              estadoAdopcion,
+              height: 30,
+              onTap: !sePuedeCambiar
+                  ? null
+                  : () => showModalBottomSheet(
+                      context: ctx,
+                      shape: const RoundedRectangleBorder(
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(20),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ],
+                      builder: (_) => CambiarEstadoSheet(
+                        docId: docId,
+                        estadoActual: estadoAdopcion,
+                        nombre: nombre,
+                        adoptanteIdEnProceso:
+                            d['adoptanteIdEnProceso'] as String?,
+                        esAlbergue: true,
+                      ),
+                    ).then((_) => _refrescarNumeros()),
             ),
-          );
-        },
+          ),
+          // Antes el albergue no tenía NINGUNA forma de contactar a quien
+          // tiene el animal en "Hogar de paso" o "En proceso de adopción" —
+          // este botón solo existía en el panel del rescatista.
+          _botonContactar(
+            ctx,
+            docId: docId,
+            nombre: nombre,
+            especie: especie,
+            fotoUrl: fotoUrl,
+            d: d,
+          ),
+        ],
       ),
     );
   }
