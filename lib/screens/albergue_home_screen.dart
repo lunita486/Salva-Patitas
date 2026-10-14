@@ -688,13 +688,21 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
           const SizedBox(height: 20),
           Row(
             children: [
-              _statCard(
-                ctx,
-                enCuidado == null ? _cargandoValor : '$enCuidado',
-                'En cuidado',
-                SpTone.mint,
-                SpAnimalKind.huella,
-                'En cuidado',
+              // El MISMO número que "N patitas en cuidado" de arriba (en
+              // cuidado + en proceso de adopción). Antes mostraba solo
+              // Rescatado/Regresado y el panel decía 6 arriba y 5 abajo
+              // (pedido de Eliza: "realmente en cuidado son 6"). Por eso abre
+              // La Jauría completa y no el filtro "En cuidado", que cuenta 5.
+              Expanded(
+                child: SpMiniStat(
+                  tone: SpTone.mint,
+                  animal: SpAnimalKind.huella,
+                  value: totalActivos == null
+                      ? _cargandoValor
+                      : '$totalActivos',
+                  label: 'En cuidado',
+                  onTap: () => _irA(AlbergueTab.jauria),
+                ),
               ),
               const SizedBox(width: SpSpace.s3),
               _statCard(
@@ -933,11 +941,6 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
   ) {
     final c = ctx.sp;
     final user = FirebaseAuth.instance.currentUser;
-    // "En el albergue" = los que el albergue está cuidando ahora, igual que
-    // la barra de capacidad del panel (en cuidado + en adopción).
-    final activos = enCuidado != null && enAdopcion != null
-        ? enCuidado + enAdopcion
-        : null;
     return SingleChildScrollView(
       key: const PageStorageKey('perfil'),
       padding: const EdgeInsets.only(bottom: 24),
@@ -1024,45 +1027,8 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                   ),
                 ],
 
-                // ── Números (los mismos contadores del panel) ────────────────────
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    Expanded(
-                      child: SpMiniStat(
-                        tone: SpTone.mint,
-                        animal: SpAnimalKind.huella,
-                        value: activos == null ? _cargandoValor : '$activos',
-                        label: 'En el albergue',
-                        onTap: () => _irA(AlbergueTab.jauria),
-                      ),
-                    ),
-                    const SizedBox(width: SpSpace.s3),
-                    Expanded(
-                      child: SpMiniStat(
-                        tone: SpTone.butter,
-                        animal: SpAnimalKind.casa,
-                        value: adoptados == null
-                            ? _cargandoValor
-                            : '$adoptados',
-                        label: 'Adoptados',
-                      ),
-                    ),
-                    const SizedBox(width: SpSpace.s3),
-                    Expanded(
-                      child: SpMiniStat(
-                        tone: SpTone.lilac,
-                        animal: SpAnimalKind.gato,
-                        value: _pendientes == null
-                            ? _cargandoValor
-                            : '$_pendientes',
-                        label: 'Solicitudes',
-                        onTap: () => _irA(AlbergueTab.solicitudes),
-                      ),
-                    ),
-                  ],
-                ),
-
+                // Sin las mini cifras del prototipo: son las mismas del Panel, a
+                // un toque, y repetirlas solo alargaba el Perfil (pedido de Eliza).
                 // ── Cuenta ───────────────────────────────────────────────────────
                 const SizedBox(height: SpSpace.s6),
                 _sectionHeader('Cuenta'),

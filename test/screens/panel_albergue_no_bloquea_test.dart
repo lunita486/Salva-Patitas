@@ -43,8 +43,11 @@ void main() {
       // settle nunca terminaria. Que ese spinner exista es justo el bug.
       await tester.pump();
 
-      expect(find.text('Alberguito domingo'), findsNothing,
-          reason: 'ni el encabezado, que no depende de ningún contador');
+      expect(
+        find.text('Alberguito domingo'),
+        findsNothing,
+        reason: 'ni el encabezado, que no depende de ningún contador',
+      );
       expect(find.text('Naranjita'), findsNothing);
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
     });
@@ -223,7 +226,8 @@ void main() {
       expect(
         codigo.substring(desde, hasta),
         isNot(contains('CircularProgressIndicator')),
-        reason: 'volvió el spinner a pantalla completa: el panel entero '
+        reason:
+            'volvió el spinner a pantalla completa: el panel entero '
             'espera otra vez a tres count() que no pueden usar caché',
       );
     });
@@ -251,7 +255,12 @@ void main() {
 
     test('los cuadritos muestran el marcador mientras no saben', () {
       expect(codigo, contains("static const _cargandoValor = '—';"));
-      expect(codigo, contains('enCuidado == null ? _cargandoValor'));
+      // "En cuidado" muestra el total activo (en cuidado + en proceso), el
+      // mismo número que la tarjeta verde de arriba.
+      expect(
+        codigo,
+        matches(RegExp(r'totalActivos == null\s*\? _cargandoValor')),
+      );
       expect(codigo, contains('adoptados == null ? _cargandoValor'));
     });
 
@@ -299,7 +308,8 @@ void main() {
       expect(
         codigo.substring(desde, hasta),
         contains('ConnectionState.waiting'),
-        reason: 'sin la rama de waiting, la Jauría le dice "Aún no tienes '
+        reason:
+            'sin la rama de waiting, la Jauría le dice "Aún no tienes '
             'animales publicados" a un albergue con 66',
       );
     });
