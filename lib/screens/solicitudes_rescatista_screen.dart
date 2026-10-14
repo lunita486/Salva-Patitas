@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../routing/app_router.dart';
 import '../theme.dart';
 import '../widgets/estado_error_feed.dart';
+import '../widgets/albergue_tab_bar.dart';
 import '../widgets/fotos.dart';
 import '../widgets/pedir_motivo.dart';
 import '../domain/compatibilidad.dart';
@@ -888,6 +889,17 @@ class _SolicitudesRescatistaScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // Abierta desde el Panel del albergue: misma barra de abajo, con esta
+      // pestaña marcada (ver AlbergueTabBar).
+      bottomNavigationBar: widget.esAlbergue
+          ? AlbergueTabBar(
+              actual: AlbergueTab.solicitudes,
+              onTap: AlbergueTabBar.volverAlPanel(
+                context,
+                AlbergueTab.solicitudes,
+              ),
+            )
+          : null,
       backgroundColor: appBg,
       body: SafeArea(
         child: Column(
@@ -1429,8 +1441,7 @@ class _SolicitudesRescatistaScreenState
                                   // de albergue mostraba "Rescatista" en el
                                   // chat del adoptante, reportado hace meses
                                   // y seguía pasando.
-                                  var creadoPorVivo =
-                                      d['creadoPor'] as String?;
+                                  var creadoPorVivo = d['creadoPor'] as String?;
                                   if (rescateIdChat.isNotEmpty) {
                                     try {
                                       final rescateDoc =

@@ -4,6 +4,7 @@ import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:go_router/go_router.dart';
 import '../theme.dart';
 import '../widgets/avatares.dart';
+import '../widgets/albergue_tab_bar.dart';
 import '../widgets/estado_error_feed.dart';
 import '../data/usuarios_repository.dart';
 import '../routing/app_router.dart';
@@ -32,12 +33,23 @@ class _AliadosScreenState extends State<AliadosScreen> {
   // vivo, arreglada por separado la primera vez que apareció el síntoma en
   // el feed. Con un solo método, no hay una segunda copia que se pueda
   // quedar atrás.
-  late final Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _aliadosFuture =
-      UsuariosRepository().aliados();
+  late final Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  _aliadosFuture = UsuariosRepository().aliados();
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // Abierta desde el Panel del albergue: misma barra de abajo, con esta
+      // pestaña marcada (ver AlbergueTabBar).
+      bottomNavigationBar: widget.esAlbergue
+          ? AlbergueTabBar(
+              actual: AlbergueTab.negocios,
+              onTap: AlbergueTabBar.volverAlPanel(
+                context,
+                AlbergueTab.negocios,
+              ),
+            )
+          : null,
       backgroundColor: appBg,
       body: SafeArea(
         child: Column(

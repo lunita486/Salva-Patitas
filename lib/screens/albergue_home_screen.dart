@@ -11,12 +11,12 @@ import '../widgets/cambiar_estado_sheet.dart';
 import '../widgets/dialogo_cerrar_sesion.dart';
 import '../widgets/elegir_foto_perfil.dart';
 import '../widgets/sp_widgets.dart';
+import '../widgets/albergue_tab_bar.dart';
 import '../theme/salva_patitas_theme.dart';
 import '../widgets/fotos.dart';
 import '../widgets/resultado_guardado_snackbar.dart';
 import '../widgets/umbral_estancado_sheet.dart';
 import '../services/notificaciones_service.dart';
-import '../data/chats_repository.dart';
 import '../data/creator_role.dart';
 import '../data/firestore_resiliencia.dart';
 import '../data/rescates_repository.dart';
@@ -229,17 +229,6 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
         role: CreatorRole.albergue,
         estado: 'pendiente',
       );
-  final _chatsRepo = ChatsRepository();
-  late final Stream<QuerySnapshot> _chatsUnreadStream = _chatsRepo.mios(
-    uid: _uid,
-    esRescatista: true,
-  );
-  // Consultas que ESTA cuenta le mandó a un negocio aliado (acá `adoptanteId`
-  // soy yo, no `rescatistaId` — ver contarMensajesSinLeer en domain/reglas_negocio.dart).
-  // Sin esto, el badge de "mensajes sin leer" nunca contaba una respuesta a
-  // una consulta propia, aunque sí apareciera en la lista de Chats.
-  late final Stream<QuerySnapshot> _consultasEnviadasStream = _chatsRepo
-      .consultasEnviadas(uid: _uid);
 
   /// Solicitudes pendientes, para el Perfil y el encabezado de SOLICITUDES
   /// del Panel. `_solicitudesStream`
@@ -447,12 +436,9 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
               );
             },
           ),
-          bottomNavigationBar: StreamBuilder<QuerySnapshot>(
-            stream: _solicitudesStream,
-            builder: (context, solSnap) {
-              final pendientes = solSnap.data?.docs.length ?? 0;
-              return _bottomNav(pendientes);
-            },
+          bottomNavigationBar: AlbergueTabBar(
+            actual: _nav == 3 ? AlbergueTab.perfil : AlbergueTab.panel,
+            onTap: _irA,
           ),
         );
       },
@@ -759,7 +745,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
               // vivo; la Jauría es un .get() que se pidió una sola vez.
               void abrir() => context
                   .push(AppRoutes.solicitudesRescatista, extra: true)
-                  .then((_) => _refrescarNumeros());
+                  .then(_alVolver);
               return _sectionHeader(
                 'Solicitudes',
                 trailing: count > 0
@@ -828,7 +814,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                     AppRoutes.misRescates,
                     extra: (filtroInicial: null, esAlbergue: true),
                   )
-                  .then((_) => _refrescarNumeros()),
+                  .then(_alVolver),
             ),
           ),
           const SizedBox(height: SpSpace.s3),
@@ -886,7 +872,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                               esAlbergue: true,
                             ),
                           )
-                          .then((_) => _refrescarNumeros()),
+                          .then(_alVolver),
                     ),
                   ),
                   const SizedBox(height: SpSpace.s3),
@@ -1353,11 +1339,11 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                     AppRoutes.misRescates,
                     extra: (filtroInicial: filtro, esAlbergue: true),
                   )
-                  .then((_) => _refrescarNumeros())
+                  .then(_alVolver)
             // Mismo motivo que la cabecera de Solicitudes.
             : ctx
                   .push(AppRoutes.solicitudesRescatista, extra: true)
-                  .then((_) => _refrescarNumeros()),
+                  .then(_alVolver),
       ),
     );
   }
@@ -1387,7 +1373,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
     ),
     // Al volver se refresca la Jauría: el panel la pide una sola vez, y sin
     // esto lo recién subido no aparecía hasta pasar por "Gestionar".
-    onTap: () => ctx.push(AppRoutes.subirLote).then((_) => _refrescarNumeros()),
+    onTap: () => ctx.push(AppRoutes.subirLote).then(_alVolver),
   );
 
   Widget _subirUnoCard(BuildContext ctx) {
@@ -1412,9 +1398,8 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
           ),
         ),
       ),
-      onTap: () => ctx
-          .push(AppRoutes.subirRescate, extra: true)
-          .then((_) => _refrescarNumeros()),
+      onTap: () =>
+          ctx.push(AppRoutes.subirRescate, extra: true).then(_alVolver),
     );
   }
 
@@ -1498,9 +1483,8 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
           label: 'Publicar el primero',
           icon: Icons.add_rounded,
           compacto: true,
-          onTap: () => context
-              .push(AppRoutes.subirRescate, extra: true)
-              .then((_) => _refrescarNumeros()),
+          onTap: () =>
+              context.push(AppRoutes.subirRescate, extra: true).then(_alVolver),
         ),
       );
     }
@@ -1681,7 +1665,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                             d['adoptanteIdEnProceso'] as String?,
                         esAlbergue: true,
                       ),
-                    ).then((_) => _refrescarNumeros()),
+                    ).then(_alVolver),
             ),
           ),
           // Antes el albergue no tenía NINGUNA forma de contactar a quien
@@ -1700,89 +1684,59 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
     );
   }
 
-  // ── Bottom nav ───────────────────────────────────────────────────────────────
+  // ── Barra de abajo ───────────────────────────────────────────────────────
 
-  Widget _bottomNav(int pendientes) {
-    // 'Perfil' va al final, después de 'Chats' — mismo orden que en el resto
-    // de la app (Rescatista, Aliado): Perfil siempre es el último ícono.
-    const perfilIndex = 3;
+  /// Al volver de cualquier pantalla abierta desde el Panel: refresca los
+  /// números (el panel los pide con .get(), una sola vez) y, si la persona
+  /// tocó otra pestaña en la barra de esa pantalla, la abre (ver
+  /// AlbergueTabBar.volverAlPanel).
+  void _alVolver(Object? resultado) {
+    _refrescarNumeros();
+    if (resultado is AlbergueTab && mounted) _irA(resultado);
+  }
 
-    return SpTabBar(
-      children: [
-        SpTabItem(
-          icon: Icons.dashboard_rounded,
-          label: 'Panel',
-          active: _nav == 0,
-          onTap: () => setState(() => _nav = 0),
-        ),
-        SpTabItem(
-          icon: Icons.pets_rounded,
-          label: 'Jauría',
-          active: false,
-          // Mismo motivo que en la cabecera de La Jauría.
-          onTap: () => context
-              .push(
-                AppRoutes.misRescates,
-                extra: (filtroInicial: null, esAlbergue: true),
-              )
-              .then((_) => _refrescarNumeros()),
-        ),
-        SpTabItem(
-          icon: Icons.assignment_outlined,
-          label: 'Solicitudes',
-          active: false,
-          badge: pendientes,
-          // Mismo motivo que la cabecera de Solicitudes.
-          onTap: () => context
-              .push(AppRoutes.solicitudesRescatista, extra: true)
-              .then((_) => _refrescarNumeros()),
-        ),
-        StreamBuilder<QuerySnapshot>(
-          stream: _chatsUnreadStream,
-          builder: (_, snap) {
-            return StreamBuilder<QuerySnapshot>(
-              stream: _consultasEnviadasStream,
-              builder: (_, consultaSnap) {
-                final unread = contarMensajesSinLeer(
-                  recibidos: snap.data?.docs,
-                  consultasEnviadas: consultaSnap.data?.docs,
-                  esAlbergue: true,
-                  uid: _uid,
-                );
-                return SpTabItem(
-                  icon: Icons.chat_bubble_outline_rounded,
-                  label: 'Chats',
-                  active: false,
-                  badge: unread,
-                  onTap: () => context.push(
-                    AppRoutes.adoptanteChats,
-                    extra: (
-                      esRescatista: true,
-                      soloConsultas: false,
-                      esAlbergue: true,
-                    ),
-                  ),
-                );
-              },
-            );
-          },
-        ),
-        SpTabItem(
-          icon: Icons.storefront_outlined,
-          label: 'Negocios',
-          active: false,
-          onTap: () => context.push(
-            AppRoutes.aliados,
-            extra: (esRescatista: true, esAlbergue: true),
-          ),
-        ),
-        SpTabItem(
-          icon: Icons.person_outline_rounded,
-          label: 'Perfil',
-          active: _nav == perfilIndex,
-          onTap: () => setState(() => _nav = perfilIndex),
-        ),
-      ],
-    );
+  void _irA(AlbergueTab t) {
+    switch (t) {
+      case AlbergueTab.panel:
+        setState(() => _nav = 0);
+      // 'Perfil' es una pestaña de esta misma pantalla, no una ruta.
+      case AlbergueTab.perfil:
+        setState(() => _nav = 3);
+      case AlbergueTab.jauria:
+        context
+            .push(
+              AppRoutes.misRescates,
+              extra: (filtroInicial: null, esAlbergue: true),
+            )
+            .then(_alVolver);
+      case AlbergueTab.solicitudes:
+        context
+            .push(AppRoutes.solicitudesRescatista, extra: true)
+            .then(_alVolver);
+      // Chats y Negocios no cambian números del panel: solo se mira si al
+      // volver hay que abrir otra pestaña.
+      case AlbergueTab.chats:
+        context
+            .push(
+              AppRoutes.adoptanteChats,
+              extra: (
+                esRescatista: true,
+                soloConsultas: false,
+                esAlbergue: true,
+              ),
+            )
+            .then(_siOtraPestana);
+      case AlbergueTab.negocios:
+        context
+            .push(
+              AppRoutes.aliados,
+              extra: (esRescatista: true, esAlbergue: true),
+            )
+            .then(_siOtraPestana);
+    }
+  }
+
+  void _siOtraPestana(Object? resultado) {
+    if (resultado is AlbergueTab && mounted) _irA(resultado);
   }
 }

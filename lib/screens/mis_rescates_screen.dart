@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../routing/app_router.dart';
 import '../domain/reglas_negocio.dart';
 import '../widgets/cambiar_estado_sheet.dart';
+import '../widgets/albergue_tab_bar.dart';
 import '../widgets/dialogos_eliminar_rescate.dart';
 import '../widgets/estado_error_feed.dart';
 import '../widgets/fotos.dart';
@@ -543,6 +544,14 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // Abierta desde el Panel del albergue: misma barra de abajo, con esta
+      // pestaña marcada (ver AlbergueTabBar).
+      bottomNavigationBar: widget.esAlbergue
+          ? AlbergueTabBar(
+              actual: AlbergueTab.jauria,
+              onTap: AlbergueTabBar.volverAlPanel(context, AlbergueTab.jauria),
+            )
+          : null,
       backgroundColor: context.sp.bg,
       body: Stack(
         children: [

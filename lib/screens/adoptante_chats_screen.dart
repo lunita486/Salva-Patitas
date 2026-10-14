@@ -8,6 +8,7 @@ import '../data/solicitudes_repository.dart';
 import '../routing/app_router.dart';
 import '../theme.dart';
 import '../widgets/avatares.dart';
+import '../widgets/albergue_tab_bar.dart';
 import '../widgets/estado_error_feed.dart';
 import '../widgets/fondo_decorativo.dart';
 import '../widgets/fotos.dart';
@@ -52,6 +53,14 @@ class _AdoptanteChatsScreenState extends State<AdoptanteChatsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // Abierta desde el Panel del albergue: misma barra de abajo, con esta
+      // pestaña marcada (ver AlbergueTabBar).
+      bottomNavigationBar: widget.esAlbergue
+          ? AlbergueTabBar(
+              actual: AlbergueTab.chats,
+              onTap: AlbergueTabBar.volverAlPanel(context, AlbergueTab.chats),
+            )
+          : null,
       backgroundColor: appBg,
       body: Stack(
         fit: StackFit.expand,
@@ -290,9 +299,7 @@ class _AdoptanteChatsScreenState extends State<AdoptanteChatsScreen> {
         // bien (el encabezado lee el perfil en vivo, sin esta copia).
         final esConsultaAliado = tipoSolicitud == 'consulta_aliado';
         final fotoUrl = esConsultaAliado ? null : d['fotoUrl'] as String?;
-        final fotoBase64 = esConsultaAliado
-            ? d['fotoBase64'] as String?
-            : null;
+        final fotoBase64 = esConsultaAliado ? d['fotoBase64'] as String? : null;
         final noLeidos = ChatsRepository.noLeidosPara(
           d,
           uid: uid,
