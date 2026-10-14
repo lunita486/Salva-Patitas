@@ -987,6 +987,7 @@ class SpScreenHeader extends StatelessWidget {
     this.subtitle,
     this.subtitleColor,
     this.onBack,
+    this.conVolver = true,
   });
   final String title;
   final String? subtitle;
@@ -995,6 +996,9 @@ class SpScreenHeader extends StatelessWidget {
   /// Sin esto, el botón hace `Navigator.pop`.
   final VoidCallback? onBack;
 
+  /// false en las pestañas (Perfil), que no tienen a dónde volver.
+  final bool conVolver;
+
   @override
   Widget build(BuildContext context) {
     final c = context.sp;
@@ -1002,12 +1006,14 @@ class SpScreenHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
       child: Row(
         children: [
-          SpRoundButton(
-            icon: Icons.arrow_back_ios_new_rounded,
-            tooltip: 'Volver',
-            onTap: onBack ?? () => Navigator.pop(context),
-          ),
-          const SizedBox(width: 12),
+          if (conVolver) ...[
+            SpRoundButton(
+              icon: Icons.arrow_back_ios_new_rounded,
+              tooltip: 'Volver',
+              onTap: onBack ?? () => Navigator.pop(context),
+            ),
+            const SizedBox(width: 12),
+          ],
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

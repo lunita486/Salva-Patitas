@@ -402,9 +402,6 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                 children: [
                   const Positioned.fill(child: SpPawBackground()),
                   SafeArea(
-                    // El Perfil dibuja su encabezado por detrás de la barra
-                    // de estado (si no, quedaba una franja "cortada" arriba).
-                    top: _nav != 3,
                     child: _nav == 0
                         ? _panel(
                             context,
@@ -429,6 +426,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                             enCuidado,
                             enAdopcion,
                             adoptados,
+                            umbralEstancadoDe(data, esAlbergue: true),
                           )
                         : const SizedBox.shrink(),
                   ),
@@ -484,6 +482,10 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
         pct >= _pctAvisoCapacidad ||
         (lugaresLibres != null && lugaresLibres <= 1);
     return SingleChildScrollView(
+      // Una clave por pestaña: Panel y Perfil ocupan el mismo lugar del
+      // árbol, y sin esto Flutter reusaba el mismo desplazamiento — el Perfil
+      // abría tan abajo como hubieras bajado en el Panel.
+      key: const PageStorageKey('panel'),
       padding: const EdgeInsets.fromLTRB(
         SpSpace.screen,
         SpSpace.s2,
@@ -917,39 +919,6 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
 
   // ── Perfil tab ───────────────────────────────────────────────────────────────
 
-  /// Un número de la tarjeta del perfil (animalitos, adoptados, solicitudes).
-  /// `Expanded` para que los tres ocupen lo mismo en cualquier ancho.
-  Widget _perfilNumero(
-    String valor,
-    String etiqueta,
-    IconData icono,
-    Color color,
-  ) {
-    return Expanded(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icono, color: color, size: 20),
-          const SizedBox(height: 4),
-          Text(
-            valor,
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            etiqueta,
-            textAlign: TextAlign.center,
-            style: SpText.caption.copyWith(color: context.sp.inkMuted),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _perfilTab(
     BuildContext ctx,
     String nombre,
@@ -960,191 +929,181 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
     int? enCuidado,
     int? enAdopcion,
     int? adoptados,
+    int umbralDias,
   ) {
+    final c = ctx.sp;
     final user = FirebaseAuth.instance.currentUser;
-    // "Animalitos activos" = los que el albergue está cuidando ahora, igual
-    // que la barra de capacidad del panel (en cuidado + en adopción).
+    // "En el albergue" = los que el albergue está cuidando ahora, igual que
+    // la barra de capacidad del panel (en cuidado + en adopción).
     final activos = enCuidado != null && enAdopcion != null
         ? enCuidado + enAdopcion
         : null;
-    // Encabezado claro (menta → fondo) con borde inferior curvo: el verde
-    // queda como acento (nombre, íconos) en vez de una franja sólida. Todo
-    // está compactado para que el perfil entre casi sin scroll.
-    final arriba = MediaQuery.of(ctx).padding.top;
-    final c = ctx.sp;
-    return Container(
-      color: c.bg,
-      child: LayoutBuilder(
-        builder: (context, box) => SingleChildScrollView(
-          child: ConstrainedBox(
-            // Ocupa al menos toda la pantalla: así el fondo liso llega hasta la
-            // barra de abajo y no se ve el corte de las patitas decorativas.
-            constraints: BoxConstraints(minHeight: box.maxHeight),
+    return SingleChildScrollView(
+      key: const PageStorageKey('perfil'),
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SpScreenHeader(
+            title: 'Perfil',
+            subtitle: 'Tu cuenta',
+            conVolver: false,
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: double.infinity,
-                  padding: EdgeInsets.fromLTRB(24, arriba + 24, 24, 24),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [c.mint, c.bg],
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                    ),
-                    borderRadius: const BorderRadius.vertical(
-                      bottom: Radius.circular(40),
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: c.primary.withValues(alpha: 0.10),
-                        blurRadius: 20,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    children: [
-                      GestureDetector(
-                        onTap: _uploadFotoPerfil,
-                        child: Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            Container(
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                border: Border.all(color: c.surface, width: 5),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: c.primary.withValues(alpha: 0.30),
-                                    blurRadius: 24,
-                                    offset: const Offset(0, 10),
-                                  ),
-                                ],
-                              ),
-                              child: AvatarPersona(
-                                fotoBase64: fotoBase64,
-                                fotoUrl: user?.photoURL,
-                                inicial: iniciales,
-                                radius: 72,
-                                backgroundColor: c.mint,
-                                textColor: c.primaryStrong,
-                              ),
-                            ),
-                            Positioned(
-                              bottom: 6,
-                              right: 6,
-                              child: Container(
-                                width: 40,
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: c.primary,
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: c.surface,
-                                    width: 3,
-                                  ),
-                                ),
-                                child: Icon(
-                                  Icons.camera_alt,
-                                  color: c.onPrimary,
-                                  size: 19,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      Text(
-                        nombre,
-                        style: TextStyle(
-                          fontSize: 25,
-                          fontWeight: FontWeight.w800,
-                          color: c.ink,
-                          letterSpacing: -0.3,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      if (tipo.isNotEmpty || ciudad.isNotEmpty) ...[
-                        const SizedBox(height: 6),
-                        Wrap(
-                          alignment: WrapAlignment.center,
-                          spacing: 14,
-                          children: [
-                            if (tipo.isNotEmpty)
-                              _perfilChip(Icons.home_work_outlined, tipo),
-                            if (ciudad.isNotEmpty)
-                              _perfilChip(Icons.place_outlined, ciudad),
-                          ],
-                        ),
-                      ],
-                      const SizedBox(height: 18),
-                      // Números del albergue: los mismos contadores del panel.
-                      Container(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        decoration: SpDeco.card(c, radius: 20),
-                        child: IntrinsicHeight(
-                          child: Row(
-                            children: [
-                              _perfilNumero(
-                                activos == null ? _cargandoValor : '$activos',
-                                'En el albergue',
-                                Icons.pets,
-                                c.primaryStrong,
-                              ),
-                              const VerticalDivider(width: 1),
-                              _perfilNumero(
-                                adoptados == null
-                                    ? _cargandoValor
-                                    : '$adoptados',
-                                'Adoptados',
-                                Icons.home_outlined,
-                                c.butterInk,
-                              ),
-                              const VerticalDivider(width: 1),
-                              _perfilNumero(
-                                _pendientes == null
-                                    ? _cargandoValor
-                                    : '$_pendientes',
-                                'Solicitudes',
-                                Icons.mail_outline,
-                                c.lilacInk,
-                              ),
-                            ],
+                // ── Foto, nombre, tipo y ciudad (`.hero2`) ───────────────────────
+                Center(
+                  child: GestureDetector(
+                    onTap: _uploadFotoPerfil,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: SpDeco.soft(c, radius: SpRadius.full),
+                          child: AvatarPersona(
+                            fotoBase64: fotoBase64,
+                            fotoUrl: user?.photoURL,
+                            inicial: iniciales,
+                            radius: 58,
+                            backgroundColor: c.mint,
+                            textColor: c.primaryStrong,
                           ),
                         ),
-                      ),
-                    ],
+                        Positioned(
+                          right: 0,
+                          bottom: 2,
+                          child: Container(
+                            width: 38,
+                            height: 38,
+                            decoration: SpDeco.primary(
+                              c,
+                              radius: SpRadius.full,
+                            ),
+                            child: Icon(
+                              Icons.photo_camera_rounded,
+                              size: 18,
+                              color: c.onPrimary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                // Correo, editar y aviso en UNA sola tarjeta con separadores, en
-                // vez de tres bloques sueltos: ocupa la mitad del alto.
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
-                  // Tres tarjetas "en relieve": degradado blanco → menta muy
-                  // claro, borde inferior más oscuro y sombra doble (cercana +
-                  // difusa). Así cada opción se ve como un botón que sobresale.
+                const SizedBox(height: 12),
+                Center(
+                  child: Text(
+                    nombre,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 23,
+                      fontWeight: FontWeight.w800,
+                      color: c.ink,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                ),
+                if (tipo.isNotEmpty || ciudad.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Center(
+                    child: Wrap(
+                      alignment: WrapAlignment.center,
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        if (tipo.isNotEmpty)
+                          _perfilChip(Icons.home_work_outlined, tipo),
+                        if (ciudad.isNotEmpty)
+                          _perfilChip(Icons.place_outlined, ciudad),
+                      ],
+                    ),
+                  ),
+                ],
+
+                // ── Números (los mismos contadores del panel) ────────────────────
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: SpMiniStat(
+                        tone: SpTone.mint,
+                        animal: SpAnimalKind.huella,
+                        value: activos == null ? _cargandoValor : '$activos',
+                        label: 'En el albergue',
+                        onTap: () => _irA(AlbergueTab.jauria),
+                      ),
+                    ),
+                    const SizedBox(width: SpSpace.s3),
+                    Expanded(
+                      child: SpMiniStat(
+                        tone: SpTone.butter,
+                        animal: SpAnimalKind.casa,
+                        value: adoptados == null
+                            ? _cargandoValor
+                            : '$adoptados',
+                        label: 'Adoptados',
+                      ),
+                    ),
+                    const SizedBox(width: SpSpace.s3),
+                    Expanded(
+                      child: SpMiniStat(
+                        tone: SpTone.lilac,
+                        animal: SpAnimalKind.gato,
+                        value: _pendientes == null
+                            ? _cargandoValor
+                            : '$_pendientes',
+                        label: 'Solicitudes',
+                        onTap: () => _irA(AlbergueTab.solicitudes),
+                      ),
+                    ),
+                  ],
+                ),
+
+                // ── Cuenta ───────────────────────────────────────────────────────
+                const SizedBox(height: SpSpace.s6),
+                _sectionHeader('Cuenta'),
+                const SizedBox(height: SpSpace.s3),
+                // La fila "Apariencia" (claro/oscuro) del prototipo NO va todavía:
+                // hasta revisar el modo oscuro pantalla por pantalla, la app queda
+                // en claro y no se ofrece cambiarlo.
+                SpCard(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
                   child: Column(
                     children: [
                       _perfilFila(
                         Icons.email_outlined,
                         user?.email ?? '-',
-                        c.primaryStrong,
                         etiqueta: 'Correo',
                       ),
-                      const SizedBox(height: 12),
+                      _perfilDivisor(),
                       _perfilFila(
                         Icons.edit_outlined,
                         'Editar perfil del albergue',
-                        c.primaryStrong,
                         onTap: () => ctx.push(AppRoutes.alberguePerfil),
                       ),
-                      const SizedBox(height: 12),
+                      _perfilDivisor(),
                       _perfilFila(
-                        Icons.schedule,
+                        Icons.schedule_rounded,
                         'Aviso sin adoptar',
-                        c.accentInk,
+                        sub: 'Recordatorio a los $umbralDias días',
+                        tono: SpTone.peach,
                         onTap: () => _configurarUmbralEstancado(ctx),
+                      ),
+                      _perfilDivisor(),
+                      _perfilFila(
+                        Icons.shield_outlined,
+                        'Política de privacidad',
+                        tono: SpTone.sky,
+                        onTap: () => launchUrl(
+                          Uri.parse(
+                            'https://lunita486.github.io/Salva-Patitas/privacidad.html',
+                          ),
+                          mode: LaunchMode.externalApplication,
+                        ),
                       ),
                     ],
                   ),
@@ -1173,141 +1132,157 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                 // Si estás por volver a poner este botón: no alcanza con
                 // ponerlo. Hay que hacer que la hoja o el enrutado permitan
                 // salir, o vuelve a no hacer nada.
-                const SizedBox(height: 14),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: TextButton.icon(
-                          onPressed: () => mostrarDialogoCerrarSesion(ctx),
-                          icon: const Icon(Icons.logout, size: 18),
-                          label: const Text('Cerrar sesión'),
-                          style: TextButton.styleFrom(
-                            foregroundColor: c.danger,
-                          ),
-                        ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: SpButton(
+                    label: 'Cerrar sesión',
+                    icon: Icons.logout_rounded,
+                    suave: true,
+                    onTap: () => mostrarDialogoCerrarSesion(ctx),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Center(
+                  child: TextButton(
+                    onPressed: () => mostrarEliminarCuentaDialog(ctx),
+                    style: TextButton.styleFrom(foregroundColor: c.danger),
+                    child: const Text(
+                      'Eliminar cuenta',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15,
                       ),
-                      Expanded(
-                        child: TextButton.icon(
-                          onPressed: () => mostrarEliminarCuentaDialog(ctx),
-                          icon: const Icon(Icons.delete_outline, size: 18),
-                          label: const Text('Eliminar cuenta'),
-                          style: TextButton.styleFrom(
-                            foregroundColor: c.danger,
-                          ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Center(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SpPaw(size: 14, angle: -12, color: c.mintDeep),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Salva Patitas',
+                        style: SpText.caption.copyWith(
+                          color: c.inkFaint,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ],
                   ),
                 ),
-                GestureDetector(
-                  onTap: () => launchUrl(
-                    Uri.parse(
-                      'https://lunita486.github.io/Salva-Patitas/privacidad.html',
-                    ),
-                    mode: LaunchMode.externalApplication,
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(0, 4, 0, 16),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.shield_outlined,
-                          size: 15,
-                          color: c.inkFaint,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Política de Privacidad',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: c.inkMuted,
-                            decoration: TextDecoration.underline,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
               ],
             ),
           ),
-        ),
+        ],
       ),
     );
   }
 
-  /// Tipo o ciudad del albergue con su ícono, debajo del nombre.
-  Widget _perfilChip(IconData icono, String texto) => Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      Icon(icono, size: 16, color: context.sp.primaryStrong),
-      const SizedBox(width: 4),
-      Text(texto, style: TextStyle(fontSize: 14, color: context.sp.inkMuted)),
-    ],
+  /// Tipo o ciudad del albergue (`.sp-chip`), debajo del nombre.
+  Widget _perfilChip(IconData icono, String texto) {
+    final c = context.sp;
+    return Container(
+      height: 34,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: SpDeco.soft(c, radius: SpRadius.full),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icono, size: 16, color: c.primary),
+          const SizedBox(width: 6),
+          Text(
+            texto,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: c.inkMuted,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _perfilDivisor() => Divider(
+    height: 1,
+    thickness: 1,
+    indent: 16,
+    endIndent: 16,
+    color: context.sp.line,
   );
 
-  /// Una fila de la tarjeta del perfil. Con [onTap] lleva flecha; sin él es
-  /// solo informativa (el correo).
+  /// Una fila de la tarjeta "Cuenta" (`.sp-row`). Con [onTap] lleva
+  /// chevron; sin él es solo informativa (el correo).
   Widget _perfilFila(
     IconData icono,
-    String texto,
-    Color color, {
+    String texto, {
     String? etiqueta,
+    String? sub,
+    SpTone tono = SpTone.mint,
     VoidCallback? onTap,
   }) {
     final c = context.sp;
-    return Container(
-      // Tarjeta 3D del tema: brillo arriba, canto abajo y sombra suave, así
-      // cada opción se ve como un botón que sobresale.
-      decoration: SpDeco.card(c, radius: 18),
-      child: Material(
-        type: MaterialType.transparency,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(18),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            child: Row(
-              children: [
-                Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(icono, size: 18, color: color),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (etiqueta != null)
-                        Text(
-                          etiqueta,
-                          style: TextStyle(fontSize: 12, color: c.inkMuted),
-                        ),
-                      Text(
-                        texto,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: c.ink,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (onTap != null)
-                  Icon(Icons.chevron_right_rounded, color: c.inkFaint),
-              ],
+    final k = SpToneColors.of(c, tono);
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: k.fill,
+                borderRadius: BorderRadius.circular(SpRadius.sm),
+              ),
+              child: Icon(icono, size: 20, color: k.ink),
             ),
-          ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (etiqueta != null)
+                    Text(
+                      etiqueta,
+                      style: TextStyle(fontSize: 12, color: c.inkMuted),
+                    ),
+                  Text(
+                    texto,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: c.ink,
+                    ),
+                  ),
+                  if (sub != null)
+                    Text(
+                      sub,
+                      style: TextStyle(fontSize: 13, color: c.inkMuted),
+                    ),
+                ],
+              ),
+            ),
+            if (onTap != null)
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: c.surfaceSunken,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.chevron_right_rounded,
+                  size: 18,
+                  color: c.inkMuted,
+                ),
+              ),
+          ],
         ),
       ),
     );
