@@ -3,7 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
 import '../routing/app_router.dart';
-import '../theme.dart';
+import '../theme/salva_patitas_theme.dart';
+import '../widgets/sp_widgets.dart';
 import '../domain/reglas_negocio.dart';
 import '../widgets/estado_error_feed.dart';
 import '../widgets/fotos.dart';
@@ -24,9 +25,7 @@ class _FavoritosScreenState extends State<FavoritosScreen> {
   // Mismo patrón que ya estaba documentado en home_screen y compañía, del
   // que esta pantalla se había quedado afuera. Hallazgo de auditoría.
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _favoritosStream =
-      FavoritosRepository().mios(
-        FirebaseAuth.instance.currentUser?.uid ?? '',
-      );
+      FavoritosRepository().mios(FirebaseAuth.instance.currentUser?.uid ?? '');
 
   // El stream de los animales guardados NO puede ser un `late final` como
   // el de arriba: depende de la lista de ids, que cambia de verdad cuando
@@ -58,152 +57,132 @@ class _FavoritosScreenState extends State<FavoritosScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.sp;
     return Scaffold(
-      backgroundColor: appBg,
-      body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // El botón de volver vive acá afuera, siempre visible, para que
-            // si falla la carga de abajo el usuario no quede atrapado sin
-            // forma de salir de la pantalla.
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-                        tooltip: 'Volver',
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  const Padding(
-                    padding: EdgeInsets.only(left: 4),
-                    child: Text(
-                      'Tus favoritos',
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: appInk,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: StreamBuilder<QuerySnapshot>(
-                stream: _favoritosStream,
-                builder: (context, snap) {
-                  if (snap.connectionState == ConnectionState.waiting) {
-                    return const Center(
-                      child: CircularProgressIndicator(color: appTeal),
-                    );
-                  }
-                  if (snap.hasError) return errorFeedState();
-                  final docs = snap.data?.docs ?? [];
-                  // Un solo listener con el estado de todos los animales guardados,
-                  // en vez de uno por tarjeta (antes N conexiones, ahora 1).
-                  final rescateIds = docs
-                      .map(
-                        (d) =>
-                            (d.data() as Map<String, dynamic>)['rescateId']
-                                as String? ??
-                            '',
-                      )
-                      .where((id) => id.isNotEmpty)
-                      .toSet()
-                      .toList();
-
-                  return StreamBuilder<
-                    List<QueryDocumentSnapshot<Map<String, dynamic>>>
-                  >(
-                    // SinTope, no porIds(): con más de 30 favoritos (pasa de
-                    // verdad, ver el doc de porIdsSinTope), recortar acá
-                    // dejaba a los que quedaban afuera pegados para siempre
-                    // en la copia vieja del favorito. Hallazgo real de Eliza,
-                    // con 62 favoritos guardados.
-                    stream: _streamDeRescates(rescateIds),
-                    builder: (context, rescatesSnap) {
-                      // hasData es distinto de "llegó un evento" — es
-                      // específicamente "recibimos una respuesta real del
-                      // servidor" (con datos, no null). El PRIMER build de
-                      // cualquier StreamBuilder recién suscripto es siempre
-                      // así (ningún stream entrega de forma sincrónica), y si
-                      // esta consulta puntual nunca llega a responder (token
-                      // vencido tras la app en segundo plano toda la noche,
-                      // sin conexión), se queda así para siempre. Antes eso
-                      // hacía que TODOS los favoritos con rescateId parecieran
-                      // huérfanos (huboRespuesta acá abajo controla eso) —
-                      // "no llegó respuesta todavía" y "llegó, y esto no está"
-                      // se trataban como lo mismo, y la pantalla se veía vacía
-                      // aunque hubiera favoritos reales, sin ningún aviso.
-                      final huboRespuesta = rescatesSnap.hasData;
-                      final rescatesDocs = rescatesSnap.data ?? const [];
-                      final estadoPorRescateId = <String, String>{
-                        if (huboRespuesta)
-                          for (final r in rescatesDocs)
-                            r.id: (r.data())['estadoAdopcion'] as String? ??
+      backgroundColor: c.bg,
+      body: Stack(
+        children: [
+          const Positioned.fill(child: SpPawBackground()),
+          SafeArea(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // El botón de volver vive acá afuera, siempre visible, para que
+                // si falla la carga de abajo el usuario no quede atrapado sin
+                // forma de salir de la pantalla.
+                const SpScreenHeader(
+                  title: 'Tus favoritos',
+                  subtitle: 'Los animalitos que guardaste',
+                ),
+                Expanded(
+                  child: StreamBuilder<QuerySnapshot>(
+                    stream: _favoritosStream,
+                    builder: (context, snap) {
+                      if (snap.connectionState == ConnectionState.waiting) {
+                        return Center(
+                          child: CircularProgressIndicator(color: c.primary),
+                        );
+                      }
+                      if (snap.hasError) return errorFeedState();
+                      final docs = snap.data?.docs ?? [];
+                      // Un solo listener con el estado de todos los animales guardados,
+                      // en vez de uno por tarjeta (antes N conexiones, ahora 1).
+                      final rescateIds = docs
+                          .map(
+                            (d) =>
+                                (d.data() as Map<String, dynamic>)['rescateId']
+                                    as String? ??
                                 '',
-                      };
-                      // `favoritos.fotoUrl` es una foto de una sola vez tomada
-                      // al guardar el favorito — si el rescate se guardó en
-                      // ese instante justo entre "se creó el doc" y "se le
-                      // linkeó la foto" (dos animales subiéndose a la vez es
-                      // el caso real que lo disparó), el favorito queda para
-                      // siempre con fotoUrl null aunque el rescate después sí
-                      // tenga foto. Este mapa de respaldo, con la foto ACTUAL
-                      // del rescate, evita que ese favorito se vea roto.
-                      final fotoPorRescateId = <String, String?>{
-                        for (final r in rescatesDocs)
-                          r.id: r.data()['fotoUrl'] as String?,
-                      };
-                      // `favoritos` nunca guardó las etiquetas del animal
-                      // (tamaño, energía, etc.) — el botón "Adoptar" de acá
-                      // armaba la solicitud sin ellas, y compatibilidad.dart
-                      // las completaba con sus valores por defecto (ej.
-                      // "Mediano" aunque el animal fuera "Pequeño"). Se leen
-                      // del rescate en vivo, igual que fotoPorRescateId.
-                      final rescatePorId = <String, Map<String, dynamic>>{
-                        for (final r in rescatesDocs) r.id: r.data(),
-                      };
-                      return _FavoritosGrid(
-                        docs: docs,
-                        // Vacío mientras no haya respuesta real — el filtro de
-                        // huérfanos de _FavoritosGrid ya sabe tratar "no
-                        // consultado" como "no ocultar" (antes era el mismo
-                        // camino que usaban los favoritos que superaban el
-                        // tope de 30 de whereIn; ese tope ya no existe, ver
-                        // porIdsSinTope, pero el camino sigue sirviendo para
-                        // "todavía esperando la primera respuesta" y "la
-                        // consulta falló y nunca hubo ninguna") — no hace
-                        // falta un camino nuevo.
-                        rescateIdsConsultados: huboRespuesta
-                            ? rescateIds.toSet()
-                            : const {},
-                        estadoPorRescateId: estadoPorRescateId,
-                        fotoPorRescateId: fotoPorRescateId,
-                        rescatePorId: rescatePorId,
-                        // Para avisar (no silencio) si la consulta falló y
-                        // nunca hubo ninguna respuesta previa que mostrar en
-                        // su lugar — ver el aviso en _FavoritosGrid.
-                        sinConfirmarPorError:
-                            rescatesSnap.hasError && !huboRespuesta,
+                          )
+                          .where((id) => id.isNotEmpty)
+                          .toSet()
+                          .toList();
+
+                      return StreamBuilder<
+                        List<QueryDocumentSnapshot<Map<String, dynamic>>>
+                      >(
+                        // SinTope, no porIds(): con más de 30 favoritos (pasa de
+                        // verdad, ver el doc de porIdsSinTope), recortar acá
+                        // dejaba a los que quedaban afuera pegados para siempre
+                        // en la copia vieja del favorito. Hallazgo real de Eliza,
+                        // con 62 favoritos guardados.
+                        stream: _streamDeRescates(rescateIds),
+                        builder: (context, rescatesSnap) {
+                          // hasData es distinto de "llegó un evento" — es
+                          // específicamente "recibimos una respuesta real del
+                          // servidor" (con datos, no null). El PRIMER build de
+                          // cualquier StreamBuilder recién suscripto es siempre
+                          // así (ningún stream entrega de forma sincrónica), y si
+                          // esta consulta puntual nunca llega a responder (token
+                          // vencido tras la app en segundo plano toda la noche,
+                          // sin conexión), se queda así para siempre. Antes eso
+                          // hacía que TODOS los favoritos con rescateId parecieran
+                          // huérfanos (huboRespuesta acá abajo controla eso) —
+                          // "no llegó respuesta todavía" y "llegó, y esto no está"
+                          // se trataban como lo mismo, y la pantalla se veía vacía
+                          // aunque hubiera favoritos reales, sin ningún aviso.
+                          final huboRespuesta = rescatesSnap.hasData;
+                          final rescatesDocs = rescatesSnap.data ?? const [];
+                          final estadoPorRescateId = <String, String>{
+                            if (huboRespuesta)
+                              for (final r in rescatesDocs)
+                                r.id:
+                                    (r.data())['estadoAdopcion'] as String? ??
+                                    '',
+                          };
+                          // `favoritos.fotoUrl` es una foto de una sola vez tomada
+                          // al guardar el favorito — si el rescate se guardó en
+                          // ese instante justo entre "se creó el doc" y "se le
+                          // linkeó la foto" (dos animales subiéndose a la vez es
+                          // el caso real que lo disparó), el favorito queda para
+                          // siempre con fotoUrl null aunque el rescate después sí
+                          // tenga foto. Este mapa de respaldo, con la foto ACTUAL
+                          // del rescate, evita que ese favorito se vea roto.
+                          final fotoPorRescateId = <String, String?>{
+                            for (final r in rescatesDocs)
+                              r.id: r.data()['fotoUrl'] as String?,
+                          };
+                          // `favoritos` nunca guardó las etiquetas del animal
+                          // (tamaño, energía, etc.) — el botón "Adoptar" de acá
+                          // armaba la solicitud sin ellas, y compatibilidad.dart
+                          // las completaba con sus valores por defecto (ej.
+                          // "Mediano" aunque el animal fuera "Pequeño"). Se leen
+                          // del rescate en vivo, igual que fotoPorRescateId.
+                          final rescatePorId = <String, Map<String, dynamic>>{
+                            for (final r in rescatesDocs) r.id: r.data(),
+                          };
+                          return _FavoritosGrid(
+                            docs: docs,
+                            // Vacío mientras no haya respuesta real — el filtro de
+                            // huérfanos de _FavoritosGrid ya sabe tratar "no
+                            // consultado" como "no ocultar" (antes era el mismo
+                            // camino que usaban los favoritos que superaban el
+                            // tope de 30 de whereIn; ese tope ya no existe, ver
+                            // porIdsSinTope, pero el camino sigue sirviendo para
+                            // "todavía esperando la primera respuesta" y "la
+                            // consulta falló y nunca hubo ninguna") — no hace
+                            // falta un camino nuevo.
+                            rescateIdsConsultados: huboRespuesta
+                                ? rescateIds.toSet()
+                                : const {},
+                            estadoPorRescateId: estadoPorRescateId,
+                            fotoPorRescateId: fotoPorRescateId,
+                            rescatePorId: rescatePorId,
+                            // Para avisar (no silencio) si la consulta falló y
+                            // nunca hubo ninguna respuesta previa que mostrar en
+                            // su lugar — ver el aviso en _FavoritosGrid.
+                            sinConfirmarPorError:
+                                rescatesSnap.hasError && !huboRespuesta,
+                          );
+                        },
                       );
                     },
-                  );
-                },
-              ),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -246,24 +225,18 @@ class _FavoritosGrid extends StatelessWidget {
       return !fueConsultado || existeTodavia;
     }).toList();
 
+    final c = context.sp;
     return CustomScrollView(
       slivers: [
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-            child: Text(
-              docs.isEmpty
-                  ? 'SIN GUARDADOS'
-                  : '${docs.length} GUARDADO${docs.length == 1 ? "" : "S"}',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1.2,
-                color: Colors.grey.shade700,
+        if (docs.isNotEmpty)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: SpSectionTitle(
+                '${docs.length} guardado${docs.length == 1 ? "" : "s"}',
               ),
             ),
           ),
-        ),
         // Aviso, no silencio: no reemplaza la lista (los favoritos
         // guardados igual se muestran, con sus datos propios) — solo
         // avisa que el estado más reciente (en proceso/adoptado/
@@ -272,28 +245,17 @@ class _FavoritosGrid extends StatelessWidget {
         if (sinConfirmarPorError && docs.isNotEmpty)
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: msgAdvertencia.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: SpNotice(
+                fondo: c.accentSoft,
+                tinta: c.accentInk,
+                child: const Row(
                   children: [
-                    Icon(
-                      Icons.wifi_off_rounded,
-                      size: 18,
-                      color: msgAdvertencia,
-                    ),
-                    const SizedBox(width: 8),
+                    Icon(Icons.wifi_off_rounded),
+                    SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         'No pudimos confirmar el estado más reciente de tus favoritos. Revisá tu conexión.',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade800,
-                        ),
                       ),
                     ),
                   ],
@@ -302,36 +264,14 @@ class _FavoritosGrid extends StatelessWidget {
             ),
           ),
         if (docs.isEmpty)
-          SliverFillRemaining(
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.favorite_border,
-                    size: 64,
-                    color: Colors.grey.shade300,
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Aún no tienes favoritos',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: appInk,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Toca ❤️ en las tarjetas para guardar\nanimalitos que te gusten.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey.shade700,
-                      height: 1.5,
-                    ),
-                  ),
-                ],
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(16, 4, 16, 16),
+              child: SpEmpty(
+                title: 'Aún no tienes favoritos',
+                subtitle:
+                    'Toca el corazón en las tarjetas para guardar animalitos que te gusten.',
+                animal: SpAnimalKind.gato,
               ),
             ),
           )
@@ -346,10 +286,10 @@ class _FavoritosGrid extends StatelessWidget {
               // con su contenido centrado y mucho espacio en blanco
               // arriba y abajo.
               gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 180,
+                maxCrossAxisExtent: 190,
                 crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-                childAspectRatio: 0.72,
+                mainAxisSpacing: 14,
+                childAspectRatio: 0.6,
               ),
               delegate: SliverChildBuilderDelegate((_, i) {
                 final d = docs[i].data() as Map<String, dynamic>;
@@ -377,7 +317,8 @@ class _FavoritosGrid extends StatelessWidget {
                     (rescate['especie'] as String?) ??
                     (d['especie'] as String? ?? '');
                 final edad =
-                    (rescate['edad'] as String?) ?? (d['edad'] as String? ?? '');
+                    (rescate['edad'] as String?) ??
+                    (d['edad'] as String? ?? '');
                 final ubicacion =
                     (rescate['ubicacion'] as String?) ??
                     (d['ubicacion'] as String? ?? '');
@@ -397,7 +338,6 @@ class _FavoritosGrid extends StatelessWidget {
                 // solo.
                 final fotoUrl =
                     fotoPorRescateId[rescateId] ?? (d['fotoUrl'] as String?);
-                final emoji = especie == 'Gato' ? '🐱' : '🐶';
 
                 final animalMap = {
                   'nombre': nombre,
@@ -417,245 +357,157 @@ class _FavoritosGrid extends StatelessWidget {
                   'creadoPor': d['creadoPor'] ?? 'rescatista',
                 };
 
-                return Stack(
-                  children: [
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(18),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.07),
-                            blurRadius: 10,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      clipBehavior: Clip.hardEdge,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            // FotoAnimal en vez de recorte — mismo
-                            // motivo que el feed y el detalle: la
-                            // foto entera sobre fondo desenfocado
-                            // (caso "Tobyiii", mueble vacío).
-                            child: fotoUrl != null
-                                ? FotoAnimal(
-                                    url: fotoUrl,
-                                    width: double.infinity,
-                                    fallback: Container(
-                                      width: double.infinity,
-                                      color: const Color(0xFFD8F0E4),
-                                      child: Center(
-                                        child: Text(
-                                          emoji,
-                                          style: const TextStyle(fontSize: 52),
-                                        ),
+                final estado = estadoPorRescateId[rescateId] ?? '';
+                final devuelto = estado == 'Regresado';
+                // sePuedeAdoptar (domain/reglas_negocio.dart) — única fuente.
+                // Acá vivía una lista de estados escrita a mano que
+                // CONTRADECÍA a la del feed justo en 'Hogar de paso'.
+                final noDisponible = !sePuedeAdoptar(estado);
+                final textoNoDisponible = switch (estado) {
+                  'Fallecido' => 'Falleció',
+                  'Hogar de paso' => 'En hogar de paso',
+                  'En proceso de adopción' => 'En proceso de adopción',
+                  _ => 'Ya adoptado',
+                };
+                final tonoNoDisponible = spToneEstado(
+                  estado == '' ? 'Adoptado' : estado,
+                );
+
+                return Container(
+                  padding: const EdgeInsets.all(SpSpace.s2),
+                  decoration: SpDeco.card(c),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(18),
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              // FotoAnimal en vez de recorte — mismo motivo
+                              // que el feed y el detalle: la foto entera sobre
+                              // fondo desenfocado (caso "Tobyiii").
+                              if (fotoUrl != null)
+                                FotoAnimal(
+                                  url: fotoUrl,
+                                  width: double.infinity,
+                                  fallback: SpFotoVacia(especie: especie),
+                                )
+                              else
+                                SpFotoVacia(especie: especie),
+                              // Quitar favorito — sin confirmación: no es
+                              // destructivo (el animal vuelve a aparecer en el
+                              // carrusel principal) y se revierte con un toque.
+                              Positioned(
+                                top: 8,
+                                right: 8,
+                                child: Tooltip(
+                                  message: 'Quitar de favoritos',
+                                  child: GestureDetector(
+                                    onTap: () => docs[i].reference.delete(),
+                                    child: Container(
+                                      width: 34,
+                                      height: 34,
+                                      decoration: SpDeco.soft(
+                                        c,
+                                        radius: SpRadius.full,
+                                      ),
+                                      child: Icon(
+                                        Icons.favorite_rounded,
+                                        color: c.accent,
+                                        size: 18,
                                       ),
                                     ),
-                                  )
-                                : Container(
-                                    width: double.infinity,
-                                    color: const Color(0xFFD8F0E4),
-                                    child: Center(
-                                      child: Text(
-                                        emoji,
-                                        style: const TextStyle(fontSize: 52),
-                                      ),
-                                    ),
                                   ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  nombre,
-                                  style: const TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.bold,
-                                    color: appInk,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  '${edad.isNotEmpty ? "$edad · " : ""}$ubicacion',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey.shade700,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
+                              ),
+                              if (devuelto)
+                                const Positioned(
+                                  top: 8,
+                                  left: 8,
+                                  child: SpBadge('Fue devuelto'),
                                 ),
-                                // El nombre del rescatista/albergue se lee
-                                // más arriba (`rescatista`, ya en vivo —
-                                // ver el comentario sobre la foto) pero
-                                // nunca se llegaba a MOSTRAR en esta
-                                // tarjeta — se calculaba solo para el mapa
-                                // que se pasa al abrir el chat. Sin esto,
-                                // no había forma de que "renombrar el
-                                // albergue actualiza Favoritos" se pudiera
-                                // ver, porque el nombre no se veía ni
-                                // antes ni después de renombrar. Hallazgo
-                                // real de Eliza probando justo eso.
-                                if (rescatista.isNotEmpty) ...[
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    rescatista,
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.grey.shade600,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ],
-                                const SizedBox(height: 8),
-                                Builder(
-                                  builder: (_) {
-                                    final estado =
-                                        estadoPorRescateId[rescateId] ?? '';
-                                    final enProceso =
-                                        estado == 'En proceso de adopción';
-                                    final devuelto = estado == 'Regresado';
-                                    final enHogarDePaso =
-                                        estado == 'Hogar de paso';
-                                    final fallecido = estado == 'Fallecido';
-                                    // sePuedeAdoptar (domain/reglas_negocio.dart)
-                                    // — única fuente. Acá vivía una lista de
-                                    // estados escrita a mano que CONTRADECÍA a
-                                    // la del feed justo en 'Hogar de paso': el
-                                    // mismo animal salía como adoptable en el
-                                    // feed y como "ya no está disponible" acá.
-                                    final noDisponible = !sePuedeAdoptar(estado);
-                                    return Column(
-                                      children: [
-                                        if (devuelto) ...[
-                                          Container(
-                                            width: double.infinity,
-                                            padding: const EdgeInsets.symmetric(
-                                              vertical: 5,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: const Color(0xFFFFF3E0),
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                              border: Border.all(
-                                                color: const Color(
-                                                  0xFFE65100,
-                                                ).withValues(alpha: 0.4),
-                                              ),
-                                            ),
-                                            child: const Text(
-                                              '🔁 Fue devuelto',
-                                              textAlign: TextAlign.center,
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                color: Color(0xFFE65100),
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(height: 6),
-                                        ],
-                                        if (noDisponible)
-                                          Container(
-                                            width: double.infinity,
-                                            padding: const EdgeInsets.symmetric(
-                                              vertical: 8,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: cicloColor(
-                                                estado,
-                                              ).withValues(alpha: 0.1),
-                                              borderRadius:
-                                                  BorderRadius.circular(20),
-                                              border: Border.all(
-                                                color: cicloColor(
-                                                  estado,
-                                                ).withValues(alpha: 0.4),
-                                              ),
-                                            ),
-                                            child: Text(
-                                              fallecido
-                                                  ? 'Falleció 🌈'
-                                                  : enHogarDePaso
-                                                  ? 'En hogar de paso 🏡'
-                                                  : enProceso
-                                                  ? 'En proceso de adopción 🔄'
-                                                  : 'Ya adoptado 🏠',
-                                              textAlign: TextAlign.center,
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.w700,
-                                                color: cicloColor(estado),
-                                              ),
-                                            ),
-                                          )
-                                        else
-                                          SizedBox(
-                                            width: double.infinity,
-                                            child: ElevatedButton(
-                                              onPressed: () => context.push(
-                                                AppRoutes.solicitudAdopcion,
-                                                extra: animalMap,
-                                              ),
-                                              style: ElevatedButton.styleFrom(
-                                                backgroundColor: appTeal,
-                                                foregroundColor: Colors.white,
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      vertical: 6,
-                                                    ),
-                                                shape: RoundedRectangleBorder(
-                                                  borderRadius:
-                                                      BorderRadius.circular(20),
-                                                ),
-                                                elevation: 0,
-                                                textStyle: const TextStyle(
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w700,
-                                                ),
-                                              ),
-                                              child: const Text('Adoptar'),
-                                            ),
-                                          ),
-                                      ],
-                                    );
-                                  },
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    // Botón quitar favorito — sin confirmación: quitar un
-                    // favorito no es destructivo (el animal vuelve a
-                    // aparecer solo en el carrusel principal) y es
-                    // reversible con un toque, no amerita el paso extra.
-                    Positioned(
-                      top: 8,
-                      right: 8,
-                      child: GestureDetector(
-                        onTap: () => docs[i].reference.delete(),
-                        child: Container(
-                          width: 36,
-                          height: 36,
-                          decoration: const BoxDecoration(
-                            color: Colors.white,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.favorite,
-                            color: appOrange,
-                            size: 17,
+                            ],
                           ),
                         ),
                       ),
-                    ),
-                  ],
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(4, 10, 4, 0),
+                        child: Text(
+                          nombre,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            color: c.ink,
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Text(
+                          '${edad.isNotEmpty ? "$edad · " : ""}$ubicacion',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: SpText.caption.copyWith(color: c.inkMuted),
+                        ),
+                      ),
+                      // El nombre del rescatista/albergue (en vivo) se
+                      // muestra para que "renombrar el albergue actualiza
+                      // Favoritos" se pueda ver. Hallazgo real de Eliza.
+                      if (rescatista.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: Text(
+                            rescatista,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: SpText.caption.copyWith(
+                              color: c.primaryStrong,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      const SizedBox(height: 8),
+                      if (noDisponible)
+                        Container(
+                          width: double.infinity,
+                          height: 34,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: tonoNoDisponible == null
+                                ? c.surfaceSunken
+                                : SpToneColors.of(c, tonoNoDisponible).fill,
+                            borderRadius: BorderRadius.circular(SpRadius.full),
+                          ),
+                          child: Text(
+                            textoNoDisponible,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: tonoNoDisponible == null
+                                  ? c.inkMuted
+                                  : SpToneColors.of(c, tonoNoDisponible).ink,
+                            ),
+                          ),
+                        )
+                      else
+                        SizedBox(
+                          width: double.infinity,
+                          child: SpButton(
+                            label: 'Quiero adoptar',
+                            icon: Icons.favorite_border_rounded,
+                            compacto: true,
+                            onTap: () => context.push(
+                              AppRoutes.solicitudAdopcion,
+                              extra: animalMap,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 );
               }, childCount: docs.length),
             ),

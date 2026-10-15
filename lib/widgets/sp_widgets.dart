@@ -1201,3 +1201,105 @@ class SpBordePunteado extends CustomPainter {
   @override
   bool shouldRepaint(SpBordePunteado old) => old.color != color;
 }
+
+/// Una fila de una tarjeta de opciones de Perfil (`.sp-row`): baldosa pastel
+/// con ícono, título, línea opcional arriba ([etiqueta]) o abajo ([sub]) y
+/// chevron si se puede tocar. La usan el Perfil del albergue y el del
+/// adoptante.
+class SpFilaCuenta extends StatelessWidget {
+  const SpFilaCuenta({
+    super.key,
+    required this.icono,
+    required this.texto,
+    this.etiqueta,
+    this.sub,
+    this.tono = SpTone.mint,
+    this.onTap,
+  });
+  final IconData icono;
+  final String texto;
+  final String? etiqueta;
+  final String? sub;
+  final SpTone tono;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.sp;
+    final k = SpToneColors.of(c, tono);
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: k.fill,
+                borderRadius: BorderRadius.circular(SpRadius.sm),
+              ),
+              child: Icon(icono, size: 20, color: k.ink),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (etiqueta != null)
+                    Text(
+                      etiqueta!,
+                      style: TextStyle(fontSize: 12, color: c.inkMuted),
+                    ),
+                  Text(
+                    texto,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: c.ink,
+                    ),
+                  ),
+                  if (sub != null)
+                    Text(
+                      sub!,
+                      style: TextStyle(fontSize: 13, color: c.inkMuted),
+                    ),
+                ],
+              ),
+            ),
+            if (onTap != null)
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: c.surfaceSunken,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.chevron_right_rounded,
+                  size: 18,
+                  color: c.inkMuted,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Separador entre filas de una tarjeta de opciones.
+class SpDivisorFilas extends StatelessWidget {
+  const SpDivisorFilas({super.key});
+
+  @override
+  Widget build(BuildContext context) => Divider(
+    height: 1,
+    thickness: 1,
+    indent: 16,
+    endIndent: 16,
+    color: context.sp.line,
+  );
+}

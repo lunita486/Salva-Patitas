@@ -5,13 +5,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../routing/app_router.dart';
-import '../theme.dart';
+import '../theme/salva_patitas_theme.dart';
+import '../widgets/sp_widgets.dart';
+import '../widgets/apariencia_sheet.dart';
 import '../data/favoritos_repository.dart';
 import '../widgets/avatares.dart';
 import '../widgets/dialogo_cerrar_sesion.dart';
-import '../widgets/fondo_decorativo.dart';
 import '../widgets/roles_sheet.dart';
-import '../widgets/texto_sin_desborde.dart';
 import '../data/rescates_repository.dart';
 import '../services/ubicacion_service.dart';
 import '../services/ubicacion_lifecycle.dart';
@@ -99,292 +99,218 @@ class _PerfilAdoptanteScreenState extends State<PerfilAdoptanteScreen>
     }
   }
 
-  Widget _settingsCard(List<Widget> items) => Container(
-    decoration: BoxDecoration(
-      color: Colors.white.withValues(alpha: 0.75),
-      borderRadius: BorderRadius.circular(16),
-      boxShadow: [
-        BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8),
-      ],
-    ),
-    child: Column(children: items),
-  );
+  void _gestionarRoles() => gestionarRoles(context, rolFallback: 'adoptante');
 
-  Widget _settingsRow(
-    String label,
-    IconData icon, {
-    Color? color,
-    VoidCallback? onTap,
-    bool last = false,
-  }) => GestureDetector(
-    onTap: onTap,
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
-      decoration: BoxDecoration(
-        border: last
-            ? null
-            : Border(bottom: BorderSide(color: Colors.grey.shade100)),
-      ),
+  /// Ciudad o favoritos debajo del nombre (`.sp-chip`).
+  Widget _chipDato({required Widget icono, required Widget texto}) {
+    final c = context.sp;
+    return Container(
+      height: 34,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: SpDeco.soft(c, radius: SpRadius.full),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 20, color: color ?? Colors.grey.shade600),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(fontSize: 15, color: color ?? appInk),
-            ),
-          ),
-          Icon(Icons.chevron_right, size: 20, color: Colors.grey.shade400),
+          icono,
+          const SizedBox(width: 6),
+          Flexible(child: texto),
         ],
       ),
-    ),
-  );
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final c = context.sp;
+    final user = FirebaseAuth.instance.currentUser;
+    final nombre = user?.displayName ?? 'Tú';
+    final inicial = nombre.isNotEmpty ? nombre[0].toUpperCase() : 'T';
+    final estiloDato = TextStyle(
+      fontSize: 13,
+      fontWeight: FontWeight.w700,
+      color: c.inkMuted,
+    );
     return Scaffold(
-      backgroundColor: appBg,
+      backgroundColor: c.bg,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          const LeafOverlay(),
+          const SpPawBackground(),
           SafeArea(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
+              padding: const EdgeInsets.only(bottom: 32),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Header
-                  Row(
-                    children: [
-                      Tooltip(
-                        message: 'Volver',
-                        child: GestureDetector(
-                          onTap: () => Navigator.pop(context),
-                          child: const Icon(
-                            Icons.arrow_back_ios_new,
-                            size: 20,
-                            color: appInk,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      const Text(
-                        'PERFIL',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1.2,
-                          color: appTeal,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  // Avatar + nombre + stats
-                  Builder(
-                    builder: (context) {
-                      final user = FirebaseAuth.instance.currentUser;
-                      final nombre = user?.displayName ?? 'Tú';
-                      final foto = user?.photoURL;
-                      final inicial = nombre.isNotEmpty
-                          ? nombre[0].toUpperCase()
-                          : 'T';
-                      return Row(
-                        children: [
-                          // AvatarPersona (widgets/avatares.dart), no un CircleAvatar armado a
-                          // mano — antes, si la foto de perfil de Google fallaba al
-                          // cargar (sin señal, link vencido), se veía un círculo
-                          // gris vacío en vez de caer a la inicial, justo en el
-                          // propio perfil de la persona. Hallazgo de auditoría de
-                          // código.
-                          AvatarPersona(
-                            fotoUrl: foto,
-                            inicial: inicial,
-                            radius: 32,
-                            backgroundColor: appOrange,
-                            textColor: Colors.white,
-                          ),
-                          const SizedBox(width: 16),
-                          // Expanded: sin esto, esta Column tomaba su ancho
-                          // natural dentro del Row, y un nombre largo (los
-                          // de Google traen nombre y apellido completos) se
-                          // pasaba del borde de la pantalla. Mismo bug que
-                          // el del encabezado del aliado.
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  nombre,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.bold,
-                                    color: appInk,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Row(
-                                  children: [
-                                    FutureBuilder<String>(
-                                      future: _ciudadFuture,
-                                      builder: (_, snap) {
-                                        // También con ciudad vacía ('' cuando el GPS falla o
-                                        // está bloqueado): sin este guard quedaba el pin y el
-                                        // separador "·" flotando sin texto.
-                                        if (!snap.hasData || snap.data!.isEmpty)
-                                          return const SizedBox.shrink();
-                                        // TextoSinDesborde (widgets/texto_sin_desborde.dart): una
-                                        // ciudad larga empujaba el separador
-                                        // "·" fuera de la fila.
-                                        return TextoSinDesborde(
-                                          texto: snap.data!,
-                                          separacion: 2,
-                                          mainAxisSize: MainAxisSize.min,
-                                          antes: Icon(
-                                            Icons.location_on,
-                                            size: 13,
-                                            color: Colors.grey.shade500,
-                                          ),
-                                          style: TextStyle(
-                                            fontSize: 13,
-                                            color: Colors.grey.shade700,
-                                          ),
-                                          despues: Padding(
-                                            padding: const EdgeInsets.only(
-                                              left: 4,
-                                            ),
-                                            child: Text(
-                                              '·',
-                                              style: TextStyle(
-                                                fontSize: 13,
-                                                color: Colors.grey.shade400,
-                                              ),
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                    const _ContadorFavoritos(),
-                                  ],
-                                ),
-                              ],
+                  const SpScreenHeader(title: 'Perfil', subtitle: 'Tu cuenta'),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // ── Foto, nombre, ciudad y favoritos (`.hero2`) ──
+                        Center(
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: SpDeco.soft(c, radius: SpRadius.full),
+                            // AvatarPersona (widgets/avatares.dart), no un
+                            // CircleAvatar armado a mano — si la foto de Google
+                            // fallaba al cargar se veía un círculo gris vacío
+                            // en vez de la inicial. Hallazgo de auditoría.
+                            child: AvatarPersona(
+                              fotoUrl: user?.photoURL,
+                              inicial: inicial,
+                              radius: 54,
+                              backgroundColor: c.lilac,
+                              textColor: c.lilacInk,
                             ),
                           ),
-                        ],
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 28),
-                  // Configuración
-                  const Text(
-                    'CONFIGURACIÓN',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.2,
-                      color: appTeal,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Preferencias',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: appInk,
-                      fontFamily: 'Baloo2',
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  // Cada opción en su propia tarjeta, no agrupadas — mismo
-                  // espaciado que el resto de la lista (Gestionar mis roles,
-                  // Cerrar sesión, etc.), antes estas dos quedaban pegadas
-                  // como si fueran una sola tarjeta con dos filas, distinto al
-                  // resto. Pedido real de Eliza.
-                  _settingsCard([
-                    _settingsRow(
-                      'Mis solicitudes',
-                      Icons.assignment_outlined,
-                      last: true,
-                      onTap: () => context.push(AppRoutes.misSolicitudes),
-                    ),
-                  ]),
-                  const SizedBox(height: 12),
-                  _settingsCard([
-                    _settingsRow(
-                      'Tipo de animal preferido',
-                      Icons.pets,
-                      last: true,
-                      onTap: () => context.push(AppRoutes.tipoAnimal),
-                    ),
-                  ]),
-                  const SizedBox(height: 12),
-                  _settingsCard([
-                    _settingsRow(
-                      'Gestionar mis roles',
-                      Icons.switch_account_outlined,
-                      last: true,
-                      onTap: () =>
-                          gestionarRoles(context, rolFallback: 'adoptante'),
-                    ),
-                  ]),
-                  const SizedBox(height: 12),
-                  _settingsCard([
-                    _settingsRow(
-                      'Cerrar sesión',
-                      Icons.logout,
-                      color: Colors.red.shade400,
-                      last: true,
-                      onTap: () => mostrarDialogoCerrarSesion(context),
-                    ),
-                  ]),
-                  const SizedBox(height: 12),
-                  _settingsCard([
-                    _settingsRow(
-                      'Eliminar mi cuenta',
-                      Icons.delete_outline,
-                      color: Colors.red.shade700,
-                      last: true,
-                      onTap: () => mostrarEliminarCuentaDialog(context),
-                    ),
-                  ]),
-                  const SizedBox(height: 16),
-                  // Estandarizado con perfil_rescatista_screen.dart: mismo
-                  // widget (link subrayado, no una card), misma posición (al
-                  // final, después de "Eliminar mi cuenta") en los dos roles.
-                  // Pedido real de Eliza.
-                  GestureDetector(
-                    onTap: () => launchUrl(
-                      Uri.parse(
-                        'https://lunita486.github.io/Salva-Patitas/privacidad.html',
-                      ),
-                      mode: LaunchMode.externalApplication,
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.shield_outlined,
-                            size: 16,
-                            color: Colors.grey.shade500,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            'Política de Privacidad',
+                        ),
+                        const SizedBox(height: 12),
+                        // maxLines: los nombres de Google traen nombre y
+                        // apellido completos y se pasaban del borde.
+                        Center(
+                          child: Text(
+                            nombre,
+                            textAlign: TextAlign.center,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.grey.shade700,
-                              decoration: TextDecoration.underline,
+                              fontSize: 23,
+                              fontWeight: FontWeight.w800,
+                              color: c.ink,
                             ),
                           ),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(height: 10),
+                        Center(
+                          child: Wrap(
+                            alignment: WrapAlignment.center,
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              FutureBuilder<String>(
+                                future: _ciudadFuture,
+                                builder: (_, snap) {
+                                  // También con ciudad vacía ('' cuando el
+                                  // GPS falla o está bloqueado): sin este
+                                  // guard quedaba el chip sin texto.
+                                  if (!snap.hasData || snap.data!.isEmpty) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  return _chipDato(
+                                    icono: Icon(
+                                      Icons.place_outlined,
+                                      size: 16,
+                                      color: c.primary,
+                                    ),
+                                    texto: Text(
+                                      snap.data!,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: estiloDato,
+                                    ),
+                                  );
+                                },
+                              ),
+                              _chipDato(
+                                icono: Icon(
+                                  Icons.favorite_rounded,
+                                  size: 15,
+                                  color: c.accent,
+                                ),
+                                texto: const _ContadorFavoritos(),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        // ── Cuenta ───────────────────────────────────────
+                        const SizedBox(height: SpSpace.s6),
+                        const SpSectionTitle('Cuenta'),
+                        const SizedBox(height: SpSpace.s3),
+                        SpCard(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Column(
+                            children: [
+                              SpFilaCuenta(
+                                icono: Icons.assignment_outlined,
+                                texto: 'Mis solicitudes',
+                                tono: SpTone.lilac,
+                                onTap: () =>
+                                    context.push(AppRoutes.misSolicitudes),
+                              ),
+                              const SpDivisorFilas(),
+                              SpFilaCuenta(
+                                icono: Icons.pets_rounded,
+                                texto: 'Animal preferido',
+                                tono: SpTone.peach,
+                                onTap: () => context.push(AppRoutes.tipoAnimal),
+                              ),
+                              const SpDivisorFilas(),
+                              SpFilaCuenta(
+                                icono: Icons.switch_account_outlined,
+                                texto: 'Gestionar mis roles',
+                                tono: SpTone.mint,
+                                onTap: _gestionarRoles,
+                              ),
+                              const SpDivisorFilas(),
+                              // Por ahora solo deja elegir Claro: el modo
+                              // oscuro se habilita cuando esté revisado (ver
+                              // widgets/apariencia_sheet.dart).
+                              SpFilaCuenta(
+                                icono: Icons.dark_mode_outlined,
+                                texto: 'Apariencia',
+                                sub: 'Claro',
+                                tono: SpTone.lilac,
+                                onTap: () => mostrarApariencia(context),
+                              ),
+                              const SpDivisorFilas(),
+                              // Estandarizado con el rescatista: la política
+                              // de privacidad está en los dos roles (pedido
+                              // real de Eliza).
+                              SpFilaCuenta(
+                                icono: Icons.shield_outlined,
+                                texto: 'Política de privacidad',
+                                tono: SpTone.sky,
+                                onTap: () => launchUrl(
+                                  Uri.parse(
+                                    'https://lunita486.github.io/Salva-Patitas/privacidad.html',
+                                  ),
+                                  mode: LaunchMode.externalApplication,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        SizedBox(
+                          width: double.infinity,
+                          child: SpButton(
+                            label: 'Cerrar sesión',
+                            icon: Icons.logout_rounded,
+                            suave: true,
+                            onTap: () => mostrarDialogoCerrarSesion(context),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Center(
+                          child: TextButton(
+                            onPressed: () =>
+                                mostrarEliminarCuentaDialog(context),
+                            style: TextButton.styleFrom(
+                              foregroundColor: c.danger,
+                            ),
+                            child: const Text(
+                              'Eliminar mi cuenta',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -436,9 +362,7 @@ class _ContadorFavoritosState extends State<_ContadorFavoritos> {
   // sea que se redibuja solo — cada verificación reiniciaba su propio
   // stream. Hallazgo de auditoría de código.
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _favoritosStream =
-      FavoritosRepository().mios(
-        FirebaseAuth.instance.currentUser?.uid ?? '',
-      );
+      FavoritosRepository().mios(FirebaseAuth.instance.currentUser?.uid ?? '');
 
   Future<void> _verificarExistencia(Set<String> ids) async {
     if (_verificando) return;
@@ -452,9 +376,7 @@ class _ContadorFavoritosState extends State<_ContadorFavoritos> {
           });
         return;
       }
-      final docs = await RescatesRepository()
-          .porIdsSinTope(ids.toList())
-          .first;
+      final docs = await RescatesRepository().porIdsSinTope(ids.toList()).first;
       if (!mounted) return;
       setState(() {
         _idsVerificados = ids;
@@ -505,15 +427,14 @@ class _ContadorFavoritosState extends State<_ContadorFavoritos> {
           return _idsExistentes.contains(rid);
         }).length;
 
-        return Row(
-          children: [
-            Icon(Icons.favorite_border, size: 13, color: Colors.grey.shade500),
-            const SizedBox(width: 2),
-            Text(
-              '$count favorito${count == 1 ? "" : "s"}',
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
-            ),
-          ],
+        // El ícono del corazón lo pone el chip de afuera.
+        return Text(
+          '$count favorito${count == 1 ? "" : "s"}',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: context.sp.inkMuted,
+          ),
         );
       },
     );
