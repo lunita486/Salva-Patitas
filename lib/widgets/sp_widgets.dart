@@ -490,14 +490,18 @@ class SpTabItem extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 3),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 10.5,
-                color: active ? c.ink : c.inkMuted,
-                fontWeight: active ? FontWeight.w800 : FontWeight.w600,
+            // scaleDown: un nombre largo ("Mis rescates") se achica un poco
+            // en vez de cortarse con "…".
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                label,
+                maxLines: 1,
+                style: TextStyle(
+                  fontSize: 10.5,
+                  color: active ? c.ink : c.inkMuted,
+                  fontWeight: active ? FontWeight.w800 : FontWeight.w600,
+                ),
               ),
             ),
           ],

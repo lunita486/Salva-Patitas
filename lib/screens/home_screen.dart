@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme.dart';
+import '../widgets/sp_widgets.dart';
+import '../theme/salva_patitas_theme.dart';
 import '../widgets/boton_cambiar_rol.dart';
 import '../domain/reglas_negocio.dart';
 import '../widgets/avatares.dart';
 import '../widgets/cambiar_estado_sheet.dart';
-import '../widgets/fondo_decorativo.dart';
 import '../widgets/fotos.dart';
 import '../widgets/texto_sin_desborde.dart';
 import '../services/notificaciones_service.dart';
@@ -19,7 +20,10 @@ import '../data/solicitudes_repository.dart';
 import 'package:go_router/go_router.dart';
 import '../routing/app_router.dart';
 import 'solicitudes_rescatista_screen.dart'
-    show verificarVencimientos, verificarSeguimientoPostAdopcion, contactarPersonaEnProceso;
+    show
+        verificarVencimientos,
+        verificarSeguimientoPostAdopcion,
+        contactarPersonaEnProceso;
 import 'adoptante_feed_screen.dart';
 import 'solicitudes_preview.dart';
 
@@ -62,6 +66,7 @@ class _HomeScreenState extends State<HomeScreen>
     role: CreatorRole.rescatista,
     estado: 'pendiente',
   );
+
   /// El contador de "Animales rescatados". Se pide una vez y se vuelve a
   /// pedir al volver de publicar (ver _refrescarContador), que es cuando de
   /// verdad cambia para quien lo está mirando.
@@ -143,6 +148,7 @@ class _HomeScreenState extends State<HomeScreen>
     });
     return (docs: docs, hayMas: false, ultimo: docs.isEmpty ? null : docs.last);
   }
+
   final _chatsRepo = ChatsRepository();
   late final Stream<QuerySnapshot> _chatsRescatistaStream = _chatsRepo.mios(
     uid: _uid,
@@ -290,18 +296,11 @@ class _HomeScreenState extends State<HomeScreen>
         .where((r) => r == 'adoptante' || r == 'rescatista')
         .toList();
     if (visibles.length <= 1) return const SizedBox.shrink();
+    final c = context.sp;
+    // Selector hundido (`.segmented--mode`): la opción activa en tinta con
+    // letra clara, como en el prototipo.
     return Container(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.80),
-        borderRadius: BorderRadius.circular(25),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      decoration: SpDeco.sunken(c, radius: SpRadius.full),
       padding: const EdgeInsets.all(4),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -331,17 +330,25 @@ class _HomeScreenState extends State<HomeScreen>
             },
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 180),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
-                color: activo ? appInk : Colors.transparent,
-                borderRadius: BorderRadius.circular(20),
+                color: activo ? c.ink : null,
+                borderRadius: BorderRadius.circular(SpRadius.full),
+                boxShadow: activo
+                    ? [
+                        BoxShadow(
+                          color: c.ink.withValues(alpha: .25),
+                          offset: const Offset(0, 3),
+                        ),
+                      ]
+                    : null,
               ),
               child: Text(
                 label,
                 style: TextStyle(
                   fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: activo ? Colors.white : Colors.grey.shade700,
+                  fontWeight: FontWeight.w800,
+                  color: activo ? c.bg : c.inkMuted,
                 ),
               ),
             ),
@@ -354,9 +361,11 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   Widget build(BuildContext context) {
     if (_isRescatista == null) {
-      return const Scaffold(
-        backgroundColor: appBg,
-        body: Center(child: CircularProgressIndicator(color: appTeal)),
+      return Scaffold(
+        backgroundColor: context.sp.bg,
+        body: Center(
+          child: CircularProgressIndicator(color: context.sp.primary),
+        ),
       );
     }
     // Único lugar que calcula "mensajes sin leer" del lado rescatista de
@@ -388,8 +397,8 @@ class _HomeScreenState extends State<HomeScreen>
               body: Stack(
                 fit: StackFit.expand,
                 children: [
-                  Container(color: appBg),
-                  const LeafOverlay(),
+                  Container(color: context.sp.bg),
+                  const SpPawBackground(),
                   SafeArea(
                     // IndexedStack en vez de un condicional: las dos vistas quedan
                     // montadas siempre, así el toggle Adoptante/Rescatista no
@@ -435,7 +444,7 @@ class _HomeScreenState extends State<HomeScreen>
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [_rolToggle(), _avatar('A', appOrange)],
+            children: [_rolToggle(), _avatar('A')],
           ),
           const SizedBox(height: 24),
           // Mismo estándar que el saludo de la vista adoptante (una sola línea
@@ -879,25 +888,21 @@ class _HomeScreenState extends State<HomeScreen>
             children: [
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [_rolToggle(), _avatar('A', appOrange)],
+                children: [_rolToggle(), _avatar('A')],
               ),
               const SizedBox(height: 12),
               Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(
-                    'Hola, $nombre ',
-                    style: const TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.bold,
-                      color: appInk,
-                      fontFamily: 'Baloo2',
+                  Flexible(
+                    child: Text(
+                      'Hola, $nombre',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: SpText.screen.copyWith(color: ctx.sp.ink),
                     ),
                   ),
-                  const Padding(
-                    padding: EdgeInsets.only(bottom: 2),
-                    child: Text('🐾', style: TextStyle(fontSize: 20)),
-                  ),
+                  const SizedBox(width: 8),
+                  const SpPaw(size: 22, angle: -12),
                 ],
               ),
             ],
@@ -1065,257 +1070,184 @@ class _HomeScreenState extends State<HomeScreen>
     ),
   );
 
-  Widget _bottomNav(int noLeidosRescatista) => Container(
-    decoration: BoxDecoration(
-      color: Colors.white,
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.08),
-          blurRadius: 12,
-          offset: const Offset(0, -2),
+  // Barra flotante 3D (SpTabBar), como la del albergue. Cada ítem conserva
+  // su misma acción de siempre.
+  Widget _bottomNav(int noLeidosRescatista) => SpTabBar(
+    children: [
+      if (_isRescatista == true) ...[
+        _navItem(Icons.pets_rounded, 'Mis rescates', 0),
+        _navTap(
+          Icons.add_circle_outline,
+          'Subir',
+          1,
+          onTap: () => context
+              .push(AppRoutes.subirRescate, extra: false)
+              .then((_) => _refrescarRescates()),
+        ),
+        _navTap(
+          Icons.notifications_outlined,
+          'Solicitudes',
+          2,
+          // Mismo motivo que la cabecera de SOLICITUDES.
+          onTap: () => context
+              .push(AppRoutes.solicitudesRescatista)
+              .then((_) => _refrescarRescates()),
+        ),
+        // Antes este badge era su propio StreamBuilder anidado,
+        // suscrito de nuevo a los mismos _chatsRescatistaStream /
+        // _consultasEnviadasStream que ya escuchaba build() más
+        // arriba para el panel — dos cálculos independientes de
+        // "mensajes sin leer" en la misma pantalla, con su propio
+        // riesgo de desincronizarse (frame de diferencia, filtro que
+        // cambia en uno y no en el otro). Ahora recibe el número ya
+        // calculado UNA sola vez en build() como parámetro — sin un
+        // segundo StreamBuilder acá, no hay dos cálculos que puedan
+        // divergir nunca más, ni un AsyncSnapshot propio que pueda
+        // quedarse con datos viejos al cambiar de rol (el bug real
+        // que tenían las ValueKey que este comentario reemplaza:
+        // "cambio rápido de rol y veo un número, pero no tengo
+        // ningún chat").
+        _navTapConBadge(
+          Icons.chat_bubble_outline_rounded,
+          'Chats',
+          noLeidosRescatista,
+          () => context.push(
+            AppRoutes.adoptanteChats,
+            extra: (
+              esRescatista: true,
+              soloConsultas: false,
+              esAlbergue: false,
+            ),
+          ),
+        ),
+        _navTap(
+          Icons.storefront_outlined,
+          'Negocios',
+          5,
+          onTap: () => context.push(
+            AppRoutes.aliados,
+            extra: (esRescatista: true, esAlbergue: false),
+          ),
+        ),
+        // .then(_cargarRol): "Gestionar mis roles" vive en esta pantalla
+        // de Perfil — sin este refresco, agregar un rol ahí guardaba
+        // bien en el servidor (el aviso verde de éxito no mentía) pero
+        // esta pantalla seguía usando los `_roles`/`_isRescatista` que
+        // había cacheado al abrirse, así que el toggle nuevo no
+        // aparecía hasta cerrar y volver a abrir la app. Hallazgo de
+        // prueba en teléfono real, 2026-08-03.
+        _navTap(
+          Icons.person_outline_rounded,
+          'Perfil',
+          4,
+          onTap: () => context
+              .push(AppRoutes.perfilRescatista)
+              .then((_) => _cargarRol()),
+        ),
+      ] else ...[
+        _navItem(Icons.pets_rounded, 'Adoptar', 0),
+        _navTap(
+          Icons.favorite_border_rounded,
+          'Favoritos',
+          1,
+          onTap: () => context.push(AppRoutes.favoritos),
+        ),
+        _navTap(
+          Icons.assignment_outlined,
+          'Solicitudes',
+          2,
+          onTap: () => context.push(AppRoutes.misSolicitudes),
+        ),
+        // Mismo orden que en Rescatista/Albergue/Aliado: Chats siempre va
+        // después de Solicitudes, antes de Negocios/Perfil.
+        // Key propia — ver el comentario del badge de rescatista.
+        StreamBuilder<QuerySnapshot>(
+          key: const ValueKey('badge-chats-adoptante'),
+          stream: _chatsAdoptanteStream,
+          builder: (_, snap) {
+            // ChatsRepository.perteneceALaLista es la misma función
+            // que decide qué chats muestra AdoptanteChatsScreen (sin
+            // esRescatista) — antes este badge tenía su propia copia
+            // a mano de esa regla de membresía (bug real, mismo
+            // patrón que el badge de rescatista más abajo: excluía
+            // TODA consulta a un negocio del conteo, sin importar con
+            // qué sombrero se mandó, así que el ícono podía no
+            // mostrar nada mientras la lista sí tenía una
+            // conversación sin leer). Con la misma función acá, la
+            // lista y el badge no pueden volver a divergir en esto.
+            final unread = (snap.data?.docs ?? []).where((doc) {
+              final d = doc.data() as Map<String, dynamic>;
+              return ChatsRepository.perteneceALaLista(
+                    d,
+                    uid: _uid,
+                    esRescatista: false,
+                  ) &&
+                  ChatsRepository.noLeidosPara(
+                        d,
+                        uid: _uid,
+                        esRescatista: false,
+                      ) >
+                      0;
+            }).length;
+            return _navTapConBadge(
+              Icons.chat_bubble_outline_rounded,
+              'Chats',
+              unread,
+              () => context.push(AppRoutes.adoptanteChats),
+            );
+          },
+        ),
+        _navTap(
+          Icons.storefront_outlined,
+          'Negocios',
+          3,
+          onTap: () => context.push(
+            AppRoutes.aliados,
+            extra: (esRescatista: false, esAlbergue: false),
+          ),
+        ),
+        // .then(_cargarRol): mismo motivo que la rama de rescatista, más
+        // arriba en este mismo archivo.
+        _navTap(
+          Icons.person_outline_rounded,
+          'Perfil',
+          4,
+          onTap: () => context
+              .push(AppRoutes.perfilAdoptante, extra: _ciudad)
+              .then((_) => _cargarRol()),
         ),
       ],
-    ),
-    child: SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            if (_isRescatista == true) ...[
-              _navItem(Icons.pets, 'Mis rescates', 0),
-              _navTap(
-                Icons.add_circle_outline,
-                'Subir',
-                1,
-                onTap: () => context
-                    .push(AppRoutes.subirRescate, extra: false)
-                    .then((_) => _refrescarRescates()),
-              ),
-              _navTap(
-                Icons.notifications_outlined,
-                'Solicitudes',
-                2,
-                // Mismo motivo que la cabecera de SOLICITUDES.
-                onTap: () => context
-                    .push(AppRoutes.solicitudesRescatista)
-                    .then((_) => _refrescarRescates()),
-              ),
-              // Antes este badge era su propio StreamBuilder anidado,
-              // suscrito de nuevo a los mismos _chatsRescatistaStream /
-              // _consultasEnviadasStream que ya escuchaba build() más
-              // arriba para el panel — dos cálculos independientes de
-              // "mensajes sin leer" en la misma pantalla, con su propio
-              // riesgo de desincronizarse (frame de diferencia, filtro que
-              // cambia en uno y no en el otro). Ahora recibe el número ya
-              // calculado UNA sola vez en build() como parámetro — sin un
-              // segundo StreamBuilder acá, no hay dos cálculos que puedan
-              // divergir nunca más, ni un AsyncSnapshot propio que pueda
-              // quedarse con datos viejos al cambiar de rol (el bug real
-              // que tenían las ValueKey que este comentario reemplaza:
-              // "cambio rápido de rol y veo un número, pero no tengo
-              // ningún chat").
-              _navTapConBadge(
-                Icons.chat_bubble_outline,
-                'Chats',
-                noLeidosRescatista,
-                () => context.push(
-                  AppRoutes.adoptanteChats,
-                  extra: (
-                    esRescatista: true,
-                    soloConsultas: false,
-                    esAlbergue: false,
-                  ),
-                ),
-              ),
-              _navTap(
-                Icons.store_outlined,
-                'Negocios',
-                5,
-                onTap: () => context.push(
-                  AppRoutes.aliados,
-                  extra: (esRescatista: true, esAlbergue: false),
-                ),
-              ),
-              // .then(_cargarRol): "Gestionar mis roles" vive en esta pantalla
-              // de Perfil — sin este refresco, agregar un rol ahí guardaba
-              // bien en el servidor (el aviso verde de éxito no mentía) pero
-              // esta pantalla seguía usando los `_roles`/`_isRescatista` que
-              // había cacheado al abrirse, así que el toggle nuevo no
-              // aparecía hasta cerrar y volver a abrir la app. Hallazgo de
-              // prueba en teléfono real, 2026-08-03.
-              _navTap(
-                Icons.person_outline,
-                'Perfil',
-                4,
-                onTap: () => context
-                    .push(AppRoutes.perfilRescatista)
-                    .then((_) => _cargarRol()),
-              ),
-            ] else ...[
-              _navItem(Icons.pets, 'Adoptar', 0),
-              _navTap(
-                Icons.favorite_outline,
-                'Favoritos',
-                1,
-                onTap: () => context.push(AppRoutes.favoritos),
-              ),
-              _navTap(
-                Icons.assignment_outlined,
-                'Solicitudes',
-                2,
-                onTap: () => context.push(AppRoutes.misSolicitudes),
-              ),
-              // Mismo orden que en Rescatista/Albergue/Aliado: Chats siempre va
-              // después de Solicitudes, antes de Negocios/Perfil.
-              // Key propia — ver el comentario del badge de rescatista.
-              StreamBuilder<QuerySnapshot>(
-                key: const ValueKey('badge-chats-adoptante'),
-                stream: _chatsAdoptanteStream,
-                builder: (_, snap) {
-                  // ChatsRepository.perteneceALaLista es la misma función
-                  // que decide qué chats muestra AdoptanteChatsScreen (sin
-                  // esRescatista) — antes este badge tenía su propia copia
-                  // a mano de esa regla de membresía (bug real, mismo
-                  // patrón que el badge de rescatista más abajo: excluía
-                  // TODA consulta a un negocio del conteo, sin importar con
-                  // qué sombrero se mandó, así que el ícono podía no
-                  // mostrar nada mientras la lista sí tenía una
-                  // conversación sin leer). Con la misma función acá, la
-                  // lista y el badge no pueden volver a divergir en esto.
-                  final unread = (snap.data?.docs ?? []).where((doc) {
-                    final d = doc.data() as Map<String, dynamic>;
-                    return ChatsRepository.perteneceALaLista(
-                          d,
-                          uid: _uid,
-                          esRescatista: false,
-                        ) &&
-                        ChatsRepository.noLeidosPara(
-                              d,
-                              uid: _uid,
-                              esRescatista: false,
-                            ) >
-                            0;
-                  }).length;
-                  return _navTapConBadge(
-                    Icons.chat_bubble_outline,
-                    'Chats',
-                    unread,
-                    () => context.push(AppRoutes.adoptanteChats),
-                  );
-                },
-              ),
-              _navTap(
-                Icons.store_outlined,
-                'Negocios',
-                3,
-                onTap: () => context.push(
-                  AppRoutes.aliados,
-                  extra: (esRescatista: false, esAlbergue: false),
-                ),
-              ),
-              // .then(_cargarRol): mismo motivo que la rama de rescatista, más
-              // arriba en este mismo archivo.
-              _navTap(
-                Icons.person_outline,
-                'Perfil',
-                4,
-                onTap: () => context
-                    .push(AppRoutes.perfilAdoptante, extra: _ciudad)
-                    .then((_) => _cargarRol()),
-              ),
-            ],
-          ],
-        ),
-      ),
-    ),
+    ],
   );
 
-  Widget _navItem(IconData icon, String label, int idx) {
-    final active = _selectedNav == idx;
-    final color = active ? appTeal : Colors.grey.shade400;
-    return GestureDetector(
-      onTap: () => setState(() => _selectedNav = idx),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: color, size: 24),
-          const SizedBox(height: 3),
-          Text(label, style: TextStyle(fontSize: 10, color: color)),
-        ],
-      ),
-    );
-  }
+  /// La pestaña que se queda en esta pantalla (Mis rescates / Adoptar).
+  Widget _navItem(IconData icon, String label, int idx) => SpTabItem(
+    icon: icon,
+    label: label,
+    active: _selectedNav == idx,
+    onTap: () => setState(() => _selectedNav = idx),
+  );
 
+  /// Una pestaña que abre otra pantalla.
   Widget _navTap(
     IconData icon,
     String label,
     int idx, {
     required VoidCallback onTap,
-  }) {
-    final color = Colors.grey.shade400;
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: color, size: 24),
-          const SizedBox(height: 3),
-          Text(label, style: TextStyle(fontSize: 10, color: color)),
-        ],
-      ),
-    );
-  }
+  }) => SpTabItem(icon: icon, label: label, active: false, onTap: onTap);
 
   Widget _navTapConBadge(
     IconData icon,
     String label,
     int badge,
     VoidCallback onTap,
-  ) {
-    final color = Colors.grey.shade400;
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Icon(icon, color: color, size: 24),
-              if (badge > 0)
-                Positioned(
-                  top: -4,
-                  right: -6,
-                  child: Container(
-                    padding: const EdgeInsets.all(3),
-                    constraints: const BoxConstraints(
-                      minWidth: 16,
-                      minHeight: 16,
-                    ),
-                    decoration: const BoxDecoration(
-                      color: appOrange,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Text(
-                      badge > 9 ? '9+' : '$badge',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 9,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 3),
-          Text(label, style: TextStyle(fontSize: 10, color: color)),
-        ],
-      ),
-    );
-  }
+  ) => SpTabItem(
+    icon: icon,
+    label: label,
+    active: false,
+    badge: badge,
+    onTap: onTap,
+  );
 }
 
 // ─── Avatar helper (global dentro del archivo) ───────────────────────────────
@@ -1325,16 +1257,22 @@ class _HomeScreenState extends State<HomeScreen>
 // vencido), se veía un círculo de color vacío en vez de caer a la
 // inicial, justo en el avatar del encabezado del dashboard principal.
 // Hallazgo de auditoría de código.
-Widget _avatar(String letter, Color color, {double radius = 22}) {
+Widget _avatar(String letter, {double radius = 22}) {
   final user = FirebaseAuth.instance.currentUser;
   final inicial = user?.displayName?.isNotEmpty == true
       ? user!.displayName![0].toUpperCase()
       : letter;
-  return AvatarPersona(
-    fotoUrl: user?.photoURL,
-    inicial: inicial,
-    radius: radius,
-    backgroundColor: color,
-    textColor: Colors.white,
+  return Builder(
+    builder: (context) => Container(
+      padding: const EdgeInsets.all(3),
+      decoration: SpDeco.soft(context.sp, radius: SpRadius.full),
+      child: AvatarPersona(
+        fotoUrl: user?.photoURL,
+        inicial: inicial,
+        radius: radius,
+        backgroundColor: context.sp.lilac,
+        textColor: context.sp.lilacInk,
+      ),
+    ),
   );
 }
