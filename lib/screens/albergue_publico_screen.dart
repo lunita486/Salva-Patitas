@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../theme.dart';
+import '../theme/salva_patitas_theme.dart';
+import '../widgets/sp_widgets.dart';
 import '../widgets/campos_perfil.dart';
 import '../domain/reglas_negocio.dart';
 import '../routing/app_router.dart';
@@ -115,6 +116,7 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
       _pidiendo = false;
     }
   }
+
   /// El TOTAL de disponibles, no los de la página.
   ///
   /// **De dónde salen ahora.** Del MISMO documento `usuarios/{uid}` que ya
@@ -182,17 +184,21 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
     required int? guardado,
     required int indice,
     required String label,
-    required Color color,
+    required SpTone tono,
+    required SpAnimalKind animal,
   }) {
-    if (guardado != null) return _statChip('$guardado', label, color);
+    if (guardado != null) return _statChip('$guardado', label, tono, animal);
     final plazoB = _plazoB;
-    if (plazoB == null) return _statChip(_cargandoValor, label, color);
+    if (plazoB == null) {
+      return _statChip(_cargandoValor, label, tono, animal);
+    }
     return FutureBuilder<List<int>>(
       future: plazoB,
       builder: (_, s) => _statChip(
         s.hasData ? '${s.data![indice]}' : _cargandoValor,
         label,
-        color,
+        tono,
+        animal,
       ),
     );
   }
@@ -202,6 +208,7 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
     return StreamBuilder<DocumentSnapshot>(
       stream: _perfilStream,
       builder: (context, userSnap) {
+        final c = context.sp;
         final data = userSnap.data?.data() as Map<String, dynamic>? ?? {};
         // Los dos contadores, del MISMO snapshot que la capacidad.
         final contadores = contadoresAlbergueDe(data);
@@ -235,397 +242,314 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
         // animales publicados".
         if (_error != null && _docs.isEmpty) return errorFeedState();
         // Mientras la primera página no volvió, la lista está vacía porque
-        // NO SE SABE, no porque el albergue no tenga animales. Sin
-        // distinguir las dos cosas, la pantalla mostraba "0 disponibles" y
-        // "No hay animales disponibles por ahora" como si fueran datos
-        // ciertos. Hallazgo de Eliza: "el 0 inicial es especialmente
-        // molesto porque no significa que haya 0 animales".
+        // NO SE SABE, no porque el albergue no tenga animales. Hallazgo de
+        // Eliza: "el 0 inicial es especialmente molesto porque no significa
+        // que haya 0 animales".
         final cargando = !_primeraLlego;
         final disponibles = _docs;
+        final hayContacto =
+            direccion.isNotEmpty ||
+            telefono.isNotEmpty ||
+            email.isNotEmpty ||
+            sitioWeb.isNotEmpty;
 
-            return Scaffold(
-              backgroundColor: appBg,
-              body: CustomScrollView(
-                controller: _scroll,
-                slivers: [
-                  // ── Header ──────────────────────────────────────────────────
-                  // Un solo Container con la decoración, que envuelve
-                  // directo al contenido — NO un Stack con un fondo de
-                  // alto FIJO (230) por debajo de un SafeArea/Column con
-                  // alto libre, como estaba antes. Con alto fijo, un
-                  // nombre de albergue largo (el campo permite hasta 50
-                  // caracteres) envolvía a 2 o 3 líneas y el Column
-                  // terminaba midiendo más que esos 230 — el verde de
-                  // fondo se cortaba ahí, pero el texto seguía
-                  // dibujándose más abajo, superpuesto con la sección
-                  // blanca de estadísticas que arranca después en el
-                  // CustomScrollView. Así SÍ se ajusta solo al contenido
-                  // real, sin importar cuántas líneas ocupe el nombre —
-                  // mismo patrón que ya usaba bien aliado_publico_screen.
-                  // dart, que nunca tuvo este problema. Hallazgo real de
-                  // Eliza con "Diga mire y vea.. venga axa por su mascota
-                  // y sea f...".
-                  SliverToBoxAdapter(
-                    child: Container(
-                      width: double.infinity,
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [Color(0xFF0A5C40), appTeal],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
+        return Scaffold(
+          backgroundColor: c.bg,
+          body: Stack(
+            children: [
+              const Positioned.fill(child: SpPawBackground()),
+              SafeArea(
+                bottom: false,
+                child: CustomScrollView(
+                  controller: _scroll,
+                  slivers: [
+                    const SliverToBoxAdapter(
+                      child: SpScreenHeader(
+                        title: 'Albergue',
+                        subtitle: 'Conoce a quién cuida a estos animalitos',
                       ),
-                      child: SafeArea(
-                        bottom: false,
+                    ),
+
+                    // ── Logo, nombre, tipo y ciudad (`.hero2`) ───────────
+                    // El nombre puede ocupar 2 líneas (el campo permite 50
+                    // caracteres): nada acá tiene alto fijo, así que se
+                    // ajusta solo. Hallazgo real de Eliza con "Diga mire y
+                    // vea.. venga axa por su mascota y sea f...".
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
                         child: Column(
                           children: [
-                            Padding(
-                              padding: const EdgeInsets.only(left: 4, top: 4),
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: IconButton(
-                                  icon: const Icon(
-                                    Icons.arrow_back_ios_new,
-                                    color: Colors.white,
-                                    size: 20,
-                                  ),
-                                  tooltip: 'Volver',
-                                  onPressed: () => Navigator.pop(context),
-                                ),
-                              ),
-                            ),
                             Container(
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: Colors.white.withValues(alpha: 0.5),
-                                  width: 3,
-                                ),
-                              ),
+                              padding: const EdgeInsets.all(4),
+                              decoration: SpDeco.soft(c, radius: SpRadius.full),
                               child: AvatarPersona(
                                 fotoBase64: foto64,
                                 inicial: iniciales,
-                                radius: 42,
-                                backgroundColor: Colors.white.withValues(
-                                  alpha: 0.2,
-                                ),
-                                textColor: Colors.white,
+                                radius: 54,
+                                backgroundColor: c.mint,
+                                textColor: c.primaryStrong,
                               ),
                             ),
-                            const SizedBox(height: 10),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 24,
-                              ),
-                              child: Text(
-                                nombre,
-                                textAlign: TextAlign.center,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 21,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
+                            const SizedBox(height: 12),
+                            Text(
+                              nombre,
+                              textAlign: TextAlign.center,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 23,
+                                fontWeight: FontWeight.w800,
+                                color: c.ink,
                               ),
                             ),
-                            if (tipo.isNotEmpty) ...[
-                              const SizedBox(height: 3),
-                              Text(
-                                tipo,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: Colors.white.withValues(alpha: 0.78),
+                            // La ciudad se geocodifica al guardar el perfil,
+                            // pero esta pantalla nunca la mostraba — mismo
+                            // hallazgo real de Eliza que en el perfil público
+                            // del Aliado.
+                            if (tipo.isNotEmpty || ciudad.isNotEmpty) ...[
+                              const SizedBox(height: 10),
+                              Wrap(
+                                alignment: WrapAlignment.center,
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  if (tipo.isNotEmpty)
+                                    _chipDato(Icons.home_work_outlined, tipo),
+                                  if (ciudad.isNotEmpty)
+                                    _chipDato(Icons.place_outlined, ciudad),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // ── Cifras ───────────────────────────────────────────
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+                        child: Row(
+                          children: [
+                            _chipContador(
+                              guardado: contadores?.principal,
+                              indice: 0,
+                              label: 'Disponibles',
+                              tono: SpTone.mint,
+                              animal: SpAnimalKind.huella,
+                            ),
+                            const SizedBox(width: SpSpace.s3),
+                            _chipContador(
+                              guardado: contadores?.adoptados,
+                              indice: 1,
+                              label: 'Adoptados',
+                              tono: SpTone.butter,
+                              animal: SpAnimalKind.casa,
+                            ),
+                            if (capacidad > 0) ...[
+                              const SizedBox(width: SpSpace.s3),
+                              _statChip(
+                                '$capacidad',
+                                'Capacidad',
+                                SpTone.sky,
+                                SpAnimalKind.perro,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // ── Contacto (opcional) ──────────────────────────────
+                    if (hayContacto)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const SpSectionTitle('Contacto'),
+                              const SizedBox(height: SpSpace.s3),
+                              SpCard(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    if (direccion.isNotEmpty)
+                                      filaContacto(
+                                        Icons.location_on_outlined,
+                                        direccion,
+                                      ),
+                                    if (email.isNotEmpty)
+                                      filaContacto(
+                                        Icons.email_outlined,
+                                        email,
+                                        onTap: () => launchUrl(
+                                          Uri.parse('mailto:$email'),
+                                        ),
+                                      ),
+                                    if (sitioWeb.isNotEmpty)
+                                      filaContacto(
+                                        Icons.language_outlined,
+                                        sitioWeb,
+                                        onTap: () => launchUrl(
+                                          Uri.parse(sitioWebUrl(sitioWeb)),
+                                          mode: LaunchMode.externalApplication,
+                                        ),
+                                      ),
+                                    if (telefono.isNotEmpty) ...[
+                                      if (direccion.isNotEmpty ||
+                                          email.isNotEmpty ||
+                                          sitioWeb.isNotEmpty)
+                                        const SizedBox(height: 8),
+                                      SizedBox(
+                                        width: double.infinity,
+                                        child: SpButton(
+                                          label: 'Escribir por WhatsApp',
+                                          icon:
+                                              Icons.chat_bubble_outline_rounded,
+                                          onTap: () {
+                                            final url = whatsappUrl(telefono);
+                                            if (url != null) {
+                                              launchUrl(
+                                                Uri.parse(url),
+                                                mode: LaunchMode
+                                                    .externalApplication,
+                                              );
+                                            }
+                                          },
+                                        ),
+                                      ),
+                                    ],
+                                  ],
                                 ),
                               ),
                             ],
-                            const SizedBox(height: 16),
-                          ],
+                          ),
                         ),
                       ),
-                    ),
-                  ),
 
-                  // ── Stats ────────────────────────────────────────────────────
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
-                      child: Row(
-                        children: [
-                          _chipContador(
-                            guardado: contadores?.principal,
-                            indice: 0,
-                            label: 'disponibles',
-                            color: appTeal,
+                    // ── Animales disponibles ─────────────────────────────
+                    const SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(16, 24, 16, 12),
+                        child: SpSectionTitle('Animales disponibles'),
+                      ),
+                    ),
+
+                    // Mismo motivo que el contador: mientras carga no se
+                    // afirma que no hay animales, porque todavía no se sabe.
+                    if (cargando)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.all(48),
+                          child: Center(
+                            child: CircularProgressIndicator(color: c.primary),
                           ),
-                          const SizedBox(width: 10),
-                          _chipContador(
-                            guardado: contadores?.adoptados,
-                            indice: 1,
-                            label: 'adoptados',
-                            color: const Color(0xFF2196F3),
+                        ),
+                      )
+                    else if (disponibles.isEmpty)
+                      const SliverToBoxAdapter(
+                        child: Padding(
+                          padding: EdgeInsets.fromLTRB(16, 0, 16, 32),
+                          child: SpEmpty(
+                            title: 'No hay animales disponibles por ahora',
+                            subtitle: 'Vuelve pronto: llegan nuevos seguido.',
+                            animal: SpAnimalKind.gato,
                           ),
-                          if (capacidad > 0) ...[
-                            const SizedBox(width: 10),
-                            _statChip(
-                              '$capacidad',
-                              'capacidad',
-                              Colors.grey.shade700,
+                        ),
+                      )
+                    else
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 40),
+                        sliver: SliverGrid(
+                          // MaxCrossAxisExtent en vez de un conteo fijo: mismo
+                          // motivo que aliados_screen.dart — en horizontal cada
+                          // columna se estiraba mucho más allá de su ancho.
+                          gridDelegate:
+                              const SliverGridDelegateWithMaxCrossAxisExtent(
+                                maxCrossAxisExtent: 190,
+                                mainAxisSpacing: 14,
+                                crossAxisSpacing: 12,
+                                childAspectRatio: 0.72,
+                              ),
+                          delegate: SliverChildBuilderDelegate(
+                            (ctx, i) => _animalCard(
+                              ctx,
+                              disponibles[i].data(),
+                              disponibles[i].id,
                             ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  // ── Contacto (opcional) ─────────────────────────────────────
-                  if (ciudad.isNotEmpty ||
-                      telefono.isNotEmpty ||
-                      direccion.isNotEmpty ||
-                      email.isNotEmpty ||
-                      sitioWeb.isNotEmpty)
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // La ciudad se geocodifica al guardar el perfil,
-                            // pero esta pantalla nunca la mostraba — mismo
-                            // hallazgo real de Eliza que en el perfil
-                            // público del Aliado (aliado_publico_screen.
-                            // dart), arreglado igual acá.
-                            if (ciudad.isNotEmpty)
-                              filaContacto(
-                                Icons.location_city_outlined,
-                                ciudad,
-                              ),
-                            if (direccion.isNotEmpty)
-                              filaContacto(
-                                Icons.location_on_outlined,
-                                direccion,
-                              ),
-                            if (email.isNotEmpty)
-                              filaContacto(
-                                Icons.email_outlined,
-                                email,
-                                onTap: () =>
-                                    launchUrl(Uri.parse('mailto:$email')),
-                              ),
-                            if (sitioWeb.isNotEmpty)
-                              filaContacto(
-                                Icons.language_outlined,
-                                sitioWeb,
-                                onTap: () => launchUrl(
-                                  Uri.parse(sitioWebUrl(sitioWeb)),
-                                  mode: LaunchMode.externalApplication,
-                                ),
-                              ),
-                            if (telefono.isNotEmpty)
-                              Padding(
-                                padding: EdgeInsets.only(
-                                  top:
-                                      (ciudad.isNotEmpty ||
-                                          direccion.isNotEmpty ||
-                                          email.isNotEmpty ||
-                                          sitioWeb.isNotEmpty)
-                                      ? 4
-                                      : 0,
-                                ),
-                                child: GestureDetector(
-                                  onTap: () {
-                                    final url = whatsappUrl(telefono);
-                                    if (url != null) {
-                                      launchUrl(
-                                        Uri.parse(url),
-                                        mode: LaunchMode.externalApplication,
-                                      );
-                                    }
-                                  },
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 8,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: const Color(
-                                        0xFF25D366,
-                                      ).withValues(alpha: 0.1),
-                                      borderRadius: BorderRadius.circular(20),
-                                      border: Border.all(
-                                        color: const Color(
-                                          0xFF25D366,
-                                        ).withValues(alpha: 0.35),
-                                      ),
-                                    ),
-                                    child: const Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          Icons.chat_bubble_outline,
-                                          size: 15,
-                                          color: Color(0xFF1E9E56),
-                                        ),
-                                        SizedBox(width: 6),
-                                        Text(
-                                          'Escribir por WhatsApp',
-                                          style: TextStyle(
-                                            fontSize: 12.5,
-                                            fontWeight: FontWeight.w700,
-                                            color: Color(0xFF1E9E56),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                  // ── Sección ──────────────────────────────────────────────────
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 22, 16, 12),
-                      child: Text(
-                        'Animales disponibles',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: appInk,
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  // ── Grid ─────────────────────────────────────────────────────
-                  // Mismo motivo que el contador: mientras carga no se
-                  // afirma que no hay animales, porque todavía no se sabe.
-                  if (cargando)
-                    const SliverToBoxAdapter(
-                      child: Padding(
-                        padding: EdgeInsets.all(48),
-                        child: Center(
-                          child: CircularProgressIndicator(color: appTeal),
-                        ),
-                      ),
-                    )
-                  else if (disponibles.isEmpty)
-                    const SliverToBoxAdapter(
-                      child: Padding(
-                        padding: EdgeInsets.all(48),
-                        child: Center(
-                          child: Text(
-                            'No hay animales disponibles por ahora.',
-                            style: TextStyle(color: Colors.grey),
+                            childCount: disponibles.length,
                           ),
                         ),
                       ),
-                    )
-                  else
-                    SliverPadding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
-                      sliver: SliverGrid(
-                        // MaxCrossAxisExtent en vez de FixedCrossAxisCount(2):
-                        // mismo motivo que aliados_screen.dart — con conteo
-                        // fijo, en horizontal cada columna se estiraba mucho
-                        // más allá de su ancho de vertical, dejando la
-                        // tarjeta con su contenido centrado y mucho espacio
-                        // en blanco arriba y abajo.
-                        gridDelegate:
-                            const SliverGridDelegateWithMaxCrossAxisExtent(
-                              maxCrossAxisExtent: 180,
-                              mainAxisSpacing: 12,
-                              crossAxisSpacing: 12,
-                              childAspectRatio: 0.78,
-                            ),
-                        delegate: SliverChildBuilderDelegate(
-                          (ctx, i) => _animalCard(
-                            ctx,
-                            disponibles[i].data(),
-                            disponibles[i].id,
+                    // Mientras viene la página siguiente. Solo si de verdad
+                    // queda algo por traer.
+                    if (_hayMas && disponibles.isNotEmpty)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 24),
+                          child: Center(
+                            child: CircularProgressIndicator(color: c.primary),
                           ),
-                          childCount: disponibles.length,
                         ),
                       ),
-                    ),
-                  // Mientras viene la página siguiente. Solo si de verdad
-                  // queda algo por traer, para no dejar un spinner colgado
-                  // al final de la lista completa.
-                  if (_hayMas && disponibles.isNotEmpty)
-                    const SliverToBoxAdapter(
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(vertical: 24),
-                        child: Center(
-                          child: CircularProgressIndicator(color: appTeal),
-                        ),
-                      ),
-                    ),
-                ],
+                  ],
+                ),
               ),
-            );
+            ],
+          ),
+        );
       },
     );
   }
 
-  /// Una línea de contacto (dirección/email/sitio web): ícono + texto,
-  /// tappable si se pasa [onTap] (email abre el cliente de correo, sitio
-  /// web abre el navegador — dirección no tiene onTap, es solo texto).
+  /// Tipo o ciudad del albergue (`.sp-chip`), debajo del nombre.
+  Widget _chipDato(IconData icono, String texto) {
+    final c = context.sp;
+    return Container(
+      height: 34,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: SpDeco.soft(c, radius: SpRadius.full),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icono, size: 16, color: c.primary),
+          const SizedBox(width: 6),
+          Text(
+            texto,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: c.inkMuted,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   /// Lo que se muestra en un contador mientras el dato todavía no llegó.
   /// Un guion largo y no un "0": un cero se lee como un dato cierto.
   static const _cargandoValor = '—';
 
-  Widget _statChip(String valor, String label, Color color) => Expanded(
-    child: Container(
-      padding: const EdgeInsets.symmetric(vertical: 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Text(
-            valor,
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: color,
-              height: 1,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              color: Colors.grey.shade700,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    ),
+  Widget _statChip(
+    String valor,
+    String label,
+    SpTone tono,
+    SpAnimalKind animal,
+  ) => Expanded(
+    child: SpMiniStat(tone: tono, animal: animal, value: valor, label: label),
   );
 
   Widget _animalCard(BuildContext ctx, Map<String, dynamic> d, String docId) {
+    final c = ctx.sp;
     final nombre = nombreDeAnimal(d['nombre'] as String?);
     final especie = d['especie'] as String? ?? 'Perro';
     final edad = d['edad'] as String? ?? '';
     final fotoUrl = d['fotoUrl'] as String?;
     final urgencia = d['urgencia'] as String? ?? '';
     final estadoAdopcion = d['estadoAdopcion'] as String? ?? 'Rescatado';
-    final emoji = especie == 'Gato' ? '🐱' : '🐶';
-    final estadoColor = cicloColor(estadoAdopcion);
 
     final animalMap = {
       'nombre': nombre,
@@ -659,128 +583,64 @@ class _AlberguePublicoScreenState extends State<AlberguePublicoScreen> {
       'creadoPor': d['creadoPor'] ?? 'albergue',
     };
 
-    return GestureDetector(
+    return SpPressable(
       onTap: () => ctx.push(AppRoutes.animalDetalle, extra: animalMap),
       child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        clipBehavior: Clip.hardEdge,
-        child: Stack(
+        padding: const EdgeInsets.all(SpSpace.s2),
+        decoration: SpDeco.card(c),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Column(
-              children: [
-                Expanded(
-                  // FotoAnimal en vez de recorte — mismo caso "Tobyiii": esta
-                  // tarjeta del perfil público del albergue es grande y el
-                  // recorte fijo podía dejar afuera al animal entero en fotos
-                  // verticales (ver solicitud_adopcion_screen.dart).
-                  child: fotoUrl != null
-                      ? FotoAnimal(
-                          url: fotoUrl,
-                          width: double.infinity,
-                          fallback: Container(
-                            width: double.infinity,
-                            color: const Color(0xFFD8F0E4),
-                            child: Center(
-                              child: Text(
-                                emoji,
-                                style: const TextStyle(fontSize: 40),
-                              ),
-                            ),
-                          ),
-                        )
-                      : Container(
-                          width: double.infinity,
-                          color: const Color(0xFFD8F0E4),
-                          child: Center(
-                            child: Text(
-                              emoji,
-                              style: const TextStyle(fontSize: 40),
-                            ),
-                          ),
-                        ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        nombre,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: appInk,
-                        ),
-                        overflow: TextOverflow.ellipsis,
+            Expanded(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(18),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    // FotoAnimal en vez de recorte — mismo caso "Tobyiii": el
+                    // recorte fijo podía dejar afuera al animal entero en
+                    // fotos verticales.
+                    if (fotoUrl != null)
+                      FotoAnimal(
+                        url: fotoUrl,
+                        width: double.infinity,
+                        fallback: SpFotoVacia(especie: especie),
+                      )
+                    else
+                      SpFotoVacia(especie: especie),
+                    if (urgencia == 'Alta')
+                      const Positioned(
+                        top: 8,
+                        left: 8,
+                        child: SpBadge('Urgente'),
                       ),
-                      const SizedBox(height: 3),
-                      Text(
-                        [especie, if (edad.isNotEmpty) edad].join(' · '),
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.grey.shade700,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: estadoColor.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: estadoColor.withValues(alpha: 0.35),
-                          ),
-                        ),
-                        child: Text(
-                          estadoAdopcion,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            color: estadoColor,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            if (urgencia == 'Alta')
-              Positioned(
-                top: 8,
-                left: 8,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 7,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFD32F2F),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Text(
-                    'URGENTE',
-                    style: TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
-                  ),
+                  ],
                 ),
               ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 10, 4, 0),
+              child: Text(
+                nombre,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: c.ink,
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+              child: Text(
+                [especie, if (edad.isNotEmpty) edad].join(' · '),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: SpText.caption.copyWith(color: c.inkMuted),
+              ),
+            ),
+            SpStatus(estadoAdopcion, height: 28),
           ],
         ),
       ),

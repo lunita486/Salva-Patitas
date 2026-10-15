@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show TextInputFormatter;
 
-import '../theme.dart';
+import '../theme/salva_patitas_theme.dart';
 
 // ─── Campos de las pantallas "Configura tu albergue"/"Configura tu negocio" ──
 // Antes cada pantalla tenía su propia versión: albergue con label gris
@@ -59,25 +59,43 @@ Widget perfilCampo(
 /// diferentes, sin que nadie lo note hasta verlas una al lado de la otra
 /// (que es exactamente cómo Eliza encontró la divergencia anterior entre
 /// estas dos mismas pantallas, ver perfilLabel arriba).
-Widget filaContacto(IconData icono, String texto, {VoidCallback? onTap}) {
-  final fila = Padding(
-    padding: const EdgeInsets.only(bottom: 8),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icono, size: 17, color: appTeal),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            texto,
-            style: TextStyle(
-              fontSize: 13.5,
-              color: onTap != null ? appTeal : appInk,
-            ),
+Widget filaContacto(IconData icono, String texto, {VoidCallback? onTap}) =>
+    Builder(
+      builder: (context) {
+        final c = context.sp;
+        final fila = Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: c.primarySoft,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icono, size: 16, color: c.primaryStrong),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 5),
+                  child: Text(
+                    texto,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: onTap != null ? c.primaryStrong : c.ink,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
-        ),
-      ],
-    ),
-  );
-  return onTap == null ? fila : GestureDetector(onTap: onTap, child: fila);
-}
+        );
+        return onTap == null
+            ? fila
+            : GestureDetector(onTap: onTap, child: fila);
+      },
+    );

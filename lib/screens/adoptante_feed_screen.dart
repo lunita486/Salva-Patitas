@@ -289,6 +289,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
           for (int i = 0; i < especieOpciones.length; i++) ...[
             if (i > 0) const SizedBox(width: especieChipGap),
             especieChip(
+              valor: especieOpciones[i].$1,
               label: especieOpciones[i].$2,
               active: _prefEspecie == especieOpciones[i].$1,
               // "Todos" (especieOpciones[0], valor 'Ambos') limpia también

@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../theme.dart' show msgError;
+import '../theme/salva_patitas_theme.dart';
+import '../widgets/sp_widgets.dart';
 import '../widgets/chips_seleccionables.dart';
 import '../widgets/especie_chip.dart';
 import '../data/firestore_resiliencia.dart';
@@ -74,22 +75,32 @@ class _TipoAnimalScreenState extends State<TipoAnimalScreen> {
     if (resultado == ResultadoGuardado.fallo && mounted) {
       setState(() => aplicarLocal(valorAnterior));
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No se pudo guardar tu preferencia. Probá de nuevo.'),
-          backgroundColor: msgError,
+        SnackBar(
+          content: const Text(
+            'No se pudo guardar tu preferencia. Probá de nuevo.',
+          ),
+          backgroundColor: context.sp.msgError,
         ),
       );
     }
   }
 
-  // ChipsSeleccionables (widgets/chips_seleccionables.dart) hace la grilla en sí (Wrap, nunca
-  // scroll oculto) — acá solo queda la etiqueta y el padding propios de
-  // esta pantalla, para que el aspecto no cambie. Antes esto tenía su
-  // propia copia entera de la lógica de la grilla, con un scroll
-  // horizontal sin ninguna señal de que había más opciones fuera de
-  // vista — bug real reportado por Eliza. Con la grilla consolidada en un
-  // solo lugar, un arreglo futuro ahí cubre las 3 pantallas que la usan de
-  // una sola vez.
+  /// Etiqueta de cada grupo, dentro de la tarjeta.
+  Widget _etiqueta(String t) => Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: Text(
+      t,
+      style: SpText.label.copyWith(
+        color: context.sp.inkMuted,
+        fontWeight: FontWeight.w700,
+      ),
+    ),
+  );
+
+  // ChipsSeleccionables (widgets/chips_seleccionables.dart) hace la grilla
+  // en sí (Wrap, nunca scroll oculto). Antes esto tenía su propia copia
+  // entera de la lógica, con un scroll horizontal sin ninguna señal de que
+  // había más opciones fuera de vista — bug real reportado por Eliza.
   Widget _grupo(
     String label,
     List<String> opciones,
@@ -98,126 +109,120 @@ class _TipoAnimalScreenState extends State<TipoAnimalScreen> {
   ) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 1.1,
-            color: Colors.grey.shade700,
-          ),
-        ),
-      ),
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: ChipsSeleccionables(
-          opciones: opciones,
-          seleccion: sel,
-          onSeleccionar: onSeleccionar,
-          colorInactivo: Colors.white.withValues(alpha: 0.88),
-          paddingChip: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
-        ),
+      _etiqueta(label),
+      ChipsSeleccionables(
+        opciones: opciones,
+        seleccion: sel,
+        onSeleccionar: onSeleccionar,
+        paddingChip: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
       ),
     ],
   );
 
-  // ESPECIE usa un widget y un orden distintos a TAMAÑO/EDAD (especieChip +
-  // especieOpciones, de widgets/especie_chip.dart) — el mismo chip con ícono y el mismo
-  // orden (Todos primero) que ya se ve en el feed del adoptante, en vez de
-  // la pastilla negro/blanco genérica de acá que antes no combinaba
-  // (sugerencia real de Eliza: "lindos en el feed, feos en el perfil").
+  // ESPECIE usa especieChip + especieOpciones (widgets/especie_chip.dart):
+  // el mismo chip con animalito y el mismo orden (Todos primero) que el feed
+  // del adoptante (sugerencia real de Eliza: "lindos en el feed, feos en el
+  // perfil"). Wrap, para que no quede ninguno escondido.
   Widget _grupoEspecie() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-        child: Text(
-          'ESPECIE',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 1.1,
-            color: Colors.grey.shade700,
-          ),
-        ),
-      ),
-      SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: Row(
-          children: [
-            for (int i = 0; i < especieOpciones.length; i++) ...[
-              if (i > 0) const SizedBox(width: especieChipGap),
-              especieChip(
-                label: especieOpciones[i].$2,
-                active: _especie == especieOpciones[i].$1,
-                onTap: () => _actualizarPreferencia(
-                  campo: 'prefEspecie',
-                  valorNuevo: especieOpciones[i].$1,
-                  valorAnterior: _especie,
-                  aplicarLocal: (v) => _especie = v,
-                ),
+      _etiqueta('Especie'),
+      Wrap(
+        spacing: especieChipGap + 2,
+        runSpacing: 10,
+        children: [
+          for (int i = 0; i < especieOpciones.length; i++)
+            especieChip(
+              valor: especieOpciones[i].$1,
+              label: especieOpciones[i].$2,
+              active: _especie == especieOpciones[i].$1,
+              onTap: () => _actualizarPreferencia(
+                campo: 'prefEspecie',
+                valorNuevo: especieOpciones[i].$1,
+                valorAnterior: _especie,
+                aplicarLocal: (v) => _especie = v,
               ),
-            ],
-          ],
-        ),
+            ),
+        ],
       ),
     ],
   );
 
   @override
-  Widget build(BuildContext context) => SettingsPageScaffold(
-    title: 'Tipo de animal preferido',
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 4),
-        if (_errorCarga)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-            child: Text(
-              'No pudimos cargar tus preferencias guardadas — esto que ves '
-              'abajo son los valores por defecto, no necesariamente lo que '
-              'ya tenías elegido. Revisá tu conexión y volvé a entrar.',
-              style: TextStyle(fontSize: 12, color: Colors.orange.shade800),
+  Widget build(BuildContext context) {
+    final c = context.sp;
+    return SettingsPageScaffold(
+      title: 'Animal preferido',
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (_errorCarga)
+              SpNotice(
+                fondo: c.accentSoft,
+                tinta: c.accentInk,
+                child: const Text(
+                  'No pudimos cargar tus preferencias guardadas: esto que ves '
+                  'abajo son los valores por defecto, no necesariamente lo que '
+                  'ya tenías elegido. Revisá tu conexión y volvé a entrar.',
+                ),
+              ),
+            const SpSectionTitle('¿Qué animal buscas?'),
+            const SizedBox(height: SpSpace.s3),
+            SpCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _grupoEspecie(),
+                  const SizedBox(height: 20),
+                  _grupo(
+                    'Tamaño',
+                    ['Pequeño', 'Mediano', 'Grande', 'Cualquiera'],
+                    _tamano,
+                    (v) => _actualizarPreferencia(
+                      campo: 'prefTamano',
+                      valorNuevo: v,
+                      valorAnterior: _tamano,
+                      aplicarLocal: (x) => _tamano = x,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  _grupo(
+                    'Edad',
+                    ['Cachorro', 'Adulto', 'Senior', 'Cualquiera'],
+                    _edad,
+                    (v) => _actualizarPreferencia(
+                      campo: 'prefEdad',
+                      valorNuevo: v,
+                      valorAnterior: _edad,
+                      aplicarLocal: (x) => _edad = x,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        _grupoEspecie(),
-        const SizedBox(height: 20),
-        _grupo(
-          'TAMAÑO',
-          ['Pequeño', 'Mediano', 'Grande', 'Cualquiera'],
-          _tamano,
-          (v) => _actualizarPreferencia(
-            campo: 'prefTamano',
-            valorNuevo: v,
-            valorAnterior: _tamano,
-            aplicarLocal: (x) => _tamano = x,
-          ),
+            const SizedBox(height: SpSpace.s4),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.notifications_active_outlined,
+                  size: 18,
+                  color: c.primary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Te notificaremos cuando llegue un animal que encaje con estas preferencias.',
+                    style: SpText.caption.copyWith(color: c.inkMuted),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
-        const SizedBox(height: 20),
-        _grupo(
-          'EDAD',
-          ['Cachorro', 'Adulto', 'Senior', 'Cualquiera'],
-          _edad,
-          (v) => _actualizarPreferencia(
-            campo: 'prefEdad',
-            valorNuevo: v,
-            valorAnterior: _edad,
-            aplicarLocal: (x) => _edad = x,
-          ),
-        ),
-        const SizedBox(height: 24),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Text(
-            'Te notificaremos cuando llegue un animal que encaje con estas preferencias.',
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-          ),
-        ),
-      ],
-    ),
-  );
+      ),
+    );
+  }
 }

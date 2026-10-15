@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../theme.dart';
-import '../widgets/fondo_decorativo.dart';
+import '../widgets/sp_widgets.dart';
+import '../theme/salva_patitas_theme.dart';
 
 class SettingsPageScaffold extends StatelessWidget {
   final String title;
@@ -13,50 +13,16 @@ class SettingsPageScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: appBg,
+    backgroundColor: context.sp.bg,
     body: Stack(
       fit: StackFit.expand,
       children: [
-        const LeafOverlay(),
+        const SpPawBackground(),
         SafeArea(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-                child: Row(
-                  children: [
-                    // IconButton en vez de GestureDetector+Icon a mano: antes el
-                    // área tocable era del tamaño del ícono solo (20px), bastante
-                    // por debajo del mínimo recomendado (~48dp) — IconButton ya
-                    // trae ese padding tocable de forma nativa. Hallazgo de
-                    // auditoría de código.
-                    IconButton(
-                      icon: const Icon(
-                        Icons.arrow_back_ios_new,
-                        size: 20,
-                        color: appInk,
-                      ),
-                      tooltip: 'Volver',
-                      onPressed: () => Navigator.pop(context),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 44,
-                        minHeight: 44,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: appInk,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              SpScreenHeader(title: title),
               Expanded(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.only(bottom: 40),
@@ -89,55 +55,62 @@ class SettingsSwitchTile extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) => Semantics(
-    // Sin esto, un lector de pantalla anunciaba el ícono, el label, el
-    // subtítulo y el interruptor como 4 piezas sueltas en vez de un solo
-    // control con su estado (activado/desactivado). Hallazgo de auditoría
-    // de código.
-    label: '$label. $subtitle',
-    toggled: value,
-    child: Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.8),
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(last ? 0 : 16),
-          topRight: Radius.circular(last ? 0 : 16),
-          bottomLeft: Radius.circular(last ? 16 : 0),
-          bottomRight: Radius.circular(last ? 16 : 0),
-        ),
-        border: last
-            ? null
-            : Border(bottom: BorderSide(color: Colors.grey.shade100)),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      child: Row(
-        children: [
-          Icon(icon, size: 22, color: Colors.grey.shade600),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                ),
-              ],
-            ),
+  Widget build(BuildContext context) {
+    final c = context.sp;
+    return Semantics(
+      // Sin esto, un lector de pantalla anunciaba el ícono, el label, el
+      // subtítulo y el interruptor como 4 piezas sueltas en vez de un solo
+      // control con su estado (activado/desactivado). Hallazgo de auditoría
+      // de código.
+      label: '$label. $subtitle',
+      toggled: value,
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: c.surface,
+          borderRadius: BorderRadius.only(
+            topLeft: Radius.circular(last ? 0 : 16),
+            topRight: Radius.circular(last ? 0 : 16),
+            bottomLeft: Radius.circular(last ? 16 : 0),
+            bottomRight: Radius.circular(last ? 16 : 0),
           ),
-          // activeThumbColor, no el activeColor deprecado desde Flutter 3.31.
-          Switch(value: value, onChanged: onChanged, activeThumbColor: appTeal),
-        ],
+          border: last ? null : Border(bottom: BorderSide(color: c.line)),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Icon(icon, size: 22, color: c.primaryStrong),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: c.ink,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(fontSize: 12, color: c.inkMuted),
+                  ),
+                ],
+              ),
+            ),
+            // activeThumbColor, no el activeColor deprecado desde Flutter 3.31.
+            Switch(
+              value: value,
+              onChanged: onChanged,
+              activeThumbColor: c.onPrimary,
+              activeTrackColor: c.primary,
+            ),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
