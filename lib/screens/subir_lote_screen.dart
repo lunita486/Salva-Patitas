@@ -6,7 +6,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import '../domain/tareas_en_paralelo.dart';
-import '../theme.dart';
 import '../widgets/tardando_mucho_mixin.dart';
 import '../data/creator_role.dart';
 import '../data/rescates_repository.dart';
@@ -14,6 +13,9 @@ import '../data/usuarios_repository.dart';
 import '../data/foto_normalizador.dart';
 import '../services/ubicacion_service.dart';
 import '../widgets/elegir_foto_animal.dart';
+import '../widgets/chips_seleccionables.dart';
+import '../widgets/sp_widgets.dart';
+import '../theme/salva_patitas_theme.dart';
 
 class SubirLoteScreen extends StatefulWidget {
   const SubirLoteScreen({super.key});
@@ -189,9 +191,9 @@ class _SubirLoteScreenState extends State<SubirLoteScreen>
               ),
               TextButton(
                 onPressed: () => Navigator.pop(dlgCtx, true),
-                child: const Text(
+                child: Text(
                   'Publicar igual',
-                  style: TextStyle(color: appTeal),
+                  style: TextStyle(color: context.sp.primaryStrong),
                 ),
               ),
             ],
@@ -360,7 +362,7 @@ class _SubirLoteScreenState extends State<SubirLoteScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('$publicados animales publicados 🐾'),
-            backgroundColor: msgExito,
+            backgroundColor: context.sp.msgExito,
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -370,7 +372,7 @@ class _SubirLoteScreenState extends State<SubirLoteScreen>
             content: Text(
               '$publicados publicados. No se pudieron publicar: ${fallidos.join(", ")}.',
             ),
-            backgroundColor: msgAdvertencia,
+            backgroundColor: context.sp.msgAdvertencia,
             behavior: SnackBarBehavior.floating,
             duration: const Duration(seconds: 6),
           ),
@@ -389,7 +391,7 @@ class _SubirLoteScreenState extends State<SubirLoteScreen>
           content: const Text(
             'No se pudo publicar el lote. Revisá tu conexión e intentá de nuevo.',
           ),
-          backgroundColor: msgError,
+          backgroundColor: context.sp.msgError,
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 6),
         ),
@@ -412,89 +414,73 @@ class _SubirLoteScreenState extends State<SubirLoteScreen>
 
   @override
   Widget build(BuildContext context) {
+    final c = context.sp;
     return Scaffold(
-      backgroundColor: appBg,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _appBar(),
-            _progressBar(),
-            Expanded(child: _body()),
-            _bottomBar(),
-          ],
-        ),
+      backgroundColor: c.bg,
+      body: Stack(
+        children: [
+          const Positioned.fill(child: SpPawBackground()),
+          SafeArea(
+            child: Column(
+              children: [
+                _appBar(),
+                _progressBar(),
+                Expanded(child: _body()),
+                _bottomBar(),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _appBar() => Padding(
-    padding: const EdgeInsets.fromLTRB(8, 8, 20, 4),
-    child: Row(
-      children: [
-        IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-          tooltip: 'Volver',
-          // Apagado mientras se publica: sin esto, se podía volver al paso de
-          // fotos (paso 0) y borrar/reemplazar la tarjeta de un animal que se
-          // está publicando en ese mismo instante de fondo — publicarUno()
-          // vuelve a leer nombreCtl/descCtl de ese draft DESPUÉS de un await
-          // (la normalización de fotos), y si el dispose() ya corrió en ese
-          // hueco, revienta con "used after being disposed". Hallazgo de
-          // auditoría de código.
-          onPressed: _publicando
-              ? null
-              : () {
-                  if (_paso > 0)
-                    setState(() => _paso--);
-                  else
-                    Navigator.pop(context);
-                },
-        ),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Subir lote',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: appInk,
-                ),
-              ),
-              Text(
-                _paso == 0
-                    ? 'Selecciona las fotos'
-                    : _paso == 1
-                    ? 'Datos comunes para todos'
-                    : 'Revisa cada animal',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-              ),
-            ],
-          ),
-        ),
-      ],
-    ),
+  // Volver apagado mientras se publica: sin esto, se podía volver al paso
+  // de fotos (paso 0) y borrar/reemplazar la tarjeta de un animal que se
+  // está publicando en ese mismo instante de fondo — publicarUno() vuelve a
+  // leer nombreCtl/descCtl de ese draft DESPUÉS de un await, y si el
+  // dispose() ya corrió en ese hueco, revienta con "used after being
+  // disposed". Hallazgo de auditoría de código.
+  Widget _appBar() => SpScreenHeader(
+    title: 'Subir lote',
+    subtitle: _paso == 0
+        ? 'Paso 1 de 3 · Selecciona las fotos'
+        : _paso == 1
+        ? 'Paso 2 de 3 · Datos comunes para todos'
+        : 'Paso 3 de 3 · Revisa cada animal',
+    onBack: _publicando
+        ? () {}
+        : () {
+            if (_paso > 0) {
+              setState(() => _paso--);
+            } else {
+              Navigator.pop(context);
+            }
+          },
   );
 
-  Widget _progressBar() => Padding(
-    padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-    child: Row(
-      children: List.generate(
-        3,
-        (i) => Expanded(
-          child: Container(
-            height: 3,
-            margin: EdgeInsets.only(right: i < 2 ? 4 : 0),
-            decoration: BoxDecoration(
-              color: i <= _paso ? appTeal : Colors.grey.shade200,
-              borderRadius: BorderRadius.circular(2),
+  Widget _progressBar() {
+    final c = context.sp;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Row(
+        children: List.generate(
+          3,
+          (i) => Expanded(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              height: 8,
+              margin: EdgeInsets.only(right: i < 2 ? 6 : 0),
+              decoration: BoxDecoration(
+                color: i <= _paso ? c.primary : c.surfaceSunken,
+                borderRadius: BorderRadius.circular(SpRadius.full),
+              ),
             ),
           ),
         ),
       ),
-    ),
-  );
+    );
+  }
 
   Widget _body() => switch (_paso) {
     0 => _pasoFotos(),
@@ -509,794 +495,668 @@ class _SubirLoteScreenState extends State<SubirLoteScreen>
       await _pickFotos();
       return;
     }
-    final opcion = await showModalBottomSheet<String>(
+    final c = context.sp;
+    Widget opcion({
+      required IconData icono,
+      required String titulo,
+      required String detalle,
+      required bool peligro,
+      required VoidCallback onTap,
+    }) => ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: peligro ? c.dangerSoft : c.primarySoft,
+          borderRadius: BorderRadius.circular(SpRadius.sm),
+        ),
+        child: Icon(icono, color: peligro ? c.danger : c.primaryStrong),
+      ),
+      title: Text(
+        titulo,
+        style: TextStyle(
+          fontWeight: FontWeight.w800,
+          color: peligro ? c.danger : c.ink,
+        ),
+      ),
+      subtitle: Text(detalle, style: TextStyle(color: c.inkMuted)),
+      onTap: onTap,
+    );
+    final elegida = await showModalBottomSheet<String>(
       context: context,
+      backgroundColor: c.bg,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
       ),
       builder: (sheetCtx) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+        padding: const EdgeInsets.fromLTRB(20, 10, 20, 28),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 36,
-              height: 4,
+              width: 44,
+              height: 5,
               decoration: BoxDecoration(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(2),
+                color: c.line,
+                borderRadius: BorderRadius.circular(3),
               ),
             ),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               '¿Qué quieres hacer?',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: c.ink,
+              ),
             ),
-            const SizedBox(height: 16),
-            ListTile(
-              leading: Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: appTeal.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.add_photo_alternate_outlined,
-                  color: appTeal,
-                ),
+            const SizedBox(height: 12),
+            SpCard(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+              child: Column(
+                children: [
+                  opcion(
+                    icono: Icons.add_photo_alternate_outlined,
+                    titulo: 'Agregar más fotos',
+                    detalle: 'Se suman a las que ya tienes',
+                    peligro: false,
+                    onTap: () => Navigator.pop(sheetCtx, 'agregar'),
+                  ),
+                  Divider(height: 1, color: c.line),
+                  opcion(
+                    icono: Icons.refresh_rounded,
+                    titulo: 'Reemplazar todo',
+                    detalle: 'Borra las fotos actuales y empieza de nuevo',
+                    peligro: true,
+                    onTap: () => Navigator.pop(sheetCtx, 'reemplazar'),
+                  ),
+                ],
               ),
-              title: const Text(
-                'Agregar más fotos',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-              subtitle: const Text('Se suman a las que ya tienes'),
-              onTap: () => Navigator.pop(sheetCtx, 'agregar'),
-            ),
-            const Divider(),
-            ListTile(
-              leading: Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(Icons.refresh, color: Colors.red.shade400),
-              ),
-              title: Text(
-                'Reemplazar todo',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: Colors.red.shade400,
-                ),
-              ),
-              subtitle: const Text(
-                'Borra las fotos actuales y empieza de nuevo',
-              ),
-              onTap: () => Navigator.pop(sheetCtx, 'reemplazar'),
             ),
           ],
         ),
       ),
     );
-    if (opcion == null) return;
-    if (opcion == 'reemplazar') {
-      for (final a in _animales) a.dispose();
+    if (elegida == null) return;
+    if (elegida == 'reemplazar') {
+      for (final a in _animales) {
+        a.dispose();
+      }
       _animales.clear();
     }
     await _pickFotos();
   }
 
-  Widget _pasoFotos() => SingleChildScrollView(
-    padding: const EdgeInsets.all(20),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (_animales.isEmpty)
-          GestureDetector(
-            onTap: _pickFotos,
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 32),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: appTeal.withValues(alpha: 0.4),
-                  width: 1.5,
+  Widget _pasoFotos() {
+    final c = context.sp;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (_animales.isEmpty)
+            GestureDetector(
+              onTap: _pickFotos,
+              child: CustomPaint(
+                foregroundPainter: SpBordePunteado(c.mintDeep),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 36),
+                  decoration: BoxDecoration(
+                    color: c.surface,
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 60,
+                        height: 60,
+                        decoration: SpDeco.primary(
+                          c,
+                          radius: 20,
+                          gradient: true,
+                        ),
+                        child: Icon(
+                          Icons.add_photo_alternate_rounded,
+                          size: 30,
+                          color: c.onPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Toca para seleccionar fotos',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: c.ink,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Selecciona varias a la vez: 1 foto = 1 animal',
+                        style: SpText.caption.copyWith(
+                          color: c.inkMuted,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              child: Column(
-                children: [
-                  Icon(
-                    Icons.add_photo_alternate_outlined,
-                    size: 52,
-                    color: appTeal.withValues(alpha: 0.7),
+            ),
+          if (_animales.isNotEmpty) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: SpSectionTitle(
+                    '${_animales.length} ${_animales.length == 1 ? "animal" : "animales"}',
                   ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Toca para seleccionar fotos',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: appTeal,
+                ),
+                SpLink('Agregar más', onTap: _pickFotosConConfirmacion),
+              ],
+            ),
+            const SizedBox(height: 12),
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+              ),
+              itemCount: _animales.length,
+              itemBuilder: (_, i) => Stack(
+                children: [
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(18),
+                      child: Image.file(
+                        File(_animales[i].foto1.path),
+                        fit: BoxFit.cover,
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Selecciona varias a la vez: 1 foto = 1 animal',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                  Positioned(
+                    bottom: 6,
+                    left: 6,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: c.surface,
+                        borderRadius: BorderRadius.circular(SpRadius.full),
+                      ),
+                      child: Text(
+                        '${i + 1}',
+                        style: TextStyle(
+                          color: c.ink,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: Tooltip(
+                      message: 'Quitar',
+                      child: GestureDetector(
+                        // Ver el comentario de _appBar(): borrar un draft
+                        // mientras se publica puede tirar abajo un
+                        // publicarUno() en curso sobre ESE mismo índice.
+                        onTap: _publicando
+                            ? null
+                            : () => setState(() {
+                                _animales[i].dispose();
+                                _animales.removeAt(i);
+                              }),
+                        child: Container(
+                          width: 28,
+                          height: 28,
+                          decoration: SpDeco.soft(c, radius: SpRadius.full),
+                          child: Icon(
+                            Icons.close_rounded,
+                            size: 16,
+                            color: c.ink,
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 ],
               ),
             ),
-          ),
-        if (_animales.isNotEmpty) ...[
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              Text(
-                '${_animales.length} ${_animales.length == 1 ? "animal" : "animales"}',
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: appInk,
-                ),
-              ),
-              const Spacer(),
-              GestureDetector(
-                onTap: _pickFotosConConfirmacion,
-                child: const Text(
-                  '+ Agregar más',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: appTeal,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 3,
-              crossAxisSpacing: 8,
-              mainAxisSpacing: 8,
-            ),
-            itemCount: _animales.length,
-            itemBuilder: (_, i) => Stack(
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: Image.file(
-                    File(_animales[i].foto1.path),
-                    width: double.infinity,
-                    height: double.infinity,
-                    fit: BoxFit.cover,
-                  ),
-                ),
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(10),
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.transparent,
-                          Colors.black.withValues(alpha: 0.3),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  bottom: 4,
-                  left: 4,
-                  child: Text(
-                    '${i + 1}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                Positioned(
-                  top: 4,
-                  right: 4,
-                  child: GestureDetector(
-                    // Ver el comentario del botón "atrás" en _appBar(): borrar
-                    // un draft mientras se publica puede tirar abajo un
-                    // publicarUno() en curso sobre ESE mismo índice.
-                    onTap: _publicando
-                        ? null
-                        : () => setState(() {
-                            _animales[i].dispose();
-                            _animales.removeAt(i);
-                          }),
-                    child: Container(
-                      decoration: const BoxDecoration(
-                        color: Colors.black54,
-                        shape: BoxShape.circle,
-                      ),
-                      padding: const EdgeInsets.all(3),
-                      child: const Icon(
-                        Icons.close,
-                        size: 13,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          ],
         ],
-      ],
-    ),
-  );
+      ),
+    );
+  }
 
   // ── Paso 1: Datos comunes ─────────────────────────────────────────────────
 
-  Widget _pasoComunes() => SingleChildScrollView(
-    padding: const EdgeInsets.all(20),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: appTeal.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: appTeal.withValues(alpha: 0.25)),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.info_outline, size: 16, color: appTeal),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Se aplican a los ${_animales.length} animales. Puedes editar cada uno después.',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 24),
-        _label('ESPECIE'),
-        const SizedBox(height: 10),
-        _chips(
-          ['Perro', 'Gato', 'Otro'],
-          _especie,
-          (v) => setState(() => _especie = v),
-          appTeal,
-        ),
-        const SizedBox(height: 24),
-        _label('URGENCIA'),
-        const SizedBox(height: 10),
-        _chips(
-          ['Alta', 'Media', 'Baja'],
-          _urgencia,
-          (v) => setState(() => _urgencia = v),
-          _urgencia == 'Alta'
-              ? const Color(0xFFD32F2F)
-              : _urgencia == 'Media'
-              ? const Color(0xFFE65100)
-              : appTeal,
-        ),
-      ],
-    ),
-  );
-
-  // ── Paso 2: Individual ────────────────────────────────────────────────────
-
-  Widget _pasoIndividual() => ListView.separated(
-    padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-    itemCount: _animales.length,
-    separatorBuilder: (_, _) => const SizedBox(height: 12),
-    itemBuilder: (_, i) {
-      final a = _animales[i];
-      return Container(
-        key: ObjectKey(a),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Botón eliminar
-            Align(
-              alignment: Alignment.centerRight,
-              child: Tooltip(
-                message: 'Eliminar',
-                child: GestureDetector(
-                  // Mismo motivo que el botón "atrás" de _appBar(): borrar
-                  // un draft mientras se publica puede tirar abajo un
-                  // publicarUno() en curso sobre ESE mismo índice.
-                  onTap: _publicando
-                      ? null
-                      : () => setState(() {
-                          _animales[i].dispose();
-                          _animales.removeAt(i);
-                        }),
-                  child: Container(
-                    padding: const EdgeInsets.all(7),
-                    decoration: BoxDecoration(
-                      color: Colors.red.shade50,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: Colors.red.shade200),
-                    ),
-                    child: Icon(
-                      Icons.delete_outline,
-                      size: 15,
-                      color: Colors.red.shade400,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _pasoComunes() {
+    final c = context.sp;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SpNotice(
+            fondo: c.primarySoft,
+            tinta: c.primaryStrong,
+            child: Row(
               children: [
-                // Fotos (principal + 2da)
-                Column(
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: Image.file(
-                        File(a.foto1.path),
-                        width: 72,
-                        height: 72,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    GestureDetector(
-                      onTap: () => _pickSegundaFoto(i),
-                      child: a.foto2 != null
-                          ? Stack(
-                              children: [
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(10),
-                                  child: Image.file(
-                                    File(a.foto2!.path),
-                                    width: 72,
-                                    height: 72,
-                                    fit: BoxFit.cover,
-                                  ),
-                                ),
-                                Positioned(
-                                  top: 3,
-                                  right: 3,
-                                  child: GestureDetector(
-                                    onTap: () => setState(() => a.foto2 = null),
-                                    child: Container(
-                                      decoration: const BoxDecoration(
-                                        color: Colors.black54,
-                                        shape: BoxShape.circle,
-                                      ),
-                                      padding: const EdgeInsets.all(2),
-                                      child: const Icon(
-                                        Icons.close,
-                                        size: 12,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            )
-                          : Container(
-                              width: 72,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                color: appTeal.withValues(alpha: 0.07),
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(
-                                  color: appTeal.withValues(alpha: 0.3),
-                                  width: 1.2,
-                                ),
-                              ),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.add_a_photo_outlined,
-                                    size: 15,
-                                    color: appTeal.withValues(alpha: 0.7),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    '+2da foto',
-                                    style: TextStyle(
-                                      fontSize: 8,
-                                      color: appTeal.withValues(alpha: 0.8),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                    ),
-                  ],
-                ),
-                const SizedBox(width: 12),
-                // Nombre + resumen datos comunes
+                const Icon(Icons.info_outline_rounded),
+                const SizedBox(width: 8),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Animal ${i + 1}',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.grey.shade400,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      TextField(
-                        controller: a.nombreCtl,
-                        maxLength: 30,
-                        decoration: InputDecoration(
-                          hintText: 'Nombre (opcional)',
-                          hintStyle: TextStyle(
-                            color: Colors.grey.shade400,
-                            fontSize: 13,
-                          ),
-                          filled: true,
-                          fillColor: const Color(0xFFF7F7F7),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: BorderSide.none,
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 10,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 4,
-                        children: [
-                          _selectableMiniChip(
-                            valor: a.especieOverride ?? _especie,
-                            opciones: const ['Perro', 'Gato', 'Otro'],
-                            color: appTeal,
-                            onChanged: (v) =>
-                                setState(() => a.especieOverride = v),
-                          ),
-                          _selectableMiniChip(
-                            valor: a.urgenciaOverride ?? _urgencia,
-                            opciones: const ['Alta', 'Media', 'Baja'],
-                            color: (a.urgenciaOverride ?? _urgencia) == 'Alta'
-                                ? const Color(0xFFD32F2F)
-                                : (a.urgenciaOverride ?? _urgencia) == 'Media'
-                                ? const Color(0xFFE65100)
-                                : appTeal,
-                            onChanged: (v) =>
-                                setState(() => a.urgenciaOverride = v),
-                          ),
-                        ],
-                      ),
-                    ],
+                  child: Text(
+                    'Se aplican a los ${_animales.length} animales. Puedes editar cada uno después.',
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 10),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Descripción (opcional)',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.grey.shade700,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                GestureDetector(
-                  onTap: () {
-                    // Sin el nombre acá adentro — mismo motivo que
-                    // subir_rescate_screen.dart: ya se muestra arriba en su
-                    // propio campo, y repetirlo como texto plano es lo que
-                    // dejaba el nombre viejo pegado en la descripción para
-                    // siempre después de renombrar. Pedido real de Eliza.
-                    const plantilla =
-                        'Fue encontrado/a [contá cómo o dónde lo/la encontraste]. '
-                        'Lo/la que lo/la hace único/a es [una costumbre, gesto o anécdota que lo/la describa]. '
-                        'Ya pasó por mucho. Ahora solo le falta alguien que decida quedarse. '
-                        '¿Serás vos?';
-                    setState(() {
-                      a.descCtl.value = TextEditingValue(
-                        text: plantilla,
-                        selection: TextSelection.collapsed(
-                          offset: plantilla.length,
+          ),
+          const SizedBox(height: SpSpace.s4),
+          const SpSectionTitle('¿Qué animales son?'),
+          const SizedBox(height: SpSpace.s3),
+          SpSelectorEspecie(
+            especies: const ['Perro', 'Gato', 'Otro'],
+            seleccion: _especie,
+            onSeleccionar: (v) => setState(() => _especie = v),
+          ),
+          const SizedBox(height: SpSpace.s6),
+          const SpSectionTitle('Urgencia'),
+          const SizedBox(height: SpSpace.s3),
+          SpCard(
+            child: _chips(
+              const ['Alta', 'Media', 'Baja'],
+              _urgencia,
+              (v) => setState(() => _urgencia = v),
+              spColorUrgencia(c, _urgencia),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Paso 2: Individual ────────────────────────────────────────────────────
+
+  Widget _pasoIndividual() {
+    final c = context.sp;
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+      itemCount: _animales.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 14),
+      itemBuilder: (_, i) {
+        final a = _animales[i];
+        final especie = a.especieOverride ?? _especie;
+        final urgencia = a.urgenciaOverride ?? _urgencia;
+        return Container(
+          key: ObjectKey(a),
+          padding: const EdgeInsets.all(12),
+          decoration: SpDeco.card(c),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Fotos (principal + 2da)
+                  Column(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(18),
+                        child: Image.file(
+                          File(a.foto1.path),
+                          width: 84,
+                          height: 84,
+                          fit: BoxFit.cover,
                         ),
-                      );
-                    });
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 3,
-                    ),
-                    decoration: BoxDecoration(
-                      color: appTeal.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: appTeal.withValues(alpha: 0.3)),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
+                      ),
+                      const SizedBox(height: 8),
+                      GestureDetector(
+                        onTap: () => _pickSegundaFoto(i),
+                        child: a.foto2 != null
+                            ? Stack(
+                                children: [
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(18),
+                                    child: Image.file(
+                                      File(a.foto2!.path),
+                                      width: 84,
+                                      height: 84,
+                                      fit: BoxFit.cover,
+                                    ),
+                                  ),
+                                  Positioned(
+                                    top: 4,
+                                    right: 4,
+                                    child: GestureDetector(
+                                      onTap: () =>
+                                          setState(() => a.foto2 = null),
+                                      child: Container(
+                                        width: 24,
+                                        height: 24,
+                                        decoration: SpDeco.soft(
+                                          c,
+                                          radius: SpRadius.full,
+                                        ),
+                                        child: Icon(
+                                          Icons.close_rounded,
+                                          size: 14,
+                                          color: c.ink,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : CustomPaint(
+                                foregroundPainter: SpBordePunteado(c.mintDeep),
+                                child: Container(
+                                  width: 84,
+                                  height: 48,
+                                  decoration: BoxDecoration(
+                                    color: c.primarySoft,
+                                    borderRadius: BorderRadius.circular(24),
+                                  ),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.add_a_photo_rounded,
+                                        size: 16,
+                                        color: c.primaryStrong,
+                                      ),
+                                      Text(
+                                        '2da foto',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w700,
+                                          color: c.primaryStrong,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('✨', style: TextStyle(fontSize: 10)),
-                        SizedBox(width: 3),
-                        Text(
-                          'Usar plantilla',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            color: appTeal,
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Animal ${i + 1}',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w800,
+                                  color: c.ink,
+                                ),
+                              ),
+                            ),
+                            // Mismo motivo que el botón "atrás" de
+                            // _appBar(): borrar un draft mientras se publica
+                            // puede tirar abajo un publicarUno() en curso
+                            // sobre ESE mismo índice.
+                            SpMiniButton(
+                              icon: Icons.delete_outline_rounded,
+                              tooltip: 'Eliminar',
+                              danger: true,
+                              onTap: _publicando
+                                  ? () {}
+                                  : () => setState(() {
+                                      _animales[i].dispose();
+                                      _animales.removeAt(i);
+                                    }),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: a.nombreCtl,
+                          maxLength: 30,
+                          decoration: const InputDecoration(
+                            hintText: 'Nombre (opcional)',
                           ),
+                        ),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: [
+                            _selectableMiniChip(
+                              valor: especie,
+                              opciones: const ['Perro', 'Gato', 'Otro'],
+                              tono: spEspecie(especie).$1,
+                              onChanged: (v) =>
+                                  setState(() => a.especieOverride = v),
+                            ),
+                            _selectableMiniChip(
+                              valor: urgencia,
+                              opciones: const ['Alta', 'Media', 'Baja'],
+                              tono: switch (urgencia) {
+                                'Alta' || 'Media' => SpTone.peach,
+                                _ => SpTone.mint,
+                              },
+                              colorActivo: spColorUrgencia(c, urgencia),
+                              onChanged: (v) =>
+                                  setState(() => a.urgenciaOverride = v),
+                            ),
+                          ],
                         ),
                       ],
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            TextField(
-              controller: a.descCtl,
-              maxLines: 3,
-              maxLength: 1000,
-              decoration: InputDecoration(
-                hintText:
-                    'Estado del animal, dónde fue encontrado, necesidades especiales...',
-                hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 12),
-                filled: true,
-                fillColor: const Color(0xFFF7F7F7),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Descripción (opcional)',
+                      style: SpText.label.copyWith(
+                        color: c.inkMuted,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  SpButton(
+                    label: 'Usar plantilla',
+                    icon: Icons.auto_awesome_rounded,
+                    suave: true,
+                    compacto: true,
+                    // Sin el nombre acá adentro — mismo motivo que
+                    // subir_rescate_screen.dart: repetirlo como texto plano
+                    // dejaba el nombre viejo pegado en la descripción para
+                    // siempre después de renombrar. Pedido real de Eliza.
+                    onTap: () {
+                      const plantilla =
+                          'Fue encontrado/a [contá cómo o dónde lo/la encontraste]. '
+                          'Lo/la que lo/la hace único/a es [una costumbre, gesto o anécdota que lo/la describa]. '
+                          'Ya pasó por mucho. Ahora solo le falta alguien que decida quedarse. '
+                          '¿Serás vos?';
+                      setState(() {
+                        a.descCtl.value = TextEditingValue(
+                          text: plantilla,
+                          selection: TextSelection.collapsed(
+                            offset: plantilla.length,
+                          ),
+                        );
+                      });
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: a.descCtl,
+                maxLines: 3,
+                maxLength: 1000,
+                decoration: const InputDecoration(
+                  hintText:
+                      'Estado del animal, dónde fue encontrado, necesidades especiales...',
                 ),
               ),
-              style: const TextStyle(fontSize: 13),
-            ),
-          ],
-        ),
-      );
-    },
-  );
+            ],
+          ),
+        );
+      },
+    );
+  }
 
   // ── Bottom bar ────────────────────────────────────────────────────────────
 
   Widget _bottomBar() {
+    final c = context.sp;
     if (_paso == 2) {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-        child: SizedBox(
-          width: double.infinity,
-          child: ElevatedButton(
-            onPressed: _publicando ? null : _publicar,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: appDark,
-              foregroundColor: Colors.white,
-              // Ver el mismo comentario en subir_rescate_screen.dart: sin
-              // esto, Material pinta el botón deshabilitado con sus propios
-              // colores grises de tema y el aviso de "tardando más de lo
-              // normal" quedaba casi ilegible encima. Hallazgo real de
-              // Eliza, en modo avión.
-              disabledBackgroundColor: appDark,
-              disabledForegroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              elevation: 0,
-            ),
-            child: _publicando
-                ? Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Text(
-                            'Publicando $_procesados de ${_animales.length}...',
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ],
+      final contenido = _publicando
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        color: c.onPrimary,
+                        strokeWidth: 2,
                       ),
-                      if (tardandoMucho) ...[
-                        const SizedBox(height: 6),
-                        const Text(
-                          'Esto está tardando más de lo normal. Revisá tu conexión',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: 11, color: Colors.white70),
-                        ),
-                      ],
-                    ],
-                  )
-                : Text(
-                    'Publicar ${_animales.length} animales 🐾',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
                     ),
+                    const SizedBox(width: 10),
+                    Text(
+                      'Publicando $_procesados de ${_animales.length}...',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: c.onPrimary,
+                      ),
+                    ),
+                  ],
+                ),
+                if (tardandoMucho) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'Esto está tardando más de lo normal. Revisá tu conexión',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 11, color: c.onPrimary),
                   ),
-          ),
-        ),
+                ],
+              ],
+            )
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.pets_rounded, size: 20, color: c.onPrimary),
+                const SizedBox(width: 8),
+                Text(
+                  'Publicar ${_animales.length} animales',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: c.onPrimary,
+                  ),
+                ),
+              ],
+            );
+      // Mientras publica no se puede tocar, pero se sigue viendo igual (mismo
+      // verde), solo ocupado — ver el mismo comentario en
+      // subir_rescate_screen.dart. Hallazgo real de Eliza, en modo avión.
+      final caja = Container(
+        width: double.infinity,
+        constraints: const BoxConstraints(minHeight: 56),
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+        alignment: Alignment.center,
+        decoration: SpDeco.primary(c, radius: SpRadius.md),
+        child: contenido,
+      );
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        child: _publicando ? caja : SpPressable(onTap: _publicar, child: caja),
       );
     }
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       child: SizedBox(
         width: double.infinity,
-        child: ElevatedButton(
-          onPressed: _animales.isNotEmpty
-              ? () => setState(() => _paso++)
-              : null,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: appTeal,
-            foregroundColor: Colors.white,
-            disabledBackgroundColor: Colors.grey.shade200,
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            elevation: 0,
-          ),
-          child: Text(
-            _paso == 0
-                ? 'Siguiente  →  Datos comunes'
-                : 'Siguiente  →  Revisar animales',
-            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-          ),
+        child: SpButton(
+          label: _paso == 0
+              ? 'Siguiente: datos comunes'
+              : 'Siguiente: revisar animales',
+          icon: Icons.arrow_forward_rounded,
+          onTap: _animales.isNotEmpty ? () => setState(() => _paso++) : null,
         ),
       ),
     );
   }
 
-  Widget _label(String t) => Text(
-    t,
-    style: TextStyle(
-      fontSize: 11,
-      fontWeight: FontWeight.w700,
-      letterSpacing: 1.1,
-      color: Colors.grey.shade700,
-    ),
-  );
-
   Widget _chips(
     List<String> opts,
     String sel,
-    ValueChanged<String> fn,
-    Color color,
-  ) => Wrap(
-    spacing: 8,
-    runSpacing: 8,
-    children: opts.map((o) {
-      final active = o == sel;
-      return GestureDetector(
-        onTap: () => fn(o),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-          decoration: BoxDecoration(
-            color: active ? color : Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: active ? color : Colors.grey.shade300),
-          ),
-          child: Text(
-            o,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: active ? Colors.white : Colors.grey.shade700,
-            ),
-          ),
-        ),
-      );
-    }).toList(),
+    ValueChanged<String> fn, [
+    Color? color,
+  ]) => ChipsSeleccionables(
+    opciones: opts,
+    seleccion: sel,
+    onSeleccionar: fn,
+    colorActivo: color,
+    paddingChip: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
   );
 
+  /// Píldora pastel que, al tocarla, abre una hoja para cambiar ese dato
+  /// solo para este animal.
   Widget _selectableMiniChip({
     required String valor,
     required List<String> opciones,
-    required Color color,
+    required SpTone tono,
     required ValueChanged<String> onChanged,
+    Color? colorActivo,
   }) {
+    final c = context.sp;
+    final k = SpToneColors.of(c, tono);
     return GestureDetector(
       onTap: () async {
         final picked = await showModalBottomSheet<String>(
           context: context,
+          backgroundColor: c.bg,
           shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
           ),
-          builder: (_) => Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+          builder: (sheetCtx) => Padding(
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 28),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  width: 36,
-                  height: 4,
+                  width: 44,
+                  height: 5,
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(2),
+                    color: c.line,
+                    borderRadius: BorderRadius.circular(3),
                   ),
                 ),
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: opciones.map((o) {
-                    final active = o == valor;
-                    return GestureDetector(
-                      onTap: () => Navigator.pop(context, o),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 18,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: active ? color : Colors.white,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: active ? color : Colors.grey.shade300,
-                          ),
-                        ),
-                        child: Text(
-                          o,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: active ? Colors.white : Colors.grey.shade700,
-                          ),
-                        ),
-                      ),
-                    );
-                  }).toList(),
+                const SizedBox(height: 18),
+                ChipsSeleccionables(
+                  opciones: opciones,
+                  seleccion: valor,
+                  colorActivo: colorActivo,
+                  paddingChip: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 10,
+                  ),
+                  onSeleccionar: (o) => Navigator.pop(sheetCtx, o),
                 ),
               ],
             ),
@@ -1305,11 +1165,11 @@ class _SubirLoteScreenState extends State<SubirLoteScreen>
         if (picked != null) onChanged(picked);
       },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: color.withValues(alpha: 0.4)),
+          color: k.fill,
+          borderRadius: BorderRadius.circular(SpRadius.full),
+          boxShadow: [BoxShadow(color: k.deep, offset: const Offset(0, 2))],
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -1317,13 +1177,13 @@ class _SubirLoteScreenState extends State<SubirLoteScreen>
             Text(
               valor,
               style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: k.ink,
               ),
             ),
             const SizedBox(width: 3),
-            Icon(Icons.expand_more, size: 11, color: color),
+            Icon(Icons.expand_more_rounded, size: 14, color: k.ink),
           ],
         ),
       ),

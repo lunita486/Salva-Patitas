@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
-import '../theme.dart';
+import '../theme/salva_patitas_theme.dart';
 
 // ─── Elegir la foto de un animal ───────────────────────────────────────────
 /// Muestra la hoja "Tomar foto / Elegir de la galería" y devuelve el
@@ -40,6 +40,7 @@ Future<XFile?> elegirFotoAnimal(BuildContext context) async {
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
+    backgroundColor: context.sp.bg,
     builder: (ctx) => SafeArea(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -49,18 +50,18 @@ Future<XFile?> elegirFotoAnimal(BuildContext context) async {
             width: 40,
             height: 4,
             decoration: BoxDecoration(
-              color: Colors.grey.shade300,
+              color: ctx.sp.line,
               borderRadius: BorderRadius.circular(2),
             ),
           ),
           const SizedBox(height: 16),
           ListTile(
-            leading: const Icon(Icons.camera_alt, color: appTeal),
+            leading: Icon(Icons.camera_alt_rounded, color: ctx.sp.primary),
             title: const Text('Tomar foto'),
             onTap: () => Navigator.pop(ctx, ImageSource.camera),
           ),
           ListTile(
-            leading: const Icon(Icons.photo_library, color: appTeal),
+            leading: Icon(Icons.photo_library_rounded, color: ctx.sp.primary),
             title: const Text('Elegir de la galería'),
             onTap: () => Navigator.pop(ctx, ImageSource.gallery),
           ),
@@ -83,9 +84,9 @@ Future<XFile?> elegirFotoAnimal(BuildContext context) async {
     // vez de dejar el toque sin ninguna respuesta.
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text('Cámara no disponible, usa la galería'),
-          backgroundColor: msgAdvertencia,
+          backgroundColor: context.sp.msgAdvertencia,
         ),
       );
     }
@@ -110,9 +111,9 @@ Future<List<XFile>> elegirVariasFotosAnimal(BuildContext context) async {
   } catch (_) {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text('No se pudo abrir la galería'),
-          backgroundColor: msgAdvertencia,
+          backgroundColor: context.sp.msgAdvertencia,
         ),
       );
     }

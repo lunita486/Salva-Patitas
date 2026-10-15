@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../theme.dart';
+import '../theme/salva_patitas_theme.dart';
 
 /// Una grilla de opciones tipo "chip" (Wrap, nunca scroll horizontal
 /// oculto) donde tocar una la marca como elegida.
@@ -24,8 +24,12 @@ class ChipsSeleccionables extends StatelessWidget {
   final List<String> opciones;
   final String seleccion;
   final ValueChanged<String> onSeleccionar;
-  final Color colorActivo;
-  final Color colorInactivo;
+
+  /// Color de la opción elegida. Sin él, el verde 3D del tema (`SpDeco.primary`).
+  final Color? colorActivo;
+
+  /// Fondo de las opciones no elegidas. Sin él, blanco con canto 3D.
+  final Color? colorInactivo;
   final EdgeInsets paddingChip;
   final double spacing;
   final double runSpacing;
@@ -35,8 +39,8 @@ class ChipsSeleccionables extends StatelessWidget {
     required this.opciones,
     required this.seleccion,
     required this.onSeleccionar,
-    this.colorActivo = appInk,
-    this.colorInactivo = Colors.white,
+    this.colorActivo,
+    this.colorInactivo,
     this.paddingChip = const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
     this.spacing = 8,
     this.runSpacing = 8,
@@ -66,31 +70,56 @@ class ChipsSeleccionables extends StatelessWidget {
       : [...opciones, seleccion];
 
   @override
-  Widget build(BuildContext context) => Wrap(
-    spacing: spacing,
-    runSpacing: runSpacing,
-    children: _opcionesVisibles.map((o) {
-      final sel = o == seleccion;
-      return GestureDetector(
-        onTap: () => onSeleccionar(o),
-        child: AnimatedContainer(
-          duration: duracion,
-          padding: paddingChip,
-          decoration: BoxDecoration(
-            color: sel ? colorActivo : colorInactivo,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: sel ? colorActivo : Colors.grey.shade300),
-          ),
-          child: Text(
-            o,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: sel ? Colors.white : Colors.grey.shade700,
+  Widget build(BuildContext context) {
+    final c = context.sp;
+    // Texto legible sobre el color elegido: oscuro sobre colores claros.
+    final activo = colorActivo;
+    final tintaActiva = activo == null
+        ? c.onPrimary
+        : ThemeData.estimateBrightnessForColor(activo) == Brightness.dark
+        ? c.surface
+        : c.ink;
+    return Wrap(
+      spacing: spacing,
+      runSpacing: runSpacing + 2,
+      children: _opcionesVisibles.map((o) {
+        final sel = o == seleccion;
+        // Chips 3D del rediseño (`.sp-chip`): blanco con canto, y la elegida
+        // en verde (o en el color que pida la pantalla, ej. la urgencia).
+        final deco = !sel
+            ? SpDeco.soft(
+                c,
+                radius: SpRadius.full,
+              ).copyWith(color: colorInactivo ?? c.surface)
+            : activo == null
+            ? SpDeco.primary(c, radius: SpRadius.full)
+            : BoxDecoration(
+                color: activo,
+                borderRadius: BorderRadius.circular(SpRadius.full),
+                boxShadow: [
+                  BoxShadow(
+                    color: Color.lerp(activo, c.ink, .35)!,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              );
+        return GestureDetector(
+          onTap: () => onSeleccionar(o),
+          child: AnimatedContainer(
+            duration: duracion,
+            padding: paddingChip,
+            decoration: deco,
+            child: Text(
+              o,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: sel ? tintaActiva : c.inkMuted,
+              ),
             ),
           ),
-        ),
-      );
-    }).toList(),
-  );
+        );
+      }).toList(),
+    );
+  }
 }

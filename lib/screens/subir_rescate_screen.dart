@@ -8,7 +8,6 @@ import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:go_router/go_router.dart';
 import '../routing/app_router.dart';
 import '../domain/reglas_negocio.dart';
-import '../theme.dart';
 import '../widgets/aviso_animal_duplicado.dart';
 import '../widgets/chips_seleccionables.dart';
 import '../widgets/confirmar_ciudad_resuelta.dart';
@@ -21,6 +20,8 @@ import '../data/foto_normalizador.dart';
 import '../services/ubicacion_service.dart';
 import '../services/ubicacion_lifecycle.dart';
 import '../widgets/campo_ciudad.dart';
+import '../widgets/sp_widgets.dart';
+import '../theme/salva_patitas_theme.dart';
 
 class SubirRescateScreen extends StatefulWidget {
   final bool esAlbergue;
@@ -75,11 +76,7 @@ class _SubirRescateScreenState extends State<SubirRescateScreen>
   static const _saludOpts = RescatesRepository.salud;
   static const _tipoRazaOpts = RescatesRepository.tiposRaza;
 
-  Color _urgenciaColor(String u) => switch (u) {
-    'Alta' => const Color(0xFFD32F2F),
-    'Media' => const Color(0xFFE65100),
-    _ => appTeal,
-  };
+  Color? _urgenciaColor(String u) => spColorUrgencia(context.sp, u);
 
   /// elegirFotoAnimal (widgets/elegir_foto_animal.dart) muestra la hoja y hace el pickImage,
   /// con el manejo de "cámara no disponible" que antes vivía sólo acá — la
@@ -194,9 +191,9 @@ class _SubirRescateScreenState extends State<SubirRescateScreen>
   Future<void> _publicar() async {
     if (_fotos.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text('Debes agregar al menos una foto del animal'),
-          backgroundColor: msgError,
+          backgroundColor: context.sp.msgError,
         ),
       );
       return;
@@ -345,9 +342,9 @@ class _SubirRescateScreenState extends State<SubirRescateScreen>
             ),
             TextButton(
               onPressed: () => Navigator.pop(dlgCtx, true),
-              child: const Text(
+              child: Text(
                 'Publicar sin ubicación',
-                style: TextStyle(color: appTeal),
+                style: TextStyle(color: context.sp.primaryStrong),
               ),
             ),
           ],
@@ -514,9 +511,9 @@ class _SubirRescateScreenState extends State<SubirRescateScreen>
                 Navigator.pop(context);
                 Navigator.pop(context);
               },
-              child: const Text(
+              child: Text(
                 'Ver rescates',
-                style: TextStyle(color: appTeal),
+                style: TextStyle(color: context.sp.primaryStrong),
               ),
             ),
           ],
@@ -539,7 +536,7 @@ class _SubirRescateScreenState extends State<SubirRescateScreen>
             'No se pudo publicar ${_nombreCtl.text.isEmpty ? "el animal" : _nombreCtl.text}. '
             'Revisá tu conexión e intentá de nuevo.',
           ),
-          backgroundColor: msgError,
+          backgroundColor: context.sp.msgError,
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 6),
         ),
@@ -586,428 +583,416 @@ class _SubirRescateScreenState extends State<SubirRescateScreen>
 
   @override
   Widget build(BuildContext context) {
+    final c = context.sp;
     return Scaffold(
-      backgroundColor: appBg,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _appBar(context),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 8),
-                    _section('Fotos del animal'),
-                    const SizedBox(height: 10),
-                    _fotoGrid(),
-                    const SizedBox(height: 20),
-                    _campoNombre(),
-                    const SizedBox(height: 16),
-                    _section('Raza'),
-                    const SizedBox(height: 8),
-                    _chips(
-                      _tipoRazaOpts,
-                      _tipoRaza,
-                      (v) => setState(() {
-                        _tipoRaza = v;
-                        _razaCtl.clear();
-                      }),
-                      appTeal,
-                    ),
-                    if (_tipoRaza == 'Raza definida') ...[
-                      const SizedBox(height: 10),
-                      _field(
-                        '¿Cuál raza?',
-                        _razaCtl,
-                        hint: 'ej. Golden Retriever, Siamés...',
-                      ),
-                    ],
-                    const SizedBox(height: 16),
-                    _section('Especie'),
-                    const SizedBox(height: 8),
-                    _chips(
-                      _especies,
-                      _especie,
-                      (v) => setState(() => _especie = v),
-                      appTeal,
-                    ),
-                    const SizedBox(height: 20),
-                    _section('Edad aproximada'),
-                    const SizedBox(height: 8),
-                    _chips(
-                      _edades,
-                      _edad,
-                      (v) => setState(() => _edad = v),
-                      appTeal,
-                    ),
-                    const SizedBox(height: 20),
-                    _section('Género'),
-                    const SizedBox(height: 8),
-                    _chips(
-                      _generos,
-                      _genero,
-                      (v) => setState(() => _genero = v),
-                      appTeal,
-                    ),
-                    const SizedBox(height: 20),
-                    _section('Estado de salud'),
-                    const SizedBox(height: 8),
-                    _chips(
-                      _estados,
-                      _estado,
-                      (v) => setState(() => _estado = v),
-                      appTeal,
-                    ),
-                    const SizedBox(height: 20),
-                    _section('¿Está vacunado?'),
-                    const SizedBox(height: 8),
-                    _chips(
-                      _saludOpts,
-                      _vacunado,
-                      (v) => setState(() => _vacunado = v),
-                      appTeal,
-                    ),
-                    const SizedBox(height: 20),
-                    _section('¿Está desparasitado?'),
-                    const SizedBox(height: 8),
-                    _chips(
-                      _saludOpts,
-                      _desparasitado,
-                      (v) => setState(() => _desparasitado = v),
-                      appTeal,
-                    ),
-                    const SizedBox(height: 20),
-                    _section('Urgencia'),
-                    const SizedBox(height: 8),
-                    _chips(
-                      _urgencias,
-                      _urgencia,
-                      (v) => setState(() => _urgencia = v),
-                      _urgenciaColor(_urgencia),
-                    ),
-                    const SizedBox(height: 28),
-                    _sectionLabel('Compatibilidad para adopción'),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Estas etiquetas ayudan a encontrar el hogar ideal',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade700,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    _section('Nivel de energía'),
-                    const SizedBox(height: 8),
-                    _chips(
-                      _energias,
-                      _energia,
-                      (v) => setState(() => _energia = v),
-                      const Color(0xFF7C4DFF),
-                    ),
-                    const SizedBox(height: 20),
-                    _section('Tamaño'),
-                    const SizedBox(height: 8),
-                    _chips(
-                      _tamanos,
-                      _tamano,
-                      (v) => setState(() => _tamano = v),
-                      appTeal,
-                    ),
-                    const SizedBox(height: 20),
-                    _section('¿Es amigable con niños?'),
-                    const SizedBox(height: 8),
-                    _chips(
-                      _siNoOpts,
-                      _okNinos,
-                      (v) => setState(() => _okNinos = v),
-                      appTeal,
-                    ),
-                    const SizedBox(height: 20),
-                    _section('¿Es sociable con otros animales?'),
-                    const SizedBox(height: 8),
-                    _chips(
-                      _siNoOpts,
-                      _okMascotas,
-                      (v) => setState(() => _okMascotas = v),
-                      appTeal,
-                    ),
-                    const SizedBox(height: 20),
-                    _section('¿Requiere adoptante con experiencia?'),
-                    const SizedBox(height: 8),
-                    _chips(
-                      _siNoOpts,
-                      _requiereExp,
-                      (v) => setState(() => _requiereExp = v),
-                      appOrange,
-                    ),
-                    const SizedBox(height: 28),
-                    if (!widget.esAlbergue) ...[
-                      _section('Ubicación'),
-                      const SizedBox(height: 8),
-                      _locationField(),
-                      const SizedBox(height: 20),
-                    ],
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      backgroundColor: c.bg,
+      body: Stack(
+        children: [
+          const Positioned.fill(child: SpPawBackground()),
+          SafeArea(
+            child: Column(
+              children: [
+                // Volver apagado mientras se publica: sin esto, se podía
+                // salir con el publish todavía corriendo de fondo — si
+                // terminaba bien, el animal quedaba publicado sin que la
+                // persona lo viera, así que podía creer que falló y
+                // reintentar, publicando el mismo animal dos veces. Hallazgo
+                // de auditoría de código.
+                SpScreenHeader(
+                  title: 'Subir un rescate',
+                  subtitle: 'Publica un animal en minutos',
+                  onBack: _publicando ? () {} : null,
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Descripción',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.grey.shade700,
-                          ),
+                        _fotoGrid(),
+
+                        // ── Especie ──────────────────────────────────────
+                        const SizedBox(height: SpSpace.s6),
+                        const SpSectionTitle('¿Qué animal es?'),
+                        const SizedBox(height: SpSpace.s3),
+                        SpSelectorEspecie(
+                          especies: _especies,
+                          seleccion: _especie,
+                          onSeleccionar: (v) => setState(() => _especie = v),
                         ),
-                        GestureDetector(
-                          onTap: () {
-                            // Sin el nombre acá adentro a propósito — ya se
-                            // muestra arriba, en su propio campo. Antes
-                            // esta plantilla lo repetía como texto plano
-                            // ("Hermoso fue encontrado/a..."), así que
-                            // renombrar el animal después dejaba ese nombre
-                            // viejo pegado en medio del párrafo para
-                            // siempre — el mismo tipo de copia congelada
-                            // que costó un día entero arreglar en otros
-                            // lugares de la app. Sin el nombre acá, no hay
-                            // nada que pueda quedar desactualizado. Pedido
-                            // real de Eliza viendo "Hermoso" en la
-                            // descripción de un animal que ya se llamaba
-                            // "lino".
-                            const plantilla =
-                                'Fue encontrado/a [contá cómo o dónde lo/la encontraste]. '
-                                'Lo/la que lo/la hace único/a es [una costumbre, gesto o anécdota que lo/la describa]. '
-                                'Ya pasó por mucho. Ahora solo le falta alguien que decida quedarse. '
-                                '¿Serás vos?';
-                            _descCtl.value = TextEditingValue(
-                              text: plantilla,
-                              selection: TextSelection.collapsed(
-                                offset: plantilla.length,
+
+                        // ── Sobre el animal ──────────────────────────────
+                        const SizedBox(height: SpSpace.s6),
+                        const SpSectionTitle('Sobre el animal'),
+                        const SizedBox(height: SpSpace.s3),
+                        SpCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _campoNombre(),
+                              const SizedBox(height: 8),
+                              _grupo(
+                                'Raza',
+                                _chips(
+                                  _tipoRazaOpts,
+                                  _tipoRaza,
+                                  (v) => setState(() {
+                                    _tipoRaza = v;
+                                    _razaCtl.clear();
+                                  }),
+                                ),
                               ),
-                            );
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: appTeal.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: appTeal.withValues(alpha: 0.3),
-                              ),
-                            ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text('✨', style: TextStyle(fontSize: 13)),
-                                SizedBox(width: 4),
-                                Text(
-                                  'Usar plantilla',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: appTeal,
-                                  ),
+                              if (_tipoRaza == 'Raza definida') ...[
+                                const SizedBox(height: 12),
+                                _field(
+                                  '¿Cuál raza?',
+                                  _razaCtl,
+                                  hint: 'ej. Golden Retriever, Siamés...',
                                 ),
                               ],
-                            ),
+                              _grupo(
+                                'Edad aproximada',
+                                _chips(
+                                  _edades,
+                                  _edad,
+                                  (v) => setState(() => _edad = v),
+                                ),
+                              ),
+                              _grupo(
+                                'Género',
+                                _chips(
+                                  _generos,
+                                  _genero,
+                                  (v) => setState(() => _genero = v),
+                                ),
+                              ),
+                              _grupo(
+                                'Estado de salud',
+                                _chips(
+                                  _estados,
+                                  _estado,
+                                  (v) => setState(() => _estado = v),
+                                ),
+                              ),
+                              _grupo(
+                                '¿Está vacunado?',
+                                _chips(
+                                  _saludOpts,
+                                  _vacunado,
+                                  (v) => setState(() => _vacunado = v),
+                                ),
+                              ),
+                              _grupo(
+                                '¿Está desparasitado?',
+                                _chips(
+                                  _saludOpts,
+                                  _desparasitado,
+                                  (v) => setState(() => _desparasitado = v),
+                                ),
+                              ),
+                              _grupo(
+                                'Urgencia',
+                                _chips(
+                                  _urgencias,
+                                  _urgencia,
+                                  (v) => setState(() => _urgencia = v),
+                                  _urgenciaColor(_urgencia),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
+
+                        // ── Compatibilidad ───────────────────────────────
+                        const SizedBox(height: SpSpace.s6),
+                        const SpSectionTitle('Compatibilidad para adopción'),
+                        const SizedBox(height: 4),
+                        Padding(
+                          padding: const EdgeInsets.only(left: 26),
+                          child: Text(
+                            'Estas etiquetas ayudan a encontrar el hogar ideal',
+                            style: SpText.caption.copyWith(color: c.inkMuted),
+                          ),
+                        ),
+                        const SizedBox(height: SpSpace.s3),
+                        SpCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _grupo(
+                                'Nivel de energía',
+                                _chips(
+                                  _energias,
+                                  _energia,
+                                  (v) => setState(() => _energia = v),
+                                ),
+                                primero: true,
+                              ),
+                              _grupo(
+                                'Tamaño',
+                                _chips(
+                                  _tamanos,
+                                  _tamano,
+                                  (v) => setState(() => _tamano = v),
+                                ),
+                              ),
+                              _grupo(
+                                '¿Es amigable con niños?',
+                                _chips(
+                                  _siNoOpts,
+                                  _okNinos,
+                                  (v) => setState(() => _okNinos = v),
+                                ),
+                              ),
+                              _grupo(
+                                '¿Es sociable con otros animales?',
+                                _chips(
+                                  _siNoOpts,
+                                  _okMascotas,
+                                  (v) => setState(() => _okMascotas = v),
+                                ),
+                              ),
+                              _grupo(
+                                '¿Requiere adoptante con experiencia?',
+                                _chips(
+                                  _siNoOpts,
+                                  _requiereExp,
+                                  (v) => setState(() => _requiereExp = v),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        // ── Su historia (y ubicación, si es rescatista) ──
+                        const SizedBox(height: SpSpace.s6),
+                        const SpSectionTitle('Su historia'),
+                        const SizedBox(height: SpSpace.s3),
+                        SpCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // El albergue no elige ubicación: todos sus
+                              // animales heredan la ciudad de su perfil.
+                              if (!widget.esAlbergue) ...[
+                                _etiqueta('Ubicación'),
+                                const SizedBox(height: 8),
+                                _locationField(),
+                                const SizedBox(height: 8),
+                              ],
+                              Row(
+                                children: [
+                                  Expanded(child: _etiqueta('Descripción')),
+                                  SpButton(
+                                    label: 'Usar plantilla',
+                                    icon: Icons.auto_awesome_rounded,
+                                    suave: true,
+                                    compacto: true,
+                                    onTap: _usarPlantilla,
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              TextField(
+                                controller: _descCtl,
+                                maxLines: 5,
+                                maxLength: 1000,
+                                decoration: const InputDecoration(
+                                  hintText:
+                                      'Estado del animal, dónde fue encontrado, necesidades especiales...',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: SpSpace.s6),
+                        _publishBtn(),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    _field(
-                      '',
-                      _descCtl,
-                      hint:
-                          'Estado del animal, dónde fue encontrado, necesidades especiales...',
-                      maxLines: 5,
-                      maxLength: 1000,
-                    ),
-                    const SizedBox(height: 28),
-                    _publishBtn(),
-                    const SizedBox(height: 40),
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _appBar(BuildContext ctx) => Padding(
-    padding: const EdgeInsets.fromLTRB(8, 8, 20, 4),
-    child: Row(
-      children: [
-        IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-          tooltip: 'Volver',
-          // Apagado mientras se publica: sin esto, se podía salir de la
-          // pantalla con el publish todavía corriendo de fondo — si terminaba
-          // bien, el animal quedaba publicado sin que la persona lo viera (ni
-          // el SnackBar de éxito, que ya no tiene dónde mostrarse), así que
-          // podía creer que falló y reintentar, publicando el mismo animal
-          // dos veces. Hallazgo de auditoría de código.
-          onPressed: _publicando ? null : () => Navigator.pop(ctx),
+  // Sin el nombre acá adentro a propósito — ya se muestra arriba, en su
+  // propio campo. Antes esta plantilla lo repetía como texto plano
+  // ("Hermoso fue encontrado/a..."), así que renombrar el animal después
+  // dejaba ese nombre viejo pegado en medio del párrafo para siempre.
+  // Pedido real de Eliza viendo "Hermoso" en la descripción de un animal
+  // que ya se llamaba "lino".
+  void _usarPlantilla() {
+    const plantilla =
+        'Fue encontrado/a [contá cómo o dónde lo/la encontraste]. '
+        'Lo/la que lo/la hace único/a es [una costumbre, gesto o anécdota que lo/la describa]. '
+        'Ya pasó por mucho. Ahora solo le falta alguien que decida quedarse. '
+        '¿Serás vos?';
+    _descCtl.value = TextEditingValue(
+      text: plantilla,
+      selection: TextSelection.collapsed(offset: plantilla.length),
+    );
+  }
+
+  /// Etiqueta de un campo dentro de una tarjeta (`.field > span`).
+  Widget _etiqueta(String t) => Text(
+    t,
+    style: SpText.label.copyWith(
+      color: context.sp.inkMuted,
+      fontWeight: FontWeight.w700,
+    ),
+  );
+
+  /// Una pregunta con sus opciones, separada de la anterior.
+  Widget _grupo(String etiqueta, Widget opciones, {bool primero = false}) =>
+      Padding(
+        padding: EdgeInsets.only(top: primero ? 0 : 18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [_etiqueta(etiqueta), const SizedBox(height: 10), opciones],
         ),
-        const Expanded(
-          child: Text(
-            'Subir un rescate',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: appInk,
-              fontFamily: 'Baloo2',
+      );
+
+  /// Fotos (`.photos`): un recuadro grande para agregar y las elegidas al
+  /// lado. Hasta 2, el tope de siempre.
+  Widget _fotoGrid() {
+    final c = context.sp;
+    return SizedBox(
+      height: 168,
+      child: Row(
+        children: [
+          if (_fotos.length < 2)
+            Expanded(
+              child: GestureDetector(
+                onTap: _mostrarOpcionesFoto,
+                child: CustomPaint(
+                  foregroundPainter: SpBordePunteado(c.mintDeep),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: c.surface,
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 56,
+                          height: 56,
+                          decoration: SpDeco.primary(
+                            c,
+                            radius: 18,
+                            gradient: true,
+                          ),
+                          child: Icon(
+                            Icons.add_a_photo_rounded,
+                            size: 26,
+                            color: c.onPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          _fotos.isEmpty ? 'Agregar fotos' : 'Agregar otra',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: c.ink,
+                          ),
+                        ),
+                        Text(
+                          _fotos.isEmpty
+                              ? 'Hasta 2 fotos · la primera es obligatoria'
+                              : '${_fotos.length} de 2',
+                          style: SpText.caption.copyWith(
+                            color: c.inkMuted,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          for (final f in _fotos) ...[
+            const SizedBox(width: SpSpace.s3),
+            _fotoThumb(f),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _fotoThumb(XFile f) {
+    final c = context.sp;
+    return Stack(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(22),
+          child: Image.file(
+            File(f.path),
+            width: _fotos.length < 2 ? 120 : 160,
+            height: 168,
+            fit: BoxFit.cover,
+          ),
+        ),
+        Positioned(
+          top: 8,
+          right: 8,
+          child: Tooltip(
+            message: 'Quitar foto',
+            child: GestureDetector(
+              onTap: () => setState(() => _fotos.remove(f)),
+              child: Container(
+                width: 30,
+                height: 30,
+                decoration: SpDeco.soft(c, radius: SpRadius.full),
+                child: Icon(Icons.close_rounded, size: 17, color: c.ink),
+              ),
             ),
           ),
         ),
       ],
-    ),
-  );
-
-  Widget _section(String t) => Text(
-    t,
-    style: const TextStyle(
-      fontSize: 15,
-      fontWeight: FontWeight.w700,
-      color: Color(0xFF222222),
-    ),
-  );
-
-  Widget _sectionLabel(String t) => Text(
-    t,
-    style: const TextStyle(
-      fontSize: 16,
-      fontWeight: FontWeight.w800,
-      color: Color(0xFF7C4DFF),
-    ),
-  );
-
-  Widget _fotoGrid() {
-    final items = List<Widget>.from(_fotos.map((f) => _fotoThumb(f)));
-    if (_fotos.length < 2) items.add(_fotoAddBtn());
-    return Wrap(spacing: 10, runSpacing: 10, children: items);
+    );
   }
 
-  Widget _fotoThumb(XFile f) => Stack(
-    children: [
-      ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Image.file(
-          File(f.path),
-          width: 90,
-          height: 90,
-          fit: BoxFit.cover,
-        ),
-      ),
-      Positioned(
-        top: 4,
-        right: 4,
-        child: GestureDetector(
-          onTap: () => setState(() => _fotos.remove(f)),
-          child: Container(
-            decoration: const BoxDecoration(
-              color: Colors.black54,
-              shape: BoxShape.circle,
-            ),
-            padding: const EdgeInsets.all(3),
-            child: const Icon(Icons.close, size: 14, color: Colors.white),
-          ),
-        ),
-      ),
-    ],
-  );
-
-  Widget _fotoAddBtn() => GestureDetector(
-    onTap: _mostrarOpcionesFoto,
-    child: Container(
-      width: 90,
-      height: 90,
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.8),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: appTeal.withValues(alpha: 0.4), width: 1.5),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.add_a_photo_outlined, color: appTeal, size: 28),
-          const SizedBox(height: 4),
-          Text(
-            _fotos.isEmpty ? 'Agregar' : '${_fotos.length}/2',
-            style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
-          ),
-        ],
-      ),
-    ),
-  );
-
-  // ChipsSeleccionables (widgets/chips_seleccionables.dart) — antes esto tenía su propia copia de
-  // la grilla, una de tres iguales repartidas en otras tantas pantallas.
-  // Ver el comentario en tipo_animal_screen.dart/_grupo para el hallazgo
-  // completo.
+  // ChipsSeleccionables (widgets/chips_seleccionables.dart) — antes esto
+  // tenía su propia copia de la grilla, una de tres iguales repartidas en
+  // otras tantas pantallas. Sin color: el verde 3D del tema.
   Widget _chips(
     List<String> options,
     String selected,
-    ValueChanged<String> onSelect,
-    Color activeColor,
-  ) => ChipsSeleccionables(
+    ValueChanged<String> onSelect, [
+    Color? activeColor,
+  ]) => ChipsSeleccionables(
     opciones: options,
     seleccion: selected,
     onSeleccionar: onSelect,
     colorActivo: activeColor,
-    colorInactivo: Colors.white.withValues(alpha: 0.85),
     duracion: const Duration(milliseconds: 160),
   );
 
-  // maxLength sin tope antes: un pegado gigante en nombre/descripción se
-  // guardaba entero, inflando el tamaño del documento sin ninguna razón
-  // real. Hallazgo de auditoría de código.
-  // Mismo estilo exacto que editar_rescate_screen.dart (_campo): el campo
-  // de nombre se ve distinto al crear y al editar un animal, aunque es la
-  // misma pregunta en las dos pantallas (rescatista Y albergue, esta
-  // pantalla es compartida por las dos — ver widget.esAlbergue). Pedido
-  // real de Eliza: que se vea "exactamente el mismo campo de Nombre" en
-  // toda la app. Campo aparte en vez de tocar _field() de acá abajo, que
-  // sigue usándose para Raza y otros campos que no pidió cambiar.
+  // Mismo campo de Nombre que editar_rescate_screen.dart: pedido real de
+  // Eliza, que se vea "exactamente el mismo campo de Nombre" en toda la app.
+  // El estilo del campo viene del tema (inputDecorationTheme).
   Widget _campoNombre() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      const Text(
-        'Nombre del animal (opcional)',
-        style: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-          color: appInk,
-        ),
-      ),
-      const SizedBox(height: 6),
+      _etiqueta('Nombre del animal (opcional)'),
+      const SizedBox(height: 8),
       TextField(
         controller: _nombreCtl,
         maxLength: 30,
-        decoration: InputDecoration(
-          hintText: 'ej. Luna, sin nombre...',
-          hintStyle: TextStyle(color: Colors.grey.shade400),
-          filled: true,
-          fillColor: Colors.white,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none,
-          ),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 12,
-          ),
-        ),
+        decoration: const InputDecoration(hintText: 'ej. Luna, sin nombre...'),
       ),
     ],
   );
 
+  // maxLength sin tope antes: un pegado gigante se guardaba entero,
+  // inflando el tamaño del documento sin ninguna razón real. Hallazgo de
+  // auditoría de código.
   Widget _field(
     String label,
     TextEditingController ctl, {
@@ -1017,47 +1002,24 @@ class _SubirRescateScreenState extends State<SubirRescateScreen>
   }) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      _section(label),
+      _etiqueta(label),
       const SizedBox(height: 8),
-      Container(
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.88),
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 6,
-            ),
-          ],
-        ),
-        child: TextField(
-          controller: ctl,
-          maxLines: maxLines,
-          maxLength: maxLength,
-          decoration: InputDecoration(
-            hintText: hint,
-            hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
-            border: InputBorder.none,
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 14,
-            ),
-          ),
-        ),
+      TextField(
+        controller: ctl,
+        maxLines: maxLines,
+        maxLength: maxLength,
+        decoration: InputDecoration(hintText: hint),
       ),
     ],
   );
 
   /// La ubicación del animalito: se puede escribir Y detectar por GPS.
   ///
-  /// Antes acá había una versión propia que SOLO detectaba: un
-  /// `GestureDetector` sobre un texto, sin forma de escribir nada. La idea
-  /// era que un rescate se publica desde donde está el animal, así que el
-  /// GPS alcanzaba. No alcanza: en Medellín el mapa devuelve el barrio en
-  /// vez de la ciudad, y quien publicaba quedaba atrapada con ese nombre
-  /// hasta ir a editar. Hallazgo real de Eliza.
-  ///
-  /// Ahora usa CampoCiudad, el mismo widget que los perfiles y que editar.
+  /// Antes acá había una versión propia que SOLO detectaba. No alcanza: en
+  /// Medellín el mapa devuelve el barrio en vez de la ciudad, y quien
+  /// publicaba quedaba atrapada con ese nombre hasta ir a editar. Hallazgo
+  /// real de Eliza. Ahora usa CampoCiudad, el mismo widget que los perfiles
+  /// y que editar.
   Widget _locationField() => CampoCiudad(
     controller: _lugarCtl,
     hint: 'Ciudad donde está el animalito',
@@ -1065,92 +1027,92 @@ class _SubirRescateScreenState extends State<SubirRescateScreen>
     controlador: _ciudadCtrl,
     antesDeAbrirAjustes: marcarVolviendoDeAjustes,
     // El GPS trae coordenadas y país junto con el nombre, y los tres tienen
-    // que quedar del MISMO lugar: mezclar el nombre de uno con las
-    // coordenadas de otro es lo que deja un animalito diciendo una ciudad y
-    // apareciendo en otra.
-    //
-    // Escribir a mano NO pasa por acá, y está bien: ese texto todavía no lo
-    // confirmó el mapa. De eso se encarga el guardado, que lo resuelve y
-    // recién ahí fija las coordenadas (ver _publicar).
+    // que quedar del MISMO lugar. Escribir a mano NO pasa por acá: de eso se
+    // encarga el guardado, que lo resuelve y recién ahí fija las
+    // coordenadas (ver _publicar).
     onDetectado: (r) => setState(() {
       _latitud = r.posicion?.latitude;
       _longitud = r.posicion?.longitude;
       _paisCodigo = r.paisCodigo;
-      // Texto y coordenadas quedan sincronizados por definición: salieron
-      // del mismo punto. El listener de _lugarCtl prende la marca al
-      // escribir el texto, así que hay que apagarla DESPUÉS.
+      // El listener de _lugarCtl prende la marca al escribir el texto, así
+      // que hay que apagarla DESPUÉS.
       _ubicacionTocadaAMano = false;
       _lugarSincronizado = _lugarCtl.text;
     }),
   );
 
-  Widget _publishBtn() => SizedBox(
-    width: double.infinity,
-    child: ElevatedButton(
-      onPressed: _publicando ? null : _publicar,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: appDark,
-        foregroundColor: Colors.white,
-        // Mientras publica, el botón queda deshabilitado (onPressed: null)
-        // para no permitir un segundo toque — pero sin esto, Material pinta
-        // un botón deshabilitado con SUS propios colores grises de tema en
-        // vez de los de acá arriba, y el texto blanco de "tardando más de
-        // lo normal" quedaba casi ilegible sobre ese gris apagado. Mismos
-        // colores que el botón habilitado: sigue pareciendo el mismo botón,
-        // solo que ocupado. Hallazgo real de Eliza, en modo avión.
-        disabledBackgroundColor: appDark,
-        disabledForegroundColor: Colors.white,
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        elevation: 0,
-      ),
-      child: _publicando
-          ? Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2,
-                        value: _progreso > 0 ? _progreso : null,
+  Widget _publishBtn() {
+    final c = context.sp;
+    final contenido = _publicando
+        ? Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(
+                      color: c.onPrimary,
+                      strokeWidth: 2,
+                      value: _progreso > 0 ? _progreso : null,
+                    ),
+                  ),
+                  if (_progreso > 0) ...[
+                    const SizedBox(width: 10),
+                    Text(
+                      '${(_progreso * 100).round()}%',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: c.onPrimary,
                       ),
                     ),
-                    if (_progreso > 0) ...[
-                      const SizedBox(width: 10),
-                      Text(
-                        '${(_progreso * 100).round()}%',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ],
                   ],
-                ),
-                // Sin señal, la subida no tiene bytes que transferir todavía
-                // — _progreso se queda en 0 y el círculo gira sin ningún
-                // texto durante hasta 45s (el timeout de la foto). Sin este
-                // aviso parecía que la app estaba colgada.
-                if (tardandoMucho) ...[
-                  const SizedBox(height: 6),
-                  const Text(
-                    'Esto está tardando más de lo normal. Revisá tu conexión',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 11, color: Colors.white70),
-                  ),
                 ],
+              ),
+              // Sin señal, la subida no tiene bytes que transferir todavía —
+              // _progreso se queda en 0 y el círculo gira sin ningún texto
+              // durante hasta 45s. Sin este aviso parecía que la app estaba
+              // colgada.
+              if (tardandoMucho) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Esto está tardando más de lo normal. Revisá tu conexión',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 11, color: c.onPrimary),
+                ),
               ],
-            )
-          : const Text(
-              'Publicar rescate 🐾',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-    ),
-  );
+            ],
+          )
+        : Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.pets_rounded, size: 20, color: c.onPrimary),
+              const SizedBox(width: 8),
+              Text(
+                'Publicar rescate',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: c.onPrimary,
+                ),
+              ),
+            ],
+          );
+    // Mientras publica no se puede tocar, pero se sigue viendo igual (mismo
+    // verde), solo ocupado: antes el botón deshabilitado se volvía gris y
+    // el aviso de "tardando" quedaba casi ilegible. Hallazgo real de Eliza,
+    // en modo avión.
+    final caja = Container(
+      width: double.infinity,
+      constraints: const BoxConstraints(minHeight: 56),
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+      alignment: Alignment.center,
+      decoration: SpDeco.primary(c, radius: SpRadius.md),
+      child: contenido,
+    );
+    return _publicando ? caja : SpPressable(onTap: _publicar, child: caja);
+  }
 }

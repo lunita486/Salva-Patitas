@@ -1075,3 +1075,129 @@ SpTone spToneAliado(String tipo) => switch (tipo) {
   'Peluquería canina' => SpTone.butter,
   _ => SpTone.sky,
 };
+
+/// Color de la opción de urgencia elegida: Alta coral, Media durazno, Baja
+/// el verde de siempre (null = verde 3D del tema). Lo usan "Subir uno" y
+/// "Subir lote".
+Color? spColorUrgencia(SpColors c, String urgencia) => switch (urgencia) {
+  'Alta' => c.accent,
+  'Media' => c.peachDeep,
+  _ => null,
+};
+
+/// Las especies como baldosas con su animalito 3D (`.species`); la elegida
+/// lleva borde verde y ✓. Lo usan "Subir uno" y "Subir lote".
+class SpSelectorEspecie extends StatelessWidget {
+  const SpSelectorEspecie({
+    super.key,
+    required this.especies,
+    required this.seleccion,
+    required this.onSeleccionar,
+  });
+  final List<String> especies;
+  final String seleccion;
+  final ValueChanged<String> onSeleccionar;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.sp;
+    return Row(
+      children: [
+        for (final (i, e) in especies.indexed) ...[
+          if (i > 0) const SizedBox(width: SpSpace.s3),
+          Expanded(
+            child: Builder(
+              builder: (_) {
+                final (tono, animal) = spEspecie(e);
+                final sel = e == seleccion;
+                return Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    SpToneBox(
+                      tone: tono,
+                      radius: 22,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      onTap: () => onSeleccionar(e),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: Column(
+                          children: [
+                            SpAnimal(animal, size: 56),
+                            const SizedBox(height: 6),
+                            Text(
+                              e,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                                color: c.ink,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (sel)
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(22),
+                              border: Border.all(color: c.primary, width: 3),
+                            ),
+                          ),
+                        ),
+                      ),
+                    if (sel)
+                      Positioned(
+                        top: 6,
+                        right: 6,
+                        child: Container(
+                          width: 22,
+                          height: 22,
+                          decoration: SpDeco.primary(c, radius: SpRadius.full),
+                          child: Icon(
+                            Icons.check_rounded,
+                            size: 14,
+                            color: c.onPrimary,
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// Borde punteado redondeado (recuadros de "Agregar fotos").
+class SpBordePunteado extends CustomPainter {
+  SpBordePunteado(this.color);
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+    final rect = RRect.fromRectAndRadius(
+      Offset.zero & size,
+      const Radius.circular(24),
+    ).deflate(1);
+    final path = Path()..addRRect(rect);
+    for (final m in path.computeMetrics()) {
+      var d = 0.0;
+      while (d < m.length) {
+        canvas.drawPath(m.extractPath(d, d + 8), paint);
+        d += 14;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(SpBordePunteado old) => old.color != color;
+}
