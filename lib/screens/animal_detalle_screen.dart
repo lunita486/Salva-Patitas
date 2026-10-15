@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../routing/app_router.dart';
-import '../theme.dart';
+import '../theme/salva_patitas_theme.dart';
+import '../widgets/sp_widgets.dart';
 import '../domain/reglas_negocio.dart';
 import '../widgets/fotos.dart';
 
@@ -44,7 +45,6 @@ class _AnimalDetalleScreenState extends State<AnimalDetalleScreen> {
     final ubicacion = (animal['ubicacion'] as String?) ?? '';
     final descripcion = (animal['descripcion'] as String?) ?? '';
     final tags = ((animal['tags'] as List?) ?? const []).cast<String>();
-    final emoji = animal['especie'] == 'Gato' ? '🐱' : '🐶';
     final vacunado = (animal['vacunado'] as String?) ?? 'Aún no lo sé';
     final desparasitado =
         (animal['desparasitado'] as String?) ?? 'Aún no lo sé';
@@ -66,432 +66,323 @@ class _AnimalDetalleScreenState extends State<AnimalDetalleScreen> {
     final screenSize = MediaQuery.of(context).size;
     final fotoHeight = screenSize.height < screenSize.width ? 180.0 : 380.0;
 
+    final c = context.sp;
+    const tonosRasgos = [
+      SpTone.mint,
+      SpTone.peach,
+      SpTone.lilac,
+      SpTone.sky,
+      SpTone.butter,
+    ];
+
     return Scaffold(
-      backgroundColor: appBg,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Header
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Row(
-                children: [
-                  _circleBtn(
-                    Icons.arrow_back_ios_new,
-                    () => Navigator.pop(context),
-                    label: 'Volver',
-                  ),
-                  Expanded(
-                    child: Text(
-                      nombre,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: appInk,
-                        fontFamily: 'Baloo2',
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 36),
-                ],
-              ),
-            ),
-            // Photo carousel — FUERA del scroll para que el swipe no compita
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              // Tocar la foto la abre completa, sin recortar y con zoom —
-              // igual que en la tarjeta del feed. El carrusel de acá recorta
-              // con BoxFit.cover exactamente igual, pero este toque nunca
-              // estuvo conectado: el ítem del checklist ("tocar la foto en el
-              // feed o en el detalle → se abre completa") lo prometía y en el
-              // detalle no pasaba nada.
-              child: GestureDetector(
-                onTap: fotos.isEmpty
-                    ? null
-                    : () => context.push(
-                        AppRoutes.visorFoto,
-                        extra: (fotos: fotos, indiceInicial: _paginaFoto),
-                      ),
-                child: Stack(
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(20),
-                      child: fotos.isEmpty
-                          ? Container(
-                              height: fotoHeight,
-                              width: double.infinity,
-                              decoration: const BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [
-                                    Color(0xFF3D7A52),
-                                    Color(0xFF1F4A30),
-                                  ],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                ),
-                              ),
-                              child: Center(
-                                child: Text(
-                                  emoji,
-                                  style: const TextStyle(fontSize: 90),
-                                ),
-                              ),
+      backgroundColor: c.bg,
+      body: Stack(
+        children: [
+          const Positioned.fill(child: SpPawBackground()),
+          SafeArea(
+            child: Column(
+              children: [
+                SpScreenHeader(
+                  title: nombre,
+                  subtitle: [
+                    if ((animal['especie'] as String?)?.isNotEmpty == true)
+                      animal['especie'] as String,
+                    if (ubicacion.isNotEmpty) ubicacion,
+                  ].join(' · '),
+                ),
+                // Carrusel de fotos — FUERA del scroll para que el swipe no
+                // compita.
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  // Tocar la foto la abre completa, sin recortar y con zoom —
+                  // igual que en la tarjeta del feed (el checklist lo
+                  // prometía y en el detalle no pasaba nada).
+                  child: GestureDetector(
+                    onTap: fotos.isEmpty
+                        ? null
+                        : () => context.push(
+                            AppRoutes.visorFoto,
+                            extra: (fotos: fotos, indiceInicial: _paginaFoto),
+                          ),
+                    child: Container(
+                      height: fotoHeight,
+                      decoration: SpDeco.card(c, radius: SpRadius.xl),
+                      clipBehavior: Clip.antiAlias,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          if (fotos.isEmpty)
+                            SpFotoVacia(
+                              especie: animal['especie'] as String?,
+                              size: 120,
                             )
-                          : SizedBox(
-                              height: fotoHeight,
-                              child: PageView.builder(
-                                controller: _pageCtrl,
-                                itemCount: fotos.length,
-                                onPageChanged: (i) =>
-                                    setState(() => _paginaFoto = i),
-                                // FotoAnimal en vez de recorte — mismo motivo que
-                                // en la tarjeta del feed: la foto entera sobre un
-                                // fondo de sí misma desenfocado (caso "Tobyiii").
-                                itemBuilder: (_, i) => FotoAnimal(
-                                  url: fotos[i],
-                                  width: double.infinity,
-                                  fallback: Container(
-                                    decoration: const BoxDecoration(
-                                      gradient: LinearGradient(
-                                        colors: [
-                                          Color(0xFF3D7A52),
-                                          Color(0xFF1F4A30),
-                                        ],
-                                        begin: Alignment.topLeft,
-                                        end: Alignment.bottomRight,
-                                      ),
+                          else
+                            PageView.builder(
+                              controller: _pageCtrl,
+                              itemCount: fotos.length,
+                              onPageChanged: (i) =>
+                                  setState(() => _paginaFoto = i),
+                              // FotoAnimal en vez de recorte — la foto entera
+                              // sobre un fondo de sí misma desenfocado (caso
+                              // "Tobyiii").
+                              itemBuilder: (_, i) => FotoAnimal(
+                                url: fotos[i],
+                                width: double.infinity,
+                                fallback: SpFotoVacia(
+                                  especie: animal['especie'] as String?,
+                                  size: 120,
+                                ),
+                              ),
+                            ),
+                          if (fotos.length > 1)
+                            Positioned(
+                              bottom: 12,
+                              left: 0,
+                              right: 0,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: List.generate(
+                                  fotos.length,
+                                  (i) => AnimatedContainer(
+                                    duration: const Duration(milliseconds: 200),
+                                    margin: const EdgeInsets.symmetric(
+                                      horizontal: 3,
                                     ),
-                                    child: Center(
-                                      child: Text(
-                                        emoji,
-                                        style: const TextStyle(fontSize: 90),
+                                    width: _paginaFoto == i ? 18 : 7,
+                                    height: 7,
+                                    decoration: BoxDecoration(
+                                      color: SpDeco.shine.withValues(
+                                        alpha: _paginaFoto == i ? 1 : .55,
                                       ),
+                                      borderRadius: BorderRadius.circular(4),
                                     ),
                                   ),
                                 ),
                               ),
                             ),
-                    ),
-                    if (fotos.length > 1)
-                      Positioned(
-                        bottom: 10,
-                        left: 0,
-                        right: 0,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: List.generate(
-                            fotos.length,
-                            (i) => AnimatedContainer(
-                              duration: const Duration(milliseconds: 200),
-                              margin: const EdgeInsets.symmetric(horizontal: 3),
-                              width: _paginaFoto == i ? 18 : 7,
-                              height: 7,
-                              decoration: BoxDecoration(
-                                color: _paginaFoto == i
-                                    ? Colors.white
-                                    : Colors.white.withValues(alpha: 0.5),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    // Misma señal visual que en la tarjeta del feed: sin el
-                    // ícono, la única forma de descubrir que la foto se puede
-                    // tocar era por casualidad.
-                    if (fotos.isNotEmpty)
-                      Positioned(
-                        bottom: 12,
-                        right: 12,
-                        child: IgnorePointer(
-                          child: Container(
-                            padding: const EdgeInsets.all(7),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.38),
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(
-                              Icons.zoom_out_map,
-                              color: Colors.white,
-                              size: 16,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-            // Scrollable content
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 12),
-                    // Badges
-                    Row(
-                      children: [
-                        if (ubicacion.isNotEmpty)
-                          _pill(Icons.location_on, ubicacion),
-                        if (ubicacion.isNotEmpty && edad.isNotEmpty)
-                          const SizedBox(width: 8),
-                        if (edad.isNotEmpty) _pill(null, edad),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    // Name
-                    Text(
-                      nombre,
-                      style: const TextStyle(
-                        fontSize: 36,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF1B3A1F),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      [
-                        raza,
-                        if (genero.isNotEmpty && genero != 'No sé') genero,
-                        if (edad.isNotEmpty) edad,
-                      ].join(' · '),
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey.shade700,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    // Chips
-                    if (tags.isNotEmpty)
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 6,
-                        children: tags
-                            .map(
-                              (t) => Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 6,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF9DDD5),
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: Text(
-                                  t,
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Color(0xFF8B3A1F),
-                                    fontWeight: FontWeight.w500,
+                          // Misma señal que en la tarjeta del feed: sin el
+                          // ícono, descubrir que la foto se toca era casualidad.
+                          if (fotos.isNotEmpty)
+                            Positioned(
+                              bottom: 12,
+                              right: 12,
+                              child: IgnorePointer(
+                                child: Container(
+                                  width: 34,
+                                  height: 34,
+                                  decoration: SpDeco.soft(
+                                    c,
+                                    radius: SpRadius.full,
+                                  ),
+                                  child: Icon(
+                                    Icons.zoom_out_map_rounded,
+                                    color: c.ink,
+                                    size: 17,
                                   ),
                                 ),
                               ),
-                            )
-                            .toList(),
-                      ),
-                    const SizedBox(height: 22),
-                    // Salud — sugerencia real de un tester: el adoptante
-                    // necesita saber esto de antemano porque va a tener que
-                    // asumir esos gastos si todavía falta. "Aún no lo sé" se
-                    // muestra igual que Sí/No (no se oculta): es información
-                    // real y honesta, no un dato faltante.
-                    const Text(
-                      'SALUD',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1.2,
-                        color: appTeal,
+                            ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 6,
-                      children: [
-                        _pill(null, 'Vacunado: $vacunado'),
-                        _pill(null, 'Desparasitado: $desparasitado'),
-                      ],
-                    ),
-                    const SizedBox(height: 22),
-                    // Historia
-                    if (descripcion.isNotEmpty) ...[
-                      const Text(
-                        'MI HISTORIA',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1.2,
-                          color: appTeal,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        descripcion,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontStyle: FontStyle.italic,
-                          color: Color(0xFF2A2A2A),
-                          height: 1.65,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 100),
-                  ],
+                  ),
                 ),
-              ),
-            ),
-            // Bottom buttons
-            Container(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-              color: appBg,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () => context.push(
-                        AppRoutes.chat,
-                        extra: (animal: animal, esRescatista: false, chatId: null),
-                      ),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(30),
-                          border: Border.all(color: Colors.grey.shade200),
-                        ),
-                        child: const Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
                           children: [
-                            Icon(Icons.chat_bubble_outline, size: 18),
-                            SizedBox(width: 8),
-                            Text(
-                              'Mensaje',
+                            if (ubicacion.isNotEmpty)
+                              _pill(Icons.place_outlined, ubicacion),
+                            if (edad.isNotEmpty) _pill(null, edad),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+                        Text(
+                          nombre,
+                          style: TextStyle(
+                            fontSize: 30,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -.5,
+                            color: c.ink,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          [
+                            raza,
+                            if (genero.isNotEmpty && genero != 'No sé') genero,
+                            if (edad.isNotEmpty) edad,
+                          ].join(' · '),
+                          style: SpText.label.copyWith(color: c.inkMuted),
+                        ),
+                        if (tags.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          // Rasgos en pastel, cada uno de un color.
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              for (final (i, t) in tags.indexed)
+                                SpPill(
+                                  t,
+                                  fondo: SpToneColors.of(
+                                    c,
+                                    tonosRasgos[i % tonosRasgos.length],
+                                  ).fill,
+                                  tinta: SpToneColors.of(
+                                    c,
+                                    tonosRasgos[i % tonosRasgos.length],
+                                  ).ink,
+                                ),
+                            ],
+                          ),
+                        ],
+                        // Salud — sugerencia real de un tester: el adoptante
+                        // necesita saber esto de antemano porque va a asumir
+                        // esos gastos si falta. "Aún no lo sé" se muestra
+                        // igual que Sí/No: es información real y honesta.
+                        const SizedBox(height: SpSpace.s6),
+                        const SpSectionTitle('Salud'),
+                        const SizedBox(height: SpSpace.s3),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _pill(
+                              Icons.vaccines_outlined,
+                              'Vacunado: $vacunado',
+                            ),
+                            _pill(
+                              Icons.medication_outlined,
+                              'Desparasitado: $desparasitado',
+                            ),
+                          ],
+                        ),
+                        if (descripcion.isNotEmpty) ...[
+                          const SizedBox(height: SpSpace.s6),
+                          const SpSectionTitle('Mi historia'),
+                          const SizedBox(height: SpSpace.s3),
+                          SpCard(
+                            child: Text(
+                              descripcion,
                               style: TextStyle(
                                 fontSize: 15,
-                                fontWeight: FontWeight.w600,
+                                color: c.ink,
+                                height: 1.6,
+                                fontWeight: FontWeight.w500,
                               ),
                             ),
-                          ],
-                        ),
-                      ),
+                          ),
+                        ],
+                        const SizedBox(height: 16),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    flex: 2,
-                    child: GestureDetector(
-                      onTap: puedeAdoptarse
-                          ? () => context.push(
-                              AppRoutes.solicitudAdopcion,
-                              extra: animal,
-                            )
-                          : null,
-                      child: Container(
-                        padding: EdgeInsets.symmetric(
-                          vertical: enHogar ? 8 : 14,
-                        ),
-                        decoration: BoxDecoration(
-                          color: puedeAdoptarse
-                              ? appOrange
-                              : Colors.grey.shade400,
-                          borderRadius: BorderRadius.circular(30),
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Icon(
-                                  Icons.favorite,
-                                  size: 18,
-                                  color: Colors.white,
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  puedeAdoptarse
-                                      ? 'Solicitar adopción'
-                                      : estadoAdopcion == 'Fallecido'
-                                      ? 'Ya no está con nosotros'
-                                      : 'Ya no está disponible',
-                                  style: const TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ],
+                ),
+                // Botones de abajo
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                  child: Column(
+                    children: [
+                      if (enHogar)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Text(
+                            'Actualmente en hogar de paso',
+                            style: SpText.caption.copyWith(
+                              color: c.butterInk,
+                              fontWeight: FontWeight.w700,
                             ),
-                            if (enHogar) ...[
-                              const SizedBox(height: 2),
-                              Text(
-                                'Actualmente en hogar de paso',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: Colors.white.withValues(alpha: 0.85),
+                          ),
+                        ),
+                      Row(
+                        children: [
+                          // Solo el ícono: con el texto "Mensaje" al lado de
+                          // "Solicitar adopción" no entraban los dos y se
+                          // cortaba ("Mensa…").
+                          Tooltip(
+                            message: 'Mensaje',
+                            child: SpPressable(
+                              onTap: () => context.push(
+                                AppRoutes.chat,
+                                extra: (
+                                  animal: animal,
+                                  esRescatista: false,
+                                  chatId: null,
                                 ),
                               ),
-                            ],
-                          ],
-                        ),
+                              child: Container(
+                                width: 56,
+                                height: 48,
+                                decoration: SpDeco.soft(c, radius: SpRadius.md),
+                                child: Icon(
+                                  Icons.chat_bubble_outline_rounded,
+                                  color: c.ink,
+                                  size: 22,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: SpButton(
+                              label: puedeAdoptarse
+                                  ? 'Solicitar adopción'
+                                  : estadoAdopcion == 'Fallecido'
+                                  ? 'Ya no está con nosotros'
+                                  : 'Ya no está disponible',
+                              icon: Icons.favorite_rounded,
+                              onTap: puedeAdoptarse
+                                  ? () => context.push(
+                                      AppRoutes.solicitudAdopcion,
+                                      extra: animal,
+                                    )
+                                  : null,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _circleBtn(IconData icon, VoidCallback onTap, {String? label}) =>
-      Tooltip(
-        message: label ?? '',
-        child: GestureDetector(
-          onTap: onTap,
-          child: Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.85),
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.07),
-                  blurRadius: 6,
-                ),
-              ],
+  Widget _pill(IconData? icon, String text) {
+    final c = context.sp;
+    return Container(
+      height: 34,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: SpDeco.soft(c, radius: SpRadius.full),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 16, color: c.primary),
+            const SizedBox(width: 6),
+          ],
+          Text(
+            text,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: c.inkMuted,
             ),
-            child: Icon(icon, size: 16, color: const Color(0xFF444444)),
           ),
-        ),
-      );
-
-  Widget _pill(IconData? icon, String text) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-    decoration: BoxDecoration(
-      color: Colors.white.withValues(alpha: 0.9),
-      borderRadius: BorderRadius.circular(20),
-    ),
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (icon != null) ...[
-          Icon(icon, size: 12, color: appTeal),
-          const SizedBox(width: 4),
         ],
-        Text(
-          text,
-          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-        ),
-      ],
-    ),
-  );
+      ),
+    );
+  }
 }
