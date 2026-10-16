@@ -357,6 +357,10 @@ class SpDeco {
   /// claro y en oscuro (es luz, no fondo), por eso no está en SpColors.
   static const shine = Color(0xFFFFFFFF);
 
+  /// Negro de los velos sobre fotos (degradado bajo el nombre, flechas). Como
+  /// [shine], es sombra sobre una imagen y no cambia con el tema.
+  static const shade = Color(0xFF000000);
+
   static bool _dark(SpColors c) => c.bg.computeLuminance() < .2;
 
   /// Tarjeta blanca tipo plastilina.

@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:go_router/go_router.dart';
 import '../theme.dart';
+import '../widgets/adoptante_tab_bar.dart';
 import '../widgets/avatares.dart';
 import '../widgets/albergue_tab_bar.dart';
 import '../widgets/estado_error_feed.dart';
@@ -49,6 +50,15 @@ class _AliadosScreenState extends State<AliadosScreen> {
               onTap: AlbergueTabBar.volverAlPanel(
                 context,
                 AlbergueTab.negocios,
+              ),
+            )
+          // Adoptante (sin sombrero de rescatista): la barra del adoptante.
+          : !widget.esRescatista
+          ? AdoptanteTabBar(
+              actual: AdoptanteTab.negocios,
+              onTap: AdoptanteTabBar.volverAlInicio(
+                context,
+                AdoptanteTab.negocios,
               ),
             )
           : null,

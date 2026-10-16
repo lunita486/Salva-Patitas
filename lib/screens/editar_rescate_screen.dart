@@ -7,7 +7,8 @@ import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:go_router/go_router.dart';
 import '../routing/app_router.dart';
-import '../theme.dart';
+import '../theme/salva_patitas_theme.dart';
+import '../widgets/sp_widgets.dart';
 import '../widgets/aviso_animal_duplicado.dart';
 import '../widgets/chips_seleccionables.dart';
 import '../widgets/confirmar_ciudad_resuelta.dart';
@@ -435,11 +436,11 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
+        SnackBar(
+          content: const Text(
             'No pudimos verificar si se puede eliminar. Revisá tu conexión e intentá de nuevo.',
           ),
-          backgroundColor: msgError,
+          backgroundColor: context.sp.msgError,
         ),
       );
       return;
@@ -498,9 +499,9 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
-          const SnackBar(
-            content: Text('Publicación eliminada'),
-            backgroundColor: msgExito,
+          SnackBar(
+            content: const Text('Publicación eliminada'),
+            backgroundColor: context.sp.msgExito,
           ),
         );
       Navigator.pop(context);
@@ -516,9 +517,9 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
-          const SnackBar(
-            content: Text('Publicación eliminada'),
-            backgroundColor: msgExito,
+          SnackBar(
+            content: const Text('Publicación eliminada'),
+            backgroundColor: context.sp.msgExito,
           ),
         );
       Navigator.pop(context);
@@ -529,7 +530,7 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
         ..showSnackBar(
           SnackBar(
             content: Text(RescatesRepository.mensajeErrorEliminar(e)),
-            backgroundColor: msgError,
+            backgroundColor: context.sp.msgError,
             behavior: SnackBarBehavior.floating,
             duration: const Duration(seconds: 6),
           ),
@@ -588,11 +589,11 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
   Future<void> _guardar() async {
     if (!_tieneAlMenosUnaFoto) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
+        SnackBar(
+          content: const Text(
             'El animal necesita al menos una foto. Agregá una antes de guardar.',
           ),
-          backgroundColor: msgError,
+          backgroundColor: context.sp.msgError,
         ),
       );
       return;
@@ -718,12 +719,12 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
             _lugarCtl.text = elegida.ciudadResuelta;
             _paisCodigo = elegida.paisCodigo;
             _lugarOriginal = _lugarCtl.text;
-              _guardando = false;
+            _guardando = false;
           });
           cancelarTimerTardando();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              backgroundColor: msgAdvertencia,
+              backgroundColor: context.sp.msgAdvertencia,
               content: Text(
                 'Ubicación: ${elegida.ciudadResuelta}. '
                 'Tocá Guardar para confirmar los cambios.',
@@ -778,7 +779,8 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
               'nombre': _nombreCtl.text.trim(),
               'descripcion': descripcionSinNombreDePlantillaVieja(
                 descripcion: _descCtl.text.trim(),
-                nombreOriginal: (widget.data['nombre'] as String?)?.trim() ?? '',
+                nombreOriginal:
+                    (widget.data['nombre'] as String?)?.trim() ?? '',
               ),
               'especie': _especie,
               'estado': _estado,
@@ -829,7 +831,9 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
                 ? '¡Cambios guardados!'
                 : 'Esto está tardando. Tu cambio se va a guardar solo apenas vuelva la señal.',
           ),
-          backgroundColor: guardadoConfirmado ? msgExito : msgAdvertencia,
+          backgroundColor: guardadoConfirmado
+              ? context.sp.msgExito
+              : context.sp.msgAdvertencia,
           behavior: SnackBarBehavior.floating,
           duration: Duration(seconds: guardadoConfirmado ? 4 : 6),
         ),
@@ -847,7 +851,7 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
           content: const Text(
             'No se pudo guardar. Revisá tu conexión e intentá de nuevo.',
           ),
-          backgroundColor: msgError,
+          backgroundColor: context.sp.msgError,
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 6),
         ),
@@ -864,232 +868,256 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
 
   @override
   Widget build(BuildContext context) {
+    final c = context.sp;
+    // Gemela de "Subir uno" (subir_rescate_screen.dart): mismas secciones,
+    // mismas tarjetas y el mismo botón verde abajo (pedido de Eliza).
     return Scaffold(
-      backgroundColor: appBg,
-      body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 10, 20, 12),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-                    tooltip: 'Volver',
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                  const Expanded(
-                    child: Text(
-                      'Editar animal',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: appInk,
-                        fontFamily: 'Baloo2',
-                      ),
-                    ),
-                  ),
-                  if (_guardando)
-                    const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        color: appTeal,
-                        strokeWidth: 2,
-                      ),
-                    )
-                  else
-                    TextButton(
-                      onPressed: _guardar,
-                      child: const Text(
-                        'Guardar',
-                        style: TextStyle(
-                          color: appTeal,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 15,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            if (tardandoMucho)
-              Container(
-                width: double.infinity,
-                color: Colors.orange.shade50,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 8,
+      backgroundColor: c.bg,
+      body: Stack(
+        children: [
+          const Positioned.fill(child: SpPawBackground()),
+          SafeArea(
+            child: Column(
+              children: [
+                // Volver apagado mientras se guarda, mismo motivo que en
+                // Subir uno: salir a mitad de camino hacía creer que no se
+                // había guardado.
+                SpScreenHeader(
+                  title: 'Editar animal',
+                  subtitle: 'Cambia lo que necesites y guarda',
+                  onBack: _guardando ? () {} : null,
                 ),
-                child: Text(
-                  'Esto está tardando más de lo normal. Revisá tu conexión',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    color: Colors.orange.shade900,
-                  ),
-                ),
-              ),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _seccion('FOTOS'),
-                    const SizedBox(height: 10),
-                    _fotoSection(),
-                    const SizedBox(height: 20),
-                    _campo('Nombre', _nombreCtl, 'ej. Luna', maxLength: 30),
-                    const SizedBox(height: 16),
-                    if (!_esDeAlbergue) ...[
-                      _campoUbicacion(),
-                      const SizedBox(height: 16),
-                    ],
-                    _campo(
-                      'Descripción',
-                      _descCtl,
-                      'Cuéntanos sobre el animal...',
-                      maxLines: 3,
-                      maxLength: 1000,
-                    ),
-                    const SizedBox(height: 20),
-                    _seccion('INFORMACIÓN'),
-                    const SizedBox(height: 12),
-                    _selector(
-                      'Especie',
-                      _especie,
-                      _especies,
-                      (v) => setState(() => _especie = v),
-                    ),
-                    const SizedBox(height: 12),
-                    _selector(
-                      'Estado de salud',
-                      _estado,
-                      _estados,
-                      (v) => setState(() => _estado = v),
-                    ),
-                    const SizedBox(height: 12),
-                    _selector(
-                      '¿Vacunado?',
-                      _vacunado,
-                      _saludOpts,
-                      (v) => setState(() => _vacunado = v),
-                    ),
-                    const SizedBox(height: 12),
-                    _selector(
-                      '¿Desparasitado?',
-                      _desparasitado,
-                      _saludOpts,
-                      (v) => setState(() => _desparasitado = v),
-                    ),
-                    const SizedBox(height: 12),
-                    _selector(
-                      'Urgencia',
-                      _urgencia,
-                      _urgencias,
-                      (v) => setState(() => _urgencia = v),
-                    ),
-                    const SizedBox(height: 20),
-                    _seccion('COMPATIBILIDAD'),
-                    const SizedBox(height: 12),
-                    _selector(
-                      'Energía',
-                      _energia,
-                      _energias,
-                      (v) => setState(() => _energia = v),
-                    ),
-                    const SizedBox(height: 12),
-                    _selector(
-                      'Tamaño',
-                      _tamano,
-                      _tamanos,
-                      (v) => setState(() => _tamano = v),
-                    ),
-                    const SizedBox(height: 12),
-                    _selector(
-                      'Edad',
-                      _edad,
-                      _edades,
-                      (v) => setState(() => _edad = v),
-                    ),
-                    const SizedBox(height: 12),
-                    _selector(
-                      'Género',
-                      _genero,
-                      _generos,
-                      (v) => setState(() => _genero = v),
-                    ),
-                    const SizedBox(height: 12),
-                    _selector(
-                      '¿Amigable con niños?',
-                      _okNinos,
-                      _siNo,
-                      (v) => setState(() => _okNinos = v),
-                    ),
-                    const SizedBox(height: 12),
-                    _selector(
-                      '¿Sociable con animales?',
-                      _okMascotas,
-                      _siNo,
-                      (v) => setState(() => _okMascotas = v),
-                    ),
-                    const SizedBox(height: 12),
-                    _selector(
-                      '¿Requiere experiencia?',
-                      _requiereExp,
-                      _siNo,
-                      (v) => setState(() => _requiereExp = v),
-                    ),
-                    const SizedBox(height: 32),
-                    GestureDetector(
-                      onTap: _guardando ? null : _eliminar,
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: Colors.red.shade200),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // ── Fotos ────────────────────────────────────────
+                        const SpSectionTitle('Fotos'),
+                        const SizedBox(height: SpSpace.s3),
+                        _fotoSection(),
+
+                        // ── Especie ──────────────────────────────────────
+                        const SizedBox(height: SpSpace.s6),
+                        const SpSectionTitle('¿Qué animal es?'),
+                        const SizedBox(height: SpSpace.s3),
+                        SpSelectorEspecie(
+                          especies: _especies,
+                          seleccion: _especie,
+                          onSeleccionar: (v) => setState(() => _especie = v),
                         ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.delete_outline,
-                              color: Colors.red.shade400,
-                              size: 18,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Eliminar publicación',
-                              style: TextStyle(
-                                color: Colors.red.shade400,
-                                fontWeight: FontWeight.w600,
+
+                        // ── Sobre el animal ──────────────────────────────
+                        const SizedBox(height: SpSpace.s6),
+                        const SpSectionTitle('Sobre el animal'),
+                        const SizedBox(height: SpSpace.s3),
+                        SpCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _campo(
+                                'Nombre',
+                                _nombreCtl,
+                                'ej. Luna',
+                                maxLength: 30,
                               ),
-                            ),
-                          ],
+                              _selector(
+                                'Edad',
+                                _edad,
+                                _edades,
+                                (v) => setState(() => _edad = v),
+                              ),
+                              _selector(
+                                'Género',
+                                _genero,
+                                _generos,
+                                (v) => setState(() => _genero = v),
+                              ),
+                              _selector(
+                                'Estado de salud',
+                                _estado,
+                                _estados,
+                                (v) => setState(() => _estado = v),
+                              ),
+                              _selector(
+                                '¿Vacunado?',
+                                _vacunado,
+                                _saludOpts,
+                                (v) => setState(() => _vacunado = v),
+                              ),
+                              _selector(
+                                '¿Desparasitado?',
+                                _desparasitado,
+                                _saludOpts,
+                                (v) => setState(() => _desparasitado = v),
+                              ),
+                              _selector(
+                                'Urgencia',
+                                _urgencia,
+                                _urgencias,
+                                (v) => setState(() => _urgencia = v),
+                                spColorUrgencia(c, _urgencia),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
+
+                        // ── Compatibilidad ───────────────────────────────
+                        const SizedBox(height: SpSpace.s6),
+                        const SpSectionTitle('Compatibilidad para adopción'),
+                        const SizedBox(height: SpSpace.s3),
+                        SpCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _selector(
+                                'Energía',
+                                _energia,
+                                _energias,
+                                (v) => setState(() => _energia = v),
+                                null,
+                                true,
+                              ),
+                              _selector(
+                                'Tamaño',
+                                _tamano,
+                                _tamanos,
+                                (v) => setState(() => _tamano = v),
+                              ),
+                              _selector(
+                                '¿Amigable con niños?',
+                                _okNinos,
+                                _siNo,
+                                (v) => setState(() => _okNinos = v),
+                              ),
+                              _selector(
+                                '¿Sociable con animales?',
+                                _okMascotas,
+                                _siNo,
+                                (v) => setState(() => _okMascotas = v),
+                              ),
+                              _selector(
+                                '¿Requiere experiencia?',
+                                _requiereExp,
+                                _siNo,
+                                (v) => setState(() => _requiereExp = v),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        // ── Su historia (y ubicación, si es rescatista) ──
+                        const SizedBox(height: SpSpace.s6),
+                        const SpSectionTitle('Su historia'),
+                        const SizedBox(height: SpSpace.s3),
+                        SpCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // El albergue no elige ubicación: todos sus
+                              // animales heredan la ciudad de su perfil.
+                              if (!_esDeAlbergue) ...[
+                                _campoUbicacion(),
+                                const SizedBox(height: 8),
+                              ],
+                              _campo(
+                                'Descripción',
+                                _descCtl,
+                                'Cuéntanos sobre el animal...',
+                                maxLines: 5,
+                                maxLength: 1000,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: SpSpace.s6),
+                        _botonGuardar(c),
+                        const SizedBox(height: SpSpace.s3),
+                        SizedBox(
+                          width: double.infinity,
+                          child: SpButton(
+                            label: 'Eliminar publicación',
+                            icon: Icons.delete_outline_rounded,
+                            peligro: true,
+                            onTap: _guardando ? null : _eliminar,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 40),
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _seccion(String t) => Text(
+  /// Botón verde 3D "Guardar cambios" (antes era un texto arriba a la
+  /// derecha). Mientras guarda no se puede tocar pero sigue verde, con el
+  /// aviso de "tardando" adentro — mismo criterio que "Publicar rescate".
+  Widget _botonGuardar(SpColors c) {
+    final contenido = _guardando
+        ? Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                height: 20,
+                width: 20,
+                child: CircularProgressIndicator(
+                  color: c.onPrimary,
+                  strokeWidth: 2,
+                ),
+              ),
+              if (tardandoMucho) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Esto está tardando más de lo normal. Revisá tu conexión',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 11, color: c.onPrimary),
+                ),
+              ],
+            ],
+          )
+        : Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.check_rounded, size: 20, color: c.onPrimary),
+              const SizedBox(width: 8),
+              Text(
+                'Guardar cambios',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: c.onPrimary,
+                ),
+              ),
+            ],
+          );
+    final caja = Container(
+      width: double.infinity,
+      constraints: const BoxConstraints(minHeight: 56),
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+      alignment: Alignment.center,
+      decoration: SpDeco.primary(c, radius: SpRadius.md),
+      child: contenido,
+    );
+    return Semantics(
+      button: true,
+      enabled: !_guardando,
+      label: _guardando ? null : 'Guardar',
+      child: _guardando ? caja : SpPressable(onTap: _guardar, child: caja),
+    );
+  }
+
+  /// Etiqueta de un campo dentro de una tarjeta (`.field > span`).
+  Widget _etiqueta(String t) => Text(
     t,
-    style: TextStyle(
-      fontSize: 11,
+    style: SpText.label.copyWith(
+      color: context.sp.inkMuted,
       fontWeight: FontWeight.w700,
-      letterSpacing: 1.2,
-      color: Colors.grey.shade700,
     ),
   );
 
@@ -1141,7 +1169,7 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
       items.add(_fotoAddBtnEdit(nextSlot: tiene1 ? 2 : 1));
     }
 
-    return Wrap(spacing: 10, runSpacing: 10, children: items);
+    return Wrap(spacing: SpSpace.s3, runSpacing: SpSpace.s3, children: items);
   }
 
   Widget _fotoThumbEdit({
@@ -1150,6 +1178,7 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
     required int slot,
     required VoidCallback onRemove,
   }) {
+    final c = context.sp;
     return Stack(
       children: [
         GestureDetector(
@@ -1158,43 +1187,44 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
           // flujo de 2 pasos que invitaba a guardar a mitad de camino.
           onTap: () => _mostrarOpcionesFoto(slot),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(22),
             child: file != null
                 ? Image.file(
                     File(file.path),
-                    width: 90,
-                    height: 90,
+                    width: 140,
+                    height: 168,
                     fit: BoxFit.cover,
                   )
                 : FotoUrl(
                     url: url!,
-                    width: 90,
-                    height: 90,
+                    width: 140,
+                    height: 168,
                     alignment: Alignment.topCenter,
                     fallback: Container(
-                      width: 90,
-                      height: 90,
-                      color: Colors.grey.shade200,
+                      width: 140,
+                      height: 168,
+                      color: c.surfaceSunken,
                       child: Icon(
                         Icons.broken_image_outlined,
-                        color: Colors.grey.shade400,
+                        color: c.inkFaint,
                       ),
                     ),
                   ),
           ),
         ),
         Positioned(
-          top: 4,
-          right: 4,
-          child: GestureDetector(
-            onTap: onRemove,
-            child: Container(
-              decoration: const BoxDecoration(
-                color: Colors.black54,
-                shape: BoxShape.circle,
+          top: 8,
+          right: 8,
+          child: Tooltip(
+            message: 'Quitar foto',
+            child: GestureDetector(
+              onTap: onRemove,
+              child: Container(
+                width: 30,
+                height: 30,
+                decoration: SpDeco.soft(c, radius: SpRadius.full),
+                child: Icon(Icons.close_rounded, size: 17, color: c.ink),
               ),
-              padding: const EdgeInsets.all(3),
-              child: const Icon(Icons.close, size: 14, color: Colors.white),
             ),
           ),
         ),
@@ -1206,20 +1236,25 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
         // igual que ya existía para el adoptante.
         if (file == null && url != null)
           Positioned(
-            bottom: 4,
-            left: 4,
-            child: GestureDetector(
-              onTap: () => context.push(
-                AppRoutes.visorFoto,
-                extra: (fotos: [url], indiceInicial: 0),
-              ),
-              child: Container(
-                decoration: const BoxDecoration(
-                  color: Colors.black54,
-                  shape: BoxShape.circle,
+            bottom: 8,
+            left: 8,
+            child: Tooltip(
+              message: 'Ver foto completa',
+              child: GestureDetector(
+                onTap: () => context.push(
+                  AppRoutes.visorFoto,
+                  extra: (fotos: [url], indiceInicial: 0),
                 ),
-                padding: const EdgeInsets.all(4),
-                child: const Icon(Icons.zoom_in, size: 14, color: Colors.white),
+                child: Container(
+                  width: 30,
+                  height: 30,
+                  decoration: SpDeco.soft(c, radius: SpRadius.full),
+                  child: Icon(
+                    Icons.zoom_out_map_rounded,
+                    size: 16,
+                    color: c.ink,
+                  ),
+                ),
               ),
             ),
           ),
@@ -1227,27 +1262,51 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
     );
   }
 
+  /// Recuadro punteado para agregar foto, como en Subir uno.
   Widget _fotoAddBtnEdit({required int nextSlot}) {
+    final c = context.sp;
     return GestureDetector(
       onTap: () => _mostrarOpcionesFoto(nextSlot),
-      child: Container(
-        width: 90,
-        height: 90,
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.8),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: appTeal.withValues(alpha: 0.4), width: 1.5),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.add_a_photo_outlined, color: appTeal, size: 28),
-            const SizedBox(height: 4),
-            Text(
-              nextSlot == 1 ? 'Agregar' : '1/2',
-              style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
-            ),
-          ],
+      child: CustomPaint(
+        foregroundPainter: SpBordePunteado(c.mintDeep),
+        child: Container(
+          width: 140,
+          height: 168,
+          decoration: BoxDecoration(
+            color: c.surface,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 50,
+                height: 50,
+                decoration: SpDeco.primary(c, radius: 16, gradient: true),
+                child: Icon(
+                  Icons.add_a_photo_rounded,
+                  size: 24,
+                  color: c.onPrimary,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                nextSlot == 1 ? 'Agregar' : 'Agregar otra',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: c.ink,
+                ),
+              ),
+              Text(
+                nextSlot == 1 ? 'Obligatoria' : '1 de 2',
+                style: SpText.caption.copyWith(
+                  color: c.inkMuted,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1255,7 +1314,8 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
 
   // maxLength sin tope antes: un pegado gigante en nombre/descripción se
   // guardaba entero, inflando el tamaño del documento sin ninguna razón
-  // real. Hallazgo de auditoría de código.
+  // real. Hallazgo de auditoría de código. El estilo del campo viene del
+  // tema (inputDecorationTheme), igual que en Subir uno.
   Widget _campo(
     String label,
     TextEditingController ctl,
@@ -1265,33 +1325,13 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
   }) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text(
-        label,
-        style: const TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-          color: appInk,
-        ),
-      ),
-      const SizedBox(height: 6),
+      _etiqueta(label),
+      const SizedBox(height: 8),
       TextField(
         controller: ctl,
         maxLines: maxLines,
         maxLength: maxLength,
-        decoration: InputDecoration(
-          hintText: hint,
-          hintStyle: TextStyle(color: Colors.grey.shade400),
-          filled: true,
-          fillColor: Colors.white,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none,
-          ),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 12,
-          ),
-        ),
+        decoration: InputDecoration(hintText: hint),
       ),
     ],
   );
@@ -1304,15 +1344,8 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Ubicación',
-          style: const TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: appInk,
-          ),
-        ),
-        const SizedBox(height: 6),
+        _etiqueta('Ubicación'),
+        const SizedBox(height: 8),
         // CampoCiudad: el mismo campo que usan los perfiles y publicar.
         // Antes acá había una versión propia con su copia entera de la
         // detección por GPS — eran tres, una por pantalla.
@@ -1331,43 +1364,37 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
             // El listener de _lugarCtl prende la marca al escribir el
             // texto, así que apagarla va DESPUÉS: esto no es una edición a
             // mano, texto y coordenadas salieron del mismo lugar.
-              _lugarOriginal = _lugarCtl.text;
+            _lugarOriginal = _lugarCtl.text;
           }),
         ),
       ],
     );
   }
 
-  // ChipsSeleccionables (widgets/chips_seleccionables.dart) — antes esto tenía su propia copia de
-  // la grilla, una de tres iguales repartidas en otras tantas pantallas.
-  // Ver el comentario en tipo_animal_screen.dart/_grupo para el hallazgo
-  // completo. `runSpacing: 0` porque esta pantalla nunca lo seteaba (el
-  // Wrap original no lo tenía) — se preserva tal cual estaba, no es parte
-  // de esta consolidación cambiarle el aspecto.
+  /// Una pregunta con sus opciones (ChipsSeleccionables, el verde 3D del
+  /// tema), separada de la anterior — igual que `_grupo` en Subir uno.
   Widget _selector(
     String label,
     String valor,
     List<String> opts,
-    ValueChanged<String> onChanged,
-  ) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(
-        label,
-        style: const TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-          color: appInk,
+    ValueChanged<String> onChanged, [
+    Color? colorActivo,
+    bool primero = false,
+  ]) => Padding(
+    padding: EdgeInsets.only(top: primero ? 0 : 18),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _etiqueta(label),
+        const SizedBox(height: 10),
+        ChipsSeleccionables(
+          opciones: opts,
+          seleccion: valor,
+          onSeleccionar: onChanged,
+          colorActivo: colorActivo,
+          duracion: const Duration(milliseconds: 160),
         ),
-      ),
-      const SizedBox(height: 6),
-      ChipsSeleccionables(
-        opciones: opts,
-        seleccion: valor,
-        onSeleccionar: onChanged,
-        colorActivo: appTeal,
-        runSpacing: 0,
-      ),
-    ],
+      ],
+    ),
   );
 }

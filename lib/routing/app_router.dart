@@ -1,6 +1,7 @@
 import 'package:go_router/go_router.dart';
 
 import '../main.dart';
+import 'pagina_pestana.dart';
 import '../screens/adoptante_chats_screen.dart';
 import '../screens/albergue_perfil_screen.dart';
 import '../screens/albergue_publico_screen.dart';
@@ -81,13 +82,22 @@ class AppRoutes {
   static const visorFoto = '/visor-foto';
 }
 
-typedef AdoptanteChatsArgs =
-    ({bool esRescatista, bool soloConsultas, bool esAlbergue});
-typedef AliadoPublicoArgs =
-    ({String aliadoId, bool esRescatista, bool esAlbergue});
+typedef AdoptanteChatsArgs = ({
+  bool esRescatista,
+  bool soloConsultas,
+  bool esAlbergue,
+});
+typedef AliadoPublicoArgs = ({
+  String aliadoId,
+  bool esRescatista,
+  bool esAlbergue,
+});
 typedef AliadosArgs = ({bool esRescatista, bool esAlbergue});
-typedef ChatArgs =
-    ({Map<String, dynamic> animal, bool esRescatista, String? chatId});
+typedef ChatArgs = ({
+  Map<String, dynamic> animal,
+  bool esRescatista,
+  String? chatId,
+});
 typedef EditarRescateArgs = ({String docId, Map<String, dynamic> data});
 typedef MisRescatesArgs = ({String? filtroInicial, bool esAlbergue});
 typedef SubirServicioArgs = ({String? docId, Map<String, dynamic>? data});
@@ -97,22 +107,20 @@ final GoRouter appRouter = GoRouter(
   initialLocation: '/',
   observers: [analyticsObserver],
   routes: [
-    GoRoute(
-      path: '/',
-      builder: (context, state) => const AuthWrapper(),
-    ),
+    GoRoute(path: '/', builder: (context, state) => const AuthWrapper()),
     GoRoute(
       path: AppRoutes.adoptanteChats,
-      builder: (context, state) {
-        final a = state.extra as AdoptanteChatsArgs? ?? (
-          esRescatista: false,
-          soloConsultas: false,
-          esAlbergue: false,
-        );
-        return AdoptanteChatsScreen(
-          esRescatista: a.esRescatista,
-          soloConsultas: a.soloConsultas,
-          esAlbergue: a.esAlbergue,
+      pageBuilder: (context, state) {
+        final a =
+            state.extra as AdoptanteChatsArgs? ??
+            (esRescatista: false, soloConsultas: false, esAlbergue: false);
+        return PaginaPestana(
+          key: state.pageKey,
+          child: AdoptanteChatsScreen(
+            esRescatista: a.esRescatista,
+            soloConsultas: a.soloConsultas,
+            esAlbergue: a.esAlbergue,
+          ),
         );
       },
     ),
@@ -142,19 +150,23 @@ final GoRouter appRouter = GoRouter(
     ),
     GoRoute(
       path: AppRoutes.aliados,
-      builder: (context, state) {
-        final a = state.extra as AliadosArgs? ?? (
-          esRescatista: false,
-          esAlbergue: false,
+      pageBuilder: (context, state) {
+        final a =
+            state.extra as AliadosArgs? ??
+            (esRescatista: false, esAlbergue: false);
+        return PaginaPestana(
+          key: state.pageKey,
+          child: AliadosScreen(
+            esRescatista: a.esRescatista,
+            esAlbergue: a.esAlbergue,
+          ),
         );
-        return AliadosScreen(esRescatista: a.esRescatista, esAlbergue: a.esAlbergue);
       },
     ),
     GoRoute(
       path: AppRoutes.animalDetalle,
-      builder: (context, state) => AnimalDetalleScreen(
-        animal: state.extra as Map<String, dynamic>,
-      ),
+      builder: (context, state) =>
+          AnimalDetalleScreen(animal: state.extra as Map<String, dynamic>),
     ),
     GoRoute(
       path: AppRoutes.chat,
@@ -176,7 +188,8 @@ final GoRouter appRouter = GoRouter(
     ),
     GoRoute(
       path: AppRoutes.favoritos,
-      builder: (context, state) => const FavoritosScreen(),
+      pageBuilder: (context, state) =>
+          PaginaPestana(key: state.pageKey, child: const FavoritosScreen()),
     ),
     GoRoute(
       path: AppRoutes.hogaresDePaso,
@@ -185,10 +198,9 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: AppRoutes.misRescates,
       builder: (context, state) {
-        final a = state.extra as MisRescatesArgs? ?? (
-          filtroInicial: null,
-          esAlbergue: false,
-        );
+        final a =
+            state.extra as MisRescatesArgs? ??
+            (filtroInicial: null, esAlbergue: false);
         return TodosLosRescatesScreen(
           filtroInicial: a.filtroInicial,
           esAlbergue: a.esAlbergue,
@@ -197,7 +209,10 @@ final GoRouter appRouter = GoRouter(
     ),
     GoRoute(
       path: AppRoutes.misSolicitudes,
-      builder: (context, state) => const MisSolicitudesScreen(),
+      pageBuilder: (context, state) => PaginaPestana(
+        key: state.pageKey,
+        child: const MisSolicitudesScreen(),
+      ),
     ),
     GoRoute(
       path: AppRoutes.notificaciones,
@@ -205,8 +220,10 @@ final GoRouter appRouter = GoRouter(
     ),
     GoRoute(
       path: AppRoutes.perfilAdoptante,
-      builder: (context, state) =>
-          PerfilAdoptanteScreen(ciudadConocida: state.extra as String?),
+      pageBuilder: (context, state) => PaginaPestana(
+        key: state.pageKey,
+        child: PerfilAdoptanteScreen(ciudadConocida: state.extra as String?),
+      ),
     ),
     GoRoute(
       path: AppRoutes.perfilRescatista,
@@ -214,14 +231,14 @@ final GoRouter appRouter = GoRouter(
     ),
     GoRoute(
       path: AppRoutes.solicitudAdopcion,
-      builder: (context, state) => SolicitudAdopcionScreen(
-        animal: state.extra as Map<String, dynamic>,
-      ),
+      builder: (context, state) =>
+          SolicitudAdopcionScreen(animal: state.extra as Map<String, dynamic>),
     ),
     GoRoute(
       path: AppRoutes.solicitudesRescatista,
-      builder: (context, state) =>
-          SolicitudesRescatistaScreen(esAlbergue: state.extra as bool? ?? false),
+      builder: (context, state) => SolicitudesRescatistaScreen(
+        esAlbergue: state.extra as bool? ?? false,
+      ),
     ),
     GoRoute(
       path: AppRoutes.subirLote,
@@ -235,7 +252,8 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: AppRoutes.subirServicio,
       builder: (context, state) {
-        final a = state.extra as SubirServicioArgs? ?? (docId: null, data: null);
+        final a =
+            state.extra as SubirServicioArgs? ?? (docId: null, data: null);
         return SubirServicioScreen(docId: a.docId, data: a.data);
       },
     ),
@@ -247,7 +265,10 @@ final GoRouter appRouter = GoRouter(
       path: AppRoutes.visorFoto,
       builder: (context, state) {
         final a = state.extra as VisorFotoArgs;
-        return VisorFotoCompleta(fotos: a.fotos, indiceInicial: a.indiceInicial);
+        return VisorFotoCompleta(
+          fotos: a.fotos,
+          indiceInicial: a.indiceInicial,
+        );
       },
     ),
   ],

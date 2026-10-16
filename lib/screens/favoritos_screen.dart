@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
 import '../routing/app_router.dart';
 import '../theme/salva_patitas_theme.dart';
+import '../widgets/adoptante_tab_bar.dart';
 import '../widgets/sp_widgets.dart';
 import '../domain/reglas_negocio.dart';
 import '../widgets/estado_error_feed.dart';
@@ -59,6 +60,11 @@ class _FavoritosScreenState extends State<FavoritosScreen> {
   Widget build(BuildContext context) {
     final c = context.sp;
     return Scaffold(
+      // Misma barra que el inicio del adoptante (ver AdoptanteTabBar).
+      bottomNavigationBar: AdoptanteTabBar(
+        actual: AdoptanteTab.favoritos,
+        onTap: AdoptanteTabBar.volverAlInicio(context, AdoptanteTab.favoritos),
+      ),
       backgroundColor: c.bg,
       body: Stack(
         children: [

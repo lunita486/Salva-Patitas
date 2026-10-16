@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../theme.dart';
+import '../widgets/adoptante_tab_bar.dart';
 import '../widgets/sp_widgets.dart';
 import '../theme/salva_patitas_theme.dart';
 import '../widgets/boton_cambiar_rol.dart';
@@ -160,10 +160,6 @@ class _HomeScreenState extends State<HomeScreen>
   // una consulta propia, aunque sí apareciera en la lista de Chats.
   late final Stream<QuerySnapshot> _consultasEnviadasStream = _chatsRepo
       .consultasEnviadas(uid: _uid);
-  late final Stream<QuerySnapshot> _chatsAdoptanteStream = _chatsRepo.mios(
-    uid: _uid,
-    esRescatista: false,
-  );
 
   static const _rolLabel = {
     'rescatista': 'Rescatista',
@@ -451,21 +447,17 @@ class _HomeScreenState extends State<HomeScreen>
           // en negrita) — antes era "Hola," gris arriba y el nombre grande
           // debajo, un estilo distinto al del resto de la app.
           Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text(
-                'Hola, ${FirebaseAuth.instance.currentUser?.displayName?.split(' ').first ?? 'Rescatista'} ',
-                style: const TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.bold,
-                  color: appInk,
-                  fontFamily: 'Baloo2',
+              Flexible(
+                child: Text(
+                  'Hola, ${FirebaseAuth.instance.currentUser?.displayName?.split(' ').first ?? 'Rescatista'}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: SpText.screen.copyWith(color: ctx.sp.ink),
                 ),
               ),
-              const Padding(
-                padding: EdgeInsets.only(bottom: 4),
-                child: Text('🐾', style: TextStyle(fontSize: 26)),
-              ),
+              const SizedBox(width: 8),
+              const SpPaw(size: 22, angle: -12),
             ],
           ),
           const SizedBox(height: 4),
@@ -478,18 +470,19 @@ class _HomeScreenState extends State<HomeScreen>
             TextoSinDesborde(
               texto: _ciudad,
               separacion: 2,
-              antes: const Icon(Icons.location_on, size: 14, color: appTeal),
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+              antes: Icon(
+                Icons.location_on_rounded,
+                size: 15,
+                color: ctx.sp.primaryStrong,
+              ),
+              style: SpText.label.copyWith(color: ctx.sp.inkMuted),
             ),
-          const SizedBox(height: 20),
-          _label('ESTA SEMANA'),
-          const SizedBox(height: 10),
+          const SizedBox(height: SpSpace.s6),
           _statsRowDynamic(noLeidosRescatista),
-          const SizedBox(height: 16),
+          const SizedBox(height: SpSpace.s4),
           _ctaCard(ctx),
-          const SizedBox(height: 28),
+          const SizedBox(height: SpSpace.s6),
           _sectionHeader(
-            'ESPERAN RESPUESTA',
             'Solicitudes',
             'Ver todas',
             // Refrescar AL VOLVER, igual que el push a misRescates de más
@@ -504,18 +497,17 @@ class _HomeScreenState extends State<HomeScreen>
                 .push(AppRoutes.solicitudesRescatista)
                 .then((_) => _refrescarRescates()),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: SpSpace.s3),
           const SolicitudesPreview(role: CreatorRole.rescatista),
-          const SizedBox(height: 28),
+          const SizedBox(height: SpSpace.s6),
           _sectionHeader(
-            'MIS ANIMALES',
-            'Tus rescates activos',
+            'Mis animales',
             'Gestionar',
             onAction: () => context
                 .push(AppRoutes.misRescates)
                 .then((_) => _refrescarRescates()),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: SpSpace.s3),
           _misRescatesCarousel(),
           const SizedBox(height: 90),
         ],
@@ -524,45 +516,17 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Widget _sectionHeader(
-    String label,
     String title,
     String action, {
     VoidCallback? onAction,
-  }) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          _label(label),
-          GestureDetector(
-            onTap: onAction,
-            child: const Text(
-              'Ver todas',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: appTeal,
-              ),
-            ),
-          ),
-        ],
-      ),
-      const SizedBox(height: 6),
-      Text(
-        title,
-        style: const TextStyle(
-          fontSize: 24,
-          fontWeight: FontWeight.bold,
-          color: appInk,
-        ),
-      ),
-    ],
+  }) => SpSectionTitle(
+    title,
+    trailing: onAction == null ? null : SpLink(action, onTap: onAction),
   );
 
   Widget _misRescatesCarousel() {
     return SizedBox(
-      height: 245,
+      height: 250,
       // Una PÁGINA, no la colección. Este carrusel es una vista previa —
       // la lista completa está en "Ver todas" (mis_rescates_screen), que
       // pagina sola. Antes escuchaba la consulta entera: con 1.000 animales
@@ -578,25 +542,34 @@ class _HomeScreenState extends State<HomeScreen>
         future: _activos,
         builder: (context, snap) {
           if (snap.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(color: appTeal),
+            return Center(
+              child: CircularProgressIndicator(color: context.sp.primary),
             );
           }
           if (snap.hasError) {
             return Center(
               child: Text(
                 'Error: ${snap.error}',
-                style: const TextStyle(fontSize: 12),
+                style: SpText.caption.copyWith(color: context.sp.danger),
               ),
             );
           }
           final docs = [...?snap.data?.docs];
 
           if (docs.isEmpty) {
-            return Center(
-              child: Text(
-                'Aún no tienes rescates publicados.',
-                style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+            return Align(
+              alignment: Alignment.topCenter,
+              child: SpEmpty(
+                title: 'Aún no tienes rescates publicados',
+                animal: SpAnimalKind.perro,
+                action: SpButton(
+                  label: 'Publicar el primero',
+                  icon: Icons.add_rounded,
+                  compacto: true,
+                  onTap: () => context
+                      .push(AppRoutes.subirRescate, extra: false)
+                      .then((_) => _refrescarRescates()),
+                ),
               ),
             );
           }
@@ -618,8 +591,9 @@ class _HomeScreenState extends State<HomeScreen>
           });
           return ListView.separated(
             scrollDirection: Axis.horizontal,
+            clipBehavior: Clip.none,
             itemCount: docs.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            separatorBuilder: (_, _) => const SizedBox(width: SpSpace.s3),
             itemBuilder: (_, i) {
               final data = docs[i].data();
               final nombre = nombreDeAnimal(data['nombre'] as String?);
@@ -641,7 +615,6 @@ class _HomeScreenState extends State<HomeScreen>
                 // reciclar la de al lado. Hallazgo real de Eliza.
                 key: ValueKey(docId),
                 estado: estadoAdopcion,
-                emoji: especie == 'Gato' ? '🐱' : '🐶',
                 fotoUrl: fotoUrl,
                 // El `.then` de abajo no es opcional: este carrusel es un
                 // .get() pedido una sola vez al abrir la pantalla, no un
@@ -714,147 +687,103 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  /// Tarjeta de un animalito del carrusel, igual a la del panel del
+  /// albergue (`.sp-pet2`).
   Widget _animalCard(
     String nombre,
     String especie, {
     Key? key,
-    String emoji = '🐾',
     String estado = 'En adopción',
     String? fotoUrl,
     VoidCallback? onCambiarEstado,
     VoidCallback? onContactarAdoptante,
   }) {
-    final color = cicloColor(estado);
+    final c = context.sp;
     return Container(
       key: key,
-      width: 150,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      width: 152,
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.all(SpSpace.s2),
+      decoration: SpDeco.card(c, radius: SpRadius.lg),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-            // FotoAnimal en vez de recorte — esta tarjeta (el resumen de "tus
-            // animales" en el panel del rescatista) es lo bastante grande
-            // como para sufrir el mismo caso "Tobyiii" que el feed del
-            // adoptante ya tenía arreglado; el rescatista se había quedado
-            // viendo sus propios animalitos peor que como los ve quien
-            // adopta.
-            child: fotoUrl != null
-                ? FotoAnimal(
-                    url: fotoUrl,
-                    height: 100,
-                    width: double.infinity,
-                    fallback: Container(
-                      height: 100,
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              // FotoAnimal en vez de recorte — esta tarjeta (el resumen de "tus
+              // animales" en el panel del rescatista) es lo bastante grande
+              // como para sufrir el mismo caso "Tobyiii" que el feed del
+              // adoptante ya tenía arreglado; el rescatista se había quedado
+              // viendo sus propios animalitos peor que como los ve quien
+              // adopta.
+              child: fotoUrl != null
+                  ? FotoAnimal(
+                      url: fotoUrl,
                       width: double.infinity,
-                      color: const Color(0xFFD8F0E4),
-                      child: Center(
-                        child: Text(
-                          emoji,
-                          style: const TextStyle(fontSize: 40),
-                        ),
-                      ),
-                    ),
-                  )
-                : Container(
-                    height: 100,
-                    width: double.infinity,
-                    color: const Color(0xFFD8F0E4),
-                    child: Center(
-                      child: Text(emoji, style: const TextStyle(fontSize: 40)),
-                    ),
-                  ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  nombre,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text(
-                  especie,
-                  style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
-                ),
-                const SizedBox(height: 8),
-                GestureDetector(
-                  onTap: onCambiarEstado,
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: color.withValues(alpha: 0.4)),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            estado,
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              color: color,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        if (onCambiarEstado != null) ...[
-                          const SizedBox(width: 2),
-                          Icon(Icons.expand_more, size: 12, color: color),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-                if (onContactarAdoptante != null) ...[
-                  const SizedBox(height: 6),
-                  GestureDetector(
-                    onTap: onContactarAdoptante,
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      decoration: BoxDecoration(
-                        color: appOrange,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Text(
-                        'Contactar 💬',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ],
+                      fallback: SpFotoVacia(especie: especie),
+                    )
+                  : SpFotoVacia(especie: especie),
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 10, 4, 0),
+            child: Text(
+              nombre,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+                color: c.ink,
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Text(
+              especie,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: SpText.caption.copyWith(color: c.inkMuted),
+            ),
+          ),
+          const SizedBox(height: SpSpace.s2),
+          SpStatus(estado, height: 30, onTap: onCambiarEstado),
+          if (onContactarAdoptante != null) ...[
+            const SizedBox(height: 6),
+            Semantics(
+              button: true,
+              label: 'Contactar a quien está en proceso con $nombre',
+              child: GestureDetector(
+                onTap: onContactarAdoptante,
+                child: Container(
+                  width: double.infinity,
+                  height: 30,
+                  decoration: SpDeco.primary(c, radius: 12),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.chat_bubble_outline_rounded,
+                        size: 13,
+                        color: c.onPrimary,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Contactar',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: c.onPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -913,16 +842,6 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _label(String t) => Text(
-    t,
-    style: TextStyle(
-      fontSize: 11,
-      fontWeight: FontWeight.w600,
-      letterSpacing: 1.2,
-      color: Colors.grey.shade700,
-    ),
-  );
-
   Widget _statsRowDynamic(int noLeidosRescatista) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       key: const ValueKey('stats-solicitudes-pendientes'),
@@ -932,22 +851,24 @@ class _HomeScreenState extends State<HomeScreen>
         return Row(
           children: [
             Expanded(
-              child: GestureDetector(
+              child: SpMiniStat(
+                tone: SpTone.lilac,
+                animal: SpAnimalKind.gato,
+                value: '$count',
+                label: 'Solicitudes',
                 // Mismo motivo que la cabecera de SOLICITUDES.
                 onTap: () => context
                     .push(AppRoutes.solicitudesRescatista)
                     .then((_) => _refrescarRescates()),
-                child: _stat(
-                  '$count',
-                  'Nuevas\nsolicitudes',
-                  const Color(0xFFF9DDD5),
-                  const Color(0xFFCC4422),
-                ),
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: SpSpace.s3),
             Expanded(
-              child: GestureDetector(
+              child: SpMiniStat(
+                tone: SpTone.sky,
+                animal: SpAnimalKind.conejo,
+                value: '$noLeidosRescatista',
+                label: 'Sin leer',
                 onTap: () => context.push(
                   AppRoutes.adoptanteChats,
                   extra: (
@@ -956,15 +877,9 @@ class _HomeScreenState extends State<HomeScreen>
                     esAlbergue: false,
                   ),
                 ),
-                child: _stat(
-                  '$noLeidosRescatista',
-                  'Mensajes\nsin leer',
-                  const Color(0xFFD8EEFA),
-                  const Color(0xFF2070B0),
-                ),
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: SpSpace.s3),
             Expanded(
               // contar() y no el stream completo: antes este número salía
               // de `docs.length` sobre TODOS los rescates de la cuenta, o
@@ -973,11 +888,11 @@ class _HomeScreenState extends State<HomeScreen>
               // veces más. Ver RescatesRepository.contar().
               child: FutureBuilder<int>(
                 future: _totalRescates,
-                builder: (context, rescSnap) => _stat(
-                  '${rescSnap.data ?? 0}',
-                  'Animales\nrescatados',
-                  Colors.white,
-                  appInk,
+                builder: (context, rescSnap) => SpMiniStat(
+                  tone: SpTone.mint,
+                  animal: SpAnimalKind.huella,
+                  value: '${rescSnap.data ?? 0}',
+                  label: 'Rescatados',
                 ),
               ),
             ),
@@ -987,238 +902,162 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _stat(String n, String lbl, Color bg, Color nc) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
-    decoration: BoxDecoration(
-      color: bg,
-      borderRadius: BorderRadius.circular(16),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          n,
-          style: TextStyle(
-            fontSize: 32,
-            fontWeight: FontWeight.bold,
-            color: nc,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          lbl,
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey.shade700,
-            height: 1.3,
-          ),
-        ),
-      ],
-    ),
-  );
-
-  Widget _ctaCard(BuildContext ctx) => GestureDetector(
-    onTap: () => ctx
-        .push(AppRoutes.subirRescate, extra: false)
-        .then((_) => _refrescarRescates()),
-    child: Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF0A5C40), appTeal],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-      ),
+  /// "Subir un rescate": tarjeta blanca con el "+" verde 3D girado, como
+  /// "Subir uno" en el panel del albergue.
+  Widget _ctaCard(BuildContext ctx) {
+    final c = ctx.sp;
+    return SpCard(
+      padding: const EdgeInsets.all(SpSpace.s3),
+      onTap: () => ctx
+          .push(AppRoutes.subirRescate, extra: false)
+          .then((_) => _refrescarRescates()),
       child: Row(
         children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: const BoxDecoration(
-              color: appOrange,
-              shape: BoxShape.circle,
+          Transform.rotate(
+            angle: -0.14,
+            child: Container(
+              width: 56,
+              height: 56,
+              decoration: SpDeco.primary(c, radius: 18, gradient: true),
+              child: Icon(Icons.add_rounded, size: 32, color: c.onPrimary),
             ),
-            child: const Icon(Icons.add, color: Colors.white, size: 24),
           ),
-          const SizedBox(width: 16),
-          const Expanded(
+          const SizedBox(width: SpSpace.s4),
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   'Subir un rescate',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold,
+                  style: SpText.headline.copyWith(
+                    color: c.ink,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
-                SizedBox(height: 2),
                 Text(
                   'Publica un animal en minutos',
-                  style: TextStyle(color: Color(0xFFB8E0CC), fontSize: 13),
+                  style: SpText.caption.copyWith(color: c.inkMuted),
                 ),
               ],
             ),
           ),
-          const Icon(Icons.chevron_right, color: Color(0xFFB8E0CC), size: 22),
+          Icon(Icons.chevron_right_rounded, color: c.inkFaint),
         ],
       ),
-    ),
-  );
+    );
+  }
 
   // Barra flotante 3D (SpTabBar), como la del albergue. Cada ítem conserva
   // su misma acción de siempre.
-  Widget _bottomNav(int noLeidosRescatista) => SpTabBar(
+  Widget _bottomNav(int noLeidosRescatista) => _isRescatista == true
+      ? _bottomNavRescatista(noLeidosRescatista)
+      // La del adoptante es la misma barra que sale en cada sección que se
+      // abre desde acá (ver AdoptanteTabBar).
+      : AdoptanteTabBar(actual: AdoptanteTab.adoptar, onTap: _irAAdoptante);
+
+  Widget _bottomNavRescatista(int noLeidosRescatista) => SpTabBar(
     children: [
-      if (_isRescatista == true) ...[
-        _navItem(Icons.pets_rounded, 'Mis rescates', 0),
-        _navTap(
-          Icons.add_circle_outline,
-          'Subir',
-          1,
-          onTap: () => context
-              .push(AppRoutes.subirRescate, extra: false)
-              .then((_) => _refrescarRescates()),
+      _navItem(Icons.pets_rounded, 'Mis rescates', 0),
+      _navTap(
+        Icons.add_circle_outline,
+        'Subir',
+        1,
+        onTap: () => context
+            .push(AppRoutes.subirRescate, extra: false)
+            .then((_) => _refrescarRescates()),
+      ),
+      _navTap(
+        Icons.notifications_outlined,
+        'Solicitudes',
+        2,
+        // Mismo motivo que la cabecera de SOLICITUDES.
+        onTap: () => context
+            .push(AppRoutes.solicitudesRescatista)
+            .then((_) => _refrescarRescates()),
+      ),
+      // Antes este badge era su propio StreamBuilder anidado,
+      // suscrito de nuevo a los mismos _chatsRescatistaStream /
+      // _consultasEnviadasStream que ya escuchaba build() más
+      // arriba para el panel — dos cálculos independientes de
+      // "mensajes sin leer" en la misma pantalla, con su propio
+      // riesgo de desincronizarse (frame de diferencia, filtro que
+      // cambia en uno y no en el otro). Ahora recibe el número ya
+      // calculado UNA sola vez en build() como parámetro — sin un
+      // segundo StreamBuilder acá, no hay dos cálculos que puedan
+      // divergir nunca más, ni un AsyncSnapshot propio que pueda
+      // quedarse con datos viejos al cambiar de rol (el bug real
+      // que tenían las ValueKey que este comentario reemplaza:
+      // "cambio rápido de rol y veo un número, pero no tengo
+      // ningún chat").
+      _navTapConBadge(
+        Icons.chat_bubble_outline_rounded,
+        'Chats',
+        noLeidosRescatista,
+        () => context.push(
+          AppRoutes.adoptanteChats,
+          extra: (esRescatista: true, soloConsultas: false, esAlbergue: false),
         ),
-        _navTap(
-          Icons.notifications_outlined,
-          'Solicitudes',
-          2,
-          // Mismo motivo que la cabecera de SOLICITUDES.
-          onTap: () => context
-              .push(AppRoutes.solicitudesRescatista)
-              .then((_) => _refrescarRescates()),
+      ),
+      _navTap(
+        Icons.storefront_outlined,
+        'Negocios',
+        5,
+        onTap: () => context.push(
+          AppRoutes.aliados,
+          extra: (esRescatista: true, esAlbergue: false),
         ),
-        // Antes este badge era su propio StreamBuilder anidado,
-        // suscrito de nuevo a los mismos _chatsRescatistaStream /
-        // _consultasEnviadasStream que ya escuchaba build() más
-        // arriba para el panel — dos cálculos independientes de
-        // "mensajes sin leer" en la misma pantalla, con su propio
-        // riesgo de desincronizarse (frame de diferencia, filtro que
-        // cambia en uno y no en el otro). Ahora recibe el número ya
-        // calculado UNA sola vez en build() como parámetro — sin un
-        // segundo StreamBuilder acá, no hay dos cálculos que puedan
-        // divergir nunca más, ni un AsyncSnapshot propio que pueda
-        // quedarse con datos viejos al cambiar de rol (el bug real
-        // que tenían las ValueKey que este comentario reemplaza:
-        // "cambio rápido de rol y veo un número, pero no tengo
-        // ningún chat").
-        _navTapConBadge(
-          Icons.chat_bubble_outline_rounded,
-          'Chats',
-          noLeidosRescatista,
-          () => context.push(
-            AppRoutes.adoptanteChats,
-            extra: (
-              esRescatista: true,
-              soloConsultas: false,
-              esAlbergue: false,
-            ),
-          ),
-        ),
-        _navTap(
-          Icons.storefront_outlined,
-          'Negocios',
-          5,
-          onTap: () => context.push(
-            AppRoutes.aliados,
-            extra: (esRescatista: true, esAlbergue: false),
-          ),
-        ),
-        // .then(_cargarRol): "Gestionar mis roles" vive en esta pantalla
-        // de Perfil — sin este refresco, agregar un rol ahí guardaba
-        // bien en el servidor (el aviso verde de éxito no mentía) pero
-        // esta pantalla seguía usando los `_roles`/`_isRescatista` que
-        // había cacheado al abrirse, así que el toggle nuevo no
-        // aparecía hasta cerrar y volver a abrir la app. Hallazgo de
-        // prueba en teléfono real, 2026-08-03.
-        _navTap(
-          Icons.person_outline_rounded,
-          'Perfil',
-          4,
-          onTap: () => context
-              .push(AppRoutes.perfilRescatista)
-              .then((_) => _cargarRol()),
-        ),
-      ] else ...[
-        _navItem(Icons.pets_rounded, 'Adoptar', 0),
-        _navTap(
-          Icons.favorite_border_rounded,
-          'Favoritos',
-          1,
-          onTap: () => context.push(AppRoutes.favoritos),
-        ),
-        _navTap(
-          Icons.assignment_outlined,
-          'Solicitudes',
-          2,
-          onTap: () => context.push(AppRoutes.misSolicitudes),
-        ),
-        // Mismo orden que en Rescatista/Albergue/Aliado: Chats siempre va
-        // después de Solicitudes, antes de Negocios/Perfil.
-        // Key propia — ver el comentario del badge de rescatista.
-        StreamBuilder<QuerySnapshot>(
-          key: const ValueKey('badge-chats-adoptante'),
-          stream: _chatsAdoptanteStream,
-          builder: (_, snap) {
-            // ChatsRepository.perteneceALaLista es la misma función
-            // que decide qué chats muestra AdoptanteChatsScreen (sin
-            // esRescatista) — antes este badge tenía su propia copia
-            // a mano de esa regla de membresía (bug real, mismo
-            // patrón que el badge de rescatista más abajo: excluía
-            // TODA consulta a un negocio del conteo, sin importar con
-            // qué sombrero se mandó, así que el ícono podía no
-            // mostrar nada mientras la lista sí tenía una
-            // conversación sin leer). Con la misma función acá, la
-            // lista y el badge no pueden volver a divergir en esto.
-            final unread = (snap.data?.docs ?? []).where((doc) {
-              final d = doc.data() as Map<String, dynamic>;
-              return ChatsRepository.perteneceALaLista(
-                    d,
-                    uid: _uid,
-                    esRescatista: false,
-                  ) &&
-                  ChatsRepository.noLeidosPara(
-                        d,
-                        uid: _uid,
-                        esRescatista: false,
-                      ) >
-                      0;
-            }).length;
-            return _navTapConBadge(
-              Icons.chat_bubble_outline_rounded,
-              'Chats',
-              unread,
-              () => context.push(AppRoutes.adoptanteChats),
-            );
-          },
-        ),
-        _navTap(
-          Icons.storefront_outlined,
-          'Negocios',
-          3,
-          onTap: () => context.push(
-            AppRoutes.aliados,
-            extra: (esRescatista: false, esAlbergue: false),
-          ),
-        ),
-        // .then(_cargarRol): mismo motivo que la rama de rescatista, más
-        // arriba en este mismo archivo.
-        _navTap(
-          Icons.person_outline_rounded,
-          'Perfil',
-          4,
-          onTap: () => context
-              .push(AppRoutes.perfilAdoptante, extra: _ciudad)
-              .then((_) => _cargarRol()),
-        ),
-      ],
+      ),
+      // .then(_cargarRol): "Gestionar mis roles" vive en esta pantalla
+      // de Perfil — sin este refresco, agregar un rol ahí guardaba
+      // bien en el servidor (el aviso verde de éxito no mentía) pero
+      // esta pantalla seguía usando los `_roles`/`_isRescatista` que
+      // había cacheado al abrirse, así que el toggle nuevo no
+      // aparecía hasta cerrar y volver a abrir la app. Hallazgo de
+      // prueba en teléfono real, 2026-08-03.
+      _navTap(
+        Icons.person_outline_rounded,
+        'Perfil',
+        4,
+        onTap: () =>
+            context.push(AppRoutes.perfilRescatista).then((_) => _cargarRol()),
+      ),
     ],
   );
+
+  /// Abre la pestaña elegida en la barra del adoptante (en el inicio o en
+  /// cualquier sección: ver AdoptanteTabBar.volverAlInicio).
+  void _irAAdoptante(AdoptanteTab t) {
+    switch (t) {
+      case AdoptanteTab.adoptar:
+        setState(() => _selectedNav = 0);
+      case AdoptanteTab.favoritos:
+        context.push(AppRoutes.favoritos).then(_alVolverAdoptante);
+      case AdoptanteTab.solicitudes:
+        context.push(AppRoutes.misSolicitudes).then(_alVolverAdoptante);
+      case AdoptanteTab.chats:
+        context.push(AppRoutes.adoptanteChats).then(_alVolverAdoptante);
+      case AdoptanteTab.negocios:
+        context
+            .push(
+              AppRoutes.aliados,
+              extra: (esRescatista: false, esAlbergue: false),
+            )
+            .then(_alVolverAdoptante);
+      // .then(_cargarRol): "Gestionar mis roles" vive en Perfil — sin este
+      // refresco, un rol nuevo no aparecía hasta reabrir la app (hallazgo
+      // de prueba en teléfono real, 2026-08-03).
+      case AdoptanteTab.perfil:
+        context.push(AppRoutes.perfilAdoptante, extra: _ciudad).then((r) {
+          _cargarRol();
+          _alVolverAdoptante(r);
+        });
+    }
+  }
+
+  /// Si en la barra de la sección se tocó otra pestaña, abrirla.
+  void _alVolverAdoptante(Object? resultado) {
+    if (resultado is AdoptanteTab && mounted) _irAAdoptante(resultado);
+  }
 
   /// La pestaña que se queda en esta pantalla (Mis rescates / Adoptar).
   Widget _navItem(IconData icon, String label, int idx) => SpTabItem(

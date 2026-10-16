@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
-import '../theme.dart';
-import '../widgets/fondo_decorativo.dart';
+import '../theme/salva_patitas_theme.dart';
+import '../widgets/sp_widgets.dart';
 import '../data/usuarios_repository.dart';
 import '../services/ubicacion_service.dart';
 
@@ -117,9 +117,9 @@ class _SeleccionRolScreenState extends State<SeleccionRolScreen> {
       if (!mounted) return;
       setState(() => _guardando = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          backgroundColor: msgError,
-          content: Text(
+        SnackBar(
+          backgroundColor: context.sp.msgError,
+          content: const Text(
             'No se pudo crear tu perfil. Revisá tu conexión e intentá de nuevo.',
           ),
         ),
@@ -146,47 +146,50 @@ class _SeleccionRolScreenState extends State<SeleccionRolScreen> {
     });
   }
 
+  /// Tarjeta de un rol: blanca 3D; elegida, con borde y canto verdes y el
+  /// check. La baldosa pastel de la izquierda lleva el animalito o ícono del
+  /// rol.
   Widget _rolCard({
     required String rol,
-    required IconData icono,
-    required Color iconoBg,
-    required Color iconoColor,
+    required SpTone tono,
+    required Widget arte,
     required String nombre,
     required String descripcion,
     String? badgeLabel,
-    Color? badgeBg,
+    SpTone? badgeTono,
   }) {
+    final c = context.sp;
     final sel = _roles.contains(rol);
+    final badge = badgeTono == null ? null : SpToneColors.of(c, badgeTono);
     return GestureDetector(
       onTap: () => _toggleRol(rol),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: sel ? appTeal : Colors.grey.shade200,
-            width: sel ? 2 : 1,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
+        padding: const EdgeInsets.all(SpSpace.s3),
+        decoration: sel
+            ? BoxDecoration(
+                color: c.surface,
+                borderRadius: BorderRadius.circular(SpRadius.lg),
+                border: Border.all(color: c.primary, width: 2.5),
+                boxShadow: [
+                  BoxShadow(color: c.primaryEdge, offset: const Offset(0, 4)),
+                  BoxShadow(
+                    color: c.primary.withValues(alpha: .3),
+                    offset: const Offset(0, 12),
+                    blurRadius: 22,
+                    spreadRadius: -10,
+                  ),
+                ],
+              )
+            : SpDeco.card(c, radius: SpRadius.lg),
         child: Row(
           children: [
             Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: sel ? appTeal.withValues(alpha: 0.15) : iconoBg,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(icono, color: sel ? appTeal : iconoColor, size: 24),
+              width: 56,
+              height: 56,
+              alignment: Alignment.center,
+              decoration: SpDeco.tone(c, tono, radius: SpRadius.md),
+              child: arte,
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -200,47 +203,59 @@ class _SeleccionRolScreenState extends State<SeleccionRolScreen> {
                     children: [
                       Text(
                         nombre,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: appInk,
+                        style: SpText.headline.copyWith(
+                          color: c.ink,
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
-                      if (badgeLabel != null)
+                      if (badgeLabel != null && badge != null)
                         Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 7,
+                            horizontal: 8,
                             vertical: 3,
                           ),
                           decoration: BoxDecoration(
-                            color: badgeBg ?? appTeal,
-                            borderRadius: BorderRadius.circular(4),
+                            color: badge.fill,
+                            borderRadius: BorderRadius.circular(SpRadius.full),
                           ),
                           child: Text(
                             badgeLabel,
-                            style: const TextStyle(
-                              fontSize: 9,
+                            style: TextStyle(
+                              fontSize: 10,
                               fontWeight: FontWeight.w800,
-                              color: Colors.white,
-                              letterSpacing: 0.4,
+                              color: badge.ink,
                             ),
                           ),
                         ),
                     ],
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 2),
                   Text(
                     descripcion,
-                    style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                    style: SpText.label.copyWith(
+                      color: c.inkMuted,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ],
               ),
             ),
             const SizedBox(width: 8),
-            if (sel)
-              const Icon(Icons.check_circle_rounded, color: appTeal, size: 22)
-            else
-              Icon(Icons.chevron_right, color: Colors.grey.shade400, size: 22),
+            // Elegido: check verde; sin elegir: círculo vacío (se puede
+            // marcar más de uno, como casillas).
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              width: 26,
+              height: 26,
+              decoration: BoxDecoration(
+                color: sel ? c.primary : c.surfaceSunken,
+                shape: BoxShape.circle,
+                border: sel ? null : Border.all(color: c.edge, width: 2),
+              ),
+              child: sel
+                  ? Icon(Icons.check_rounded, size: 18, color: c.onPrimary)
+                  : null,
+            ),
           ],
         ),
       ),
@@ -249,39 +264,41 @@ class _SeleccionRolScreenState extends State<SeleccionRolScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.sp;
     final nombre = widget.user.displayName?.split(' ').first ?? 'Usuario';
     return Scaffold(
-      backgroundColor: appBg,
+      backgroundColor: c.bg,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          const LeafOverlay(),
+          const SpPawBackground(),
           SafeArea(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
+              padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const SizedBox(height: 40),
-                  Text(
-                    'Hola, $nombre 👋',
-                    style: const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: appInk,
-                    ),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          'Hola, $nombre',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: SpText.screen.copyWith(color: c.ink),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const SpPaw(size: 22, angle: -12),
+                    ],
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 4),
                   Text(
-                    '¿CÓMO VAS A ENTRAR?',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.5,
-                      color: Colors.grey.shade700,
-                    ),
+                    '¿Cómo vas a entrar? Puedes elegir más de uno.',
+                    style: SpText.body.copyWith(color: c.inkMuted),
                   ),
-                  const SizedBox(height: 28),
+                  const SizedBox(height: SpSpace.s6),
                   // Las 4 tarjetas + el Spacer de antes eran un Column fijo sin
                   // scroll: en una pantalla lo bastante baja (teléfono chico,
                   // o con letra grande de accesibilidad), el conjunto no
@@ -295,95 +312,55 @@ class _SeleccionRolScreenState extends State<SeleccionRolScreen> {
                   // para verlas todas antes de tocar Continuar.
                   Expanded(
                     child: SingleChildScrollView(
+                      clipBehavior: Clip.none,
+                      padding: const EdgeInsets.only(bottom: 8),
                       child: Column(
                         children: [
                           _rolCard(
                             rol: 'adoptante',
-                            icono: Icons.pets,
-                            iconoBg: const Color(0xFFD8F0E4),
-                            iconoColor: appTeal,
+                            tono: SpTone.peach,
+                            arte: const SpAnimal(SpAnimalKind.perro, size: 46),
                             nombre: 'Adoptante',
                             descripcion: 'Quiero adoptar un animal',
                           ),
-                          const SizedBox(height: 10),
+                          const SizedBox(height: SpSpace.s3),
                           _rolCard(
                             rol: 'rescatista',
-                            icono: Icons.eco_outlined,
-                            iconoBg: const Color(0xFFE8F5E9),
-                            iconoColor: const Color(0xFF388E3C),
+                            tono: SpTone.mint,
+                            arte: const SpAnimal(SpAnimalKind.huella, size: 42),
                             nombre: 'Rescatista',
                             descripcion: 'Rescato animales por mi cuenta',
                           ),
-                          const SizedBox(height: 10),
+                          const SizedBox(height: SpSpace.s3),
                           _rolCard(
                             rol: 'albergue',
-                            icono: Icons.account_balance_outlined,
-                            iconoBg: const Color(0xFFF5F5F5),
-                            iconoColor: const Color(0xFF757575),
+                            tono: SpTone.butter,
+                            arte: const SpAnimal(SpAnimalKind.casa, size: 44),
                             nombre: 'Albergue',
                             descripcion: 'Represento un albergue oficial',
-                            badgeLabel: 'VERIFICACIÓN OFICIAL',
-                            badgeBg: appTeal,
+                            badgeLabel: 'Verificación oficial',
+                            badgeTono: SpTone.mint,
                           ),
-                          const SizedBox(height: 10),
+                          const SizedBox(height: SpSpace.s3),
                           _rolCard(
                             rol: 'aliado',
-                            icono: Icons.storefront_outlined,
-                            iconoBg: const Color(0xFFEDE7F6),
-                            iconoColor: const Color(0xFF7C4DFF),
+                            tono: SpTone.lilac,
+                            arte: Icon(
+                              Icons.storefront_rounded,
+                              size: 28,
+                              color: c.lilacInk,
+                            ),
                             nombre: 'Aliado',
                             descripcion: 'Soy veterinario, tienda o servicio',
-                            badgeLabel: 'NEGOCIO ALIADO',
-                            badgeBg: const Color(0xFFE91E63),
+                            badgeLabel: 'Negocio aliado',
+                            badgeTono: SpTone.lilac,
                           ),
                         ],
                       ),
                     ),
                   ),
                   const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: _guardando ? null : _continuar,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: appInk,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                      ),
-                      child: _guardando
-                          ? const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    color: Colors.white,
-                                    strokeWidth: 2,
-                                  ),
-                                ),
-                                SizedBox(width: 12),
-                                Text(
-                                  'Creando tu perfil...',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            )
-                          : const Text(
-                              'Continuar',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                    ),
-                  ),
+                  _botonContinuar(c),
                   const SizedBox(height: 32),
                 ],
               ),
@@ -391,6 +368,45 @@ class _SeleccionRolScreenState extends State<SeleccionRolScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  /// Botón verde 3D. Mientras guarda dice "Creando tu perfil..." con un
+  /// spinner y no se puede tocar de nuevo.
+  Widget _botonContinuar(SpColors c) {
+    final caja = Container(
+      width: double.infinity,
+      height: 54,
+      decoration: SpDeco.primary(c, radius: SpRadius.md),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          if (_guardando) ...[
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                color: c.onPrimary,
+                strokeWidth: 2,
+              ),
+            ),
+            const SizedBox(width: 12),
+          ],
+          Text(
+            _guardando ? 'Creando tu perfil...' : 'Continuar',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: c.onPrimary,
+            ),
+          ),
+        ],
+      ),
+    );
+    return Semantics(
+      button: true,
+      enabled: !_guardando,
+      child: _guardando ? caja : SpPressable(onTap: _continuar, child: caja),
     );
   }
 }

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import '../theme/salva_patitas_theme.dart';
 import '../widgets/fotos.dart';
+import '../widgets/sp_widgets.dart';
 
 /// Foto completa, sin recortar (BoxFit.contain) y con zoom — la tarjeta del
 /// feed recorta la foto a propósito para que se vea prolija y llamativa
@@ -36,7 +38,8 @@ class _VisorFotoCompletaState extends State<VisorFotoCompleta> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      // Fondo negro siempre (claro u oscuro): es para mirar la foto.
+      backgroundColor: SpDeco.shade,
       body: SafeArea(
         child: Stack(
           children: [
@@ -53,10 +56,9 @@ class _VisorFotoCompletaState extends State<VisorFotoCompleta> {
                     child: FotoUrl(
                       url: widget.fotos[i],
                       fit: BoxFit.contain,
-                      fallback: const Icon(
-                        Icons.pets,
-                        color: Colors.white54,
+                      fallback: SpPaw(
                         size: 80,
+                        color: SpDeco.shine.withValues(alpha: .5),
                       ),
                     ),
                   ),
@@ -64,12 +66,12 @@ class _VisorFotoCompletaState extends State<VisorFotoCompleta> {
               ),
             ),
             Positioned(
-              top: 4,
-              right: 4,
-              child: IconButton(
-                icon: const Icon(Icons.close, color: Colors.white, size: 28),
+              top: 12,
+              right: 12,
+              child: SpRoundButton(
+                icon: Icons.close_rounded,
                 tooltip: 'Cerrar',
-                onPressed: () => Navigator.pop(context),
+                onTap: () => Navigator.pop(context),
               ),
             ),
             if (widget.fotos.length > 1)
@@ -81,13 +83,16 @@ class _VisorFotoCompletaState extends State<VisorFotoCompleta> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: List.generate(
                     widget.fotos.length,
-                    (i) => Container(
-                      width: 8,
-                      height: 8,
+                    (i) => AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      width: i == _idx ? 18 : 7,
+                      height: 7,
                       margin: const EdgeInsets.symmetric(horizontal: 3),
                       decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: i == _idx ? Colors.white : Colors.white38,
+                        borderRadius: BorderRadius.circular(4),
+                        color: SpDeco.shine.withValues(
+                          alpha: i == _idx ? 1 : .4,
+                        ),
                       ),
                     ),
                   ),

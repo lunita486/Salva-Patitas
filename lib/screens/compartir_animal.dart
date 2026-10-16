@@ -4,7 +4,8 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:share_plus/share_plus.dart';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
-import '../theme.dart';
+import '../theme/salva_patitas_theme.dart';
+import '../widgets/sp_widgets.dart';
 import '../widgets/campo_pais_telefono.dart' show banderaPais;
 
 // Extraído de adoptante_feed_screen.dart (que llegó a 1642 líneas mezclando
@@ -66,6 +67,44 @@ class _ShareCard extends StatelessWidget {
     ),
   );
 
+  // Siempre con los colores claros de la marca, no con los del tema del
+  // teléfono: es una imagen que sale de la app y se tiene que ver igual
+  // para todo el mundo.
+  static const _c = SpColors.light;
+
+  static TextStyle _texto(double size, Color color, [FontWeight? w]) =>
+      TextStyle(
+        fontFamily: spFontFamily,
+        fontSize: size,
+        fontWeight: w ?? FontWeight.w800,
+        color: color,
+      );
+
+  /// Píldora 3D con canto (como las del diseño de la app).
+  static Widget _pildora({
+    required Widget child,
+    required Color fondo,
+    required Color canto,
+  }) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+    decoration: BoxDecoration(
+      color: fondo,
+      borderRadius: BorderRadius.circular(40),
+      border: Border(
+        top: BorderSide(color: SpDeco.shine.withValues(alpha: .35), width: 3),
+      ),
+      boxShadow: [
+        BoxShadow(color: canto, offset: const Offset(0, 6)),
+        BoxShadow(
+          color: SpDeco.shade.withValues(alpha: 0.25),
+          blurRadius: 16,
+          offset: const Offset(0, 10),
+        ),
+      ],
+    ),
+    child: child,
+  );
+
   @override
   Widget build(BuildContext context) => Stack(
     fit: StackFit.expand,
@@ -84,7 +123,10 @@ class _ShareCard extends StatelessWidget {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Colors.transparent, Colors.black.withValues(alpha: 0.78)],
+            colors: [
+              SpDeco.shade.withValues(alpha: 0),
+              SpDeco.shade.withValues(alpha: 0.78),
+            ],
             stops: const [0.35, 1.0],
           ),
         ),
@@ -96,47 +138,33 @@ class _ShareCard extends StatelessWidget {
         top: 170,
         right: 64,
         child: _sticker(
-          Icons.favorite,
+          Icons.favorite_rounded,
           size: 40,
           angle: -0.35,
-          opacity: 0.55,
-          color: appOrange,
+          opacity: 0.7,
+          color: _c.accent,
         ),
       ),
       Positioned(
         top: 260,
         right: 150,
-        child: _sticker(
-          Icons.pets,
-          size: 30,
+        child: Transform.rotate(
           angle: 0.4,
-          opacity: 0.45,
-          color: Colors.white,
+          child: SpPaw(size: 34, color: SpDeco.shine.withValues(alpha: .5)),
         ),
       ),
       Positioned(
         top: 48,
         left: 48,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
-          decoration: BoxDecoration(
-            color: appTeal,
-            borderRadius: BorderRadius.circular(32),
-          ),
-          child: const Row(
+        child: _pildora(
+          fondo: _c.primary,
+          canto: _c.primaryEdge,
+          child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('🐾', style: TextStyle(fontSize: 26)),
-              SizedBox(width: 10),
-              Text(
-                'Salva Patitas',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
-                  fontFamily: 'Baloo2',
-                ),
-              ),
+              SpPaw(size: 28, color: _c.onPrimary),
+              const SizedBox(width: 10),
+              Text('Salva Patitas', style: _texto(26, _c.onPrimary)),
             ],
           ),
         ),
@@ -153,27 +181,12 @@ class _ShareCard extends StatelessWidget {
         child: Transform.rotate(
           angle: 0.045,
           alignment: Alignment.centerRight,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-            decoration: BoxDecoration(
-              color: appOrange,
-              borderRadius: BorderRadius.circular(32),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.25),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: const Text(
+          child: _pildora(
+            fondo: _c.accent,
+            canto: _c.accentInk,
+            child: Text(
               '¡Necesito un hogar! 💚',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 24,
-                fontWeight: FontWeight.w700,
-                fontFamily: 'Baloo2',
-              ),
+              style: _texto(26, _c.onAccent),
             ),
           ),
         ),
@@ -194,40 +207,36 @@ class _ShareCard extends StatelessWidget {
               nombre,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 72,
-                fontWeight: FontWeight.w800,
-                height: 1.0,
-                fontFamily: 'Baloo2',
-              ),
+              style: _texto(
+                76,
+                SpDeco.shine,
+              ).copyWith(height: 1.0, letterSpacing: -1.5),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             Text(
               [
                 if (especie.isNotEmpty) especie,
                 if (edad.isNotEmpty) edad,
               ].join(' · '),
-              style: const TextStyle(
-                color: Colors.white70,
-                fontSize: 28,
-                fontWeight: FontWeight.w700,
-                fontFamily: 'Baloo2',
-              ),
+              style: _texto(30, _c.mint, FontWeight.w700),
             ),
             if (ubicacion.isNotEmpty) ...[
               const SizedBox(height: 12),
               Row(
                 children: [
-                  const Icon(
-                    Icons.location_on,
-                    color: Colors.white70,
-                    size: 26,
+                  Icon(
+                    Icons.location_on_rounded,
+                    color: SpDeco.shine.withValues(alpha: .8),
+                    size: 28,
                   ),
                   const SizedBox(width: 6),
                   Text(
                     ubicacion,
-                    style: const TextStyle(color: Colors.white70, fontSize: 26),
+                    style: _texto(
+                      28,
+                      SpDeco.shine.withValues(alpha: .8),
+                      FontWeight.w600,
+                    ),
                   ),
                 ],
               ),
@@ -256,7 +265,7 @@ Future<Uint8List?> _renderShareCardToPng(
       left: 0,
       top: 0,
       child: Material(
-        color: Colors.transparent,
+        type: MaterialType.transparency,
         child: RepaintBoundary(
           key: key,
           child: SizedBox(width: size, height: size, child: card),
@@ -267,9 +276,9 @@ Future<Uint8List?> _renderShareCardToPng(
   final scrimEntry = OverlayEntry(
     builder: (_) => Positioned.fill(
       child: Material(
-        color: Colors.black.withValues(alpha: 0.55),
+        color: SpDeco.shade.withValues(alpha: 0.55),
         child: const Center(
-          child: CircularProgressIndicator(color: Colors.white),
+          child: CircularProgressIndicator(color: SpDeco.shine),
         ),
       ),
     ),

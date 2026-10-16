@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../data/chats_repository.dart';
 import '../data/solicitudes_repository.dart';
 import '../routing/app_router.dart';
+import '../widgets/adoptante_tab_bar.dart';
 import '../widgets/avatares.dart';
 import '../widgets/albergue_tab_bar.dart';
 import '../widgets/estado_error_feed.dart';
@@ -59,6 +60,15 @@ class _AdoptanteChatsScreenState extends State<AdoptanteChatsScreen> {
           ? AlbergueTabBar(
               actual: AlbergueTab.chats,
               onTap: AlbergueTabBar.volverAlPanel(context, AlbergueTab.chats),
+            )
+          // Adoptante (sin sombrero de rescatista): la barra del adoptante.
+          : !widget.esRescatista
+          ? AdoptanteTabBar(
+              actual: AdoptanteTab.chats,
+              onTap: AdoptanteTabBar.volverAlInicio(
+                context,
+                AdoptanteTab.chats,
+              ),
             )
           : null,
       backgroundColor: context.sp.bg,

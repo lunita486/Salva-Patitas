@@ -6,6 +6,8 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../routing/app_router.dart';
 import '../theme/salva_patitas_theme.dart';
+import '../routing/pagina_pestana.dart';
+import '../widgets/adoptante_tab_bar.dart';
 import '../widgets/sp_widgets.dart';
 import '../widgets/apariencia_sheet.dart';
 import '../data/favoritos_repository.dart';
@@ -131,6 +133,11 @@ class _PerfilAdoptanteScreenState extends State<PerfilAdoptanteScreen>
       color: c.inkMuted,
     );
     return Scaffold(
+      // Misma barra que el inicio del adoptante (ver AdoptanteTabBar).
+      bottomNavigationBar: AdoptanteTabBar(
+        actual: AdoptanteTab.perfil,
+        onTap: AdoptanteTabBar.volverAlInicio(context, AdoptanteTab.perfil),
+      ),
       backgroundColor: c.bg,
       body: Stack(
         fit: StackFit.expand,
@@ -237,8 +244,19 @@ class _PerfilAdoptanteScreenState extends State<PerfilAdoptanteScreen>
                                 icono: Icons.assignment_outlined,
                                 texto: 'Mis solicitudes',
                                 tono: SpTone.lilac,
-                                onTap: () =>
-                                    context.push(AppRoutes.misSolicitudes),
+                                // Si en la barra de Mis solicitudes se toca
+                                // otra pestaña, se la pasa al inicio (la
+                                // pila sigue siendo inicio + una sección).
+                                onTap: () => context
+                                    .push(AppRoutes.misSolicitudes)
+                                    .then((t) {
+                                      if (t is AdoptanteTab &&
+                                          t != AdoptanteTab.perfil &&
+                                          context.mounted) {
+                                        SaltoDePestana.marcar();
+                                        context.pop(t);
+                                      }
+                                    }),
                               ),
                               const SpDivisorFilas(),
                               SpFilaCuenta(

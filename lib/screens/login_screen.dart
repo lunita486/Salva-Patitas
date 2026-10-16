@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../data/auth_helper.dart';
-import '../theme.dart';
-import '../widgets/fondo_decorativo.dart';
+import '../theme/salva_patitas_theme.dart';
+import '../widgets/sp_widgets.dart';
 import '../data/sandbox.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -27,9 +27,9 @@ class _LoginScreenState extends State<LoginScreen> {
       await entrarEnSandbox(email: email, nombre: nombre);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Sandbox: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Sandbox: $e')));
       }
     } finally {
       if (mounted) setState(() => _cargando = false);
@@ -50,9 +50,9 @@ class _LoginScreenState extends State<LoginScreen> {
         case ResultadoLogin.ocupado:
           setState(() => _cargando = false);
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              backgroundColor: msgError,
-              content: Text('Esperá unos segundos e intentá de nuevo.'),
+            SnackBar(
+              backgroundColor: context.sp.msgError,
+              content: const Text('Esperá unos segundos e intentá de nuevo.'),
             ),
           );
       }
@@ -67,9 +67,9 @@ class _LoginScreenState extends State<LoginScreen> {
       if (mounted) {
         setState(() => _cargando = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            backgroundColor: msgError,
-            content: Text(
+          SnackBar(
+            backgroundColor: context.sp.msgError,
+            content: const Text(
               'No se pudo iniciar sesión con Google en este dispositivo. '
               'Probá con otra cuenta o revisá que Google Play Services esté actualizado.',
             ),
@@ -80,9 +80,9 @@ class _LoginScreenState extends State<LoginScreen> {
       if (mounted) {
         setState(() => _cargando = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            backgroundColor: msgError,
-            content: Text(
+          SnackBar(
+            backgroundColor: context.sp.msgError,
+            content: const Text(
               'Esto está tardando demasiado. Revisá tu conexión e intentá de nuevo.',
             ),
           ),
@@ -92,9 +92,9 @@ class _LoginScreenState extends State<LoginScreen> {
       if (mounted) {
         setState(() => _cargando = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            backgroundColor: msgError,
-            content: Text(
+          SnackBar(
+            backgroundColor: context.sp.msgError,
+            content: const Text(
               'No se pudo iniciar sesión. Revisá tu conexión e intentá de nuevo.',
             ),
           ),
@@ -105,12 +105,13 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.sp;
     return Scaffold(
-      backgroundColor: appBg,
+      backgroundColor: c.bg,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          const LeafOverlay(),
+          const SpPawBackground(),
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 32),
@@ -118,93 +119,71 @@ class _LoginScreenState extends State<LoginScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   const Spacer(),
+                  // Baldosa menta con los tres animalitos 3D, como el héroe
+                  // del panel.
                   Container(
-                    width: 80,
-                    height: 80,
-                    decoration: const BoxDecoration(
-                      color: appTeal,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.pets,
-                      color: Colors.white,
-                      size: 44,
+                    width: 210,
+                    height: 170,
+                    decoration: SpDeco.tone(c, SpTone.mint, radius: 44),
+                    child: const Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Positioned(
+                          left: 120,
+                          top: 14,
+                          child: SpAnimal(SpAnimalKind.conejo, size: 74),
+                        ),
+                        Positioned(
+                          left: 14,
+                          top: 52,
+                          child: SpAnimal(SpAnimalKind.gato, size: 92),
+                        ),
+                        Positioned(
+                          left: 72,
+                          top: 60,
+                          child: SpAnimal(SpAnimalKind.perro, size: 100),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 24),
-                  const Text(
-                    'Salva Patitas',
-                    style: TextStyle(
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                      color: appInk,
-                    ),
+                  const SizedBox(height: 28),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Salva Patitas',
+                        style: SpText.display.copyWith(
+                          fontSize: 34,
+                          color: c.ink,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const SpPaw(size: 24, angle: -12),
+                    ],
                   ),
                   const SizedBox(height: 8),
                   Text(
                     'Conectamos animales con familias',
-                    style: TextStyle(fontSize: 15, color: Colors.grey.shade700),
+                    textAlign: TextAlign.center,
+                    style: SpText.body.copyWith(color: c.inkMuted),
                   ),
                   const Spacer(),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: _cargando ? null : _loginGoogle,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: appInk,
-                        elevation: 2,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                      ),
-                      child: _cargando
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: appTeal,
-                              ),
-                            )
-                          : Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Image.network(
-                                  'https://www.google.com/favicon.ico',
-                                  width: 20,
-                                  height: 20,
-                                  errorBuilder: (_, __, ___) =>
-                                      const Icon(Icons.login, size: 20),
-                                ),
-                                const SizedBox(width: 12),
-                                const Text(
-                                  'Continuar con Google',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                    ),
-                  ),
+                  _botonGoogle(c),
                   // Modo sandbox: cuatro cuentas de prueba, una por rol,
                   // contra el emulador de Auth. No existe en un build de
                   // release — `enSandbox` es una constante falsa ahí y todo
                   // este bloque se elimina del binario. Ver sandbox.dart.
                   if (enSandbox) ...[
                     const SizedBox(height: 12),
-                    const Text(
+                    Text(
                       'SANDBOX (emuladores locales)',
-                      style: TextStyle(fontSize: 11, color: Colors.grey),
+                      style: TextStyle(fontSize: 11, color: c.inkFaint),
                     ),
                     Wrap(
                       spacing: 6,
                       alignment: WrapAlignment.center,
                       children: [
-                        for (final c in const [
+                        for (final cuenta in const [
                           ('ana@sandbox.test', 'Ana Adoptante'),
                           ('rita@sandbox.test', 'Rita Rescatista'),
                           ('perla@sandbox.test', 'Refugio La Perla'),
@@ -213,16 +192,16 @@ class _LoginScreenState extends State<LoginScreen> {
                           OutlinedButton(
                             onPressed: _cargando
                                 ? null
-                                : () => _entrarSandbox(c.$1, c.$2),
+                                : () => _entrarSandbox(cuenta.$1, cuenta.$2),
                             child: Text(
-                              c.$2.split(' ').first,
+                              cuenta.$2.split(' ').first,
                               style: const TextStyle(fontSize: 12),
                             ),
                           ),
                       ],
                     ),
                   ],
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 18),
                   GestureDetector(
                     onTap: () => launchUrl(
                       Uri.parse(
@@ -233,18 +212,16 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: RichText(
                       textAlign: TextAlign.center,
                       text: TextSpan(
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade700,
-                        ),
-                        children: const [
-                          TextSpan(text: 'Al continuar aceptás nuestra '),
+                        style: SpText.caption.copyWith(color: c.inkMuted),
+                        children: [
+                          const TextSpan(text: 'Al continuar aceptás nuestra '),
                           TextSpan(
                             text: 'Política de Privacidad',
                             style: TextStyle(
-                              color: appTeal,
+                              color: c.primaryStrong,
+                              fontWeight: FontWeight.w700,
                               decoration: TextDecoration.underline,
-                              decorationColor: appTeal,
+                              decorationColor: c.primaryStrong,
                             ),
                           ),
                         ],
@@ -258,6 +235,53 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  /// Botón blanco 3D de Google. Mientras entra muestra un spinner y no se
+  /// puede tocar de nuevo.
+  Widget _botonGoogle(SpColors c) {
+    final caja = Container(
+      width: double.infinity,
+      height: 56,
+      decoration: SpDeco.soft(c, radius: SpRadius.md),
+      child: _cargando
+          ? Center(
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: c.primary,
+                ),
+              ),
+            )
+          : Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Image.network(
+                  'https://www.google.com/favicon.ico',
+                  width: 20,
+                  height: 20,
+                  errorBuilder: (_, _, _) =>
+                      Icon(Icons.login_rounded, size: 20, color: c.ink),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'Continuar con Google',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: c.ink,
+                  ),
+                ),
+              ],
+            ),
+    );
+    return Semantics(
+      button: true,
+      enabled: !_cargando,
+      child: _cargando ? caja : SpPressable(onTap: _loginGoogle, child: caja),
     );
   }
 }

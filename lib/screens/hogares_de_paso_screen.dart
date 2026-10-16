@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../theme.dart';
+import '../theme/salva_patitas_theme.dart';
+import '../widgets/sp_widgets.dart';
 import '../domain/reglas_negocio.dart';
 import '../widgets/avatares.dart';
 import '../widgets/campo_pais_telefono.dart';
 import '../widgets/estado_error_feed.dart';
-import '../widgets/fondo_decorativo.dart';
 import '../widgets/resultado_guardado_snackbar.dart';
 import '../data/hogares_de_paso_repository.dart';
 import '../data/firestore_resiliencia.dart';
@@ -91,9 +91,9 @@ class _HogaresDePasoScreenState extends State<HogaresDePasoScreen> {
               ),
               TextButton(
                 onPressed: () => Navigator.pop(dlgCtx, true),
-                child: const Text(
+                child: Text(
                   'Agregar igual',
-                  style: TextStyle(color: appTeal),
+                  style: TextStyle(color: context.sp.primaryStrong),
                 ),
               ),
             ],
@@ -113,18 +113,18 @@ class _HogaresDePasoScreenState extends State<HogaresDePasoScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('${resultado['nombre']} se agregó a tu red.'),
-            backgroundColor: msgExito,
+            backgroundColor: context.sp.msgExito,
           ),
         );
       }
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
+          SnackBar(
+            content: const Text(
               'No se pudo agregar. Revisá tu conexión e intentá de nuevo.',
             ),
-            backgroundColor: msgError,
+            backgroundColor: context.sp.msgError,
           ),
         );
       }
@@ -185,7 +185,7 @@ class _HogaresDePasoScreenState extends State<HogaresDePasoScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(dlgCtx, true),
-            child: const Text('Quitar', style: TextStyle(color: Colors.red)),
+            child: Text('Quitar', style: TextStyle(color: context.sp.danger)),
           ),
         ],
       ),
@@ -203,16 +203,16 @@ class _HogaresDePasoScreenState extends State<HogaresDePasoScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('$nombre se quitó de tu red.'),
-            backgroundColor: msgExito,
+            backgroundColor: context.sp.msgExito,
           ),
         );
       case ResultadoGuardado.fallo:
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
+          SnackBar(
+            content: const Text(
               'No se pudo quitar. Revisá tu conexión e intentá de nuevo.',
             ),
-            backgroundColor: msgError,
+            backgroundColor: context.sp.msgError,
           ),
         );
     }
@@ -220,65 +220,44 @@ class _HogaresDePasoScreenState extends State<HogaresDePasoScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.sp;
     return Scaffold(
-      backgroundColor: appBg,
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _agregando ? null : _agregarManual,
-        backgroundColor: _agregando ? Colors.grey.shade400 : appTeal,
-        icon: const Icon(Icons.add, color: Colors.white),
-        label: const Text(
-          'Agregar',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-        ),
-      ),
+      backgroundColor: c.bg,
+      floatingActionButton: _botonAgregar(c),
       body: Stack(
         fit: StackFit.expand,
         children: [
-          const LeafOverlay(),
+          const SpPawBackground(),
           SafeArea(
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 8, 20, 4),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-                        tooltip: 'Volver',
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                      const Expanded(
-                        child: Text(
-                          'Red de hogares de paso',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: appInk,
-                            fontFamily: 'Baloo2',
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                const SpScreenHeader(
+                  title: 'Hogares de paso',
+                  subtitle: 'Tu red de confianza',
                 ),
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Text(
-                    'Personas de confianza que ya te ayudaron con hogar de paso. Se agregan solas cuando aprobás una solicitud.',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      color: Colors.grey.shade700,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: SpNotice(
+                    fondo: c.butter,
+                    tinta: c.butterInk,
+                    child: Text(
+                      'Personas de confianza que ya te ayudaron con hogar de paso. Se agregan solas cuando aprobás una solicitud.',
+                      style: SpText.label.copyWith(
+                        color: c.butterInk,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: SpSpace.s4),
                 Expanded(
                   child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                     stream: _repo.deAlbergue(_uid),
                     builder: (context, snap) {
                       if (snap.connectionState == ConnectionState.waiting) {
-                        return const Center(
-                          child: CircularProgressIndicator(color: appTeal),
+                        return Center(
+                          child: CircularProgressIndicator(color: c.primary),
                         );
                       }
                       if (snap.hasError) return errorFeedState();
@@ -289,34 +268,25 @@ class _HogaresDePasoScreenState extends State<HogaresDePasoScreen> {
                           return vb.compareTo(va);
                         });
                       if (docs.isEmpty) {
-                        return Center(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 32),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Text(
-                                  '🏡',
-                                  style: TextStyle(fontSize: 48),
-                                ),
-                                const SizedBox(height: 12),
-                                Text(
-                                  'Todavía no tenés hogares de paso en tu red.\nCuando apruebes una solicitud, la persona se agrega acá sola.',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: Colors.grey.shade700,
-                                  ),
-                                ),
-                              ],
+                        return const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 16),
+                          child: Align(
+                            alignment: Alignment.topCenter,
+                            child: SpEmpty(
+                              title:
+                                  'Todavía no tenés hogares de paso en tu red',
+                              subtitle:
+                                  'Cuando apruebes una solicitud, la persona se agrega acá sola.',
+                              animal: SpAnimalKind.casa,
                             ),
                           ),
                         );
                       }
                       return ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 110),
                         itemCount: docs.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 12),
+                        separatorBuilder: (_, _) =>
+                            const SizedBox(height: SpSpace.s3),
                         itemBuilder: (_, i) {
                           final d = docs[i].data();
                           final docId = docs[i].id;
@@ -332,18 +302,8 @@ class _HogaresDePasoScreenState extends State<HogaresDePasoScreen> {
 
                           return Container(
                             key: ValueKey(docId),
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(16),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.05),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
-                            ),
+                            padding: const EdgeInsets.all(SpSpace.s4),
+                            decoration: SpDeco.card(c),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -356,11 +316,9 @@ class _HogaresDePasoScreenState extends State<HogaresDePasoScreen> {
                                       inicial: nombre.isNotEmpty
                                           ? nombre[0].toUpperCase()
                                           : '?',
-                                      radius: 22,
-                                      backgroundColor: appTeal.withValues(
-                                        alpha: 0.12,
-                                      ),
-                                      textColor: appTeal,
+                                      radius: 24,
+                                      backgroundColor: c.butter,
+                                      textColor: c.butterInk,
                                     ),
                                     const SizedBox(width: 12),
                                     Expanded(
@@ -370,9 +328,10 @@ class _HogaresDePasoScreenState extends State<HogaresDePasoScreen> {
                                         children: [
                                           Text(
                                             nombre,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 15,
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 16,
+                                              color: c.ink,
                                             ),
                                           ),
                                           const SizedBox(height: 2),
@@ -380,42 +339,19 @@ class _HogaresDePasoScreenState extends State<HogaresDePasoScreen> {
                                             veces == 1
                                                 ? 'Ayudó 1 vez'
                                                 : 'Ayudó $veces veces',
-                                            style: TextStyle(
-                                              fontSize: 12.5,
-                                              color: Colors.grey.shade700,
+                                            style: SpText.caption.copyWith(
+                                              color: c.inkMuted,
+                                              fontWeight: FontWeight.w600,
                                             ),
                                           ),
                                         ],
                                       ),
                                     ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 10,
-                                        vertical: 5,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: appTeal.withValues(alpha: 0.1),
-                                        borderRadius: BorderRadius.circular(20),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          const Icon(
-                                            Icons.favorite,
-                                            size: 12,
-                                            color: appTeal,
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            '$veces',
-                                            style: const TextStyle(
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.w700,
-                                              color: appTeal,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
+                                    SpPill(
+                                      '$veces',
+                                      fondo: c.butter,
+                                      tinta: c.butterInk,
+                                      icon: Icons.favorite_rounded,
                                     ),
                                   ],
                                 ),
@@ -424,23 +360,22 @@ class _HogaresDePasoScreenState extends State<HogaresDePasoScreen> {
                                   if (ultimaVez != null)
                                     Text(
                                       'Última vez: ${formatearFecha(ultimaVez)}',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.grey.shade700,
+                                      style: SpText.caption.copyWith(
+                                        color: c.inkMuted,
                                       ),
                                     ),
                                   if (notas.isNotEmpty) ...[
                                     const SizedBox(height: 4),
                                     Text(
                                       notas,
-                                      style: TextStyle(
-                                        fontSize: 12.5,
-                                        color: Colors.grey.shade700,
+                                      style: SpText.label.copyWith(
+                                        color: c.inkMuted,
+                                        fontWeight: FontWeight.w500,
                                       ),
                                     ),
                                   ],
                                 ],
-                                const SizedBox(height: 10),
+                                const SizedBox(height: 12),
                                 Row(
                                   children: [
                                     if (linkWhatsapp != null)
@@ -449,86 +384,30 @@ class _HogaresDePasoScreenState extends State<HogaresDePasoScreen> {
                                           Uri.parse(linkWhatsapp),
                                           mode: LaunchMode.externalApplication,
                                         ),
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 6,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: const Color(
-                                              0xFF25D366,
-                                            ).withValues(alpha: 0.12),
-                                            borderRadius: BorderRadius.circular(
-                                              20,
-                                            ),
-                                          ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: const [
-                                              Icon(
-                                                Icons.chat,
-                                                size: 13,
-                                                color: Color(0xFF25D366),
-                                              ),
-                                              SizedBox(width: 5),
-                                              Text(
-                                                'WhatsApp',
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: Color(0xFF25D366),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
+                                        child: SpPill(
+                                          'WhatsApp',
+                                          fondo: c.primarySoft,
+                                          tinta: c.primaryStrong,
+                                          icon: Icons.chat_rounded,
                                         ),
                                       ),
                                     const Spacer(),
-                                    Tooltip(
-                                      message: 'Editar contacto',
-                                      child: GestureDetector(
-                                        onTap: () => _editarContacto(
-                                          docId,
-                                          telefono,
-                                          notas,
-                                          email,
-                                        ),
-                                        child: Container(
-                                          padding: const EdgeInsets.all(8),
-                                          decoration: BoxDecoration(
-                                            color: Colors.grey.shade100,
-                                            borderRadius: BorderRadius.circular(
-                                              20,
-                                            ),
-                                          ),
-                                          child: Icon(
-                                            Icons.edit_outlined,
-                                            size: 16,
-                                            color: Colors.grey.shade600,
-                                          ),
-                                        ),
+                                    SpMiniButton(
+                                      icon: Icons.edit_outlined,
+                                      tooltip: 'Editar contacto',
+                                      onTap: () => _editarContacto(
+                                        docId,
+                                        telefono,
+                                        notas,
+                                        email,
                                       ),
                                     ),
                                     const SizedBox(width: 8),
-                                    Tooltip(
-                                      message: 'Quitar',
-                                      child: GestureDetector(
-                                        onTap: () => _eliminar(docId, nombre),
-                                        child: Container(
-                                          padding: const EdgeInsets.all(8),
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFFFFEBEE),
-                                            borderRadius: BorderRadius.circular(
-                                              20,
-                                            ),
-                                          ),
-                                          child: const Icon(
-                                            Icons.delete_outline,
-                                            size: 16,
-                                            color: Color(0xFFD32F2F),
-                                          ),
-                                        ),
-                                      ),
+                                    SpMiniButton(
+                                      icon: Icons.delete_outline_rounded,
+                                      tooltip: 'Quitar',
+                                      danger: true,
+                                      onTap: () => _eliminar(docId, nombre),
                                     ),
                                   ],
                                 ),
@@ -545,6 +424,38 @@ class _HogaresDePasoScreenState extends State<HogaresDePasoScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  /// "Agregar": píldora verde 3D. Mientras la hoja está abierta se ve
+  /// apagada y no se puede tocar de nuevo (ver `_agregando`).
+  Widget _botonAgregar(SpColors c) {
+    final caja = Container(
+      height: 54,
+      padding: const EdgeInsets.symmetric(horizontal: 22),
+      decoration: SpDeco.primary(c, radius: SpRadius.full),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.add_rounded, color: c.onPrimary),
+          const SizedBox(width: 6),
+          Text(
+            'Agregar',
+            style: TextStyle(
+              color: c.onPrimary,
+              fontWeight: FontWeight.w800,
+              fontSize: 15,
+            ),
+          ),
+        ],
+      ),
+    );
+    return Semantics(
+      button: true,
+      enabled: !_agregando,
+      child: _agregando
+          ? Opacity(opacity: .5, child: caja)
+          : SpPressable(onTap: _agregarManual, child: caja),
     );
   }
 }
@@ -607,25 +518,12 @@ class _AgregarHogarSheetState extends State<_AgregarHogarSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(
-              child: Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
+            const SpAgarradera(),
             const SizedBox(height: 16),
-            const Text(
+            const SpHojaTitulo(
               'Agregar a la red',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Alguien de confianza que ya conocés, aunque todavía no haya pedido hogar de paso por la app.',
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+              subtitulo:
+                  'Alguien de confianza que ya conocés, aunque todavía no haya pedido hogar de paso por la app.',
             ),
             const SizedBox(height: 20),
             TextField(
@@ -667,13 +565,14 @@ class _AgregarHogarSheetState extends State<_AgregarHogarSheet> {
             Text(
               'Sirve para no confundirla con otra persona del mismo nombre, y para '
               'sumar acá si más adelante pide hogar de paso por la app con este mismo email.',
-              style: TextStyle(fontSize: 11.5, color: Colors.grey.shade700),
+              style: SpText.caption.copyWith(color: context.sp.inkMuted),
             ),
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _valido
+              child: SpButton(
+                label: 'Agregar',
+                onTap: _valido
                     ? () => Navigator.pop(context, {
                         'nombre': _nombreCtl.text.trim(),
                         'telefono': _telefonoCtl.text.trim(),
@@ -681,20 +580,6 @@ class _AgregarHogarSheetState extends State<_AgregarHogarSheet> {
                         'email': _emailCtl.text.trim(),
                       })
                     : null,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: appTeal,
-                  foregroundColor: Colors.white,
-                  disabledBackgroundColor: Colors.grey.shade300,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  elevation: 0,
-                ),
-                child: const Text(
-                  'Agregar',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
               ),
             ),
           ],
@@ -703,15 +588,8 @@ class _AgregarHogarSheetState extends State<_AgregarHogarSheet> {
     );
   }
 
-  InputDecoration _dec(String label) => InputDecoration(
-    labelText: label,
-    filled: true,
-    fillColor: Colors.grey.shade50,
-    border: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
-      borderSide: BorderSide.none,
-    ),
-  );
+  // El relleno y los bordes vienen del tema (inputDecorationTheme).
+  InputDecoration _dec(String label) => InputDecoration(labelText: label);
 }
 
 // Deja completar teléfono/notas después — pedido real de Eliza: las filas
@@ -772,21 +650,9 @@ class _EditarContactoSheetState extends State<_EditarContactoSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(
-              child: Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
+            const SpAgarradera(),
             const SizedBox(height: 16),
-            const Text(
-              'Editar contacto',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
+            const SpHojaTitulo('Editar contacto'),
             const SizedBox(height: 20),
             CampoTelefono(
               controller: _telefonoCtl,
@@ -820,27 +686,15 @@ class _EditarContactoSheetState extends State<_EditarContactoSheet> {
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _valido
+              child: SpButton(
+                label: 'Guardar',
+                onTap: _valido
                     ? () => Navigator.pop(context, {
                         'telefono': _telefonoCtl.text.trim(),
                         'notas': _notasCtl.text.trim(),
                         'email': _emailCtl.text.trim(),
                       })
                     : null,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: appTeal,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  elevation: 0,
-                ),
-                child: const Text(
-                  'Guardar',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
               ),
             ),
           ],
@@ -849,13 +703,6 @@ class _EditarContactoSheetState extends State<_EditarContactoSheet> {
     );
   }
 
-  InputDecoration _dec(String label) => InputDecoration(
-    labelText: label,
-    filled: true,
-    fillColor: Colors.grey.shade50,
-    border: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
-      borderSide: BorderSide.none,
-    ),
-  );
+  // El relleno y los bordes vienen del tema (inputDecorationTheme).
+  InputDecoration _dec(String label) => InputDecoration(labelText: label);
 }

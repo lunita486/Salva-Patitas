@@ -5,7 +5,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:async';
 import 'package:geolocator/geolocator.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
-import '../theme.dart';
+import '../theme/salva_patitas_theme.dart';
+import '../widgets/sp_widgets.dart';
 import '../domain/reglas_negocio.dart';
 import '../widgets/avatares.dart';
 import '../widgets/campo_pais_telefono.dart';
@@ -97,8 +98,8 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
   // UsuariosRepository.aliados() es la única fuente de esta consulta para
   // toda la app — se pide UNA sola vez acá (no en cada build de
   // _aliadosSection()), ver el doc del método para el porqué completo.
-  late final Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _aliadosFuture =
-      UsuariosRepository().aliados();
+  late final Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  _aliadosFuture = UsuariosRepository().aliados();
 
   /// Descarga por adelantado la 2da foto (y siguientes) de la tarjeta
   /// visible — el widget que las muestra de verdad (FotoUrl, en
@@ -202,9 +203,9 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
     if (resultado == ResultadoGuardado.fallo && mounted) {
       setState(() => _prefEspecie = anterior);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No se pudo guardar tu filtro. Probá de nuevo.'),
-          backgroundColor: msgError,
+        SnackBar(
+          content: const Text('No se pudo guardar tu filtro. Probá de nuevo.'),
+          backgroundColor: context.sp.msgError,
         ),
       );
     }
@@ -268,9 +269,9 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
         _prefEdad = anteriorEdad;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No se pudo guardar tu filtro. Probá de nuevo.'),
-          backgroundColor: msgError,
+        SnackBar(
+          content: const Text('No se pudo guardar tu filtro. Probá de nuevo.'),
+          backgroundColor: context.sp.msgError,
         ),
       );
     }
@@ -551,8 +552,8 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                     favSnap.data == null) ||
                 (snap.connectionState == ConnectionState.waiting &&
                     snap.data == null)) {
-              return const Center(
-                child: CircularProgressIndicator(color: appTeal),
+              return Center(
+                child: CircularProgressIndicator(color: context.sp.primary),
               );
             }
             // Separado en 2 pasos (disponibles → firestoreDocs) para poder
@@ -593,12 +594,8 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                   // Más nuevos primero. Sin campo `creadoEn` (legado) se van al final
                   // en vez de desaparecer del feed — ver feedPublico() en el repo.
                   ..sort((a, b) {
-                    final ta =
-                        a.data()['creadoEn']
-                            as Timestamp?;
-                    final tb =
-                        b.data()['creadoEn']
-                            as Timestamp?;
+                    final ta = a.data()['creadoEn'] as Timestamp?;
+                    final tb = b.data()['creadoEn'] as Timestamp?;
                     if (ta == null && tb == null) return 0;
                     if (ta == null) return 1;
                     if (tb == null) return -1;
@@ -755,13 +752,22 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                         if (distancia.isNotEmpty)
                           Padding(
                             padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
-                            child: Text(
-                              'Se encuentra a $distancia de ti',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: appTeal,
-                              ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.near_me_rounded,
+                                  size: 14,
+                                  color: context.sp.primaryStrong,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Se encuentra a $distancia de ti',
+                                  style: SpText.caption.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    color: context.sp.primaryStrong,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         Padding(
@@ -782,10 +788,11 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       _actionBtn(
-                        Icons.close,
-                        Colors.grey.shade200,
-                        Colors.grey.shade700,
-                        52,
+                        Icons.close_rounded,
+                        context.sp.surface,
+                        context.sp.edge,
+                        context.sp.inkMuted,
+                        56,
                         () {
                           _fotoPageNotifier.value = 0;
                           setState(() => _idx++);
@@ -794,10 +801,11 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                       ),
                       const SizedBox(width: 18),
                       _actionBtn(
-                        Icons.pets,
-                        Colors.white,
-                        appInk,
-                        46,
+                        Icons.pets_rounded,
+                        context.sp.mint,
+                        context.sp.mintDeep,
+                        context.sp.primaryStrong,
+                        48,
                         () {
                           context.push(AppRoutes.animalDetalle, extra: animal);
                         },
@@ -805,16 +813,18 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                       ),
                       const SizedBox(width: 18),
                       _actionBtn(
-                        Icons.favorite,
-                        appOrange,
-                        Colors.white,
-                        62,
+                        Icons.favorite_rounded,
+                        context.sp.accent,
+                        context.sp.accentInk,
+                        SpDeco.shine,
+                        66,
                         () async {
                           // Se oculta de una (sin avanzar _idx a mano): la lista se
                           // achica sola y el siguiente animal ocupa este mismo lugar.
                           final favRescateId =
                               animal['rescateId'] as String? ?? '';
                           final messenger = ScaffoldMessenger.of(context);
+                          final colorError = context.sp.msgError;
                           _fotoPageNotifier.value = 0;
                           if (favRescateId.isNotEmpty)
                             setState(
@@ -829,9 +839,9 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                                 () => _favoritosRecientes.remove(favRescateId),
                               );
                             messenger.showSnackBar(
-                              const SnackBar(
-                                backgroundColor: msgError,
-                                content: Text(
+                              SnackBar(
+                                backgroundColor: colorError,
+                                content: const Text(
                                   'No se pudo guardar el favorito. Intentá de nuevo.',
                                 ),
                               ),
@@ -870,22 +880,23 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
           // de Eliza).
           const SizedBox(height: 40),
           Container(
-            width: 90,
-            height: 90,
-            decoration: BoxDecoration(
-              color: appOrange.withValues(alpha: 0.15),
-              shape: BoxShape.circle,
+            width: 120,
+            height: 120,
+            alignment: Alignment.center,
+            decoration: SpDeco.tone(
+              context.sp,
+              hayMasSinFiltros ? SpTone.lilac : SpTone.peach,
+              radius: SpRadius.xl,
             ),
-            child: const Icon(Icons.pets, size: 44, color: appOrange),
+            child: SpAnimal(
+              hayMasSinFiltros ? SpAnimalKind.gato : SpAnimalKind.perro,
+              size: 84,
+            ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 22),
           Text(
             hayMasSinFiltros ? 'Nada con estos filtros' : 'Eso es todo por hoy',
-            style: const TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              color: appInk,
-            ),
+            style: SpText.title.copyWith(color: context.sp.ink),
           ),
           // Caso real: una tester probó Perro+Pequeño+Cachorro (sin ningún
           // animal así en el catálogo) y pensó que la app tenía un error —
@@ -896,11 +907,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
             const SizedBox(height: 6),
             Text(
               'Filtros activos: ${_resumenFiltros()}',
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: appTeal,
-              ),
+              style: SpText.label.copyWith(color: context.sp.primaryStrong),
             ),
           ],
           const SizedBox(height: 8),
@@ -913,14 +920,14 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                 ? 'Todavía no hay ningún animal con esa combinación exacta.'
                 : 'Vuelve mañana, nuevos amigos\nllegan cada día.',
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey.shade700,
-              height: 1.5,
-            ),
+            style: SpText.body.copyWith(color: context.sp.inkMuted),
           ),
           const SizedBox(height: 24),
-          GestureDetector(
+          SpButton(
+            label: hayMasSinFiltros ? 'Ver todos' : 'Ver de nuevo',
+            icon: hayMasSinFiltros
+                ? Icons.filter_alt_off_rounded
+                : Icons.replay_rounded,
             onTap: () {
               // Ahora saca especie, tamaño Y edad juntos — antes solo tocaba
               // especie, y si el bloqueo era tamaño/edad el botón no hacía
@@ -931,21 +938,6 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                 setState(() => _idx = 0);
               }
             },
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 14),
-              decoration: BoxDecoration(
-                color: appOrange,
-                borderRadius: BorderRadius.circular(30),
-              ),
-              child: Text(
-                hayMasSinFiltros ? 'Ver todos' : 'Ver de nuevo',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
           ),
           const SizedBox(height: 36),
           _aliadosSection(),
@@ -965,30 +957,16 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                children: [
-                  const Text(
-                    'NEGOCIOS ALIADOS',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.2,
-                      color: appTeal,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Text('🐾', style: const TextStyle(fontSize: 12)),
-                ],
-              ),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 20),
+              child: SpSectionTitle('Negocios aliados'),
             ),
             const SizedBox(height: 12),
             SizedBox(
-              height: 132,
+              height: 146,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 20),
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
                 itemCount: aliados.length,
                 separatorBuilder: (_, __) => const SizedBox(width: 12),
                 itemBuilder: (_, i) {
@@ -998,6 +976,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                   final foto = d['aliadoFotoBase64'] as String?;
                   final ini = nombre.isNotEmpty ? nombre[0].toUpperCase() : 'A';
                   final uid = aliados[i].id;
+                  final k = SpToneColors.of(context.sp, spToneAliado(tipo));
 
                   return GestureDetector(
                     onTap: () {
@@ -1019,17 +998,7 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                     child: Container(
                       width: 100,
                       padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.06),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
+                      decoration: SpDeco.card(context.sp, radius: SpRadius.md),
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -1037,16 +1006,16 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                             fotoBase64: foto,
                             inicial: ini,
                             radius: 26,
-                            backgroundColor: appTeal.withValues(alpha: 0.12),
-                            textColor: appTeal,
+                            backgroundColor: k.fill,
+                            textColor: k.ink,
                           ),
                           const SizedBox(height: 8),
                           Text(
                             nombre,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: appInk,
+                              fontWeight: FontWeight.w800,
+                              color: context.sp.ink,
                             ),
                             textAlign: TextAlign.center,
                             maxLines: 2,
@@ -1058,7 +1027,8 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                               tipo,
                               style: TextStyle(
                                 fontSize: 9,
-                                color: Colors.grey.shade700,
+                                fontWeight: FontWeight.w600,
+                                color: context.sp.inkMuted,
                               ),
                               textAlign: TextAlign.center,
                               maxLines: 1,
@@ -1088,11 +1058,8 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
             child: Container(
               width: 36,
               height: 36,
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.38),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, color: Colors.white, size: 26),
+              decoration: SpDeco.soft(context.sp, radius: SpRadius.full),
+              child: Icon(icon, color: context.sp.ink, size: 24),
             ),
           ),
         ),
@@ -1122,27 +1089,25 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
     final rescateId = a['rescateId'] as String? ?? '';
     final especie = a['especie'] as String? ?? '';
     final bandera = banderaPais(a['paisCodigo'] as String?);
-    final emoji = especie == 'Gato' ? '🐱' : '🐶';
+    final c = context.sp;
+    const tonosRasgos = [
+      SpTone.mint,
+      SpTone.peach,
+      SpTone.lilac,
+      SpTone.sky,
+      SpTone.butter,
+    ];
 
-    Color scoreColor(int s) {
-      if (s >= 80) return appTeal;
-      if (s >= 60) return const Color(0xFFE65100);
-      return const Color(0xFFB71C1C);
+    // Mismos 3 escalones de antes (80 / 60), ahora en los pasteles del tema.
+    SpTone scoreTone(int s) {
+      if (s >= 80) return SpTone.mint;
+      if (s >= 60) return SpTone.butter;
+      return SpTone.peach;
     }
 
     return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.09),
-            blurRadius: 18,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      clipBehavior: Clip.hardEdge,
+      decoration: SpDeco.card(c, radius: SpRadius.xl),
+      clipBehavior: Clip.antiAlias,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1210,44 +1175,16 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                                 // caso real "Tobyiii": se veía el mueble vacío).
                                 child: FotoAnimal(
                                   url: fotos[idxSeguro],
-                                  fallback: Container(
-                                    decoration: const BoxDecoration(
-                                      gradient: LinearGradient(
-                                        begin: Alignment.topLeft,
-                                        end: Alignment.bottomRight,
-                                        colors: [
-                                          Color(0xFF3D7A52),
-                                          Color(0xFF1F4A30),
-                                        ],
-                                      ),
-                                    ),
-                                    child: Center(
-                                      child: Text(
-                                        emoji,
-                                        style: const TextStyle(fontSize: 90),
-                                      ),
-                                    ),
+                                  fallback: SpFotoVacia(
+                                    especie: especie,
+                                    size: 120,
                                   ),
                                 ),
                               ),
                             );
                           },
                         )
-                      : Container(
-                          decoration: const BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [Color(0xFF3D7A52), Color(0xFF1F4A30)],
-                            ),
-                          ),
-                          child: Center(
-                            child: Text(
-                              emoji,
-                              style: const TextStyle(fontSize: 90),
-                            ),
-                          ),
-                        ),
+                      : SpFotoVacia(especie: especie, size: 120),
                   if (fotos.length > 1)
                     Positioned(
                       top: urgencia == 'Alta' ? 38 : 10,
@@ -1268,9 +1205,9 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                                   width: pageIdx == i ? 18 : 7,
                                   height: 7,
                                   decoration: BoxDecoration(
-                                    color: pageIdx == i
-                                        ? Colors.white
-                                        : Colors.white.withValues(alpha: 0.5),
+                                    color: SpDeco.shine.withValues(
+                                      alpha: pageIdx == i ? 1 : .55,
+                                    ),
                                     borderRadius: BorderRadius.circular(4),
                                   ),
                                 ),
@@ -1287,8 +1224,8 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
                           colors: [
-                            Colors.transparent,
-                            Colors.black.withValues(alpha: 0.68),
+                            SpDeco.shade.withValues(alpha: 0),
+                            SpDeco.shade.withValues(alpha: 0.68),
                           ],
                           stops: const [0.45, 1.0],
                         ),
@@ -1301,23 +1238,23 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                       left: 0,
                       right: 0,
                       child: Container(
-                        color: const Color(0xFFD32F2F),
+                        color: c.accent,
                         padding: const EdgeInsets.symmetric(vertical: 6),
-                        child: const Row(
+                        child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Icon(
                               Icons.warning_amber_rounded,
                               size: 13,
-                              color: Colors.white,
+                              color: c.onAccent,
                             ),
-                            SizedBox(width: 6),
+                            const SizedBox(width: 6),
                             Text(
                               'URGENTE · NECESITA HOGAR YA',
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w800,
-                                color: Colors.white,
+                                color: c.onAccent,
                                 letterSpacing: 0.8,
                               ),
                             ),
@@ -1377,16 +1314,24 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                                 vertical: 5,
                               ),
                               decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.92),
-                                borderRadius: BorderRadius.circular(20),
+                                color: c.surface.withValues(alpha: 0.94),
+                                borderRadius: BorderRadius.circular(
+                                  SpRadius.full,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: c.edge,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(
-                                    Icons.location_on,
-                                    size: 12,
-                                    color: appTeal,
+                                  Icon(
+                                    Icons.location_on_rounded,
+                                    size: 13,
+                                    color: c.primaryStrong,
                                   ),
                                   const SizedBox(width: 3),
                                   Flexible(
@@ -1394,9 +1339,10 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                                       ubicacion,
                                       overflow: TextOverflow.ellipsis,
                                       maxLines: 1,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 11,
-                                        fontWeight: FontWeight.w600,
+                                        fontWeight: FontWeight.w700,
+                                        color: c.ink,
                                       ),
                                     ),
                                   ),
@@ -1433,83 +1379,22 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                             runSpacing: 6,
                             children: [
                               if (estadoAdopcion == 'Hogar de paso')
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 9,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: appTeal,
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  child: const Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.home_outlined,
-                                        size: 11,
-                                        color: Colors.white,
-                                      ),
-                                      SizedBox(width: 3),
-                                      Text(
-                                        'Hogar de paso',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w700,
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                                _pildoraFoto(
+                                  'Hogar de paso',
+                                  SpTone.butter,
+                                  Icons.night_shelter_outlined,
                                 ),
                               if (estadoAdopcion == 'Regresado')
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 9,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFE65100),
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  child: const Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.refresh,
-                                        size: 11,
-                                        color: Colors.white,
-                                      ),
-                                      SizedBox(width: 3),
-                                      Text(
-                                        'Fue devuelto',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w700,
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                                _pildoraFoto(
+                                  'Fue devuelto',
+                                  SpTone.peach,
+                                  Icons.undo_rounded,
                                 ),
                               if (score >= 0)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 9,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: scoreColor(score),
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  child: Text(
-                                    '$score% compatible',
-                                    style: const TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.white,
-                                    ),
-                                  ),
+                                _pildoraFoto(
+                                  '$score% compatible',
+                                  scoreTone(score),
+                                  null,
                                 ),
                             ],
                           ),
@@ -1562,17 +1447,18 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                           maxLines: 1,
                           text: TextSpan(
                             style: const TextStyle(
-                              fontSize: 26,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
+                              fontSize: 27,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -.4,
+                              color: SpDeco.shine,
                             ),
                             children: [
                               TextSpan(text: '$nombre, '),
                               TextSpan(
                                 text: edad,
-                                style: const TextStyle(
-                                  color: Color(0xFFB8F0CC),
-                                  fontWeight: FontWeight.w400,
+                                style: TextStyle(
+                                  color: c.mint,
+                                  fontWeight: FontWeight.w500,
                                 ),
                               ),
                             ],
@@ -1582,9 +1468,10 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                           '$raza · $tamano',
                           overflow: TextOverflow.ellipsis,
                           maxLines: 1,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 13,
-                            color: Colors.white70,
+                            fontWeight: FontWeight.w600,
+                            color: SpDeco.shine.withValues(alpha: .8),
                           ),
                         ),
                       ],
@@ -1606,14 +1493,12 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                       right: 12,
                       child: IgnorePointer(
                         child: Container(
-                          padding: const EdgeInsets.all(7),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.38),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.zoom_out_map,
-                            color: Colors.white,
+                          width: 32,
+                          height: 32,
+                          decoration: SpDeco.soft(c, radius: SpRadius.full),
+                          child: Icon(
+                            Icons.zoom_out_map_rounded,
+                            color: c.ink,
                             size: 16,
                           ),
                         ),
@@ -1632,9 +1517,10 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                   Text(
                     descripcion,
                     style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey.shade700,
-                      height: 1.4,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: c.inkMuted,
+                      height: 1.45,
                     ),
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
@@ -1645,31 +1531,20 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                   Wrap(
                     spacing: 8,
                     runSpacing: 6,
-                    children: tags
-                        .map(
-                          (t) => Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 5,
-                            ),
-                            decoration: BoxDecoration(
-                              border: Border.all(
-                                color: appTeal.withValues(alpha: 0.5),
-                              ),
-                              borderRadius: BorderRadius.circular(20),
-                              color: appTeal.withValues(alpha: 0.07),
-                            ),
-                            child: Text(
-                              t,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: appTeal,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                        )
-                        .toList(),
+                    children: [
+                      for (final (i, t) in tags.indexed)
+                        SpPill(
+                          t,
+                          fondo: SpToneColors.of(
+                            c,
+                            tonosRasgos[i % tonosRasgos.length],
+                          ).fill,
+                          tinta: SpToneColors.of(
+                            c,
+                            tonosRasgos[i % tonosRasgos.length],
+                          ).ink,
+                        ),
+                    ],
                   ),
                   const SizedBox(height: 14),
                 ],
@@ -1721,9 +1596,9 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                               inicial: rescatista.isNotEmpty
                                   ? rescatista[0].toUpperCase()
                                   : 'R',
-                              radius: 16,
-                              backgroundColor: appTeal.withValues(alpha: 0.15),
-                              textColor: appTeal,
+                              radius: 18,
+                              backgroundColor: c.mint,
+                              textColor: c.primaryStrong,
                             ),
                             const SizedBox(width: 10),
                             Expanded(
@@ -1734,9 +1609,10 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                                     esCreadoPorAlbergue(creadoPor)
                                         ? 'Albergue'
                                         : 'Rescatista',
-                                    style: const TextStyle(
-                                      fontSize: 10,
-                                      color: Color(0xFFAAAAAA),
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: c.inkMuted,
                                     ),
                                   ),
                                   Row(
@@ -1746,19 +1622,19 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                                           rescatista,
                                           overflow: TextOverflow.ellipsis,
                                           maxLines: 1,
-                                          style: const TextStyle(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w600,
-                                            color: appTeal,
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w800,
+                                            color: c.primaryStrong,
                                           ),
                                         ),
                                       ),
                                       if (esCreadoPorAlbergue(creadoPor)) ...[
                                         const SizedBox(width: 4),
-                                        const Icon(
-                                          Icons.chevron_right,
-                                          size: 14,
-                                          color: appTeal,
+                                        Icon(
+                                          Icons.chevron_right_rounded,
+                                          size: 16,
+                                          color: c.primaryStrong,
                                         ),
                                       ],
                                     ],
@@ -1775,40 +1651,27 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                     // sin texto (con Tooltip), y tener las dos variantes en la
                     // misma app era la inconsistencia real que notó Eliza.
                     // El Tooltip conserva la accesibilidad que el texto daba.
-                    Tooltip(
-                      message: 'Compartir',
-                      child: GestureDetector(
-                        onTap: () => compartirAnimal(
-                          context: context,
-                          nombre: nombre,
-                          especie: especie,
-                          edad: edad,
-                          ubicacion: ubicacion,
-                          tags: tags,
-                          fotoUrl: fotoUrl,
-                          paisCodigo: a['paisCodigo'] as String?,
-                        ),
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: appTeal.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: appTeal.withValues(alpha: 0.3),
-                            ),
-                          ),
-                          child: const Icon(
-                            Icons.share_outlined,
-                            size: 16,
-                            color: appTeal,
-                          ),
-                        ),
+                    SpMiniButton(
+                      icon: Icons.share_rounded,
+                      tooltip: 'Compartir',
+                      onTap: () => compartirAnimal(
+                        context: context,
+                        nombre: nombre,
+                        especie: especie,
+                        edad: edad,
+                        ubicacion: ubicacion,
+                        tags: tags,
+                        fotoUrl: fotoUrl,
+                        paisCodigo: a['paisCodigo'] as String?,
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
-                GestureDetector(
+                SpToneBox(
+                  tone: SpTone.butter,
+                  radius: SpRadius.md,
+                  padding: const EdgeInsets.symmetric(vertical: 13),
                   onTap: () => showModalBottomSheet(
                     context: context,
                     useSafeArea: true,
@@ -1837,34 +1700,54 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                       requiereExperiencia: a['requiereExperiencia'] as bool?,
                     ),
                   ),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFF3CD),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: const Color(0xFFFFB800).withValues(alpha: 0.4),
-                      ),
-                    ),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text('💛', style: TextStyle(fontSize: 16)),
-                        SizedBox(width: 8),
-                        Text(
-                          'Me interesa ayudar',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF8B6914),
-                          ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text('💛', style: TextStyle(fontSize: 16)),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Me interesa ayudar',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: c.butterInk,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Insignia pastel con canto que va sobre la foto (Hogar de paso, Fue
+  /// devuelto, % compatible).
+  Widget _pildoraFoto(String label, SpTone tono, IconData? icon) {
+    final k = SpToneColors.of(context.sp, tono);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: k.fill,
+        borderRadius: BorderRadius.circular(SpRadius.full),
+        boxShadow: [BoxShadow(color: k.deep, offset: const Offset(0, 2))],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 12, color: k.ink),
+            const SizedBox(width: 3),
+          ],
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              color: k.ink,
             ),
           ),
         ],
@@ -1880,13 +1763,14 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
   Widget _actionBtn(
     IconData icon,
     Color bg,
+    Color canto,
     Color iconColor,
     double size,
     VoidCallback onTap,
     String label,
   ) => Tooltip(
     message: label,
-    child: GestureDetector(
+    child: SpPressable(
       onTap: onTap,
       child: Container(
         width: size,
@@ -1894,17 +1778,24 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
         decoration: BoxDecoration(
           color: bg,
           shape: BoxShape.circle,
+          border: Border(
+            top: BorderSide(
+              color: SpDeco.shine.withValues(alpha: .6),
+              width: 2,
+            ),
+          ),
           boxShadow: [
+            BoxShadow(color: canto, offset: const Offset(0, 4)),
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.12),
-              blurRadius: 8,
-              offset: const Offset(0, 3),
+              color: canto.withValues(alpha: .45),
+              offset: const Offset(0, 10),
+              blurRadius: 16,
+              spreadRadius: -6,
             ),
           ],
         ),
-        child: Icon(icon, color: iconColor, size: size * 0.40),
+        child: Icon(icon, color: iconColor, size: size * 0.42),
       ),
     ),
   );
 }
-
