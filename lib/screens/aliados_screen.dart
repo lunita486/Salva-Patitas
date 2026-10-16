@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:go_router/go_router.dart';
 import '../theme.dart';
+import '../widgets/rescatista_tab_bar.dart';
 import '../widgets/adoptante_tab_bar.dart';
 import '../widgets/avatares.dart';
 import '../widgets/albergue_tab_bar.dart';
@@ -61,7 +62,14 @@ class _AliadosScreenState extends State<AliadosScreen> {
                 AdoptanteTab.negocios,
               ),
             )
-          : null,
+          // Rescatista: la barra del rescatista.
+          : RescatistaTabBar(
+              actual: RescatistaTab.negocios,
+              onTap: RescatistaTabBar.volverAlInicio(
+                context,
+                RescatistaTab.negocios,
+              ),
+            ),
       backgroundColor: context.sp.bg,
       body: Stack(
         children: [

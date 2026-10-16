@@ -27,6 +27,13 @@ final refrescaAlVolverAlbergue = anyOf(
   contains('.then(_alVolver)'),
 );
 
+/// Lo mismo para el inicio del rescatista: el `.then` de siempre o
+/// `_alVolverRescatista` (que refresca, ver su test).
+final refrescaAlVolverRescatista = anyOf(
+  contains('.then((_) => _refrescarRescates())'),
+  contains('.then(_alVolverRescatista)'),
+);
+
 void main() {
   late FakeFirebaseFirestore db;
   late RescatesRepository repo;
@@ -463,6 +470,19 @@ void main() {
     // abre otra pestaña si la persona la tocó en la barra de abajo (ver
     // AlbergueTabBar). Cuenta como refresco solo si `_alVolver` de verdad
     // llama a `_refrescarNumeros()`: eso lo cuida este test.
+    test('_alVolverRescatista del inicio del rescatista refresca', () {
+      final f = leer('lib/screens/home_screen.dart');
+      final i = f.indexOf('void _alVolverRescatista(');
+      expect(i, isNot(-1), reason: 'no existe _alVolverRescatista');
+      expect(
+        f.substring(i, f.indexOf('}', i)),
+        contains('_refrescarRescates()'),
+        reason:
+            '_alVolverRescatista ya no refresca: volver de Solicitudes deja '
+            'el carrusel con el estado viejo',
+      );
+    });
+
     test('_alVolver del panel del albergue refresca los números', () {
       final f = leer('lib/screens/albergue_home_screen.dart');
       final i = f.indexOf('void _alVolver(');
@@ -569,7 +589,7 @@ void main() {
             f.substring(d.end, d.end + 300),
             refresco == '_refrescarNumeros'
                 ? refrescaAlVolverAlbergue
-                : contains('.then((_) => $refresco())'),
+                : refrescaAlVolverRescatista,
             reason:
                 'un acceso a Solicitudes que no refresca al volver, en '
                 '$ruta: el panel se queda con el estado anterior del '

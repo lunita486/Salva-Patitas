@@ -227,7 +227,10 @@ final GoRouter appRouter = GoRouter(
     ),
     GoRoute(
       path: AppRoutes.perfilRescatista,
-      builder: (context, state) => const PerfilRescatistaScreen(),
+      pageBuilder: (context, state) => PaginaPestana(
+        key: state.pageKey,
+        child: const PerfilRescatistaScreen(),
+      ),
     ),
     GoRoute(
       path: AppRoutes.solicitudAdopcion,
@@ -236,8 +239,11 @@ final GoRouter appRouter = GoRouter(
     ),
     GoRoute(
       path: AppRoutes.solicitudesRescatista,
-      builder: (context, state) => SolicitudesRescatistaScreen(
-        esAlbergue: state.extra as bool? ?? false,
+      pageBuilder: (context, state) => PaginaPestana(
+        key: state.pageKey,
+        child: SolicitudesRescatistaScreen(
+          esAlbergue: state.extra as bool? ?? false,
+        ),
       ),
     ),
     GoRoute(

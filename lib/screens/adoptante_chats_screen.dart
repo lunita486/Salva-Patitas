@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../data/chats_repository.dart';
 import '../data/solicitudes_repository.dart';
 import '../routing/app_router.dart';
+import '../widgets/rescatista_tab_bar.dart';
 import '../widgets/adoptante_tab_bar.dart';
 import '../widgets/avatares.dart';
 import '../widgets/albergue_tab_bar.dart';
@@ -68,6 +69,16 @@ class _AdoptanteChatsScreenState extends State<AdoptanteChatsScreen> {
               onTap: AdoptanteTabBar.volverAlInicio(
                 context,
                 AdoptanteTab.chats,
+              ),
+            )
+          // Rescatista desde su inicio. NO las consultas del negocio aliado
+          // (soloConsultas), que se abren desde el panel del aliado.
+          : !widget.soloConsultas
+          ? RescatistaTabBar(
+              actual: RescatistaTab.chats,
+              onTap: RescatistaTabBar.volverAlInicio(
+                context,
+                RescatistaTab.chats,
               ),
             )
           : null,

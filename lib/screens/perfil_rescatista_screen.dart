@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme/salva_patitas_theme.dart';
+import '../widgets/rescatista_tab_bar.dart';
 import '../widgets/apariencia_sheet.dart';
 import '../widgets/avatares.dart';
 import '../widgets/sp_widgets.dart';
@@ -66,6 +67,11 @@ class PerfilRescatistaScreen extends StatelessWidget {
 
     // Mismo diseño que el perfil del adoptante (pedido de Eliza).
     return Scaffold(
+      // Misma barra que el inicio del rescatista (ver RescatistaTabBar).
+      bottomNavigationBar: RescatistaTabBar(
+        actual: RescatistaTab.perfil,
+        onTap: RescatistaTabBar.volverAlInicio(context, RescatistaTab.perfil),
+      ),
       backgroundColor: c.bg,
       body: Stack(
         fit: StackFit.expand,

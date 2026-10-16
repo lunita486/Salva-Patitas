@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../widgets/adoptante_tab_bar.dart';
+import '../widgets/rescatista_tab_bar.dart';
 import '../widgets/sp_widgets.dart';
 import '../theme/salva_patitas_theme.dart';
 import '../widgets/boton_cambiar_rol.dart';
@@ -39,7 +40,6 @@ class _HomeScreenState extends State<HomeScreen>
     with WidgetsBindingObserver, ReintentoUbicacionAlVolver {
   bool? _isRescatista;
   List<String> _roles = [];
-  int _selectedNav = 0;
   String _ciudad = '';
   // Evita que dos detecciones corran encima (el reintento al volver a
   // primer plano puede caer mientras la primera sigue en curso).
@@ -307,10 +307,7 @@ class _HomeScreenState extends State<HomeScreen>
           final label = _rolLabel[rol] ?? rol;
           return GestureDetector(
             onTap: () {
-              setState(() {
-                _isRescatista = rol == 'rescatista';
-                _selectedNav = 0;
-              });
+              setState(() => _isRescatista = rol == 'rescatista');
               // Best-effort, sin esperar ni avisar si falla — es solo para
               // recordar el rol la PRÓXIMA vez que la persona inicie
               // sesión (ver _cargarRol), no algo que deba trabar el toggle
@@ -493,9 +490,7 @@ class _HomeScreenState extends State<HomeScreen>
             // mostrando como Rescatado. El feed del adoptante sí lo veía,
             // porque es un stream en vivo; este carrusel es un .get() que
             // se pidió una sola vez, al abrir.
-            onAction: () => context
-                .push(AppRoutes.solicitudesRescatista)
-                .then((_) => _refrescarRescates()),
+            onAction: () => _irARescatista(RescatistaTab.solicitudes),
           ),
           const SizedBox(height: SpSpace.s3),
           const SolicitudesPreview(role: CreatorRole.rescatista),
@@ -857,9 +852,7 @@ class _HomeScreenState extends State<HomeScreen>
                 value: '$count',
                 label: 'Solicitudes',
                 // Mismo motivo que la cabecera de SOLICITUDES.
-                onTap: () => context
-                    .push(AppRoutes.solicitudesRescatista)
-                    .then((_) => _refrescarRescates()),
+                onTap: () => _irARescatista(RescatistaTab.solicitudes),
               ),
             ),
             const SizedBox(width: SpSpace.s3),
@@ -869,14 +862,7 @@ class _HomeScreenState extends State<HomeScreen>
                 animal: SpAnimalKind.conejo,
                 value: '$noLeidosRescatista',
                 label: 'Sin leer',
-                onTap: () => context.push(
-                  AppRoutes.adoptanteChats,
-                  extra: (
-                    esRescatista: true,
-                    soloConsultas: false,
-                    esAlbergue: false,
-                  ),
-                ),
+                onTap: () => _irARescatista(RescatistaTab.chats),
               ),
             ),
             const SizedBox(width: SpSpace.s3),
@@ -955,81 +941,78 @@ class _HomeScreenState extends State<HomeScreen>
       // abre desde acá (ver AdoptanteTabBar).
       : AdoptanteTabBar(actual: AdoptanteTab.adoptar, onTap: _irAAdoptante);
 
-  Widget _bottomNavRescatista(int noLeidosRescatista) => SpTabBar(
-    children: [
-      _navItem(Icons.pets_rounded, 'Mis rescates', 0),
-      _navTap(
-        Icons.add_circle_outline,
-        'Subir',
-        1,
-        onTap: () => context
-            .push(AppRoutes.subirRescate, extra: false)
-            .then((_) => _refrescarRescates()),
-      ),
-      _navTap(
-        Icons.notifications_outlined,
-        'Solicitudes',
-        2,
-        // Mismo motivo que la cabecera de SOLICITUDES.
-        onTap: () => context
-            .push(AppRoutes.solicitudesRescatista)
-            .then((_) => _refrescarRescates()),
-      ),
-      // Antes este badge era su propio StreamBuilder anidado,
-      // suscrito de nuevo a los mismos _chatsRescatistaStream /
-      // _consultasEnviadasStream que ya escuchaba build() más
-      // arriba para el panel — dos cálculos independientes de
-      // "mensajes sin leer" en la misma pantalla, con su propio
-      // riesgo de desincronizarse (frame de diferencia, filtro que
-      // cambia en uno y no en el otro). Ahora recibe el número ya
-      // calculado UNA sola vez en build() como parámetro — sin un
-      // segundo StreamBuilder acá, no hay dos cálculos que puedan
-      // divergir nunca más, ni un AsyncSnapshot propio que pueda
-      // quedarse con datos viejos al cambiar de rol (el bug real
-      // que tenían las ValueKey que este comentario reemplaza:
-      // "cambio rápido de rol y veo un número, pero no tengo
-      // ningún chat").
-      _navTapConBadge(
-        Icons.chat_bubble_outline_rounded,
-        'Chats',
-        noLeidosRescatista,
-        () => context.push(
-          AppRoutes.adoptanteChats,
-          extra: (esRescatista: true, soloConsultas: false, esAlbergue: false),
-        ),
-      ),
-      _navTap(
-        Icons.storefront_outlined,
-        'Negocios',
-        5,
-        onTap: () => context.push(
-          AppRoutes.aliados,
-          extra: (esRescatista: true, esAlbergue: false),
-        ),
-      ),
-      // .then(_cargarRol): "Gestionar mis roles" vive en esta pantalla
-      // de Perfil — sin este refresco, agregar un rol ahí guardaba
-      // bien en el servidor (el aviso verde de éxito no mentía) pero
-      // esta pantalla seguía usando los `_roles`/`_isRescatista` que
-      // había cacheado al abrirse, así que el toggle nuevo no
-      // aparecía hasta cerrar y volver a abrir la app. Hallazgo de
-      // prueba en teléfono real, 2026-08-03.
-      _navTap(
-        Icons.person_outline_rounded,
-        'Perfil',
-        4,
-        onTap: () =>
-            context.push(AppRoutes.perfilRescatista).then((_) => _cargarRol()),
-      ),
-    ],
+  // La del rescatista también es la misma barra en cada sección que se abre
+  // desde acá (ver RescatistaTabBar), salvo en el formulario de Subir.
+  Widget _bottomNavRescatista(int noLeidosRescatista) => RescatistaTabBar(
+    actual: RescatistaTab.misRescates,
+    onTap: _irARescatista,
   );
+
+  /// Abre la pestaña elegida en la barra del rescatista (en el inicio o en
+  /// cualquier sección: ver RescatistaTabBar.volverAlInicio).
+  void _irARescatista(RescatistaTab t) {
+    switch (t) {
+      // Ya está en el inicio: no hay nada que abrir.
+      case RescatistaTab.misRescates:
+        break;
+      case RescatistaTab.subir:
+        context
+            .push(AppRoutes.subirRescate, extra: false)
+            .then((_) => _refrescarRescates());
+      // Refrescar AL VOLVER: desde Solicitudes se APRUEBA, y aprobar cambia
+      // el estado del animalito. Este carrusel es un .get() pedido una sola
+      // vez; sin esto seguía mostrando el estado viejo (hallazgo de Eliza).
+      case RescatistaTab.solicitudes:
+        context.push(AppRoutes.solicitudesRescatista).then(_alVolverRescatista);
+      case RescatistaTab.chats:
+        context
+            .push(
+              AppRoutes.adoptanteChats,
+              extra: (
+                esRescatista: true,
+                soloConsultas: false,
+                esAlbergue: false,
+              ),
+            )
+            .then(_siOtraPestanaRescatista);
+      case RescatistaTab.negocios:
+        context
+            .push(
+              AppRoutes.aliados,
+              extra: (esRescatista: true, esAlbergue: false),
+            )
+            .then(_siOtraPestanaRescatista);
+      // .then(_cargarRol): "Gestionar mis roles" vive en Perfil — sin este
+      // refresco, un rol nuevo no aparecía hasta reabrir la app (hallazgo
+      // de prueba en teléfono real, 2026-08-03).
+      case RescatistaTab.perfil:
+        context.push(AppRoutes.perfilRescatista).then((r) {
+          _cargarRol();
+          _siOtraPestanaRescatista(r);
+        });
+    }
+  }
+
+  /// Al volver de Solicitudes: refresca el carrusel (es un .get() pedido una
+  /// sola vez, y desde ahí se aprueba) y, si se tocó otra pestaña en la
+  /// barra, la abre. Mismo patrón que `_alVolver` del panel del albergue.
+  void _alVolverRescatista(Object? resultado) {
+    _refrescarRescates();
+    _siOtraPestanaRescatista(resultado);
+  }
+
+  /// Si en la barra de la sección se tocó otra pestaña, abrirla.
+  void _siOtraPestanaRescatista(Object? resultado) {
+    if (resultado is RescatistaTab && mounted) _irARescatista(resultado);
+  }
 
   /// Abre la pestaña elegida en la barra del adoptante (en el inicio o en
   /// cualquier sección: ver AdoptanteTabBar.volverAlInicio).
   void _irAAdoptante(AdoptanteTab t) {
     switch (t) {
+      // Ya está en el inicio: no hay nada que abrir.
       case AdoptanteTab.adoptar:
-        setState(() => _selectedNav = 0);
+        break;
       case AdoptanteTab.favoritos:
         context.push(AppRoutes.favoritos).then(_alVolverAdoptante);
       case AdoptanteTab.solicitudes:
@@ -1058,35 +1041,6 @@ class _HomeScreenState extends State<HomeScreen>
   void _alVolverAdoptante(Object? resultado) {
     if (resultado is AdoptanteTab && mounted) _irAAdoptante(resultado);
   }
-
-  /// La pestaña que se queda en esta pantalla (Mis rescates / Adoptar).
-  Widget _navItem(IconData icon, String label, int idx) => SpTabItem(
-    icon: icon,
-    label: label,
-    active: _selectedNav == idx,
-    onTap: () => setState(() => _selectedNav = idx),
-  );
-
-  /// Una pestaña que abre otra pantalla.
-  Widget _navTap(
-    IconData icon,
-    String label,
-    int idx, {
-    required VoidCallback onTap,
-  }) => SpTabItem(icon: icon, label: label, active: false, onTap: onTap);
-
-  Widget _navTapConBadge(
-    IconData icon,
-    String label,
-    int badge,
-    VoidCallback onTap,
-  ) => SpTabItem(
-    icon: icon,
-    label: label,
-    active: false,
-    badge: badge,
-    onTap: onTap,
-  );
 }
 
 // ─── Avatar helper (global dentro del archivo) ───────────────────────────────

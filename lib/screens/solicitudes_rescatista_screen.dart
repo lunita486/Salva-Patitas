@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:go_router/go_router.dart';
 import '../routing/app_router.dart';
+import '../widgets/rescatista_tab_bar.dart';
 import '../widgets/estado_error_feed.dart';
 import '../widgets/albergue_tab_bar.dart';
 import '../widgets/sp_widgets.dart';
@@ -923,7 +924,14 @@ class _SolicitudesRescatistaScreenState
                 AlbergueTab.solicitudes,
               ),
             )
-          : null,
+          // Rescatista: la barra del rescatista.
+          : RescatistaTabBar(
+              actual: RescatistaTab.solicitudes,
+              onTap: RescatistaTabBar.volverAlInicio(
+                context,
+                RescatistaTab.solicitudes,
+              ),
+            ),
       backgroundColor: c.bg,
       body: Stack(
         children: [
