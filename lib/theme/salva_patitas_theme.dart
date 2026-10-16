@@ -537,6 +537,61 @@ class SpTheme {
         borderSide: BorderSide(color: c.primary, width: 2),
       ),
     ),
+    // Ventanitas (AlertDialog) y hojas de abajo: blancas/menta, esquinas
+    // grandes, letra del tema. Así todas las confirmaciones de la app se ven
+    // iguales sin que cada una ponga su estilo.
+    dialogTheme: DialogThemeData(
+      backgroundColor: c.surface,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(SpRadius.xl),
+      ),
+      titleTextStyle: TextStyle(
+        fontFamily: spFontFamily,
+        fontSize: 20,
+        fontWeight: FontWeight.w800,
+        color: c.ink,
+      ),
+      contentTextStyle: TextStyle(
+        fontFamily: spFontFamily,
+        fontSize: 14.5,
+        height: 1.45,
+        color: c.inkMuted,
+      ),
+    ),
+    bottomSheetTheme: BottomSheetThemeData(
+      backgroundColor: c.bg,
+      surfaceTintColor: Colors.transparent,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+      ),
+    ),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(
+        foregroundColor: c.primaryStrong,
+        textStyle: const TextStyle(
+          fontFamily: spFontFamily,
+          fontWeight: FontWeight.w800,
+          fontSize: 14.5,
+        ),
+      ),
+    ),
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: c.primary,
+        foregroundColor: c.onPrimary,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(SpRadius.md),
+        ),
+        textStyle: const TextStyle(
+          fontFamily: spFontFamily,
+          fontWeight: FontWeight.w800,
+          fontSize: 14.5,
+        ),
+      ),
+    ),
+    progressIndicatorTheme: ProgressIndicatorThemeData(color: c.primary),
     snackBarTheme: SnackBarThemeData(
       backgroundColor: c.ink,
       contentTextStyle: TextStyle(

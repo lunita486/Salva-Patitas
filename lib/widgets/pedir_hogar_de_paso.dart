@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../domain/reglas_negocio.dart';
-import '../theme.dart';
+import '../theme/salva_patitas_theme.dart';
 
 /// Los datos de un hogar de paso puesto a mano desde el desplegable de
 /// estado.
@@ -156,7 +156,7 @@ class _DialogoHogarDePasoState extends State<_DialogoHogarDePaso> {
           child: Text(
             valor == null ? 'Seleccionar' : formatearFecha(valor),
             style: TextStyle(
-              color: valor == null ? Colors.grey.shade600 : appInk,
+              color: valor == null ? context.sp.inkMuted : context.sp.ink,
             ),
           ),
         ),
@@ -225,7 +225,7 @@ class _DialogoHogarDePasoState extends State<_DialogoHogarDePaso> {
             const SizedBox(height: 8),
             Text(
               'Con las fechas te avisamos cuando esté por vencer.',
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+              style: TextStyle(fontSize: 12, color: context.sp.inkMuted),
             ),
           ],
         ),

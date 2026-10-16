@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import '../theme.dart';
+import '../theme/salva_patitas_theme.dart';
 import '../data/auth_helper.dart';
 import '../data/cuenta_repository.dart';
 import '../data/servicios_repository.dart';
@@ -102,9 +102,9 @@ Future<void> mostrarEliminarCuentaDialog(
         ),
         TextButton(
           onPressed: () => Navigator.pop(ctx, true),
-          child: const Text(
+          child: Text(
             'Continuar',
-            style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600),
+            style: TextStyle(color: ctx.sp.danger, fontWeight: FontWeight.w800),
           ),
         ),
       ],
@@ -160,10 +160,7 @@ Future<void> mostrarEliminarCuentaDialog(
             SizedBox(
               width: 20,
               height: 20,
-              child: CircularProgressIndicator(
-                color: appTeal,
-                strokeWidth: 2.5,
-              ),
+              child: CircularProgressIndicator(strokeWidth: 2.5),
             ),
             SizedBox(width: 20),
             Expanded(child: Text('Eliminando tu cuenta…')),
@@ -242,7 +239,7 @@ Future<void> mostrarEliminarCuentaDialog(
     cerrarSpinner();
     avisos.showSnackBar(
       SnackBar(
-        backgroundColor: msgError,
+        backgroundColor: context.sp.msgError,
         content: Text(CuentaRepository.mensajeError(e)),
       ),
     );
@@ -290,11 +287,11 @@ class _ConfirmarEscribiendoDialogState
           controller: _ctl,
           autofocus: true,
           textCapitalization: TextCapitalization.characters,
+          // Fondo del tema; al escribir, borde rojo: es una acción peligrosa.
           decoration: InputDecoration(
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: Colors.red, width: 2),
+              borderRadius: BorderRadius.circular(SpRadius.md),
+              borderSide: BorderSide(color: context.sp.danger, width: 2),
             ),
           ),
         ),
@@ -310,8 +307,8 @@ class _ConfirmarEscribiendoDialogState
         child: Text(
           'Eliminar mi cuenta',
           style: TextStyle(
-            color: _habilitado ? Colors.red : Colors.grey.shade400,
-            fontWeight: FontWeight.w600,
+            color: _habilitado ? context.sp.danger : context.sp.inkFaint,
+            fontWeight: FontWeight.w800,
           ),
         ),
       ),

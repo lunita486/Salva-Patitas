@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../domain/reglas_negocio.dart';
-import '../theme.dart';
+import 'sp_widgets.dart';
+import 'chips_seleccionables.dart';
 
 // Hoja para elegir el umbral — compartida entre perfil_rescatista_screen.dart
 // y albergue_home_screen.dart (antes vivía privada en la de rescatista, y
@@ -32,58 +33,28 @@ class _UmbralEstancadoSheetState extends State<UmbralEstancadoSheet> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: 36,
-            height: 4,
-            decoration: BoxDecoration(
-              color: Colors.grey.shade300,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(height: 16),
-          const Text(
+          const SpAgarradera(),
+          const SizedBox(height: 14),
+          const SpHojaTitulo(
             'Aviso de animal sin adoptar',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Después de cuánto tiempo sin encontrar hogar querés que te avisemos',
-            style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
-            textAlign: TextAlign.center,
+            subtitulo:
+                'Después de cuánto tiempo sin encontrar hogar querés que te avisemos',
+            centrado: true,
           ),
           const SizedBox(height: 20),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            alignment: WrapAlignment.center,
-            children: umbralEstancadoOpciones.map((o) {
-              final sel = o.$1 == _umbral;
-              return GestureDetector(
-                onTap: () => setState(() => _umbral = o.$1),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 9,
-                  ),
-                  decoration: BoxDecoration(
-                    color: sel ? appOrange : Colors.grey.shade50,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: sel ? appOrange : Colors.grey.shade200,
-                    ),
-                  ),
-                  child: Text(
-                    o.$2,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: sel ? Colors.white : appInk,
-                    ),
-                  ),
-                ),
-              );
-            }).toList(),
+          ChipsSeleccionables(
+            opciones: [for (final o in umbralEstancadoOpciones) o.$2],
+            seleccion: umbralEstancadoOpciones
+                .firstWhere(
+                  (o) => o.$1 == _umbral,
+                  orElse: () => umbralEstancadoOpciones.first,
+                )
+                .$2,
+            onSeleccionar: (etiqueta) => setState(
+              () => _umbral = umbralEstancadoOpciones
+                  .firstWhere((o) => o.$2 == etiqueta)
+                  .$1,
+            ),
           ),
           const SizedBox(height: 24),
           SizedBox(
@@ -91,8 +62,6 @@ class _UmbralEstancadoSheetState extends State<UmbralEstancadoSheet> {
             child: ElevatedButton(
               onPressed: () => Navigator.pop(context, _umbral),
               style: ElevatedButton.styleFrom(
-                backgroundColor: appTeal,
-                foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),

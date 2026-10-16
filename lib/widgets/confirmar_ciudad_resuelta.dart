@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'campo_pais_telefono.dart';
-import '../theme.dart';
+import '../theme/salva_patitas_theme.dart';
 import '../services/ubicacion_service.dart'
     show CandidatoUbicacion, UbicacionService;
 
@@ -58,9 +58,9 @@ Future<CandidatoUbicacion?> resolverCiudadEscrita(
   }
   if (!context.mounted) return null;
   if (error != null) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(error), backgroundColor: msgError));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(error), backgroundColor: context.sp.msgError),
+    );
     return null;
   }
   // Un texto mal escrito puede coincidir con OTRO lugar real del mundo (no
@@ -192,7 +192,7 @@ Future<CandidatoUbicacion?> confirmarCiudadResuelta(
               'Si ninguna es tu ciudad, tocá "No, corregir" y agregale el '
               'país o la provincia (por ejemplo "Córdoba, Argentina"). Se '
               'guarda solo el nombre de la ciudad.',
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              style: TextStyle(fontSize: 12, color: context.sp.inkMuted),
             ),
           ],
         ),
@@ -200,10 +200,7 @@ Future<CandidatoUbicacion?> confirmarCiudadResuelta(
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(ctx),
-          child: const Text(
-            'No, corregir',
-            style: TextStyle(color: Colors.grey),
-          ),
+          child: Text('No, corregir', style: TextStyle(color: ctx.sp.inkMuted)),
         ),
       ],
     ),
@@ -236,10 +233,17 @@ class _OpcionCiudad extends StatelessWidget {
             Expanded(
               child: Text(
                 '$nombreCompleto${bandera.isNotEmpty ? ' $bandera' : ''}',
-                style: const TextStyle(fontWeight: FontWeight.w600),
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: context.sp.ink,
+                ),
               ),
             ),
-            Icon(Icons.chevron_right, size: 20, color: Colors.grey.shade400),
+            Icon(
+              Icons.chevron_right_rounded,
+              size: 20,
+              color: context.sp.inkFaint,
+            ),
           ],
         ),
       ),

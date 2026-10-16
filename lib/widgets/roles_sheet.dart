@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import '../theme/salva_patitas_theme.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../theme.dart';
+import 'sp_widgets.dart';
 import '../data/firestore_resiliencia.dart';
 import '../data/usuarios_repository.dart';
 import 'resultado_guardado_snackbar.dart';
@@ -122,35 +123,27 @@ class _RolesSheetState extends State<RolesSheet> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Text(
+            const SpAgarradera(),
+            const SizedBox(height: 14),
+            const SpHojaTitulo(
               'Mis roles',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Podés tener los dos roles al mismo tiempo',
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+              subtitulo: 'Podés tener los dos roles al mismo tiempo',
+              centrado: true,
             ),
             const SizedBox(height: 20),
             _rolTile(
               'adoptante',
-              '🐾 Adoptante',
+              'Adoptante',
               'Busco animales para adoptar',
+              Icons.favorite_border_rounded,
+              SpTone.peach,
             ),
-            const SizedBox(height: 10),
             _rolTile(
               'rescatista',
-              '🦺 Rescatista',
+              'Rescatista',
               'Rescato y publico animales',
+              Icons.pets_rounded,
+              SpTone.mint,
             ),
             const SizedBox(height: 24),
             SizedBox(
@@ -160,8 +153,6 @@ class _RolesSheetState extends State<RolesSheet> {
                     ? () => Navigator.pop(context, _roles)
                     : null,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: appTeal,
-                  foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
@@ -180,48 +171,18 @@ class _RolesSheetState extends State<RolesSheet> {
     );
   }
 
-  Widget _rolTile(String rol, String titulo, String subtitulo) {
-    final activo = _roles.contains(rol);
-    return GestureDetector(
-      onTap: () => _toggle(rol),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: activo ? appTeal.withValues(alpha: 0.08) : Colors.grey.shade50,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: activo ? appTeal : Colors.grey.shade200,
-            width: activo ? 2 : 1,
-          ),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    titulo,
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: activo ? appTeal : appInk,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitulo,
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                  ),
-                ],
-              ),
-            ),
-            if (activo)
-              const Icon(Icons.check_circle, color: appTeal, size: 22),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget _rolTile(
+    String rol,
+    String titulo,
+    String subtitulo,
+    IconData icono,
+    SpTone tono,
+  ) => SpOpcionHoja(
+    titulo: titulo,
+    detalle: subtitulo,
+    icono: icono,
+    tono: tono,
+    elegida: _roles.contains(rol),
+    onTap: () => _toggle(rol),
+  );
 }

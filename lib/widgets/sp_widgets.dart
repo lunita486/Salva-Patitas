@@ -559,6 +559,16 @@ SpTone? spToneEstado(String estado) => switch (estado) {
   _ => SpTone.mint,
 };
 
+/// Ícono de cada estado de un animalito (hoja de cambiar estado).
+IconData spIconoEstado(String estado) => switch (estado) {
+  'Rescatado' => Icons.pets_rounded,
+  'Hogar de paso' => Icons.night_shelter_outlined,
+  'En proceso de adopción' => Icons.hourglass_top_rounded,
+  'Adoptado' => Icons.home_rounded,
+  'Regresado' => Icons.undo_rounded,
+  _ => Icons.favorite_border_rounded,
+};
+
 /// Lugar de la foto cuando el animalito no tiene foto (o no cargó): baldosa
 /// pastel con el animalito 3D de su especie.
 class SpFotoVacia extends StatelessWidget {
@@ -1306,4 +1316,143 @@ class SpDivisorFilas extends StatelessWidget {
     endIndent: 16,
     color: context.sp.line,
   );
+}
+
+/// Barrita de arriba de una hoja que sube desde abajo (`.sheet__grab`).
+class SpAgarradera extends StatelessWidget {
+  const SpAgarradera({super.key});
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Container(
+      width: 44,
+      height: 5,
+      decoration: BoxDecoration(
+        color: context.sp.line,
+        borderRadius: BorderRadius.circular(3),
+      ),
+    ),
+  );
+}
+
+/// Título y subtítulo de una hoja (`.sheet__title` / `.sheet__sub`).
+class SpHojaTitulo extends StatelessWidget {
+  const SpHojaTitulo(
+    this.titulo, {
+    super.key,
+    this.subtitulo,
+    this.centrado = false,
+  });
+  final String titulo;
+  final String? subtitulo;
+  final bool centrado;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.sp;
+    final align = centrado ? TextAlign.center : TextAlign.start;
+    return Column(
+      crossAxisAlignment: centrado
+          ? CrossAxisAlignment.center
+          : CrossAxisAlignment.start,
+      children: [
+        Text(
+          titulo,
+          textAlign: align,
+          style: TextStyle(
+            fontSize: 21,
+            fontWeight: FontWeight.w800,
+            color: c.ink,
+          ),
+        ),
+        if (subtitulo != null) ...[
+          const SizedBox(height: 2),
+          Text(
+            subtitulo!,
+            textAlign: align,
+            style: TextStyle(fontSize: 14, color: c.inkMuted),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// Una opción elegible en una hoja (cambiar estado, roles): baldosa pastel
+/// con ícono, título y detalle; la elegida con borde verde y ✓.
+class SpOpcionHoja extends StatelessWidget {
+  const SpOpcionHoja({
+    super.key,
+    required this.titulo,
+    required this.detalle,
+    required this.icono,
+    required this.tono,
+    required this.elegida,
+    this.onTap,
+  });
+  final String titulo;
+  final String detalle;
+  final IconData icono;
+
+  /// null = gris (Fallecido).
+  final SpTone? tono;
+  final bool elegida;
+
+  /// null: el toque lo maneja quien la envuelve.
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.sp;
+    final k = tono == null ? null : SpToneColors.of(c, tono!);
+    final caja = AnimatedContainer(
+      duration: const Duration(milliseconds: 150),
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: SpDeco.soft(c, radius: 18).copyWith(
+        border: elegida ? Border.all(color: c.primary, width: 2.5) : null,
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: k?.fill ?? c.surfaceSunken,
+              borderRadius: BorderRadius.circular(SpRadius.sm),
+            ),
+            child: Icon(icono, size: 20, color: k?.ink ?? c.inkMuted),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  titulo,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: c.ink,
+                  ),
+                ),
+                Text(
+                  detalle,
+                  style: TextStyle(fontSize: 12.5, color: c.inkMuted),
+                ),
+              ],
+            ),
+          ),
+          if (elegida)
+            Container(
+              width: 24,
+              height: 24,
+              decoration: SpDeco.primary(c, radius: SpRadius.full),
+              child: Icon(Icons.check_rounded, size: 15, color: c.onPrimary),
+            ),
+        ],
+      ),
+    );
+    return onTap == null ? caja : GestureDetector(onTap: onTap, child: caja);
+  }
 }

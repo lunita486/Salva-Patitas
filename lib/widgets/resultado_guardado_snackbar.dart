@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../data/firestore_resiliencia.dart';
-import '../theme.dart';
+import '../theme/salva_patitas_theme.dart';
 
 /// Muestra el SnackBar que corresponde a un [ResultadoGuardado] —
 /// `guardarConAviso()` (firestore_resiliencia.dart) ya centralizó CÓMO
@@ -32,13 +32,13 @@ void mostrarResultadoGuardado(
   switch (resultado) {
     case ResultadoGuardado.confirmado:
       mensaje = exito;
-      color = msgExito;
+      color = context.sp.msgExito;
     case ResultadoGuardado.siguePendiente:
       mensaje = pendiente;
-      color = msgAdvertencia;
+      color = context.sp.msgAdvertencia;
     case ResultadoGuardado.fallo:
       mensaje = fallo;
-      color = msgError;
+      color = context.sp.msgError;
   }
   if (mensaje == null) return;
   ScaffoldMessenger.of(

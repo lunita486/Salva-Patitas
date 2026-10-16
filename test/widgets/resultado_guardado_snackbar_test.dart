@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:salva_patitas/theme/salva_patitas_theme.dart';
 import 'package:salva_patitas/data/firestore_resiliencia.dart';
-import 'package:salva_patitas/theme.dart';
 import 'package:salva_patitas/widgets/resultado_guardado_snackbar.dart';
 
 Future<void> _mostrar(
@@ -51,7 +51,7 @@ void main() {
 
         expect(find.text('Roles actualizados'), findsOneWidget);
         final snackBar = tester.widget<SnackBar>(find.byType(SnackBar));
-        expect(snackBar.backgroundColor, msgExito);
+        expect(snackBar.backgroundColor, SpColors.light.msgExito);
       });
 
       testWidgets(
@@ -79,7 +79,7 @@ void main() {
           findsOneWidget,
         );
         final snackBar = tester.widget<SnackBar>(find.byType(SnackBar));
-        expect(snackBar.backgroundColor, msgAdvertencia);
+        expect(snackBar.backgroundColor, SpColors.light.msgAdvertencia);
       });
 
       testWidgets('fallo muestra el texto de error en rojo', (tester) async {
@@ -96,7 +96,7 @@ void main() {
           findsOneWidget,
         );
         final snackBar = tester.widget<SnackBar>(find.byType(SnackBar));
-        expect(snackBar.backgroundColor, msgError);
+        expect(snackBar.backgroundColor, SpColors.light.msgError);
       });
     },
   );

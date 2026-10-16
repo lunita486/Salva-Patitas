@@ -1,13 +1,14 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../theme/salva_patitas_theme.dart';
 
 import '../data/chats_repository.dart';
 import '../data/rescates_repository.dart';
 import '../data/solicitudes_repository.dart';
 import '../data/usuarios_repository.dart';
 import '../domain/reglas_negocio.dart';
-import '../theme.dart';
+import 'sp_widgets.dart';
 import '../data/hogares_de_paso_repository.dart';
 import 'pedir_hogar_de_paso.dart';
 import 'pedir_motivo.dart';
@@ -82,8 +83,8 @@ class CambiarEstadoSheet extends StatelessWidget {
     } catch (_) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            backgroundColor: msgError,
+          SnackBar(
+            backgroundColor: context.sp.msgError,
             content: Text('No se pudo actualizar el estado. Intentá de nuevo.'),
           ),
         );
@@ -231,13 +232,15 @@ class CambiarEstadoSheet extends StatelessWidget {
     return todoOk;
   }
 
+  // El segundo dato era un emoji de color; ya no se muestra (cada estado se
+  // pinta con su tono del tema, spToneEstado, y su ícono, spIconoEstado).
   static const _estados = [
-    ('Rescatado', '🟢', 'Disponible para adopción'),
-    ('Hogar de paso', '🟣', 'Temporalmente con un cuidador'),
-    ('En proceso de adopción', '🟠', 'Tiene una solicitud activa'),
-    ('Adoptado', '🔵', 'Ya encontró su hogar'),
-    ('Regresado', '🔴', 'Fue devuelto, disponible de nuevo'),
-    ('Fallecido', '🌈', 'Ya no está con nosotros'),
+    ('Rescatado', '', 'Disponible para adopción'),
+    ('Hogar de paso', '', 'Temporalmente con un cuidador'),
+    ('En proceso de adopción', '', 'Tiene una solicitud activa'),
+    ('Adoptado', '', 'Ya encontró su hogar'),
+    ('Regresado', '', 'Fue devuelto, disponible de nuevo'),
+    ('Fallecido', '', 'Ya no está con nosotros'),
   ];
 
   /// Los estados que esta hoja ofrece de verdad.
@@ -273,25 +276,11 @@ class CambiarEstadoSheet extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Center(
-          child: Container(
-            width: 36,
-            height: 4,
-            decoration: BoxDecoration(
-              color: Colors.grey.shade300,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-        const Text(
+        const SpAgarradera(),
+        const SizedBox(height: 14),
+        const SpHojaTitulo(
           'Estado del animal',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'Toca para cambiar el estado',
-          style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+          subtitulo: 'Toca para cambiar el estado',
         ),
         const SizedBox(height: 16),
         ..._estadosOfrecidos.map((e) {
@@ -403,8 +392,8 @@ class CambiarEstadoSheet extends StatelessWidget {
                     : 'Ej: Incompatibilidad con otros animales, mudanza...',
                 etiquetaConfirmar: 'Guardar',
                 colorConfirmar: esFallecido
-                    ? const Color(0xFF78909C)
-                    : const Color(0xFFD32F2F),
+                    ? context.sp.inkMuted
+                    : context.sp.danger,
                 confirmarRelleno: true,
                 autofocus: true,
               );
@@ -433,8 +422,8 @@ class CambiarEstadoSheet extends StatelessWidget {
               }
               if (!avisoOk && sheetCtx.mounted) {
                 ScaffoldMessenger.of(sheetCtx).showSnackBar(
-                  const SnackBar(
-                    backgroundColor: msgAdvertencia,
+                  SnackBar(
+                    backgroundColor: context.sp.msgAdvertencia,
                     content: Text(
                       'El estado se guardó, pero no pudimos avisarle '
                       'al adoptante. Escribile por el chat.',
@@ -444,49 +433,13 @@ class CambiarEstadoSheet extends StatelessWidget {
               }
               if (ok && sheetCtx.mounted) Navigator.pop(sheetCtx);
             },
-            child: Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: sel
-                    ? cicloColor(e.$1).withValues(alpha: 0.1)
-                    : Colors.grey.shade50,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: sel ? cicloColor(e.$1) : Colors.grey.shade200,
-                  width: sel ? 2 : 1,
-                ),
-              ),
-              child: Row(
-                children: [
-                  Text(e.$2, style: const TextStyle(fontSize: 20)),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          e.$1,
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: sel ? cicloColor(e.$1) : appInk,
-                          ),
-                        ),
-                        Text(
-                          e.$3,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade700,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (sel)
-                    Icon(Icons.check_circle, color: cicloColor(e.$1), size: 20),
-                ],
-              ),
+            // El toque lo maneja el GestureDetector de afuera.
+            child: SpOpcionHoja(
+              titulo: e.$1,
+              detalle: e.$3,
+              icono: spIconoEstado(e.$1),
+              tono: spToneEstado(e.$1),
+              elegida: sel,
             ),
           );
         }),

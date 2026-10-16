@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/salva_patitas_theme.dart';
 
 /// Los dos diálogos del flujo de "eliminar un animal" — vivían copiados
 /// byte a byte en mis_rescates_screen.dart y editar_rescate_screen.dart
@@ -28,7 +29,10 @@ Future<void> mostrarBloqueoEliminarRescate(
 );
 
 /// El "¿seguro que querés eliminar?" — true si confirmó.
-Future<bool> confirmarEliminarRescate(BuildContext context, String nombre) async {
+Future<bool> confirmarEliminarRescate(
+  BuildContext context,
+  String nombre,
+) async {
   final confirmar = await showDialog<bool>(
     context: context,
     builder: (dlgCtx) => AlertDialog(
@@ -44,7 +48,7 @@ Future<bool> confirmarEliminarRescate(BuildContext context, String nombre) async
         ),
         TextButton(
           onPressed: () => Navigator.pop(dlgCtx, true),
-          child: const Text('Eliminar', style: TextStyle(color: Colors.red)),
+          child: Text('Eliminar', style: TextStyle(color: dlgCtx.sp.danger)),
         ),
       ],
     ),

@@ -3,7 +3,8 @@ import 'package:go_router/go_router.dart';
 
 import '../domain/reglas_negocio.dart';
 import '../routing/app_router.dart';
-import '../theme.dart';
+import '../theme/salva_patitas_theme.dart';
+import 'sp_widgets.dart';
 
 /// El panel de "¿cómo querés ayudar a X?" del feed del adoptante.
 ///
@@ -63,9 +64,13 @@ class MeInteresaSheet extends StatelessWidget {
     context.push(
       AppRoutes.solicitudAdopcion,
       extra: {
-        'nombre': nombre, 'especie': especie, 'edad': edad,
-        'ubicacion': ubicacion, 'rescatista': rescatista,
-        'rescatistaId': rescatistaId, 'rescateId': rescateId,
+        'nombre': nombre,
+        'especie': especie,
+        'edad': edad,
+        'ubicacion': ubicacion,
+        'rescatista': rescatista,
+        'rescatistaId': rescatistaId,
+        'rescateId': rescateId,
         'fotoUrl': fotoUrl,
         'tipoSolicitud': tipo,
         'creadoPor': creadoPor,
@@ -92,19 +97,11 @@ class MeInteresaSheet extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
+            const SpAgarradera(),
+            const SizedBox(height: 14),
+            SpHojaTitulo(
               '¿Cómo querés ayudar a ${nombreDeAnimal(nombre, enFrase: true)}?',
-              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-              textAlign: TextAlign.center,
+              centrado: true,
             ),
             const SizedBox(height: 20),
             // Adoptar va PRIMERO y por eso existe: este panel pregunta
@@ -124,7 +121,8 @@ class MeInteresaSheet extends StatelessWidget {
             if (sePuedeAdoptar(estadoAdopcion)) ...[
               _opcion(
                 context,
-                emoji: '🏠',
+                icono: Icons.home_rounded,
+                tono: SpTone.butter,
                 titulo: 'Adoptar',
                 subtitulo: 'Querés que sea parte de tu familia para siempre',
                 onTap: () => _pedir(context, 'adopcion'),
@@ -137,7 +135,8 @@ class MeInteresaSheet extends StatelessWidget {
             if (sePuedeSerHogarDePaso(estadoAdopcion)) ...[
               _opcion(
                 context,
-                emoji: '🏡',
+                icono: Icons.night_shelter_outlined,
+                tono: SpTone.sky,
                 titulo: 'Ser hogar de paso',
                 subtitulo:
                     'Lo/la cuidás temporalmente mientras encuentra familia',
@@ -147,7 +146,8 @@ class MeInteresaSheet extends StatelessWidget {
             ],
             _opcion(
               context,
-              emoji: '💬',
+              icono: Icons.chat_bubble_outline_rounded,
+              tono: SpTone.lilac,
               titulo: 'Hacer una pregunta',
               subtitulo: 'Escribile directamente al rescatista',
               onTap: () {
@@ -187,46 +187,55 @@ class MeInteresaSheet extends StatelessWidget {
 
   Widget _opcion(
     BuildContext context, {
-    required String emoji,
+    required IconData icono,
+    required SpTone tono,
     required String titulo,
     required String subtitulo,
     required VoidCallback onTap,
-  }) => GestureDetector(
-    onTap: onTap,
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Row(
-        children: [
-          Text(emoji, style: const TextStyle(fontSize: 24)),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  titulo,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: appInk,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitulo,
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                ),
-              ],
+  }) {
+    final c = context.sp;
+    final k = SpToneColors.of(c, tono);
+    return SpPressable(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: SpDeco.soft(c, radius: 18),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: k.fill,
+                borderRadius: BorderRadius.circular(SpRadius.sm),
+              ),
+              child: Icon(icono, size: 21, color: k.ink),
             ),
-          ),
-          Icon(Icons.chevron_right, color: Colors.grey.shade400),
-        ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    titulo,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      color: c.ink,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitulo,
+                    style: TextStyle(fontSize: 12.5, color: c.inkMuted),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded, color: c.inkFaint),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }

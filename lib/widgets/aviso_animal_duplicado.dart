@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-
-import '../theme.dart';
+import '../theme/salva_patitas_theme.dart';
 
 /// Qué decidió la persona frente al aviso de "ya tenés otro con este nombre".
 enum AccionDuplicado {
@@ -56,7 +55,10 @@ Future<AccionDuplicado?> avisarAnimalDuplicado(
       ),
       TextButton(
         onPressed: () => Navigator.pop(dlgCtx, AccionDuplicado.seguir),
-        child: Text(etiquetaSeguir, style: const TextStyle(color: appTeal)),
+        child: Text(
+          etiquetaSeguir,
+          style: TextStyle(color: dlgCtx.sp.primaryStrong),
+        ),
       ),
     ],
   ),

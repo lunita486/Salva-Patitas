@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../theme.dart';
+import '../theme/salva_patitas_theme.dart';
 
 /// Pide un texto libre (un motivo, una nota) en un diálogo. Devuelve lo
 /// escrito —que puede ser vacío, el motivo nunca es obligatorio— o `null`
@@ -34,7 +34,7 @@ Future<String?> pedirMotivo(
   String textoInicial = '',
   String hint = '',
   String etiquetaConfirmar = 'Confirmar',
-  Color colorConfirmar = const Color(0xFFD32F2F),
+  Color? colorConfirmar,
   // true = botón relleno (ElevatedButton), false = de texto — para que cada
   // pantalla conserve el aspecto que ya tenía.
   bool confirmarRelleno = false,
@@ -75,7 +75,9 @@ class _MotivoDialog extends StatefulWidget {
   final String textoInicial;
   final String hint;
   final String etiquetaConfirmar;
-  final Color colorConfirmar;
+
+  /// null = rojo de peligro del tema.
+  final Color? colorConfirmar;
   final bool confirmarRelleno;
   final int maxLines;
   final int maxLength;
@@ -87,7 +89,7 @@ class _MotivoDialog extends StatefulWidget {
     required this.textoInicial,
     required this.hint,
     required this.etiquetaConfirmar,
-    required this.colorConfirmar,
+    this.colorConfirmar,
     required this.confirmarRelleno,
     required this.maxLines,
     required this.maxLength,
@@ -138,7 +140,7 @@ class _MotivoDialogState extends State<_MotivoDialog> {
           focusedBorder: widget.radioCampo > 0
               ? OutlineInputBorder(
                   borderRadius: BorderRadius.circular(widget.radioCampo),
-                  borderSide: const BorderSide(color: appTeal, width: 2),
+                  borderSide: BorderSide(color: context.sp.primary, width: 2),
                 )
               : null,
         ),
@@ -152,12 +154,12 @@ class _MotivoDialogState extends State<_MotivoDialog> {
         if (widget.confirmarRelleno)
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: widget.colorConfirmar,
+              backgroundColor: widget.colorConfirmar ?? context.sp.danger,
             ),
             onPressed: () => Navigator.pop(context, _ctrl.text.trim()),
             child: Text(
               widget.etiquetaConfirmar,
-              style: const TextStyle(color: Colors.white),
+              style: TextStyle(color: context.sp.surface),
             ),
           )
         else
@@ -165,7 +167,9 @@ class _MotivoDialogState extends State<_MotivoDialog> {
             onPressed: () => Navigator.pop(context, _ctrl.text.trim()),
             child: Text(
               widget.etiquetaConfirmar,
-              style: TextStyle(color: widget.colorConfirmar),
+              style: TextStyle(
+                color: widget.colorConfirmar ?? context.sp.danger,
+              ),
             ),
           ),
       ],
