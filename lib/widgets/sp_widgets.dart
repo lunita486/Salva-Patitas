@@ -549,7 +549,7 @@ class SpTabBar extends StatelessWidget {
 };
 
 /// Tono de la píldora de estado de un animalito. Mismos grupos que
-/// `cicloColor` (theme.dart), pero con los colores del tema.
+/// los estados de siempre, pero con los colores del tema.
 SpTone? spToneEstado(String estado) => switch (estado) {
   'Hogar de paso' => SpTone.butter,
   'En proceso de adopción' => SpTone.lilac,

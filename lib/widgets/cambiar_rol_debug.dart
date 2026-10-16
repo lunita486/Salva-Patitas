@@ -2,7 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../data/usuarios_repository.dart';
-import '../theme.dart';
+import '../theme/salva_patitas_theme.dart';
 
 // ─── Selector de rol (solo debug) ──────────────────────────────────────────
 // Un mismo copy-paste de este diálogo vivía en 5 pantallas distintas
@@ -45,11 +45,11 @@ Future<void> mostrarCambiarRolDebug(BuildContext context) async {
   } catch (_) {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
+      SnackBar(
+        content: const Text(
           'No se pudo cambiar el rol. Revisá tu conexión e intentá de nuevo.',
         ),
-        backgroundColor: msgError,
+        backgroundColor: context.sp.msgError,
       ),
     );
   }

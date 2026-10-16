@@ -197,13 +197,16 @@ final GoRouter appRouter = GoRouter(
     ),
     GoRoute(
       path: AppRoutes.misRescates,
-      builder: (context, state) {
+      pageBuilder: (context, state) {
         final a =
             state.extra as MisRescatesArgs? ??
             (filtroInicial: null, esAlbergue: false);
-        return TodosLosRescatesScreen(
-          filtroInicial: a.filtroInicial,
-          esAlbergue: a.esAlbergue,
+        return PaginaPestana(
+          key: state.pageKey,
+          child: TodosLosRescatesScreen(
+            filtroInicial: a.filtroInicial,
+            esAlbergue: a.esAlbergue,
+          ),
         );
       },
     ),

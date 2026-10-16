@@ -3,7 +3,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import '../theme.dart' show appTeal;
+import '../theme/salva_patitas_theme.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {}
@@ -186,19 +186,22 @@ class NotificacionesService {
             children: [
               Text(
                 notif.title ?? '',
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: context.sp.onPrimary,
                 ),
               ),
               if ((notif.body ?? '').isNotEmpty)
                 Text(
                   notif.body ?? '',
-                  style: const TextStyle(fontSize: 12, color: Colors.white70),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.sp.onPrimary.withValues(alpha: .8),
+                  ),
                 ),
             ],
           ),
-          backgroundColor: appTeal,
+          backgroundColor: context.sp.primary,
           duration: const Duration(seconds: 4),
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(

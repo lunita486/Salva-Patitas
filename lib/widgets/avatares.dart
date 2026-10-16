@@ -2,7 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
-import '../theme.dart';
+import '../theme/salva_patitas_theme.dart';
 import 'fotos.dart';
 
 /// Avatar de una persona (foto de perfil en base64 o URL). Si la foto falla
@@ -16,16 +16,18 @@ class AvatarPersona extends StatefulWidget {
   final String? fotoUrl;
   final String inicial;
   final double radius;
-  final Color backgroundColor;
-  final Color textColor;
+
+  /// null = verde del tema (primary), con la inicial en onPrimary.
+  final Color? backgroundColor;
+  final Color? textColor;
   const AvatarPersona({
     super.key,
     this.fotoBase64,
     this.fotoUrl,
     required this.inicial,
     this.radius = 20,
-    this.backgroundColor = appTeal,
-    this.textColor = Colors.white,
+    this.backgroundColor,
+    this.textColor,
   });
 
   @override
@@ -39,7 +41,7 @@ class _AvatarPersonaState extends State<AvatarPersona> {
     child: Text(
       widget.inicial,
       style: TextStyle(
-        color: widget.textColor,
+        color: widget.textColor ?? context.sp.onPrimary,
         fontSize: widget.radius * 0.65,
         fontWeight: FontWeight.bold,
       ),
@@ -67,7 +69,7 @@ class _AvatarPersonaState extends State<AvatarPersona> {
         width: size,
         height: size,
         child: ColoredBox(
-          color: widget.backgroundColor,
+          color: widget.backgroundColor ?? context.sp.primary,
           child: mostrarFoto
               ? Image(
                   image: foto,
@@ -137,16 +139,18 @@ class AvatarUsuario extends StatefulWidget {
   final String? userId;
   final String inicial;
   final double radius;
-  final Color backgroundColor;
-  final Color textColor;
+
+  /// null = el mismo color por defecto que AvatarPersona.
+  final Color? backgroundColor;
+  final Color? textColor;
   final String? campoLogoNegocio;
   const AvatarUsuario({
     super.key,
     required this.userId,
     required this.inicial,
     this.radius = 20,
-    this.backgroundColor = appTeal,
-    this.textColor = Colors.white,
+    this.backgroundColor,
+    this.textColor,
     this.campoLogoNegocio,
   });
 

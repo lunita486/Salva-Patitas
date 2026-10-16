@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../theme.dart';
+import '../theme/salva_patitas_theme.dart';
 import '../data/preferencias_repository.dart';
 import 'configuracion_screens.dart';
 
@@ -63,7 +63,7 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
   Widget build(BuildContext context) => SettingsPageScaffold(
     title: 'Notificaciones',
     child: _loading
-        ? const Center(child: CircularProgressIndicator(color: appTeal))
+        ? Center(child: CircularProgressIndicator(color: context.sp.primary))
         : Column(
             children: [
               SettingsSwitchTile(

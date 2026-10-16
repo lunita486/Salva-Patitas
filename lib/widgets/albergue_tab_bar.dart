@@ -16,6 +16,7 @@ import '../data/chats_repository.dart';
 import '../data/creator_role.dart';
 import '../data/solicitudes_repository.dart';
 import '../domain/reglas_negocio.dart';
+import '../routing/pagina_pestana.dart';
 import 'sp_widgets.dart';
 
 enum AlbergueTab { panel, jauria, solicitudes, chats, negocios, perfil }
@@ -34,7 +35,11 @@ class AlbergueTabBar extends StatefulWidget {
     BuildContext context,
     AlbergueTab actual,
   ) => (t) {
-    if (t != actual) context.pop(t);
+    if (t == actual) return;
+    // Cambio de pestaña: sin animación de salida ni de entrada (ver
+    // PaginaPestana).
+    SaltoDePestana.marcar();
+    context.pop(t);
   };
 
   @override

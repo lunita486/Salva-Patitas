@@ -11,8 +11,8 @@ import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'firebase_options.dart';
-import 'theme.dart';
 import 'theme/salva_patitas_theme.dart';
+import 'widgets/sp_widgets.dart';
 import 'data/auth_helper.dart';
 import 'domain/resolucion_perfil.dart';
 import 'routing/app_router.dart';
@@ -496,49 +496,36 @@ class _CargaConSalidaState extends State<_CargaConSalida> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.sp;
     return Scaffold(
-      backgroundColor: appBg,
+      backgroundColor: c.bg,
       body: Center(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 40),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const CircularProgressIndicator(color: appTeal),
+              CircularProgressIndicator(color: c.primary),
               if (_tardando) ...[
                 const SizedBox(height: 28),
                 Text(
                   'Esto está tardando más de lo normal.\nRevisá tu conexión.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey.shade700,
-                    height: 1.4,
-                  ),
+                  style: SpText.body.copyWith(color: c.inkMuted),
                 ),
                 const SizedBox(height: 16),
                 if (widget.onReintentar != null)
-                  ElevatedButton(
-                    onPressed: widget.onReintentar,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: appTeal,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 28,
-                        vertical: 12,
-                      ),
-                    ),
-                    child: const Text('Reintentar'),
+                  SpButton(
+                    label: 'Reintentar',
+                    icon: Icons.refresh_rounded,
+                    onTap: widget.onReintentar,
                   ),
+                const SizedBox(height: 4),
                 TextButton(
                   onPressed: cerrarSesion,
                   child: Text(
                     'Cerrar sesión y volver a entrar',
-                    style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+                    style: SpText.label.copyWith(color: c.inkMuted),
                   ),
                 ),
               ],

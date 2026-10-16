@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/sandbox.dart';
+import '../theme/salva_patitas_theme.dart';
 import 'cambiar_rol_debug.dart';
 
 /// El botón morado que deja entrar a cualquier rol con la misma cuenta.
@@ -33,10 +34,10 @@ Widget? botonCambiarRol(
       await mostrarCambiarRolDebug(context);
       alVolver?.call();
     },
-    backgroundColor: Colors.purple.shade100,
+    backgroundColor: context.sp.lilac,
     elevation: 4,
     tooltip: 'Cambiar rol',
-    child: Icon(Icons.developer_mode, color: Colors.purple.shade700),
+    child: Icon(Icons.developer_mode, color: context.sp.lilacInk),
   );
 }
 
@@ -63,21 +64,13 @@ Widget? chipCambiarRol(BuildContext context, {VoidCallback? alVolver}) {
       child: Container(
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
-          color: Colors.purple.shade100,
+          color: context.sp.lilac,
           shape: BoxShape.circle,
           boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.12),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
+            BoxShadow(color: context.sp.lilacDeep, offset: const Offset(0, 3)),
           ],
         ),
-        child: Icon(
-          Icons.developer_mode,
-          color: Colors.purple.shade700,
-          size: 18,
-        ),
+        child: Icon(Icons.developer_mode, color: context.sp.lilacInk, size: 18),
       ),
     ),
   );

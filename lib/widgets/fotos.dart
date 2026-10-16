@@ -4,7 +4,7 @@ import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
-import '../theme.dart';
+import '../theme/salva_patitas_theme.dart';
 
 // Caché con límite (LRU simple) del último resultado de bytesFotoSegura()
 // por string — ver el porqué en el doc de la función. `_maxCacheado`
@@ -164,13 +164,13 @@ class FotoUrl extends StatelessWidget {
           placeholder: (_, _) => SizedBox(
             width: width,
             height: height,
-            child: const Center(
+            child: Center(
               child: SizedBox(
                 width: 20,
                 height: 20,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
-                  color: appTeal,
+                  color: context.sp.primary,
                 ),
               ),
             ),
@@ -264,7 +264,7 @@ class FotoAnimal extends StatelessWidget {
                 child: FotoUrl(url: url, fit: BoxFit.cover, fallback: fallback),
               ),
               // Velo suave para que el fondo no compita con la foto nítida.
-              Container(color: Colors.black.withValues(alpha: 0.12)),
+              Container(color: SpDeco.shade.withValues(alpha: 0.12)),
             ] else
               // Color plano en vez de la foto desenfocada: una capa menos,
               // sin saveLayer y sin una segunda imagen que dibujar. Sin
@@ -275,7 +275,7 @@ class FotoAnimal extends StatelessWidget {
               // que BoxFit.contain deja libres), no solo cuando la foto de
               // verdad fallaba — se veía la foto Y el emoji al mismo
               // tiempo. Hallazgo real de Eliza en "Mis rescates".
-              Container(color: const Color(0xFFE8F2EC)),
+              Container(color: context.sp.surfaceSunken),
             // La foto de verdad, entera. Con fondo borroso, sin fallback
             // propio (dos fallbacks apilados se verían duplicados — ya lo
             // cubre la capa de fondo, que si el fondo desenfocado falla

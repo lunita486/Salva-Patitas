@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../theme.dart';
+import '../theme/salva_patitas_theme.dart';
 
 /// Los dos mensajes que se repetían tal cual en las 3 pantallas que llaman
 /// a [avisarErrorUbicacion] con un botón "Abrir Ajustes" — cortos a
@@ -40,7 +40,7 @@ void avisarErrorUbicacion(
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
       content: Text(mensaje),
-      backgroundColor: msgError,
+      backgroundColor: context.sp.msgError,
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       duration: const Duration(seconds: 8),
@@ -48,7 +48,7 @@ void avisarErrorUbicacion(
           ? null
           : SnackBarAction(
               label: 'Abrir Ajustes',
-              textColor: Colors.white,
+              textColor: SpDeco.shine,
               onPressed: () {
                 antesDeAbrirAjustes?.call();
                 accionAjustes();
