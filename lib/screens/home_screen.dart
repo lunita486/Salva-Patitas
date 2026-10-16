@@ -293,11 +293,13 @@ class _HomeScreenState extends State<HomeScreen>
         .toList();
     if (visibles.length <= 1) return const SizedBox.shrink();
     final c = context.sp;
-    // Selector hundido (`.segmented--mode`): la opción activa en tinta con
-    // letra clara, como en el prototipo.
+    // Riel blanco 3D con la opción activa en verde 3D (con brillo y canto),
+    // igual que la pestaña activa de la barra de abajo. Antes la activa iba
+    // en tinta (negro en claro, blanco en oscuro) y era el único botón de
+    // la app sin el estilo 3D (pedido de Eliza: "más llamativo").
     return Container(
-      decoration: SpDeco.sunken(c, radius: SpRadius.full),
-      padding: const EdgeInsets.all(4),
+      decoration: SpDeco.soft(c, radius: SpRadius.full),
+      padding: const EdgeInsets.all(5),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: visibles.map((rol) {
@@ -323,26 +325,32 @@ class _HomeScreenState extends State<HomeScreen>
             },
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 180),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: activo ? c.ink : null,
-                borderRadius: BorderRadius.circular(SpRadius.full),
-                boxShadow: activo
-                    ? [
-                        BoxShadow(
-                          color: c.ink.withValues(alpha: .25),
-                          offset: const Offset(0, 3),
-                        ),
-                      ]
-                    : null,
-              ),
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  color: activo ? c.bg : c.inkMuted,
-                ),
+              padding: const EdgeInsets.fromLTRB(12, 8, 16, 8),
+              decoration: activo
+                  ? SpDeco.primary(c, radius: SpRadius.full, gradient: true)
+                  : BoxDecoration(
+                      borderRadius: BorderRadius.circular(SpRadius.full),
+                    ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    rol == 'rescatista'
+                        ? Icons.volunteer_activism_rounded
+                        : Icons.favorite_rounded,
+                    size: 16,
+                    color: activo ? c.onPrimary : c.inkFaint,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w800,
+                      color: activo ? c.onPrimary : c.inkMuted,
+                    ),
+                  ),
+                ],
               ),
             ),
           );
