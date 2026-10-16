@@ -13,6 +13,7 @@ import '../widgets/elegir_foto_perfil.dart';
 import '../widgets/sp_widgets.dart';
 import '../widgets/albergue_tab_bar.dart';
 import '../widgets/apariencia_sheet.dart';
+import '../theme/apariencia.dart';
 import '../theme/salva_patitas_theme.dart';
 import '../widgets/fotos.dart';
 import '../widgets/resultado_guardado_snackbar.dart';
@@ -1064,7 +1065,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                       _perfilFila(
                         Icons.dark_mode_outlined,
                         'Apariencia',
-                        sub: 'Claro',
+                        sub: Apariencia.etiqueta,
                         tono: SpTone.lilac,
                         onTap: () => mostrarApariencia(ctx),
                       ),

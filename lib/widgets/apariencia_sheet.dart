@@ -1,26 +1,40 @@
 // Hoja "Apariencia" del Perfil (`.sheet` + `.looks` del prototipo):
 // Claro · Oscuro (sin "Sistema", pedido de Eliza).
 //
-// Por ahora solo se puede elegir Claro: el modo oscuro todavía no está
-// revisado pantalla por pantalla, y dejar elegirlo mostraría pantallas a
-// medio pasar. Oscuro se ve, con "Pronto", pero no se toca.
-// Cuando el oscuro esté listo, alcanza con habilitarlos acá y guardar la
-// elección (MaterialApp ya tiene SpTheme.light/dark).
+// Tocar una tarjeta cambia el tema al instante y lo guarda en el teléfono
+// (lib/theme/apariencia.dart). La hoja misma se repinta con el tema nuevo,
+// así se ve el cambio antes de cerrarla.
 import 'package:flutter/material.dart';
 
+import '../theme/apariencia.dart';
 import '../theme/salva_patitas_theme.dart';
 import 'sp_widgets.dart';
 
 Future<void> mostrarApariencia(BuildContext context) {
-  final c = context.sp;
   return showModalBottomSheet<void>(
     context: context,
-    backgroundColor: c.bg,
     isScrollControlled: true,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
     ),
-    builder: (ctx) => SafeArea(
+    // Los colores salen del contexto de la hoja (no del de quien la abre):
+    // al elegir Oscuro la hoja se repinta con el tema nuevo.
+    builder: (ctx) => ValueListenableBuilder<ThemeMode>(
+      valueListenable: Apariencia.modo,
+      builder: (ctx, modo, _) => _HojaApariencia(ctx: ctx, modo: modo),
+    ),
+  );
+}
+
+class _HojaApariencia extends StatelessWidget {
+  const _HojaApariencia({required this.ctx, required this.modo});
+  final BuildContext ctx;
+  final ThemeMode modo;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.sp;
+    return SafeArea(
       top: false,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
@@ -53,9 +67,8 @@ Future<void> mostrarApariencia(BuildContext context) {
               style: TextStyle(fontSize: 14, color: c.inkMuted),
             ),
             const SizedBox(height: 16),
-            // Las dos tarjetas del mismo alto, aunque solo una lleve
-            // "Pronto".
-            const IntrinsicHeight(
+            // Las dos tarjetas del mismo alto.
+            IntrinsicHeight(
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -64,16 +77,18 @@ Future<void> mostrarApariencia(BuildContext context) {
                       titulo: 'Claro',
                       detalle: 'Fondo blanco',
                       dibujo: _Dibujo.claro,
-                      elegido: true,
+                      elegido: modo != ThemeMode.dark,
+                      onTap: () => Apariencia.elegir(ThemeMode.light),
                     ),
                   ),
-                  SizedBox(width: 10),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: _Look(
                       titulo: 'Oscuro',
                       detalle: 'Fondo oscuro',
                       dibujo: _Dibujo.oscuro,
-                      disponible: false,
+                      elegido: modo == ThemeMode.dark,
+                      onTap: () => Apariencia.elegir(ThemeMode.dark),
                     ),
                   ),
                 ],
@@ -87,8 +102,8 @@ Future<void> mostrarApariencia(BuildContext context) {
           ],
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 enum _Dibujo { claro, oscuro }
@@ -99,13 +114,13 @@ class _Look extends StatelessWidget {
     required this.detalle,
     required this.dibujo,
     this.elegido = false,
-    this.disponible = true,
+    required this.onTap,
   });
   final String titulo;
   final String detalle;
   final _Dibujo dibujo;
   final bool elegido;
-  final bool disponible;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -136,10 +151,6 @@ class _Look extends StatelessWidget {
               color: c.inkMuted,
             ),
           ),
-          if (!disponible) ...[
-            const SizedBox(height: 6),
-            SpPill('Pronto', fondo: c.surfaceSunken, tinta: c.inkMuted),
-          ],
         ],
       ),
     );
@@ -148,7 +159,12 @@ class _Look extends StatelessWidget {
       // passthrough: la tarjeta toma el ancho y alto de su columna.
       fit: StackFit.passthrough,
       children: [
-        Opacity(opacity: disponible ? 1 : .6, child: tarjeta),
+        Semantics(
+          button: true,
+          selected: elegido,
+          label: '$titulo, $detalle',
+          child: GestureDetector(onTap: onTap, child: tarjeta),
+        ),
         if (elegido)
           Positioned(
             top: 6,

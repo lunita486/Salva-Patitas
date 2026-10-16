@@ -11,6 +11,7 @@ import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'firebase_options.dart';
+import 'theme/apariencia.dart';
 import 'theme/salva_patitas_theme.dart';
 import 'widgets/sp_widgets.dart';
 import 'data/auth_helper.dart';
@@ -84,6 +85,11 @@ void main() async {
   // Vitals marca como mal comportamiento.
   unawaited(_inicializarEnSegundoPlano());
 
+  // Esto SÍ se espera: es leer un dato del teléfono (milisegundos), y sin
+  // esperarlo la app arrancaba en claro y saltaba a oscuro un instante
+  // después. Si falla, queda en claro (ver Apariencia.cargar).
+  await Apariencia.cargar();
+
   runApp(const PatitasApp());
 }
 
@@ -131,40 +137,46 @@ class PatitasApp extends StatelessWidget {
   const PatitasApp({super.key});
   @override
   Widget build(BuildContext context) {
-    return MaterialApp.router(
-      title: 'Salva Patitas',
-      debugShowCheckedModeBanner: false,
-      // Sin esto, los widgets que trae Material con texto propio salen en
-      // INGLÉS adentro de una app que está entera en español. El caso que
-      // se veía: el selector de fechas del hogar de paso decía "Select
-      // date", "August 2026" y los días "S M T W T F S". También afecta al
-      // menú de copiar/pegar y al selector de hora.
-      //
-      // `localeResolutionCallback` fuerza español pase lo que pase: sin él,
-      // un teléfono configurado en otro idioma seguiría viendo esos widgets
-      // en el suyo, mientras que TODO el resto de la app (que está escrita
-      // a mano en español) no cambiaría. Media app en un idioma y media en
-      // otro es peor que toda en español.
-      localizationsDelegates: GlobalMaterialLocalizations.delegates,
-      supportedLocales: const [Locale('es')],
-      localeResolutionCallback: (_, __) => const Locale('es'),
-      // El observer de Analytics ("screen_view" automático en cada cambio
-      // de pantalla) ahora se pasa al GoRouter (ver lib/routing/
-      // app_router.dart), no acá — MaterialApp.router no tiene
-      // navigatorObservers propio, el Navigator vive adentro del router.
-      // Antes ThemeData(useMaterial3: true) sin colorScheme ni textTheme —
-      // cada pantalla pintaba sus propios colores a mano (257 Color(0xFF...)
-      // hardcodeados, medido en la auditoría previa a subir a Play). Esto no
-      // reemplaza esos estilos explícitos (siguen ganando ellos), solo le da
-      // una base coherente con la marca a cualquier widget de Material que
-      // NO tenga un color propio puesto (ej. Checkbox/Radio/Switch, que hoy
-      // casi no se usan en la app — bajo riesgo de que algo se vea distinto).
-      // Tema 3D "plastilina" del rediseño (lib/theme/salva_patitas_theme.dart):
-      // colores SpColors, fuente Plus Jakarta Sans empaquetada. Solo modo
-      // claro por ahora; el modo oscuro se conecta cuando todas las
-      // pantallas usen estos colores en vez de los escritos a mano.
-      theme: SpTheme.light(),
-      routerConfig: appRouter,
+    // Claro u Oscuro según la hoja "Apariencia" (lib/theme/apariencia.dart):
+    // al cambiarlo se repinta toda la app al instante.
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: Apariencia.modo,
+      builder: (context, modo, _) => MaterialApp.router(
+        title: 'Salva Patitas',
+        debugShowCheckedModeBanner: false,
+        // Sin esto, los widgets que trae Material con texto propio salen en
+        // INGLÉS adentro de una app que está entera en español. El caso que
+        // se veía: el selector de fechas del hogar de paso decía "Select
+        // date", "August 2026" y los días "S M T W T F S". También afecta al
+        // menú de copiar/pegar y al selector de hora.
+        //
+        // `localeResolutionCallback` fuerza español pase lo que pase: sin él,
+        // un teléfono configurado en otro idioma seguiría viendo esos widgets
+        // en el suyo, mientras que TODO el resto de la app (que está escrita
+        // a mano en español) no cambiaría. Media app en un idioma y media en
+        // otro es peor que toda en español.
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
+        supportedLocales: const [Locale('es')],
+        localeResolutionCallback: (_, __) => const Locale('es'),
+        // El observer de Analytics ("screen_view" automático en cada cambio
+        // de pantalla) ahora se pasa al GoRouter (ver lib/routing/
+        // app_router.dart), no acá — MaterialApp.router no tiene
+        // navigatorObservers propio, el Navigator vive adentro del router.
+        // Antes ThemeData(useMaterial3: true) sin colorScheme ni textTheme —
+        // cada pantalla pintaba sus propios colores a mano (257 Color(0xFF...)
+        // hardcodeados, medido en la auditoría previa a subir a Play). Esto no
+        // reemplaza esos estilos explícitos (siguen ganando ellos), solo le da
+        // una base coherente con la marca a cualquier widget de Material que
+        // NO tenga un color propio puesto (ej. Checkbox/Radio/Switch, que hoy
+        // casi no se usan en la app — bajo riesgo de que algo se vea distinto).
+        // Tema 3D "plastilina" del rediseño (lib/theme/salva_patitas_theme.dart):
+        // colores SpColors, fuente Plus Jakarta Sans empaquetada. Claro y
+        // oscuro: todas las pantallas ya usan estos colores.
+        theme: SpTheme.light(),
+        darkTheme: SpTheme.dark(),
+        themeMode: modo,
+        routerConfig: appRouter,
+      ),
     );
   }
 }

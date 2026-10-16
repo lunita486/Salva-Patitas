@@ -75,6 +75,10 @@ dependencies:
   # fotos, en sus 2 teléfonos, con la app recién abierta.
   cached_network_image: ^3.4.1
   flutter_svg: ^2.3.0
+  # Guarda en el teléfono si la persona eligió Claro u Oscuro (ver
+  # lib/theme/apariencia.dart). Es una preferencia del aparato, no de la
+  # cuenta: no hace falta Firestore ni red para recordarla.
+  shared_preferences: ^2.5.6
 
 dev_dependencies:
   flutter_test:

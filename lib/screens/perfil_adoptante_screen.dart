@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../routing/app_router.dart';
+import '../theme/apariencia.dart';
 import '../theme/salva_patitas_theme.dart';
 import '../routing/pagina_pestana.dart';
 import '../widgets/adoptante_tab_bar.dart';
@@ -273,13 +274,12 @@ class _PerfilAdoptanteScreenState extends State<PerfilAdoptanteScreen>
                                 onTap: _gestionarRoles,
                               ),
                               const SpDivisorFilas(),
-                              // Por ahora solo deja elegir Claro: el modo
-                              // oscuro se habilita cuando esté revisado (ver
-                              // widgets/apariencia_sheet.dart).
+                              // Claro u Oscuro, según lo elegido en la hoja (ver
+                              // lib/theme/apariencia.dart).
                               SpFilaCuenta(
                                 icono: Icons.dark_mode_outlined,
                                 texto: 'Apariencia',
-                                sub: 'Claro',
+                                sub: Apariencia.etiqueta,
                                 tono: SpTone.lilac,
                                 onTap: () => mostrarApariencia(context),
                               ),

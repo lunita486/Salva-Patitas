@@ -1456,8 +1456,11 @@ class _AdoptanteFeedScreenState extends State<AdoptanteFeedScreen>
                               TextSpan(text: '$nombre, '),
                               TextSpan(
                                 text: edad,
+                                // Sobre la foto oscurecida: el menta claro
+                                // en los dos temas (el menta del oscuro es
+                                // muy apagado y no se leía).
                                 style: TextStyle(
-                                  color: c.mint,
+                                  color: SpColors.light.mint,
                                   fontWeight: FontWeight.w500,
                                 ),
                               ),

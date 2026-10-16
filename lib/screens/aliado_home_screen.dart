@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme.dart' show aliadoTipoIcono;
+import '../theme/apariencia.dart';
 import '../theme/salva_patitas_theme.dart';
 import '../widgets/apariencia_sheet.dart';
 import '../widgets/sp_widgets.dart';
@@ -1045,13 +1046,14 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                       // ponerlo. Hay que hacer que la hoja o el enrutado
                       // permitan salir, o vuelve a no hacer nada.
                       const SpDivisorFilas(),
-                      // Por ahora solo deja elegir Claro: el modo oscuro se
+                      // Claro u Oscuro, según lo elegido en la hoja (ver
+                      // lib/theme/apariencia.dart). oscuro se
                       // habilita cuando esté revisado (ver
                       // widgets/apariencia_sheet.dart).
                       SpFilaCuenta(
                         icono: Icons.dark_mode_outlined,
                         texto: 'Apariencia',
-                        sub: 'Claro',
+                        sub: Apariencia.etiqueta,
                         tono: SpTone.lilac,
                         onTap: () => mostrarApariencia(context),
                       ),

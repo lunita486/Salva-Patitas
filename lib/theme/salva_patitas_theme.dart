@@ -332,17 +332,29 @@ class SpToneColors {
   final Color fill, deep, ink, highlight;
   const SpToneColors(this.fill, this.deep, this.ink, this.highlight);
   static SpToneColors of(SpColors c, SpTone t) {
+    // El brillo de arriba a la izquierda de la baldosa. En claro es la
+    // superficie blanca; en oscuro la superficie es casi negra y dejaba una
+    // mancha oscura en vez de un brillo, así que ahí es el mismo pastel un
+    // poco más claro.
+    final oscuro = c.bg.computeLuminance() < .2;
+    Color brillo(Color fill) =>
+        oscuro ? Color.lerp(fill, SpDeco.shine, .1)! : c.surface;
     switch (t) {
       case SpTone.mint:
         return SpToneColors(c.mint, c.mintDeep, c.primaryStrong, c.mintLight);
       case SpTone.peach:
-        return SpToneColors(c.peach, c.peachDeep, c.peachInk, c.surface);
+        return SpToneColors(c.peach, c.peachDeep, c.peachInk, brillo(c.peach));
       case SpTone.lilac:
-        return SpToneColors(c.lilac, c.lilacDeep, c.lilacInk, c.surface);
+        return SpToneColors(c.lilac, c.lilacDeep, c.lilacInk, brillo(c.lilac));
       case SpTone.sky:
-        return SpToneColors(c.sky, c.skyDeep, c.skyInk, c.surface);
+        return SpToneColors(c.sky, c.skyDeep, c.skyInk, brillo(c.sky));
       case SpTone.butter:
-        return SpToneColors(c.butter, c.butterDeep, c.butterInk, c.surface);
+        return SpToneColors(
+          c.butter,
+          c.butterDeep,
+          c.butterInk,
+          brillo(c.butter),
+        );
     }
   }
 }
@@ -419,7 +431,9 @@ class SpDeco {
   /// Botón secundario, chips, buscador.
   static BoxDecoration soft(SpColors c, {double radius = SpRadius.md}) =>
       BoxDecoration(
-        color: c.surface,
+        // En oscuro, un tono más claro que la tarjeta: con el mismo color,
+        // los chips sin elegir se perdían dentro de las tarjetas.
+        color: _dark(c) ? c.line : c.surface,
         borderRadius: BorderRadius.circular(radius),
         boxShadow: [BoxShadow(color: c.edge, offset: const Offset(0, 4))],
       );
@@ -431,11 +445,16 @@ class SpDeco {
     double radius = SpRadius.lg,
   }) {
     final k = SpToneColors.of(c, t);
+    // En oscuro el "deep" de cada pastel es MÁS claro que su relleno (sirve
+    // de canto que se distinga del fondo negro), así que como borde del
+    // degradado lo dejaba invertido: centro oscuro, orilla brillante. Ahí el
+    // degradado termina en el mismo relleno un poco más oscuro.
+    final orilla = _dark(c) ? Color.lerp(k.fill, shade, .25)! : k.deep;
     return BoxDecoration(
       gradient: RadialGradient(
         center: const Alignment(-.45, -.7),
         radius: 1.3,
-        colors: [k.highlight, k.fill, k.deep],
+        colors: [k.highlight, k.fill, orilla],
         stops: const [0, .45, 1.2],
       ),
       borderRadius: BorderRadius.circular(radius),
