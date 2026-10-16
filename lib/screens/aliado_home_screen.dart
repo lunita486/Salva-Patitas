@@ -2,13 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../theme.dart';
+import '../theme.dart' show aliadoTipoIcono;
+import '../theme/salva_patitas_theme.dart';
+import '../widgets/apariencia_sheet.dart';
+import '../widgets/sp_widgets.dart';
 import '../widgets/boton_cambiar_rol.dart';
 import '../domain/reglas_negocio.dart';
 import '../widgets/avatares.dart';
 import '../widgets/dialogo_cerrar_sesion.dart';
 import '../widgets/estado_error_feed.dart';
-import '../widgets/fondo_decorativo.dart';
 import '../widgets/resultado_guardado_snackbar.dart';
 import '../widgets/texto_sin_desborde.dart';
 import '../services/notificaciones_service.dart';
@@ -63,15 +65,6 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
     'Otro': '🐾',
   };
 
-  static const _catColor = {
-    'Baño y peluquería': Color(0xFF1565C0),
-    'Veterinaria': Color(0xFFB71C1C),
-    'Tienda': Color(0xFF6A1B9A),
-    'Adiestramiento': Color(0xFFF57F17),
-    'Transporte': Color(0xFFE65100),
-    'Otro': appTeal,
-  };
-
   @override
   void initState() {
     super.initState();
@@ -114,13 +107,13 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('Cancelar'),
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
+          TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Eliminar'),
+            style: TextButton.styleFrom(foregroundColor: ctx.sp.danger),
+            child: const Text(
+              'Eliminar',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
           ),
         ],
       ),
@@ -133,7 +126,8 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
     mostrarResultadoGuardado(
       context,
       resultado,
-      pendiente: 'Esto está tardando. Se va a eliminar solo apenas vuelva la señal.',
+      pendiente:
+          'Esto está tardando. Se va a eliminar solo apenas vuelva la señal.',
       fallo: 'No se pudo eliminar. Revisá tu conexión e intentá de nuevo.',
     );
   }
@@ -193,7 +187,7 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
             }).length;
 
             return Scaffold(
-              backgroundColor: appBg,
+              backgroundColor: context.sp.bg,
               floatingActionButton: botonCambiarRol(
                 context,
                 heroTag: 'debug_rol',
@@ -201,7 +195,7 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
               bottomNavigationBar: _bottomNav(chatsNuevos),
               body: Stack(
                 children: [
-                  const Positioned.fill(child: LeafOverlay()),
+                  const Positioned.fill(child: SpPawBackground()),
                   SafeArea(
                     child: IndexedStack(
                       index: _nav,
@@ -246,9 +240,8 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
             // servicioEstaActivo (domain/reglas_negocio.dart) — misma
             // fuente que la lista de abajo, que usaba otro criterio.
             .where(
-              (d) => servicioEstaActivo(
-                (d.data() as Map).cast<String, dynamic>(),
-              ),
+              (d) =>
+                  servicioEstaActivo((d.data() as Map).cast<String, dynamic>()),
             )
             .length;
 
@@ -283,123 +276,151 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                 return tb.compareTo(ta);
               });
         {
+          final c = context.sp;
           return SingleChildScrollView(
             padding: const EdgeInsets.only(bottom: 24),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ── Header ──────────────────────────────────────────────────
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.fromLTRB(24, 28, 24, 28),
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Color(0xFF0A5C40), appTeal],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+                // ── Héroe: el negocio ───────────────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(SpSpace.s4),
+                    decoration: SpDeco.primary(
+                      c,
+                      radius: SpRadius.xl,
+                      gradient: true,
                     ),
-                  ),
-                  child: Column(
-                    children: [
-                      // Avatar grande
-                      Container(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.5),
-                            width: 3,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.2),
-                              blurRadius: 16,
-                              offset: const Offset(0, 6),
-                            ),
-                          ],
-                        ),
-                        // AvatarPersona (widgets/avatares.dart), no un
-                        // CircleAvatar armado a mano: con
-                        // onBackgroundImageError vacío, si la foto fallaba
-                        // al cargar quedaba un círculo vacío en vez de caer
-                        // a las iniciales. Hallazgo de auditoría de código.
-                        child: AvatarPersona(
-                          fotoBase64: foto,
-                          inicial: iniciales,
-                          radius: 52,
-                          backgroundColor: Colors.white.withValues(
-                            alpha: 0.2,
-                          ),
-                          textColor: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      TextoSinDesborde(
-                        texto: nombre,
-                        style: const TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                        textAlign: TextAlign.center,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        despues: Container(
-                          width: 10,
-                          height: 10,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFF4ADE80),
-                            shape: BoxShape.circle,
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(3),
+                          decoration: SpDeco.soft(c, radius: SpRadius.full),
+                          // AvatarPersona (widgets/avatares.dart), no un
+                          // CircleAvatar armado a mano: con
+                          // onBackgroundImageError vacío, si la foto fallaba
+                          // al cargar quedaba un círculo vacío en vez de caer
+                          // a las iniciales. Hallazgo de auditoría de código.
+                          child: AvatarPersona(
+                            fotoBase64: foto,
+                            inicial: iniciales,
+                            radius: 34,
+                            backgroundColor: c.mint,
+                            textColor: c.primaryStrong,
                           ),
                         ),
-                      ),
-                      if (tipo.isNotEmpty) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          tipo,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.white.withValues(alpha: 0.75),
+                        const SizedBox(width: SpSpace.s4),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Tu negocio hoy',
+                                style: SpText.label.copyWith(
+                                  color: c.onPrimary.withValues(alpha: .85),
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              TextoSinDesborde(
+                                texto: nombre,
+                                style: SpText.title.copyWith(
+                                  color: c.onPrimary,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                                despues: Container(
+                                  width: 10,
+                                  height: 10,
+                                  decoration: const BoxDecoration(
+                                    color: SpDeco.shine,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                              ),
+                              if (tipo.isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: SpDeco.shine.withValues(alpha: .55),
+                                    borderRadius: BorderRadius.circular(
+                                      SpRadius.full,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        aliadoTipoIcono(tipo),
+                                        size: 14,
+                                        color: c.onPrimary,
+                                      ),
+                                      const SizedBox(width: 5),
+                                      Flexible(
+                                        child: Text(
+                                          tipo,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: SpText.caption.copyWith(
+                                            color: c.onPrimary,
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                         ),
                       ],
-                    ],
+                    ),
                   ),
                 ),
 
-                // ── Stats ────────────────────────────────────────────────────
+                // ── Cifras ───────────────────────────────────────────────────
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
                   child: Row(
                     children: [
-                      _statCard(
-                        '$activos',
-                        'Servicios\nactivos',
-                        const Color(0xFFD8F0E4),
-                        appTeal,
-                        Icons.spa_outlined,
-                        onTap: () => setState(() => _nav = 1),
+                      Expanded(
+                        child: SpMiniStat(
+                          tone: SpTone.mint,
+                          animal: SpAnimalKind.huella,
+                          value: '$activos',
+                          label: 'Activos',
+                          onTap: () => setState(() => _nav = 1),
+                        ),
                       ),
-                      const SizedBox(width: 12),
-                      _statCard(
-                        '${servicios.length}',
-                        'Servicios\ntotales',
-                        Colors.white,
-                        const Color(0xFF444444),
-                        Icons.list_alt_outlined,
-                        onTap: () => setState(() => _nav = 1),
+                      const SizedBox(width: SpSpace.s3),
+                      Expanded(
+                        child: SpMiniStat(
+                          tone: SpTone.sky,
+                          animal: SpAnimalKind.conejo,
+                          value: '${servicios.length}',
+                          label: 'En total',
+                          onTap: () => setState(() => _nav = 1),
+                        ),
                       ),
-                      const SizedBox(width: 12),
-                      _statCard(
-                        '$chatsNuevos',
-                        'Mensajes\nnuevos',
-                        const Color(0xFFFFF0E6),
-                        appOrange,
-                        Icons.chat_bubble_outline,
-                        onTap: () => context.push(
-                          AppRoutes.adoptanteChats,
-                          extra: (
-                            esRescatista: true,
-                            soloConsultas: true,
-                            esAlbergue: false,
+                      const SizedBox(width: SpSpace.s3),
+                      Expanded(
+                        child: SpMiniStat(
+                          tone: SpTone.peach,
+                          animal: SpAnimalKind.gato,
+                          value: '$chatsNuevos',
+                          label: 'Mensajes',
+                          onTap: () => context.push(
+                            AppRoutes.adoptanteChats,
+                            extra: (
+                              esRescatista: true,
+                              soloConsultas: true,
+                              esAlbergue: false,
+                            ),
                           ),
                         ),
                       ),
@@ -407,46 +428,38 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                   ),
                 ),
 
-                // ── Acceso rápido ─────────────────────────────────────────────
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
-                  child: Text(
-                    'ACCIONES RÁPIDAS',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.2,
-                      color: Colors.grey.shade700,
-                    ),
-                  ),
+                // ── Acciones rápidas ─────────────────────────────────────────
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 24, 16, 0),
+                  child: SpSectionTitle('Acciones rápidas'),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: SpSpace.s3),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Row(
                     children: [
                       _quickAction(
-                        Icons.add_circle_outline,
+                        Icons.add_rounded,
                         'Nuevo\nservicio',
-                        appTeal,
+                        SpTone.mint,
                         () {
                           context.push(AppRoutes.subirServicio);
                         },
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: SpSpace.s3),
                       _quickAction(
-                        Icons.list_alt_outlined,
+                        Icons.list_alt_rounded,
                         'Ver\nservicios',
-                        const Color(0xFF444444),
+                        SpTone.sky,
                         () {
                           setState(() => _nav = 1);
                         },
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: SpSpace.s3),
                       _quickAction(
-                        Icons.chat_bubble_outline,
+                        Icons.chat_bubble_outline_rounded,
                         'Ver\nchats',
-                        appOrange,
+                        SpTone.peach,
                         () {
                           context.push(
                             AppRoutes.adoptanteChats,
@@ -466,40 +479,22 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                 if (chats.isNotEmpty) ...[
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 28, 16, 0),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'CONVERSACIONES RECIENTES',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 1.2,
-                            color: Colors.grey.shade700,
+                    child: SpSectionTitle(
+                      'Conversaciones recientes',
+                      trailing: SpLink(
+                        'Ver todas',
+                        onTap: () => context.push(
+                          AppRoutes.adoptanteChats,
+                          extra: (
+                            esRescatista: true,
+                            soloConsultas: true,
+                            esAlbergue: false,
                           ),
                         ),
-                        GestureDetector(
-                          onTap: () => context.push(
-                            AppRoutes.adoptanteChats,
-                            extra: (
-                              esRescatista: true,
-                              soloConsultas: true,
-                              esAlbergue: false,
-                            ),
-                          ),
-                          child: const Text(
-                            'Ver todas',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: appTeal,
-                            ),
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: SpSpace.s3),
                   ...chats.take(3).map((doc) {
                     final d = doc.data() as Map<String, dynamic>;
                     final quien = d['adoptanteNombre'] as String? ?? 'Usuario';
@@ -537,27 +532,17 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                     );
                     return Container(
                       key: ValueKey(doc.id),
-                      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                       padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(14),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.05),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
+                      decoration: SpDeco.card(c, radius: SpRadius.lg),
                       child: Row(
                         children: [
                           AvatarUsuario(
                             userId: d['adoptanteId'] as String?,
                             inicial: ini,
-                            radius: 20,
-                            backgroundColor: appTeal.withValues(alpha: 0.12),
-                            textColor: appTeal,
+                            radius: 22,
+                            backgroundColor: c.sky,
+                            textColor: c.skyInk,
                             // ChatsRepository.campoLogoAdoptante es la única
                             // fuente de "qué campo mirar para el logo de quien
                             // contactó" — no volver a derivarlo acá a mano.
@@ -574,10 +559,10 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                                     Flexible(
                                       child: Text(
                                         quien,
-                                        style: const TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w600,
-                                          color: appInk,
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w800,
+                                          color: c.ink,
                                         ),
                                         overflow: TextOverflow.ellipsis,
                                       ),
@@ -589,15 +574,17 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                                         vertical: 2,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: appTeal.withValues(alpha: 0.1),
-                                        borderRadius: BorderRadius.circular(20),
+                                        color: c.lilac,
+                                        borderRadius: BorderRadius.circular(
+                                          SpRadius.full,
+                                        ),
                                       ),
                                       child: Text(
                                         rotulo,
-                                        style: const TextStyle(
-                                          fontSize: 9,
-                                          fontWeight: FontWeight.w700,
-                                          color: appTeal,
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w800,
+                                          color: c.lilacInk,
                                         ),
                                       ),
                                     ),
@@ -607,9 +594,8 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                                   const SizedBox(height: 2),
                                   Text(
                                     ultimo,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.grey.shade700,
+                                    style: SpText.caption.copyWith(
+                                      color: c.inkMuted,
                                     ),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
@@ -624,9 +610,8 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                               if (hora.isNotEmpty)
                                 Text(
                                   hora,
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.grey.shade400,
+                                  style: SpText.caption.copyWith(
+                                    color: c.inkFaint,
                                   ),
                                 ),
                               if (noLeidos > 0) ...[
@@ -636,16 +621,16 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                                     horizontal: 6,
                                     vertical: 2,
                                   ),
-                                  decoration: const BoxDecoration(
-                                    color: appOrange,
+                                  decoration: BoxDecoration(
+                                    color: c.accent,
                                     shape: BoxShape.circle,
                                   ),
                                   child: Text(
                                     '$noLeidos',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 11,
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
+                                      color: c.onAccent,
+                                      fontWeight: FontWeight.w800,
                                     ),
                                   ),
                                 ),
@@ -665,98 +650,42 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
     );
   }
 
-  Widget _statCard(
-    String valor,
-    String label,
-    Color bg,
-    Color color,
-    IconData icon, {
-    VoidCallback? onTap,
-  }) => Expanded(
-    child: GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, size: 18, color: color.withValues(alpha: 0.7)),
-            const SizedBox(height: 8),
-            Text(
-              valor,
-              style: TextStyle(
-                fontSize: 26,
-                fontWeight: FontWeight.bold,
-                color: color,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 10,
-                color: color.withValues(alpha: 0.75),
-                height: 1.3,
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-
+  /// Acceso rápido: tarjeta blanca 3D con una baldosa pastel y el texto.
   Widget _quickAction(
     IconData icon,
     String label,
-    Color color,
+    SpTone tono,
     VoidCallback onTap,
-  ) => Expanded(
-    child: GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
+  ) {
+    final c = context.sp;
+    final k = SpToneColors.of(c, tono);
+    return Expanded(
+      child: SpCard(
+        onTap: onTap,
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
         child: Column(
           children: [
             Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, size: 20, color: color),
+              width: 44,
+              height: 44,
+              decoration: SpDeco.tone(c, tono, radius: SpRadius.sm),
+              child: Icon(icon, size: 22, color: k.ink),
             ),
             const SizedBox(height: 8),
             Text(
               label,
               textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: color,
+              style: SpText.caption.copyWith(
+                color: c.ink,
+                fontWeight: FontWeight.w800,
                 height: 1.2,
               ),
             ),
           ],
         ),
       ),
-    ),
-  );
+    );
+  }
 
   // ── Catálogo ─────────────────────────────────────────────────────────────────
 
@@ -764,8 +693,9 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
     return StreamBuilder<QuerySnapshot>(
       stream: _serviciosStream,
       builder: (context, snap) {
+        final c = context.sp;
         if (snap.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: appTeal));
+          return Center(child: CircularProgressIndicator(color: c.primary));
         }
         // Sin esto, un error real se veía igual que "todavía no publicaste
         // ningún servicio" — mismo patrón ya arreglado en
@@ -786,60 +716,32 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
           children: [
             // Header
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+              padding: const EdgeInsets.fromLTRB(20, 20, 16, 16),
               child: Row(
                 children: [
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'MIS SERVICIOS',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 1.2,
-                            color: appTeal,
-                          ),
+                        Text(
+                          'Mis servicios',
+                          style: SpText.screen.copyWith(color: c.ink),
                         ),
-                        const Text(
-                          'Servicios activos',
-                          style: TextStyle(
-                            fontSize: 26,
-                            fontWeight: FontWeight.bold,
-                            color: appInk,
+                        Text(
+                          'Lo que ofrece tu negocio',
+                          style: SpText.label.copyWith(
+                            color: c.inkMuted,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ],
                     ),
                   ),
-                  GestureDetector(
+                  SpButton(
+                    label: 'Nuevo',
+                    icon: Icons.add_rounded,
+                    compacto: true,
                     onTap: () => context.push(AppRoutes.subirServicio),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 9,
-                      ),
-                      decoration: BoxDecoration(
-                        color: appTeal,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.add, color: Colors.white, size: 16),
-                          SizedBox(width: 4),
-                          Text(
-                            'Nuevo',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                   ),
                 ],
               ),
@@ -848,38 +750,22 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
             // Lista
             Expanded(
               child: docs.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.spa_outlined,
-                            size: 56,
-                            color: Colors.grey.shade300,
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'Sin servicios publicados',
-                            style: TextStyle(
-                              fontSize: 15,
-                              color: Colors.grey.shade700,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Toca "Nuevo" para agregar el primero',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.grey.shade400,
-                            ),
-                          ),
-                        ],
+                  ? const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16),
+                      child: Align(
+                        alignment: Alignment.topCenter,
+                        child: SpEmpty(
+                          title: 'Sin servicios publicados',
+                          subtitle: 'Toca "Nuevo" para agregar el primero',
+                          animal: SpAnimalKind.huella,
+                        ),
                       ),
                     )
                   : ListView.separated(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
                       itemCount: docs.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 10),
+                      separatorBuilder: (_, _) =>
+                          const SizedBox(height: SpSpace.s3),
                       itemBuilder: (_, i) {
                         final doc = docs[i];
                         final d = doc.data() as Map<String, dynamic>;
@@ -888,34 +774,26 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                         final desc = d['descripcion'] as String? ?? '';
                         final activo = servicioEstaActivo(d);
                         final cat = d['categoria'] as String? ?? '';
-                        final catColor = _catColor[cat] ?? appTeal;
+                        final tono = spToneCategoriaServicio(cat);
+                        final k = SpToneColors.of(c, tono);
                         final catEmoji = _catEmoji[cat] ?? '🐾';
 
                         return Container(
                           key: ValueKey(doc.id),
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.05),
-                                blurRadius: 8,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
+                          padding: const EdgeInsets.all(SpSpace.s4),
+                          decoration: SpDeco.card(c),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Row(
                                 children: [
                                   Container(
-                                    width: 48,
-                                    height: 48,
-                                    decoration: BoxDecoration(
-                                      color: catColor.withValues(alpha: 0.12),
-                                      borderRadius: BorderRadius.circular(12),
+                                    width: 50,
+                                    height: 50,
+                                    decoration: SpDeco.tone(
+                                      c,
+                                      tono,
+                                      radius: SpRadius.sm,
                                     ),
                                     child: Center(
                                       child: Text(
@@ -932,19 +810,18 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                                       children: [
                                         Text(
                                           sNombre,
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontSize: 15,
-                                            fontWeight: FontWeight.w700,
-                                            color: appInk,
+                                            fontWeight: FontWeight.w800,
+                                            color: c.ink,
                                           ),
                                         ),
                                         if (desc.isNotEmpty) ...[
                                           const SizedBox(height: 3),
                                           Text(
                                             desc,
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: Colors.grey.shade700,
+                                            style: SpText.caption.copyWith(
+                                              color: c.inkMuted,
                                             ),
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
@@ -961,8 +838,8 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                                         '\$${_fmt(precio)}',
                                         style: TextStyle(
                                           fontSize: 17,
-                                          fontWeight: FontWeight.bold,
-                                          color: catColor,
+                                          fontWeight: FontWeight.w800,
+                                          color: k.ink,
                                         ),
                                       ),
                                       const SizedBox(height: 6),
@@ -978,11 +855,19 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                                           height: 24,
                                           decoration: BoxDecoration(
                                             color: activo
-                                                ? appTeal
-                                                : Colors.grey.shade300,
+                                                ? c.primary
+                                                : c.surfaceSunken,
                                             borderRadius: BorderRadius.circular(
                                               12,
                                             ),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: activo
+                                                    ? c.primaryEdge
+                                                    : c.edge,
+                                                offset: const Offset(0, 2),
+                                              ),
+                                            ],
                                           ),
                                           child: AnimatedAlign(
                                             duration: const Duration(
@@ -996,8 +881,8 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                                               child: Container(
                                                 width: 20,
                                                 height: 20,
-                                                decoration: const BoxDecoration(
-                                                  color: Colors.white,
+                                                decoration: BoxDecoration(
+                                                  color: c.surface,
                                                   shape: BoxShape.circle,
                                                 ),
                                               ),
@@ -1012,25 +897,20 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
                               const SizedBox(height: 12),
                               Row(
                                 children: [
-                                  _miniBtn(
-                                    Icons.edit_outlined,
-                                    'Editar',
-                                    Colors.grey.shade700,
-                                    Colors.grey.shade50,
-                                    Colors.grey.shade200,
-                                    () => context.push(
+                                  SpMiniButton(
+                                    icon: Icons.edit_outlined,
+                                    tooltip: 'Editar',
+                                    onTap: () => context.push(
                                       AppRoutes.subirServicio,
                                       extra: (docId: doc.id, data: d),
                                     ),
                                   ),
                                   const SizedBox(width: 8),
-                                  _miniBtn(
-                                    Icons.delete_outline,
-                                    'Eliminar',
-                                    Colors.red.shade400,
-                                    Colors.red.shade50,
-                                    Colors.red.shade100,
-                                    () => _eliminarServicio(doc.id),
+                                  SpMiniButton(
+                                    icon: Icons.delete_outline_rounded,
+                                    tooltip: 'Eliminar',
+                                    danger: true,
+                                    onTap: () => _eliminarServicio(doc.id),
                                   ),
                                 ],
                               ),
@@ -1046,29 +926,6 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
     );
   }
 
-  Widget _miniBtn(
-    IconData icon,
-    String label,
-    Color fg,
-    Color bg,
-    Color border,
-    VoidCallback onTap,
-  ) => Tooltip(
-    message: label,
-    child: GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: border),
-        ),
-        child: Icon(icon, size: 16, color: fg),
-      ),
-    ),
-  );
-
   // ── Perfil ────────────────────────────────────────────────────────────────────
 
   Widget _perfilTab(
@@ -1077,179 +934,166 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
     String? foto,
     String iniciales,
   ) {
+    final c = context.sp;
+    final k = SpToneColors.of(c, spToneAliado(tipo));
+    // Mismo diseño que el perfil del adoptante y del rescatista.
     return SingleChildScrollView(
+      padding: const EdgeInsets.only(bottom: 32),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header verde
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.fromLTRB(24, 36, 24, 32),
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0xFF0A5C40), appTeal],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-            ),
+          const SpScreenHeader(
+            title: 'Perfil',
+            subtitle: 'Tu negocio',
+            conVolver: false,
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.5),
-                      width: 3,
+                Center(
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: SpDeco.soft(c, radius: SpRadius.full),
+                    child: AvatarPersona(
+                      fotoBase64: foto,
+                      inicial: iniciales,
+                      radius: 54,
+                      backgroundColor: k.fill,
+                      textColor: k.ink,
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.2),
-                        blurRadius: 16,
-                        offset: const Offset(0, 6),
-                      ),
-                    ],
-                  ),
-                  child: AvatarPersona(
-                    fotoBase64: foto,
-                    inicial: iniciales,
-                    radius: 52,
-                    backgroundColor: Colors.white.withValues(alpha: 0.2),
-                    textColor: Colors.white,
                   ),
                 ),
-                const SizedBox(height: 16),
-                Text(
-                  nombre,
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
+                const SizedBox(height: 12),
+                Center(
+                  child: Text(
+                    nombre,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 23,
+                      fontWeight: FontWeight.w800,
+                      color: c.ink,
+                    ),
                   ),
-                  textAlign: TextAlign.center,
                 ),
                 if (tipo.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    tipo,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.white.withValues(alpha: 0.8),
+                  const SizedBox(height: 10),
+                  Center(
+                    child: Container(
+                      height: 34,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: SpDeco.soft(c, radius: SpRadius.full),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(aliadoTipoIcono(tipo), size: 16, color: k.ink),
+                          const SizedBox(width: 6),
+                          Text(
+                            tipo,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: c.inkMuted,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ],
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              children: [
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: () => context.push(AppRoutes.aliadoPerfil),
-                    icon: const Icon(Icons.edit_outlined, size: 18),
-                    label: const Text('Editar perfil del negocio'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: appTeal,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
+                const SizedBox(height: SpSpace.s6),
+                const SpSectionTitle('Cuenta'),
+                const SizedBox(height: SpSpace.s3),
+                SpCard(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Column(
+                    children: [
+                      SpFilaCuenta(
+                        icono: Icons.storefront_outlined,
+                        texto: 'Editar perfil del negocio',
+                        tono: SpTone.mint,
+                        onTap: () => context.push(AppRoutes.aliadoPerfil),
                       ),
-                      elevation: 0,
-                    ),
+                      // Acá NO va "Gestionar mis roles", y es a propósito.
+                      //
+                      // Estuvo un rato y había que sacarlo: la hoja de roles
+                      // (widgets/roles_sheet.dart) solo ofrece Adoptante y
+                      // Rescatista. No tiene casilla para Albergue ni para
+                      // Aliado, y arranca copiando los roles que ya están,
+                      // así que desde acá solo se podían AGREGAR roles, nunca
+                      // salir de este.
+                      //
+                      // Y agregarlos no cambiaba nada: resolverPantallaPerfil
+                      // (domain/resolucion_perfil.dart) manda a albergue y a
+                      // aliado antes que a cualquier otro rol, así que
+                      // después de guardar se volvía a aterrizar exactamente
+                      // acá. Un botón que promete una salida y no la da es
+                      // peor que no tenerlo.
+                      //
+                      // La salida de verdad sigue sin existir: quien tiene
+                      // rol de negocio no puede volver al lado de
+                      // adoptante/rescatista desde la app. Queda como trabajo
+                      // para después del lanzamiento, y la forma que tiene
+                      // más sentido es un cambio de VISTA (como el
+                      // interruptor Adoptante/Rescatista que ya existe en el
+                      // inicio), no tocar los roles guardados.
+                      //
+                      // Si estás por volver a poner este botón: no alcanza con
+                      // ponerlo. Hay que hacer que la hoja o el enrutado
+                      // permitan salir, o vuelve a no hacer nada.
+                      const SpDivisorFilas(),
+                      // Por ahora solo deja elegir Claro: el modo oscuro se
+                      // habilita cuando esté revisado (ver
+                      // widgets/apariencia_sheet.dart).
+                      SpFilaCuenta(
+                        icono: Icons.dark_mode_outlined,
+                        texto: 'Apariencia',
+                        sub: 'Claro',
+                        tono: SpTone.lilac,
+                        onTap: () => mostrarApariencia(context),
+                      ),
+                      const SpDivisorFilas(),
+                      SpFilaCuenta(
+                        icono: Icons.shield_outlined,
+                        texto: 'Política de privacidad',
+                        tono: SpTone.sky,
+                        onTap: () => launchUrl(
+                          Uri.parse(
+                            'https://lunita486.github.io/Salva-Patitas/privacidad.html',
+                          ),
+                          mode: LaunchMode.externalApplication,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                // Acá NO va "Gestionar mis roles", y es a propósito.
-                //
-                // Estuvo un rato y había que sacarlo: la hoja de roles
-                // (widgets/roles_sheet.dart) solo ofrece Adoptante y
-                // Rescatista. No tiene casilla para Albergue ni para Aliado,
-                // y arranca copiando los roles que ya están, así que desde
-                // acá solo se podían AGREGAR roles, nunca salir de este.
-                //
-                // Y agregarlos no cambiaba nada: resolverPantallaPerfil
-                // (domain/resolucion_perfil.dart) manda a albergue y a aliado
-                // antes que a cualquier otro rol, así que después de guardar
-                // se volvía a aterrizar exactamente acá. Un botón que promete
-                // una salida y no la da es peor que no tenerlo.
-                //
-                // La salida de verdad sigue sin existir: quien tiene rol de
-                // negocio no puede volver al lado de adoptante/rescatista
-                // desde la app. Queda como trabajo para después del
-                // lanzamiento, y la forma que tiene más sentido es un cambio
-                // de VISTA (como el interruptor Adoptante/Rescatista que ya
-                // existe en el inicio), no tocar los roles guardados.
-                //
-                // Si estás por volver a poner este botón: no alcanza con
-                // ponerlo. Hay que hacer que la hoja o el enrutado permitan
-                // salir, o vuelve a no hacer nada.
-                const SizedBox(height: 12),
+                const SizedBox(height: 20),
                 SizedBox(
                   width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () => mostrarDialogoCerrarSesion(context),
-                    icon: const Icon(Icons.logout, size: 18),
-                    label: const Text('Cerrar sesión'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.red.shade400,
-                      side: BorderSide(color: Colors.red.shade200),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
+                  child: SpButton(
+                    label: 'Cerrar sesión',
+                    icon: Icons.logout_rounded,
+                    suave: true,
+                    onTap: () => mostrarDialogoCerrarSesion(context),
                   ),
                 ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
+                const SizedBox(height: 6),
+                Center(
+                  child: TextButton(
                     onPressed: () => mostrarEliminarCuentaDialog(
                       context,
                       mostrarParrafoAdopciones: false,
                     ),
-                    icon: const Icon(Icons.delete_outline, size: 18),
-                    label: const Text('Eliminar mi cuenta'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.red.shade700,
-                      side: BorderSide(color: Colors.red.shade200),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
+                    style: TextButton.styleFrom(foregroundColor: c.danger),
+                    child: const Text(
+                      'Eliminar mi cuenta',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15,
                       ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                GestureDetector(
-                  onTap: () => launchUrl(
-                    Uri.parse(
-                      'https://lunita486.github.io/Salva-Patitas/privacidad.html',
-                    ),
-                    mode: LaunchMode.externalApplication,
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.shield_outlined,
-                          size: 16,
-                          color: Colors.grey.shade500,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Política de Privacidad',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.grey.shade700,
-                            decoration: TextDecoration.underline,
-                          ),
-                        ),
-                      ],
                     ),
                   ),
                 ),
@@ -1261,124 +1105,32 @@ class _AliadoHomeScreenState extends State<AliadoHomeScreen> {
     );
   }
 
-  // ── Bottom Nav ───────────────────────────────────────────────────────────────
+  // ── Barra de abajo ───────────────────────────────────────────────────────────
 
-  Widget _bottomNav(int chatsNuevos) => Container(
-    decoration: BoxDecoration(
-      color: Colors.white,
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.07),
-          blurRadius: 12,
-          offset: const Offset(0, -2),
-        ),
-      ],
-    ),
-    child: SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            _navItem(Icons.dashboard_outlined, Icons.dashboard, 'Panel', 0),
-            _navItem(Icons.spa_outlined, Icons.spa, 'Servicios', 1),
-            _navTapBadge(
-              Icons.chat_bubble_outline,
-              Icons.chat_bubble,
-              'Chats',
-              chatsNuevos,
-              () => context.push(
-                AppRoutes.adoptanteChats,
-                extra: (
-                  esRescatista: true,
-                  soloConsultas: true,
-                  esAlbergue: false,
-                ),
-              ),
-            ),
-            _navItem(Icons.person_outline, Icons.person, 'Perfil', 2),
-          ],
+  // Barra flotante 3D (SpTabBar), como la del resto de la app. Cada ítem
+  // conserva su misma acción de siempre.
+  Widget _bottomNav(int chatsNuevos) => SpTabBar(
+    children: [
+      _navItem(Icons.dashboard_rounded, 'Panel', 0),
+      _navItem(Icons.spa_outlined, 'Servicios', 1),
+      SpTabItem(
+        icon: Icons.chat_bubble_outline_rounded,
+        label: 'Chats',
+        active: false,
+        badge: chatsNuevos,
+        onTap: () => context.push(
+          AppRoutes.adoptanteChats,
+          extra: (esRescatista: true, soloConsultas: true, esAlbergue: false),
         ),
       ),
-    ),
+      _navItem(Icons.person_outline_rounded, 'Perfil', 2),
+    ],
   );
 
-  Widget _navItem(IconData icon, IconData iconActive, String label, int idx) {
-    final active = _nav == idx;
-    return GestureDetector(
-      onTap: () => setState(() => _nav = idx),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            active ? iconActive : icon,
-            color: active ? appTeal : Colors.grey.shade400,
-            size: 24,
-          ),
-          const SizedBox(height: 3),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 10,
-              color: active ? appTeal : Colors.grey.shade400,
-              fontWeight: active ? FontWeight.w700 : FontWeight.normal,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _navTapBadge(
-    IconData icon,
-    IconData iconActive,
-    String label,
-    int badge,
-    VoidCallback onTap,
-  ) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Icon(icon, color: Colors.grey.shade400, size: 24),
-              if (badge > 0)
-                Positioned(
-                  top: -4,
-                  right: -6,
-                  child: Container(
-                    padding: const EdgeInsets.all(3),
-                    constraints: const BoxConstraints(
-                      minWidth: 16,
-                      minHeight: 16,
-                    ),
-                    decoration: const BoxDecoration(
-                      color: appOrange,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Text(
-                      badge > 9 ? '9+' : '$badge',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 9,
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 3),
-          Text(
-            label,
-            style: TextStyle(fontSize: 10, color: Colors.grey.shade400),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _navItem(IconData icon, String label, int idx) => SpTabItem(
+    icon: icon,
+    label: label,
+    active: _nav == idx,
+    onTap: () => setState(() => _nav = idx),
+  );
 }

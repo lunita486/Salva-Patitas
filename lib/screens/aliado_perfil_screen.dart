@@ -2,7 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../theme.dart';
+import '../theme/salva_patitas_theme.dart';
+import '../widgets/sp_widgets.dart';
 import '../widgets/boton_cambiar_rol.dart';
 import '../widgets/campo_ciudad.dart';
 import '../widgets/campo_pais_telefono.dart';
@@ -10,7 +11,6 @@ import '../widgets/campos_perfil.dart';
 import '../widgets/confirmar_ciudad_resuelta.dart';
 import '../widgets/elegir_foto_perfil.dart';
 import '../widgets/estado_error_feed.dart';
-import '../widgets/fondo_decorativo.dart';
 import '../widgets/fotos.dart';
 import '../widgets/resultado_guardado_snackbar.dart';
 import '../data/firestore_resiliencia.dart';
@@ -76,8 +76,7 @@ class _AliadoPerfilScreenState extends State<AliadoPerfilScreen> {
       // ciudad geocodificada de esta misma pantalla. Hallazgo real de
       // Eliza: "sjejdj" se guardaba igual que un email/sitio real, sin
       // ningún aviso.
-      (_emailCtl.text.trim().isEmpty ||
-          esEmailValido(_emailCtl.text.trim())) &&
+      (_emailCtl.text.trim().isEmpty || esEmailValido(_emailCtl.text.trim())) &&
       (_webCtl.text.trim().isEmpty || esSitioWebValido(_webCtl.text.trim()));
 
   @override
@@ -346,14 +345,16 @@ class _AliadoPerfilScreenState extends State<AliadoPerfilScreen> {
   @override
   Widget build(BuildContext context) {
     if (_cargando) {
-      return const Scaffold(
-        backgroundColor: appBg,
-        body: Center(child: CircularProgressIndicator(color: appTeal)),
+      return Scaffold(
+        backgroundColor: context.sp.bg,
+        body: Center(
+          child: CircularProgressIndicator(color: context.sp.primary),
+        ),
       );
     }
     if (_errorCarga) {
       return Scaffold(
-        backgroundColor: appBg,
+        backgroundColor: context.sp.bg,
         body: SafeArea(
           child: Column(
             children: [
@@ -381,24 +382,10 @@ class _AliadoPerfilScreenState extends State<AliadoPerfilScreen> {
                               'No pudimos cargar tu perfil. Revisá tu conexión e intentá de nuevo.',
                         ),
                         const SizedBox(height: 12),
-                        ElevatedButton(
-                          onPressed: _reintentarCarga,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: appTeal,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 28,
-                              vertical: 14,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            elevation: 0,
-                          ),
-                          child: const Text(
-                            'Reintentar',
-                            style: TextStyle(fontWeight: FontWeight.w600),
-                          ),
+                        SpButton(
+                          label: 'Reintentar',
+                          icon: Icons.refresh_rounded,
+                          onTap: _reintentarCarga,
                         ),
                       ],
                     ),
@@ -410,256 +397,256 @@ class _AliadoPerfilScreenState extends State<AliadoPerfilScreen> {
         ),
       );
     }
+    final c = context.sp;
+    // Mismo patrón que albergue_perfil_screen.dart — antes acá no había
+    // ninguna forma de volver atrás salvo el gesto del sistema (o cerrar la
+    // app), a diferencia del resto de las pantallas de perfil. Hallazgo real
+    // de Eliza. Al crear el perfil por primera vez no hay a dónde volver.
+    final puedeVolver = Navigator.canPop(context);
+    Widget aviso(String texto) => Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Text(
+        texto,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: c.danger,
+        ),
+      ),
+    );
+    Widget ayuda(String texto) =>
+        Text(texto, style: SpText.caption.copyWith(color: c.inkMuted));
+
+    // Mismo diseño que "Configura tu albergue" (pedido de Eliza: que las dos
+    // se vean con la misma tipografía y el mismo orden).
     return Scaffold(
-      backgroundColor: appBg,
+      backgroundColor: c.bg,
       floatingActionButton: botonCambiarRol(context, heroTag: 'debug_perfil'),
       body: Stack(
         fit: StackFit.expand,
         children: [
-          const LeafOverlay(),
+          const SpPawBackground(),
           SafeArea(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
+              padding: const EdgeInsets.only(bottom: 32),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SizedBox(height: 24),
-                  // Mismo patrón que albergue_perfil_screen.dart — acá no
-                  // había ninguna forma de volver atrás salvo el gesto del
-                  // sistema (o cerrar la app), a diferencia del resto de
-                  // las pantallas de perfil. Hallazgo real de Eliza.
-                  Builder(
-                    builder: (ctx) => Navigator.canPop(ctx)
-                        ? IconButton(
-                            icon: const Icon(
-                              Icons.arrow_back_ios_new,
-                              size: 20,
-                            ),
-                            tooltip: 'Volver',
-                            onPressed: () => Navigator.pop(ctx),
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                          )
-                        : const SizedBox.shrink(),
+                  SpScreenHeader(
+                    title: puedeVolver
+                        ? 'Editar perfil'
+                        : 'Configura tu negocio',
+                    subtitle: 'Esta información aparecerá en tu perfil público',
+                    conVolver: puedeVolver,
                   ),
-                  const SizedBox(height: 16),
-
-                  const Text(
-                    'Configura tu negocio',
-                    style: TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.bold,
-                      color: appInk,
-                      fontFamily: 'Baloo2',
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Esta información aparecerá en tu perfil público',
-                    style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
-                  ),
-                  const SizedBox(height: 32),
-
-                  // Foto
-                  Center(
-                    child: GestureDetector(
-                      onTap: _pickFoto,
-                      child: Container(
-                        width: 90,
-                        height: 90,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.white,
-                          border: Border.all(color: appTeal, width: 2),
-                        ),
-                        clipBehavior: Clip.hardEdge,
-                        child: _fotoBase64 != null
-                            ? FotoSegura(
-                                base64: _fotoBase64!,
-                                fit: BoxFit.cover,
-                                fallback: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // ── Logo del negocio ───────────────────────────────
+                        Center(
+                          child: Builder(
+                            builder: (_) {
+                              final fotoBytes = bytesFotoSegura(_fotoBase64);
+                              return GestureDetector(
+                                onTap: _pickFoto,
+                                child: Stack(
+                                  clipBehavior: Clip.none,
                                   children: [
-                                    Icon(
-                                      Icons.camera_alt_outlined,
-                                      color: appTeal,
-                                      size: 24,
+                                    Container(
+                                      width: 112,
+                                      height: 112,
+                                      padding: const EdgeInsets.all(4),
+                                      decoration: SpDeco.soft(
+                                        c,
+                                        radius: SpRadius.full,
+                                      ),
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: c.lilac,
+                                          image: fotoBytes != null
+                                              ? DecorationImage(
+                                                  image: MemoryImage(fotoBytes),
+                                                  fit: BoxFit.cover,
+                                                  onError: (_, _) {},
+                                                )
+                                              : null,
+                                        ),
+                                        child: fotoBytes == null
+                                            ? Center(
+                                                child: Icon(
+                                                  Icons.storefront_rounded,
+                                                  size: 44,
+                                                  color: c.lilacInk,
+                                                ),
+                                              )
+                                            : null,
+                                      ),
                                     ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'Logo',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: appTeal,
+                                    Positioned(
+                                      right: -2,
+                                      bottom: 2,
+                                      child: Container(
+                                        width: 38,
+                                        height: 38,
+                                        decoration: SpDeco.primary(
+                                          c,
+                                          radius: SpRadius.full,
+                                        ),
+                                        child: Icon(
+                                          fotoBytes == null
+                                              ? Icons.add_a_photo_outlined
+                                              : Icons.photo_camera_rounded,
+                                          size: 18,
+                                          color: c.onPrimary,
+                                        ),
                                       ),
                                     ),
                                   ],
                                 ),
-                              )
-                            : Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.camera_alt_outlined,
-                                    color: appTeal,
-                                    size: 24,
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Logo',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: appTeal,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 28),
-
-                  // Mismo estilo que "Configura tu albergue" (label arriba del
-                  // campo, en vez del ícono + label flotante que tenía esta
-                  // pantalla antes) — Eliza las comparó una al lado de la otra
-                  // y pidió que las dos se vean con la misma tipografía.
-                  perfilLabel('NOMBRE DEL NEGOCIO *'),
-                  const SizedBox(height: 8),
-                  perfilCampo(
-                    _nombreCtl,
-                    'ej. Veterinaria La 30',
-                    autofocus: true,
-                    maxLength: 50,
-                    onChanged: (_) => setState(() {}),
-                  ),
-                  const SizedBox(height: 24),
-
-                  perfilLabel('CIUDAD *'),
-                  const SizedBox(height: 8),
-                  CampoCiudad(
-                    controller: _ciudadCtl,
-                    hint: 'ej. Medellín, Bogotá, Santiago',
-                    maxLength: 50,
-                    onChanged: (_) => setState(() {}),
-                  ),
-                  const SizedBox(height: 24),
-
-                  // Teléfono/WhatsApp y dirección, opcionales — no van en
-                  // _completo a propósito, un negocio recién sumándose puede
-                  // no tener todavía un número de atención separado.
-                  perfilLabel('TELÉFONO / WHATSAPP (OPCIONAL)'),
-                  const SizedBox(height: 8),
-                  CampoTelefono(controller: _telefonoCtl),
-                  const SizedBox(height: 24),
-
-                  perfilLabel('DIRECCIÓN (OPCIONAL)'),
-                  const SizedBox(height: 8),
-                  perfilCampo(
-                    _direccionCtl,
-                    'ej. Calle 10 #43-12, El Poblado',
-                    maxLength: 100,
-                  ),
-                  const SizedBox(height: 24),
-
-                  perfilLabel('EMAIL (OPCIONAL)'),
-                  const SizedBox(height: 8),
-                  perfilCampo(
-                    _emailCtl,
-                    'ej. contacto@tunegocio.com',
-                    tipo: TextInputType.emailAddress,
-                    maxLength: 100,
-                    onChanged: (_) => setState(() {}),
-                  ),
-                  // Opcional de verdad (vacío no bloquea), pero un texto sin
-                  // forma de email sí — ver el comentario de _completo.
-                  if (_emailCtl.text.trim().isNotEmpty &&
-                      !esEmailValido(_emailCtl.text.trim()))
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text(
-                        avisoEmailInvalido,
-                        style: TextStyle(fontSize: 12, color: msgError),
-                      ),
-                    ),
-                  const SizedBox(height: 24),
-
-                  perfilLabel('PÁGINA WEB (OPCIONAL)'),
-                  const SizedBox(height: 8),
-                  perfilCampo(
-                    _webCtl,
-                    'ej. www.tunegocio.com',
-                    tipo: TextInputType.url,
-                    maxLength: 150,
-                    onChanged: (_) => setState(() {}),
-                  ),
-                  if (_webCtl.text.trim().isNotEmpty &&
-                      !esSitioWebValido(_webCtl.text.trim()))
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text(
-                        avisoSitioWebInvalido,
-                        style: TextStyle(fontSize: 12, color: msgError),
-                      ),
-                    ),
-                  const SizedBox(height: 24),
-
-                  // Tipo — mismo look que el resto de los campos (caja blanca
-                  // sin ícono, radio 12): solo cambia que es un desplegable.
-                  perfilLabel('TIPO DE NEGOCIO *'),
-                  const SizedBox(height: 8),
-                  DropdownButtonFormField<String>(
-                    initialValue: _tipo,
-                    decoration: InputDecoration(
-                      filled: true,
-                      fillColor: Colors.white,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none,
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 14,
-                      ),
-                    ),
-                    items: _tipos
-                        .map((t) => DropdownMenuItem(value: t, child: Text(t)))
-                        .toList(),
-                    onChanged: (v) => setState(() => _tipo = v),
-                  ),
-                  const SizedBox(height: 40),
-
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: (_completo && !_guardando) ? _guardar : null,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: appTeal,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
+                              );
+                            },
+                          ),
                         ),
-                        elevation: 0,
-                      ),
-                      child: _guardando
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
+                        const SizedBox(height: 10),
+                        Center(
+                          child: ayuda(
+                            _fotoBase64 == null
+                                ? 'Agrega el logo de tu negocio (opcional)'
+                                : 'Toca para cambiar el logo',
+                          ),
+                        ),
+
+                        // ── Datos del negocio ──────────────────────────────
+                        const SizedBox(height: SpSpace.s6),
+                        const SpSectionTitle('Datos del negocio'),
+                        const SizedBox(height: SpSpace.s3),
+                        SpCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              perfilLabel('NOMBRE DEL NEGOCIO *'),
+                              const SizedBox(height: 8),
+                              perfilCampo(
+                                _nombreCtl,
+                                'ej. Veterinaria La 30',
+                                autofocus: true,
+                                maxLength: 50,
+                                onChanged: (_) => setState(() {}),
                               ),
-                            )
-                          : const Text(
-                              'Guardar y continuar',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
+                              const SizedBox(height: 12),
+
+                              // Chips 3D en vez del desplegable de antes:
+                              // mismo control que "Tipo de organización" en
+                              // el perfil del albergue.
+                              perfilLabel('TIPO DE NEGOCIO *'),
+                              const SizedBox(height: 10),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 10,
+                                children: _tipos
+                                    .map(
+                                      (t) => SpChip(
+                                        label: t,
+                                        selected: t == (_tipo ?? ''),
+                                        onTap: () => setState(() => _tipo = t),
+                                      ),
+                                    )
+                                    .toList(),
                               ),
-                            ),
+                              const SizedBox(height: 20),
+
+                              perfilLabel('CIUDAD *'),
+                              const SizedBox(height: 8),
+                              CampoCiudad(
+                                controller: _ciudadCtl,
+                                hint: 'ej. Medellín, Bogotá, Santiago',
+                                maxLength: 50,
+                                onChanged: (_) => setState(() {}),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        // ── Contacto ───────────────────────────────────────
+                        // Opcionales — no van en _completo a propósito, un
+                        // negocio recién sumándose puede no tener todavía un
+                        // número de atención separado.
+                        const SizedBox(height: SpSpace.s6),
+                        const SpSectionTitle('Contacto'),
+                        const SizedBox(height: 4),
+                        Padding(
+                          padding: const EdgeInsets.only(left: 26),
+                          child: ayuda(
+                            'Opcional. Así te encuentran más fácil.',
+                          ),
+                        ),
+                        const SizedBox(height: SpSpace.s3),
+                        SpCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              perfilLabel('TELÉFONO / WHATSAPP'),
+                              const SizedBox(height: 8),
+                              CampoTelefono(controller: _telefonoCtl),
+                              const SizedBox(height: 20),
+
+                              perfilLabel('DIRECCIÓN'),
+                              const SizedBox(height: 8),
+                              perfilCampo(
+                                _direccionCtl,
+                                'ej. Calle 10 #43-12, El Poblado',
+                                maxLength: 100,
+                              ),
+                              const SizedBox(height: 12),
+
+                              perfilLabel('EMAIL'),
+                              const SizedBox(height: 8),
+                              perfilCampo(
+                                _emailCtl,
+                                'ej. contacto@tunegocio.com',
+                                tipo: TextInputType.emailAddress,
+                                maxLength: 100,
+                                onChanged: (_) => setState(() {}),
+                              ),
+                              // Opcional de verdad (vacío no bloquea), pero un
+                              // texto sin forma de email sí — ver el
+                              // comentario de _completo.
+                              if (_emailCtl.text.trim().isNotEmpty &&
+                                  !esEmailValido(_emailCtl.text.trim()))
+                                aviso(avisoEmailInvalido),
+                              const SizedBox(height: 12),
+
+                              perfilLabel('PÁGINA WEB'),
+                              const SizedBox(height: 8),
+                              perfilCampo(
+                                _webCtl,
+                                'ej. www.tunegocio.com',
+                                tipo: TextInputType.url,
+                                maxLength: 150,
+                                onChanged: (_) => setState(() {}),
+                              ),
+                              if (_webCtl.text.trim().isNotEmpty &&
+                                  !esSitioWebValido(_webCtl.text.trim()))
+                                aviso(avisoSitioWebInvalido),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: SpSpace.s6),
+                        SizedBox(
+                          width: double.infinity,
+                          child: SpButton(
+                            label: 'Guardar y continuar',
+                            icon: Icons.check_rounded,
+                            cargando: _guardando,
+                            onTap: (_completo && !_guardando) ? _guardar : null,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 32),
                 ],
               ),
             ),

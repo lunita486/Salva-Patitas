@@ -4,7 +4,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
-import '../theme.dart';
+import '../theme.dart' show aliadoTipoIcono;
+import '../theme/salva_patitas_theme.dart';
+import '../widgets/sp_widgets.dart';
 import '../widgets/campos_perfil.dart';
 import '../domain/reglas_negocio.dart';
 import '../routing/app_router.dart';
@@ -120,9 +122,11 @@ class _AliadoPublicoScreenState extends State<AliadoPublicoScreen> {
       } catch (_) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              backgroundColor: msgError,
-              content: Text('No se pudo abrir el chat. Intentá de nuevo.'),
+            SnackBar(
+              backgroundColor: context.sp.msgError,
+              content: const Text(
+                'No se pudo abrir el chat. Intentá de nuevo.',
+              ),
             ),
           );
         }
@@ -191,351 +195,348 @@ class _AliadoPublicoScreenState extends State<AliadoPublicoScreen> {
             .map((w) => w.isNotEmpty ? w[0].toUpperCase() : '')
             .join();
 
+        final c = context.sp;
+        final k = SpToneColors.of(c, spToneAliado(tipo));
+        final hayContacto =
+            telefono.isNotEmpty ||
+            direccion.isNotEmpty ||
+            email.isNotEmpty ||
+            sitioWeb.isNotEmpty;
+
+        // Mismo diseño que el perfil público del albergue.
         return Scaffold(
-          backgroundColor: appBg,
-          body: StreamBuilder<
-            List<QueryDocumentSnapshot<Map<String, dynamic>>>
-          >(
-            stream: _serviciosStream,
-            builder: (context, svcSnap) {
-              // Sin esto, un error real se veía igual que "Sin servicios
-              // publicados" — mismo patrón ya arreglado en
-              // favoritos_screen.dart y otras pantallas (errorFeedState,
-              // widgets/estado_error_feed.dart), acá en el perfil público del aliado
-              // (hallazgo de auditoría de código).
-              if (svcSnap.hasError) return errorFeedState();
-              final servicios = svcSnap.data ?? const [];
+          backgroundColor: c.bg,
+          body: Stack(
+            children: [
+              const Positioned.fill(child: SpPawBackground()),
+              SafeArea(
+                bottom: false,
+                child:
+                    StreamBuilder<
+                      List<QueryDocumentSnapshot<Map<String, dynamic>>>
+                    >(
+                      stream: _serviciosStream,
+                      builder: (context, svcSnap) {
+                        // Sin esto, un error real se veía igual que "Sin
+                        // servicios publicados" — mismo patrón ya arreglado en
+                        // favoritos_screen.dart y otras pantallas
+                        // (errorFeedState, widgets/estado_error_feed.dart), acá
+                        // en el perfil público del aliado (hallazgo de
+                        // auditoría de código).
+                        if (svcSnap.hasError) return errorFeedState();
+                        final servicios = svcSnap.data ?? const [];
 
-              return CustomScrollView(
-                slivers: [
-                  // Header
-                  SliverToBoxAdapter(
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.fromLTRB(20, 56, 20, 28),
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [Color(0xFF0A5C40), appTeal],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                      ),
-                      child: Column(
-                        children: [
-                          AvatarPersona(
-                            fotoBase64: foto,
-                            inicial: iniciales,
-                            radius: 44,
-                            backgroundColor: Colors.white.withValues(
-                              alpha: 0.2,
-                            ),
-                            textColor: Colors.white,
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            nombre,
-                            style: const TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                          if (tipo.isNotEmpty) ...[
-                            const SizedBox(height: 6),
-                            // Mismo ícono por tipo que la grilla de "Negocios
-                            // aliados" (theme.dart) — acá en blanco porque el
-                            // fondo ya es un degradado oscuro, no una tarjeta
-                            // clara con pastel.
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  aliadoTipoIcono(tipo),
-                                  size: 14,
-                                  color: Colors.white.withValues(alpha: 0.8),
-                                ),
-                                const SizedBox(width: 5),
-                                Text(
-                                  tipo,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: Colors.white.withValues(alpha: 0.8),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                          const SizedBox(height: 20),
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton.icon(
-                              onPressed: () =>
-                                  _contactar(context, nombre, foto),
-                              icon: const Icon(
-                                Icons.chat_bubble_outline,
-                                size: 18,
+                        return CustomScrollView(
+                          slivers: [
+                            const SliverToBoxAdapter(
+                              child: SpScreenHeader(
+                                title: 'Negocio aliado',
+                                subtitle: 'Servicios para tu mascota',
                               ),
-                              label: const Text(
-                                'Contactar',
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.white,
-                                foregroundColor: appTeal,
+                            ),
+
+                            // ── Logo, nombre, tipo y ciudad ──────────────
+                            SliverToBoxAdapter(
+                              child: Padding(
                                 padding: const EdgeInsets.symmetric(
-                                  vertical: 14,
+                                  horizontal: 24,
                                 ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                                elevation: 0,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  // Back button overlay
-                  SliverToBoxAdapter(child: const SizedBox.shrink()),
-
-                  // Contacto (opcional)
-                  if (ciudad.isNotEmpty ||
-                      telefono.isNotEmpty ||
-                      direccion.isNotEmpty ||
-                      email.isNotEmpty ||
-                      sitioWeb.isNotEmpty)
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // La ciudad se geocodifica al guardar el perfil
-                            // (mismo campo con detección por GPS que usa
-                            // Albergue), pero esta pantalla nunca la
-                            // mostraba — se veía dirección/email/web, pero
-                            // nunca en qué ciudad está el negocio. Hallazgo
-                            // real de Eliza.
-                            if (ciudad.isNotEmpty)
-                              filaContacto(
-                                Icons.location_city_outlined,
-                                ciudad,
-                              ),
-                            if (direccion.isNotEmpty)
-                              filaContacto(
-                                Icons.location_on_outlined,
-                                direccion,
-                              ),
-                            if (email.isNotEmpty)
-                              filaContacto(
-                                Icons.email_outlined,
-                                email,
-                                onTap: () =>
-                                    launchUrl(Uri.parse('mailto:$email')),
-                              ),
-                            if (sitioWeb.isNotEmpty)
-                              filaContacto(
-                                Icons.language_outlined,
-                                sitioWeb,
-                                onTap: () => launchUrl(
-                                  Uri.parse(sitioWebUrl(sitioWeb)),
-                                  mode: LaunchMode.externalApplication,
-                                ),
-                              ),
-                            if (telefono.isNotEmpty)
-                              Padding(
-                                padding: EdgeInsets.only(
-                                  top:
-                                      (ciudad.isNotEmpty ||
-                                          direccion.isNotEmpty ||
-                                          email.isNotEmpty ||
-                                          sitioWeb.isNotEmpty)
-                                      ? 4
-                                      : 0,
-                                ),
-                                child: GestureDetector(
-                                  onTap: () {
-                                    final url = whatsappUrl(telefono);
-                                    if (url != null) {
-                                      launchUrl(
-                                        Uri.parse(url),
-                                        mode: LaunchMode.externalApplication,
-                                      );
-                                    }
-                                  },
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 8,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: const Color(
-                                        0xFF25D366,
-                                      ).withValues(alpha: 0.1),
-                                      borderRadius: BorderRadius.circular(20),
-                                      border: Border.all(
-                                        color: const Color(
-                                          0xFF25D366,
-                                        ).withValues(alpha: 0.35),
+                                child: Column(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(4),
+                                      decoration: SpDeco.soft(
+                                        c,
+                                        radius: SpRadius.full,
+                                      ),
+                                      child: AvatarPersona(
+                                        fotoBase64: foto,
+                                        inicial: iniciales,
+                                        radius: 54,
+                                        backgroundColor: k.fill,
+                                        textColor: k.ink,
                                       ),
                                     ),
-                                    child: const Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          Icons.chat_bubble_outline,
-                                          size: 15,
-                                          color: Color(0xFF1E9E56),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      nombre,
+                                      textAlign: TextAlign.center,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 23,
+                                        fontWeight: FontWeight.w800,
+                                        color: c.ink,
+                                      ),
+                                    ),
+                                    // La ciudad se geocodifica al guardar el
+                                    // perfil (mismo campo con detección por
+                                    // GPS que usa Albergue), pero esta
+                                    // pantalla nunca la mostraba. Hallazgo
+                                    // real de Eliza.
+                                    if (tipo.isNotEmpty ||
+                                        ciudad.isNotEmpty) ...[
+                                      const SizedBox(height: 10),
+                                      Wrap(
+                                        alignment: WrapAlignment.center,
+                                        spacing: 8,
+                                        runSpacing: 8,
+                                        children: [
+                                          // Mismo ícono por tipo que la
+                                          // grilla de "Negocios aliados".
+                                          if (tipo.isNotEmpty)
+                                            _chipDato(
+                                              aliadoTipoIcono(tipo),
+                                              tipo,
+                                              k.ink,
+                                            ),
+                                          if (ciudad.isNotEmpty)
+                                            _chipDato(
+                                              Icons.place_outlined,
+                                              ciudad,
+                                              c.primary,
+                                            ),
+                                        ],
+                                      ),
+                                    ],
+                                    const SizedBox(height: SpSpace.s4),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: SpButton(
+                                        label: 'Contactar',
+                                        icon: Icons.chat_bubble_outline_rounded,
+                                        onTap: () =>
+                                            _contactar(context, nombre, foto),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+
+                            // ── Contacto (opcional) ──────────────────────
+                            if (hayContacto)
+                              SliverToBoxAdapter(
+                                child: Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    16,
+                                    24,
+                                    16,
+                                    0,
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const SpSectionTitle('Contacto'),
+                                      const SizedBox(height: SpSpace.s3),
+                                      SpCard(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            if (direccion.isNotEmpty)
+                                              filaContacto(
+                                                Icons.location_on_outlined,
+                                                direccion,
+                                              ),
+                                            if (email.isNotEmpty)
+                                              filaContacto(
+                                                Icons.email_outlined,
+                                                email,
+                                                onTap: () => launchUrl(
+                                                  Uri.parse('mailto:$email'),
+                                                ),
+                                              ),
+                                            if (sitioWeb.isNotEmpty)
+                                              filaContacto(
+                                                Icons.language_outlined,
+                                                sitioWeb,
+                                                onTap: () => launchUrl(
+                                                  Uri.parse(
+                                                    sitioWebUrl(sitioWeb),
+                                                  ),
+                                                  mode: LaunchMode
+                                                      .externalApplication,
+                                                ),
+                                              ),
+                                            if (telefono.isNotEmpty) ...[
+                                              if (direccion.isNotEmpty ||
+                                                  email.isNotEmpty ||
+                                                  sitioWeb.isNotEmpty)
+                                                const SizedBox(height: 8),
+                                              SizedBox(
+                                                width: double.infinity,
+                                                child: SpButton(
+                                                  label:
+                                                      'Escribir por WhatsApp',
+                                                  icon: Icons.chat_rounded,
+                                                  suave: true,
+                                                  onTap: () {
+                                                    final url = whatsappUrl(
+                                                      telefono,
+                                                    );
+                                                    if (url != null) {
+                                                      launchUrl(
+                                                        Uri.parse(url),
+                                                        mode: LaunchMode
+                                                            .externalApplication,
+                                                      );
+                                                    }
+                                                  },
+                                                ),
+                                              ),
+                                            ],
+                                          ],
                                         ),
-                                        SizedBox(width: 6),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+
+                            // ── Servicios ────────────────────────────────
+                            SliverToBoxAdapter(
+                              child: Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  24,
+                                  16,
+                                  12,
+                                ),
+                                child: servicios.isEmpty
+                                    ? const SpEmpty(
+                                        title: 'Sin servicios publicados',
+                                        animal: SpAnimalKind.huella,
+                                      )
+                                    : const SpSectionTitle(
+                                        'Servicios disponibles',
+                                      ),
+                              ),
+                            ),
+
+                            SliverPadding(
+                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+                              sliver: SliverList(
+                                delegate: SliverChildBuilderDelegate((_, i) {
+                                  final d = servicios[i].data();
+                                  final sNombre = d['nombre'] as String? ?? '';
+                                  final precio = d['precio'] as int? ?? 0;
+                                  final desc =
+                                      d['descripcion'] as String? ?? '';
+                                  final cat = d['categoria'] as String? ?? '';
+                                  final emoji = _categoriaEmoji[cat] ?? '🐾';
+                                  final tono = spToneCategoriaServicio(cat);
+                                  final kc = SpToneColors.of(c, tono);
+
+                                  return Container(
+                                    margin: const EdgeInsets.only(
+                                      bottom: SpSpace.s3,
+                                    ),
+                                    padding: const EdgeInsets.all(SpSpace.s4),
+                                    decoration: SpDeco.card(c),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          width: 48,
+                                          height: 48,
+                                          decoration: SpDeco.tone(
+                                            c,
+                                            tono,
+                                            radius: SpRadius.sm,
+                                          ),
+                                          child: Center(
+                                            child: Text(
+                                              emoji,
+                                              style: const TextStyle(
+                                                fontSize: 22,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                sNombre,
+                                                style: TextStyle(
+                                                  fontSize: 15,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: c.ink,
+                                                ),
+                                              ),
+                                              if (desc.isNotEmpty) ...[
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  desc,
+                                                  style: SpText.caption
+                                                      .copyWith(
+                                                        color: c.inkMuted,
+                                                      ),
+                                                  maxLines: 2,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                              ],
+                                            ],
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
                                         Text(
-                                          'Escribir por WhatsApp',
+                                          '\$${_fmt(precio)}',
                                           style: TextStyle(
-                                            fontSize: 12.5,
-                                            fontWeight: FontWeight.w700,
-                                            color: Color(0xFF1E9E56),
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w800,
+                                            color: kc.ink,
                                           ),
                                         ),
                                       ],
                                     ),
-                                  ),
-                                ),
+                                  );
+                                }, childCount: servicios.length),
                               ),
+                            ),
                           ],
-                        ),
-                      ),
-                    ),
-
-                  // Servicios
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
-                      child: Text(
-                        servicios.isEmpty
-                            ? 'Sin servicios publicados'
-                            : 'SERVICIOS DISPONIBLES',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1.2,
-                          color: Colors.grey.shade700,
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
-                    sliver: SliverList(
-                      delegate: SliverChildBuilderDelegate((_, i) {
-                        final d = servicios[i].data();
-                        final sNombre = d['nombre'] as String? ?? '';
-                        final precio = d['precio'] as int? ?? 0;
-                        final desc = d['descripcion'] as String? ?? '';
-                        final cat = d['categoria'] as String? ?? '';
-                        final emoji = _categoriaEmoji[cat] ?? '🐾';
-
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.05),
-                                blurRadius: 8,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 44,
-                                height: 44,
-                                decoration: BoxDecoration(
-                                  color: appTeal.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    emoji,
-                                    style: const TextStyle(fontSize: 22),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      sNombre,
-                                      style: const TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w700,
-                                        color: appInk,
-                                      ),
-                                    ),
-                                    if (desc.isNotEmpty) ...[
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        desc,
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.grey.shade700,
-                                        ),
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                '\$${_fmt(precio)}',
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: appTeal,
-                                ),
-                              ),
-                            ],
-                          ),
                         );
-                      }, childCount: servicios.length),
+                      },
                     ),
-                  ),
-                ],
-              );
-            },
-          ),
-          // Back button
-          floatingActionButtonLocation:
-              FloatingActionButtonLocation.miniStartTop,
-          floatingActionButton: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.only(top: 8, left: 4),
-              child: FloatingActionButton.small(
-                heroTag: 'back',
-                onPressed: () => Navigator.pop(context),
-                backgroundColor: Colors.white,
-                foregroundColor: appTeal,
-                elevation: 2,
-                tooltip: 'Volver',
-                child: const Icon(Icons.arrow_back_ios_new, size: 16),
               ),
-            ),
+            ],
           ),
         );
       },
+    );
+  }
+
+  /// Tipo o ciudad debajo del nombre (`.sp-chip`).
+  Widget _chipDato(IconData icono, String texto, Color colorIcono) {
+    final c = context.sp;
+    return Container(
+      height: 34,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: SpDeco.soft(c, radius: SpRadius.full),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icono, size: 16, color: colorIcono),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              texto,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: c.inkMuted,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
