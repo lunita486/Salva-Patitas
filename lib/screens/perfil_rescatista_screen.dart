@@ -8,6 +8,7 @@ import '../widgets/rescatista_tab_bar.dart';
 import '../widgets/apariencia_sheet.dart';
 import '../widgets/avatares.dart';
 import '../widgets/sp_widgets.dart';
+import '../widgets/fila_mi_equipo.dart';
 import '../domain/reglas_negocio.dart';
 import '../widgets/dialogo_cerrar_sesion.dart';
 import '../widgets/resultado_guardado_snackbar.dart';
@@ -171,6 +172,9 @@ class PerfilRescatistaScreen extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(vertical: 4),
                           child: Column(
                             children: [
+                              // Solo aparece con un equipo o una invitación
+                              // (equipo del albergue, PLAN-EQUIPO-ALBERGUE.md).
+                              const FilaMiEquipo(),
                               SpFilaCuenta(
                                 icono: Icons.switch_account_outlined,
                                 texto: 'Gestionar mis roles',

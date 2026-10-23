@@ -743,4 +743,53 @@ void main() {
       });
     },
   );
+
+  group('HogaresDePasoRepository — equipo del albergue', () {
+    late FakeFirebaseFirestore firestore;
+    late HogaresDePasoRepository repo;
+
+    setUp(() {
+      firestore = FakeFirebaseFirestore();
+      repo = HogaresDePasoRepository(db: firestore);
+    });
+
+    test('visiblesParaEquipo: solo los hogares autorizados de ESE albergue — '
+        'sin el campo o con false quedan afuera', () async {
+      final col = firestore.collection('hogaresDePaso');
+      await col.doc('sinCampo').set({'albergueId': 'perla', 'nombre': 'A'});
+      await col.doc('noVisible').set({'albergueId': 'perla', 'nombre': 'B', 'visibleEquipo': false});
+      await col.doc('visible').set({'albergueId': 'perla', 'nombre': 'C', 'visibleEquipo': true});
+      await col.doc('deOtro').set({'albergueId': 'huellitas', 'nombre': 'D', 'visibleEquipo': true});
+
+      final snap = await repo.visiblesParaEquipo('perla').get();
+      expect(snap.docs.map((d) => d.id).toList(), ['visible']);
+    });
+
+    test('ninguna escritura de la app menciona visibleEquipo ni revisionEquipo — '
+        'las reglas rechazarían cualquiera que los toque', () async {
+      await repo.registrarAyuda(albergueId: 'perla', adoptanteId: 'ad-1', nombre: 'Karen');
+      await repo.agregarManual(albergueId: 'perla', nombre: 'David', email: 'd@mail.com');
+      await repo.sumarAyudaManual(albergueId: 'perla', nombre: 'Lucía', email: 'l@mail.com');
+      final docs = await firestore.collection('hogaresDePaso').get();
+      expect(docs.docs, isNotEmpty);
+      for (final d in docs.docs) {
+        expect(d.data().containsKey('visibleEquipo'), isFalse, reason: d.id);
+        expect(d.data().containsKey('revisionEquipo'), isFalse, reason: d.id);
+      }
+    });
+
+    test('editar un hogar ya autorizado no le toca visibleEquipo ni la revisión', () async {
+      await firestore.collection('hogaresDePaso').doc('h1').set({
+        'albergueId': 'perla',
+        'nombre': 'Familia Pérez',
+        'visibleEquipo': true,
+        'revisionEquipo': {'decision': 'compartir', 'por': 'perla'},
+      });
+      await repo.actualizarContacto('h1', telefono: '300', notas: 'patio', email: 'p@mail.com');
+      final d = (await firestore.collection('hogaresDePaso').doc('h1').get()).data()!;
+      expect(d['visibleEquipo'], isTrue);
+      expect(d['revisionEquipo'], {'decision': 'compartir', 'por': 'perla'});
+      expect(d['telefono'], '300');
+    });
+  });
 }

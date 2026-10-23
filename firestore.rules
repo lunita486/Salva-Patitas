@@ -33,6 +33,37 @@ service cloud.firestore {
         rol in get(/databases/$(database)/documents/usuarios/$(elUid)).data.get('roles', []);
     }
 
+    // ── Equipo del albergue ───────────────────────────────────────────
+    // Ver PLAN-EQUIPO-ALBERGUE.md. La membresía la escriben SOLO las
+    // Cloud Functions (membresias/{uid}); ningún rol de `usuarios` la
+    // prueba, porque los roles se los pone cada cuenta. En esta fase las
+    // miembros solo LEEN: chats y mensajes del albergue, y los hogares de
+    // paso que la responsable autorizó. No escriben nada todavía.
+    function membresiaPath() {
+      return /databases/$(database)/documents/membresias/$(request.auth.uid);
+    }
+    function esMiembroActivoDe(albergueId) {
+      return signedIn() &&
+        exists(membresiaPath()) &&
+        get(membresiaPath()).data.estado == 'activa' &&
+        get(membresiaPath()).data.albergueId == albergueId;
+    }
+    // Los únicos tipos de chat que se comparten con el equipo. Quedan
+    // afuera las consultas a negocios aliados ('consulta_aliado'), los
+    // chats sin tipo (o con tipo null) y cualquier tipo desconocido.
+    function tiposDelEquipo() {
+      return ['adopcion', 'hogar_de_paso', 'consulta'];
+    }
+    // Acceso directo a los campos a propósito: si falta `creadoPor` o
+    // `tipoSolicitud`, la evaluación da error y se niega. Las consultas de
+    // lista de una miembro tienen que pedir los mismos filtros
+    // (rescatistaId ==, creadoPor == 'albergue', tipoSolicitud in [...]).
+    function chatDelEquipo(chat) {
+      return chat.creadoPor == 'albergue' &&
+        chat.tipoSolicitud in tiposDelEquipo() &&
+        esMiembroActivoDe(chat.rescatistaId);
+    }
+
     // ── usuarios ──────────────────────────────────────────────────────
     // Perfil de cuenta. Hay pantallas públicas (albergue_publico_screen,
     // aliado_publico_screen) que leen el perfil de OTRO usuario, así que
@@ -97,7 +128,9 @@ service cloud.firestore {
       allow write: if signedIn() && uid() == userId &&
         (!('roles' in request.resource.data) ||
           request.resource.data.roles.hasOnly(['adoptante', 'rescatista', 'albergue', 'aliado'])) &&
-        contadoresIntactos();
+        contadoresIntactos() &&
+        servidorIntacto() &&
+        rolesCompatiblesConEquipo();
     }
 
     // true si esta escritura deja los contadores de perfil tal como están.
@@ -112,6 +145,49 @@ service cloud.firestore {
         'contadorRescatistaTotal', 'contadorRescatistaAdoptados',
         'contadorAlbergueEnCuidado', 'contadorAlbergueAdoptados'
       ];
+    }
+
+    // `trabajaEn` (a qué albergue pertenece una miembro) lo escribe solo la
+    // Cloud Function aceptarInvitacion. No da permisos (eso es la
+    // membresía), pero ninguna cuenta puede asignarse o cambiarse de
+    // albergue a mano. Lista aparte de camposDeContador() a propósito: esa
+    // la compara una prueba de Dart con contadores_logica.js.
+    function camposDeServidorUsuario() {
+      return ['trabajaEn'];
+    }
+    function servidorIntacto() {
+      return resource == null
+        ? !request.resource.data.keys().hasAny(camposDeServidorUsuario())
+        : !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(camposDeServidorUsuario());
+    }
+
+    // Combinaciones de roles prohibidas con el equipo (PLAN-EQUIPO-ALBERGUE,
+    // decisión 2). Los roles los escribe la app (ninguna Cloud Function los
+    // toca), así que se imponen acá, en el único punto de escritura:
+    //  · una miembro activa no se puede sumar 'albergue' ni 'aliado'
+    //    (miembro + responsable, miembro + negocio aliado);
+    //  · una responsable con miembros activos no se puede sumar 'aliado'.
+    // Solo se mira lo que se AGREGA: una cuenta que ya tenía una combinación
+    // de antes sigue pudiendo guardar su perfil (el diagnóstico las cuenta).
+    // Con invitaciones pendientes y sin miembros, el control está al
+    // aceptar: aceptarInvitacion rechaza si la responsable es negocio aliado.
+    function rolesAgregados() {
+      return request.resource.data.get('roles', []).toSet().difference(
+        resource == null ? [].toSet() : resource.data.get('roles', []).toSet());
+    }
+    function tieneMembresiaActiva() {
+      return exists(membresiaPath()) && get(membresiaPath()).data.get('estado', '') == 'activa';
+    }
+    function equipoPropioPath() {
+      return /databases/$(database)/documents/equipos/$(request.auth.uid);
+    }
+    function tieneMiembrosActivos() {
+      return exists(equipoPropioPath()) && get(equipoPropioPath()).data.get('miembrosActivos', 0) > 0;
+    }
+    function rolesCompatiblesConEquipo() {
+      return !(rolesAgregados().hasAny(['albergue', 'aliado']) && tieneMembresiaActiva()) &&
+        !('aliado' in rolesAgregados() && tieneMiembrosActivos());
     }
 
     function contadoresIntactos() {
@@ -304,8 +380,9 @@ service cloud.firestore {
             || (duenio == uid() && request.resource.data.get(campo, 0) == 0);
       }
 
-      allow read: if signedIn() &&
-        (resource.data.adoptanteId == uid() || resource.data.rescatistaId == uid());
+      allow read: if (signedIn() &&
+        (resource.data.adoptanteId == uid() || resource.data.rescatistaId == uid())) ||
+        chatDelEquipo(resource.data);
       //
       // ── P0-1 (auditoría del 2026-08-25) ──────────────────────────────
       // Esta regla decía, en resumen: "si `creadoPor` no viene, pasá".
@@ -338,7 +415,11 @@ service cloud.firestore {
           (request.resource.data.get('rescateId', '') != '' &&
            request.resource.data.get('creadoPor', '') in ['rescatista', 'albergue'] &&
            get(/databases/$(database)/documents/rescates/$(request.resource.data.rescateId)).data.rescatistaId == request.resource.data.rescatistaId &&
-           get(/databases/$(database)/documents/rescates/$(request.resource.data.rescateId)).data.creadoPor == request.resource.data.creadoPor)
+           get(/databases/$(database)/documents/rescates/$(request.resource.data.rescateId)).data.creadoPor == request.resource.data.creadoPor &&
+           // Un chat de animal no puede disfrazarse de otra cosa: si trae
+           // tipo, es uno de los de un animal.
+           (!('tipoSolicitud' in request.resource.data) ||
+            request.resource.data.tipoSolicitud in tiposDelEquipo()))
           ||
           // (B) Consulta a un negocio aliado. Acá `rescatistaId` es el
           // aliado y `adoptanteId` es quien pregunta, sin importar qué rol
@@ -379,7 +460,17 @@ service cloud.firestore {
           // no alcanza con que exista.
           (request.resource.data.get('solicitudId', '') != '' &&
            get(/databases/$(database)/documents/solicitudes/$(request.resource.data.solicitudId)).data.adoptanteId == request.resource.data.adoptanteId &&
-           get(/databases/$(database)/documents/solicitudes/$(request.resource.data.solicitudId)).data.rescatistaId == request.resource.data.rescatistaId)
+           get(/databases/$(database)/documents/solicitudes/$(request.resource.data.solicitudId)).data.rescatistaId == request.resource.data.rescatistaId &&
+           (!('tipoSolicitud' in request.resource.data) ||
+            request.resource.data.tipoSolicitud in tiposDelEquipo()) &&
+           // Sin esto, alguien podía crear con sombrero de albergue y un
+           // tipo del equipo un chat sobre una solicitud PERSONAL de la
+           // responsable (misma cuenta, creadoPor 'rescatista'), y su
+           // equipo lo vería. Esta rama no se ancla a un animal, así que
+           // el sombrero se ancla a la solicitud.
+           (request.resource.data.get('creadoPor', '') != 'albergue' ||
+            !('tipoSolicitud' in request.resource.data) ||
+            get(/databases/$(database)/documents/solicitudes/$(request.resource.data.solicitudId)).data.get('creadoPor', '') == 'albergue'))
           // Antes había acá una rama (D) sin ancla: `rescateId` vacío,
           // sin solicitud, y como único chequeo el rol del destinatario.
           // Era la última puerta por la que se le podía abrir un chat (y
@@ -408,14 +499,20 @@ service cloud.firestore {
         request.resource.data.rescatistaId == resource.data.rescatistaId &&
         request.resource.data.get('creadoPor', null) == resource.data.get('creadoPor', null) &&
         request.resource.data.get('rescateId', null) == resource.data.get('rescateId', null) &&
+        // El tipo también queda fijo, y un chat sin tipo no puede recibirlo
+        // después: es lo que decide si el equipo lo ve. Sin esto, una
+        // responsable que también fuera negocio aliado podía cambiarle el
+        // tipo a una consulta que recibió y abrírsela a su equipo.
+        request.resource.data.get('tipoSolicitud', null) == resource.data.get('tipoSolicitud', null) &&
         contadorValido('noLeidosAdoptante', resource.data.adoptanteId) &&
         contadorValido('noLeidosRescatista', resource.data.rescatistaId) &&
         (resource.data.adoptanteId == uid() || resource.data.rescatistaId == uid());
 
       match /mensajes/{mensajeId} {
-        allow read: if signedIn() &&
+        allow read: if (signedIn() &&
           (get(/databases/$(database)/documents/chats/$(chatId)).data.adoptanteId == uid() ||
-           get(/databases/$(database)/documents/chats/$(chatId)).data.rescatistaId == uid());
+           get(/databases/$(database)/documents/chats/$(chatId)).data.rescatistaId == uid())) ||
+          chatDelEquipo(get(/databases/$(database)/documents/chats/$(chatId)).data);
         // emisor tiene que coincidir con el lado REAL de quien escribe —
         // antes cualquiera de los dos participantes podía mandar su propio
         // mensaje marcado con el emisor DEL OTRO. chat_screen.dart calcula
@@ -487,13 +584,24 @@ service cloud.firestore {
     // lo ve/edita el albergue dueño (`albergueId`). Solo para albergues,
     // no rescatistas (decisión de producto: mejoras_albergue.html).
     match /hogaresDePaso/{docId} {
-      allow read, delete: if signedIn() && resource.data.albergueId == uid();
+      // Las miembros ven solo los hogares que la responsable autorizó
+      // (`visibleEquipo == true`, lo escribe una Cloud Function de una fase
+      // posterior). Los que no tienen el campo, o lo tienen en false,
+      // quedan ocultos: ningún hogar es visible por defecto. Acceso directo
+      // al campo a propósito: si falta, se niega. La consulta de lista de
+      // una miembro tiene que pedir albergueId == y visibleEquipo == true.
+      allow read: if signedIn() && (resource.data.albergueId == uid() ||
+        (resource.data.visibleEquipo == true && esMiembroActivoDe(resource.data.albergueId)));
+      allow delete: if signedIn() && resource.data.albergueId == uid();
       // update NO deja reescribir albergueId — mismo motivo que en
       // servicios.update: sin este candado se podía inyectar un contacto
       // falso directo en el roster PRIVADO de otro albergue, reescribiendo
       // a quién pertenece una fila propia. Hallazgo de auditoría de código.
       allow update: if signedIn() && resource.data.albergueId == uid() &&
-        request.resource.data.albergueId == resource.data.albergueId;
+        request.resource.data.albergueId == resource.data.albergueId &&
+        // Lo decide el servidor, nunca la app (ni siquiera la responsable).
+        !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['visibleEquipo', 'revisionEquipo']);
       // hasRole('albergue') es lo que hace cumplir "solo para albergues,
       // no rescatistas" en la práctica — antes solo se pedía que
       // albergueId fuera uno mismo, así que una cuenta rescatista (sin
@@ -501,7 +609,45 @@ service cloud.firestore {
       // igual acotado a su propio uid (nunca se filtraba entre cuentas).
       allow create: if signedIn() &&
         request.resource.data.albergueId == uid() &&
-        hasRole('albergue');
+        hasRole('albergue') &&
+        !request.resource.data.keys().hasAny(['visibleEquipo', 'revisionEquipo']);
+    }
+
+    // ── membresias, invitaciones, equipos ─────────────────────────────
+    // Las escriben solo las Cloud Functions del equipo (Admin SDK, que no
+    // pasa por estas reglas): desde la app NUNCA se escribe. Las reglas de
+    // arriba leen membresias/{uid} con get(), que no depende de esto.
+    //
+    // Lectura, lo mínimo para las pantallas del equipo:
+    // - Cada persona lee SU membresía (saber si es de un equipo y de cuál).
+    // - La responsable lee las membresías de SU albergue (lista del equipo).
+    //   La app consulta con albergueId == su uid, que las reglas pueden
+    //   probar; una lista sin ese filtro se rechaza entera.
+    // - Las invitaciones: la responsable lee las de su albergue; una persona
+    //   lee las dirigidas a SU correo, solo si Auth lo verificó. El correo
+    //   se compara en minúsculas, igual que lo guarda invitarMiembro.
+    // - El contador del equipo: la responsable y las miembros activas.
+    // Nadie lee membresías ni invitaciones de otro albergue.
+    function correoVerificado() {
+      return request.auth.token.email_verified == true &&
+        request.auth.token.email is string;
+    }
+    match /membresias/{uidMiembro} {
+      allow read: if signedIn() &&
+        (uidMiembro == uid() || resource.data.albergueId == uid());
+      allow write: if false;
+    }
+    match /invitaciones/{invitacionId} {
+      allow read: if signedIn() &&
+        (resource.data.albergueId == uid() ||
+         (correoVerificado() &&
+          resource.data.emailDestino == request.auth.token.email.lower()));
+      allow write: if false;
+    }
+    match /equipos/{albergueId} {
+      allow read: if signedIn() &&
+        (albergueId == uid() || esMiembroActivoDe(albergueId));
+      allow write: if false;
     }
 
     // ── solicitudes_rescatista ────────────────────────────────────────

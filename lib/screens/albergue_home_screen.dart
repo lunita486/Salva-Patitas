@@ -804,6 +804,38 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
             ),
           ),
 
+          // ── Equipo del albergue ──────────────────────────────────────────────
+          const SizedBox(height: SpSpace.s3),
+          SpCard(
+            padding: const EdgeInsets.all(SpSpace.s3),
+            onTap: () => ctx.push(AppRoutes.equipoAlbergue),
+            child: Row(
+              children: [
+                const SpBigTile(tone: SpTone.lilac, animal: SpAnimalKind.gato),
+                const SizedBox(width: SpSpace.s3),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Equipo del albergue',
+                        style: SpText.headline.copyWith(
+                          color: c.ink,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      Text(
+                        'Invitá a quienes te ayudan',
+                        style: SpText.caption.copyWith(color: c.inkMuted),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right_rounded, color: c.inkFaint),
+              ],
+            ),
+          ),
+
           // ── Jauría ───────────────────────────────────────────────────────────
           const SizedBox(height: SpSpace.s6),
           _sectionHeader(

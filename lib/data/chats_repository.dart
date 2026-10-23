@@ -10,6 +10,40 @@ class ChatsRepository {
     : _db = db ?? FirebaseFirestore.instance;
   final FirebaseFirestore _db;
 
+  /// Los únicos tipos de chat que ve el equipo de un albergue. Tiene que
+  /// decir lo mismo que `tiposDelEquipo()` en firestore.rules (hay una
+  /// prueba que compara los dos). Quedan afuera las consultas a negocios
+  /// aliados, los chats sin tipo y cualquier tipo desconocido.
+  static const tiposDelEquipo = ['adopcion', 'hogar_de_paso', 'consulta'];
+
+  /// Tipo con el que NACE un chat sobre un animal. Sale del contexto de la
+  /// operación (el tipo de la solicitud que lo motiva, si es uno de los
+  /// conocidos); si no hay, 'adopcion', que es lo mismo que la app ya asume
+  /// al leer un chat sin tipo, así que en pantalla no cambia nada.
+  ///
+  /// Solo se usa al crear: después, firestore.rules deja el tipo fijo, y a
+  /// un chat que ya existe sin tipo no se le agrega nunca (decide si el
+  /// equipo del albergue lo ve, y los chats viejos quedan afuera).
+  static String tipoDeChatNuevo(String? tipoSolicitud) =>
+      tiposDelEquipo.contains(tipoSolicitud) ? tipoSolicitud! : 'adopcion';
+
+  /// Chats de un albergue que puede leer una miembro de su equipo. Pide
+  /// exactamente los filtros que exige firestore.rules: las reglas no
+  /// filtran resultados, rechazan la consulta entera si podría traer algo
+  /// que no se puede leer. La usa ChatsDelEquipoScreen
+  /// (equipo_lectura_screens.dart), que ordena en la app. Sin orderBy a
+  /// propósito: ordenar por fecha pediría otro índice compuesto.
+  ///
+  /// Los chats viejos sin `tipoSolicitud` (y los del camino legado sin
+  /// animal, [asegurarChatLegado]) quedan FUERA del equipo a propósito: las
+  /// reglas los rechazan y nadie les agrega un tipo después. Cambiar eso es
+  /// una migración de datos que necesita su propia aprobación.
+  Query<Map<String, dynamic>> delEquipo(String albergueId) => _db
+      .collection('chats')
+      .where('rescatistaId', isEqualTo: albergueId)
+      .where('creadoPor', isEqualTo: 'albergue')
+      .where('tipoSolicitud', whereIn: tiposDelEquipo);
+
   /// Qué campo de usuarios/{uid} contiene el logo de negocio del lado
   /// `rescatistaId` de este chat — o null si ese lado no actúa como negocio
   /// (se muestra su foto personal).
@@ -726,7 +760,8 @@ class ChatsRepository {
             'ultimoMensajeEn': FieldValue.serverTimestamp(),
             'noLeidosAdoptante': 1,
             if (avisoParaAmbosLados) 'noLeidosRescatista': 1,
-            if (tipoSolicitud != null) 'tipoSolicitud': tipoSolicitud,
+            // Chat nuevo: nace con su tipo. Ver tipoDeChatNuevo.
+            'tipoSolicitud': tipoDeChatNuevo(tipoSolicitud),
           },
           texto: texto,
           emisor: emisor,
@@ -767,7 +802,11 @@ class ChatsRepository {
             'creadoPor': creadoPor ?? 'rescatista',
             'rescatistaId': rescatistaId,
             'rescatista': rescatista,
-            if (tipoSolicitud != null) 'tipoSolicitud': tipoSolicitud,
+            // Sin tipo a propósito: este camino es el de solicitudes viejas,
+            // sin animal, y el chat queda fuera del equipo como los demás
+            // chats viejos. Además, firestore.rules (chats.create, rama C)
+            // rechaza un tipo con sombrero de albergue si la solicitud no
+            // dice que es del albergue, y las viejas no siempre lo dicen.
             if (especie != null) 'especie': especie,
           },
           // Solo se completa la foto si el chat todavía no tenía una:
@@ -800,6 +839,17 @@ class ChatsRepository {
   /// (`chat_screen.dart`, `solicitudes_rescatista_screen.dart`) ya
   /// atrapan el error, pero nunca llegaban a recibirlo. Hallazgo de
   /// auditoría de código.
+  ///
+  /// `tipoSolicitud` se escribe SOLO si el chat es nuevo, con
+  /// [tipoDeChatNuevo]: firestore.rules lo deja fijo, y un chat viejo sin
+  /// tipo que se reabre no lo recibe (quedaría rechazada la escritura, y
+  /// además lo abriría al equipo del albergue). Por eso primero se mira si
+  /// existe. Las reglas no dejan leer un chat que todavía no existe, así que
+  /// `permission-denied` en esa lectura significa "es nuevo" (mismo criterio
+  /// que [asegurarChatNegocio]). Si la lectura falla por otra cosa (sin
+  /// señal, timeout), no se sabe: se escribe sin tipo, como antes, y el chat
+  /// queda fuera del equipo, que es el lado seguro. Un `tipoSolicitud` que
+  /// venga en `extra` se ignora: el tipo no lo elige quien llama.
   Future<String> asegurarChatAnimal({
     required String adoptanteId,
     required String adoptanteNombre,
@@ -814,9 +864,17 @@ class ChatsRepository {
     Duration timeout = const Duration(seconds: 15),
   }) async {
     final chatId = idAnimal(rescateId: rescateId, adoptanteId: adoptanteId);
-    await _db
-        .collection('chats')
-        .doc(chatId)
+    final ref = _db.collection('chats').doc(chatId);
+    bool esNuevo;
+    try {
+      esNuevo = !(await ref.get().timeout(timeout)).exists;
+    } on FirebaseException catch (e) {
+      esNuevo = e.code == 'permission-denied';
+    } catch (_) {
+      esNuevo = false;
+    }
+    final camposExtra = {...?extra}..remove('tipoSolicitud');
+    await ref
         .set({
           if (animalNombre != null) 'animalNombre': animalNombre,
           'rescateId': rescateId,
@@ -827,7 +885,8 @@ class ChatsRepository {
           'adoptanteNombre': adoptanteNombre,
           if (especie != null) 'especie': especie,
           if (fotoUrl != null) 'fotoUrl': fotoUrl,
-          if (extra != null) ...extra,
+          if (esNuevo) 'tipoSolicitud': tipoDeChatNuevo(null),
+          ...camposExtra,
         }, SetOptions(merge: true))
         .timeout(timeout);
     return chatId;

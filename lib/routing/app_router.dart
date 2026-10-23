@@ -11,9 +11,12 @@ import '../screens/aliados_screen.dart';
 import '../screens/animal_detalle_screen.dart';
 import '../screens/chat_screen.dart';
 import '../screens/editar_rescate_screen.dart';
+import '../screens/equipo_albergue_screen.dart';
+import '../screens/equipo_lectura_screens.dart';
 import '../screens/favoritos_screen.dart';
 import '../screens/hogares_de_paso_screen.dart';
 import '../screens/mis_rescates_screen.dart';
+import '../screens/mi_equipo_screen.dart';
 import '../screens/mis_solicitudes_screen.dart';
 import '../screens/notificaciones_screen.dart';
 import '../screens/perfil_adoptante_screen.dart';
@@ -66,6 +69,12 @@ class AppRoutes {
   static const animalDetalle = '/animal-detalle';
   static const chat = '/chat';
   static const editarRescate = '/editar-rescate';
+  // Equipo del albergue (PLAN-EQUIPO-ALBERGUE.md).
+  static const equipoAlbergue = '/equipo-albergue';
+  static const miEquipo = '/mi-equipo';
+  static const chatsEquipo = '/equipo/chats';
+  static const conversacionEquipo = '/equipo/conversacion';
+  static const hogaresEquipo = '/equipo/hogares';
   static const favoritos = '/favoritos';
   static const hogaresDePaso = '/hogares-de-paso';
   static const misRescates = '/mis-rescates';
@@ -190,6 +199,35 @@ final GoRouter appRouter = GoRouter(
       path: AppRoutes.favoritos,
       pageBuilder: (context, state) =>
           PaginaPestana(key: state.pageKey, child: const FavoritosScreen()),
+    ),
+    GoRoute(
+      path: AppRoutes.equipoAlbergue,
+      builder: (context, state) => const EquipoAlbergueScreen(),
+    ),
+    GoRoute(
+      path: AppRoutes.miEquipo,
+      builder: (context, state) => const MiEquipoScreen(),
+    ),
+    GoRoute(
+      path: AppRoutes.chatsEquipo,
+      builder: (context, state) {
+        final a = state.extra as EquipoAlbergueArgs;
+        return ChatsDelEquipoScreen(albergueId: a.albergueId, albergueNombre: a.albergueNombre);
+      },
+    ),
+    GoRoute(
+      path: AppRoutes.conversacionEquipo,
+      builder: (context, state) {
+        final a = state.extra as ConversacionEquipoArgs;
+        return ConversacionEquipoScreen(chatId: a.chatId, titulo: a.titulo, adoptanteNombre: a.adoptanteNombre);
+      },
+    ),
+    GoRoute(
+      path: AppRoutes.hogaresEquipo,
+      builder: (context, state) {
+        final a = state.extra as EquipoAlbergueArgs;
+        return HogaresDelEquipoScreen(albergueId: a.albergueId, albergueNombre: a.albergueNombre);
+      },
     ),
     GoRoute(
       path: AppRoutes.hogaresDePaso,

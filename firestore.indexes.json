@@ -115,6 +115,80 @@
           "order": "DESCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "chats",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "rescatistaId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "creadoPor",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipoSolicitud",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "hogaresDePaso",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "albergueId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "visibleEquipo",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "membresias",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "albergueId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "estado",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "invitaciones",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "albergueId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "estado",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "invitaciones",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "emailDestino",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "estado",
+          "order": "ASCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": []

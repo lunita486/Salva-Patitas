@@ -7,7 +7,7 @@ const { setGlobalOptions } = require('firebase-functions/v2');
 
 initializeApp();
 
-// Techo de instancias para las 10 funciones. Sin esto todas se despliegan
+// Techo de instancias para todas las funciones. Sin esto todas se despliegan
 // con `maxInstances` sin definir, o sea el máximo de la plataforma: el gasto
 // de cómputo de Functions no tiene tope. `landingAnimales` es el caso que
 // motivó esto — `onRequest` sin auth, alcanzable por cualquiera.
@@ -23,6 +23,18 @@ setGlobalOptions({ maxInstances: 10 });
 // ver el plan en C:\Users\Eliza\.claude\plans\joyful-waddling-squid.md
 // para el razonamiento completo de qué se borra/anonimiza/bloquea.
 exports.eliminarCuenta = require('./eliminar_cuenta').eliminarCuenta;
+
+// Equipo del albergue (PLAN-EQUIPO-ALBERGUE.md): invitaciones, membresías y
+// qué hogares de paso ve el equipo. Todas son onCall con sesión y correo
+// verificado; ninguna acepta del cliente más que ids, un correo o una decisión.
+const equipo = require('./equipo');
+exports.invitarMiembro = equipo.invitarMiembro;
+exports.aceptarInvitacion = equipo.aceptarInvitacion;
+exports.rechazarInvitacion = equipo.rechazarInvitacion;
+exports.cancelarInvitacion = equipo.cancelarInvitacion;
+exports.revocarMiembro = equipo.revocarMiembro;
+exports.salirDelEquipo = equipo.salirDelEquipo;
+exports.revisarHogarEquipo = equipo.revisarHogarEquipo;
 
 // Endpoint público para la vidriera de animales de la landing (docs/index.html).
 exports.landingAnimales = require('./landing_animales').landingAnimales;

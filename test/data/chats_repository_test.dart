@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
@@ -1882,6 +1883,265 @@ void main() {
         ),
         isTrue,
       );
+    });
+  });
+
+  group('equipo del albergue — tipoSolicitud y consulta del equipo', () {
+    late FakeFirebaseFirestore firestore;
+    late ChatsRepository repo;
+
+    setUp(() {
+      firestore = FakeFirebaseFirestore();
+      repo = ChatsRepository(db: firestore);
+    });
+
+    Future<Map<String, dynamic>> chat(String id) async =>
+        (await firestore.collection('chats').doc(id).get()).data()!;
+
+    Future<String> abrir({Map<String, dynamic>? extra}) =>
+        repo.asegurarChatAnimal(
+          adoptanteId: 'ana',
+          adoptanteNombre: 'Ana',
+          rescateId: 'r1',
+          rescatistaId: 'perla',
+          rescatista: 'La Perla',
+          creadoPor: 'albergue',
+          extra: extra,
+        );
+
+    test('la lista de tipos del equipo dice lo mismo que firestore.rules — '
+        'si una cambia y la otra no, el equipo vería chats distintos de los que '
+        'la app le pide', () {
+      final reglas = File('firestore.rules').readAsStringSync();
+      final m = RegExp(
+        r"function tiposDelEquipo\(\) \{\s*return \[([^\]]*)\];",
+      ).firstMatch(reglas);
+      expect(m, isNotNull, reason: 'no se encontró tiposDelEquipo() en firestore.rules');
+      final enReglas = RegExp(r"'([^']+)'")
+          .allMatches(m!.group(1)!)
+          .map((x) => x.group(1))
+          .toList();
+      expect(enReglas, ChatsRepository.tiposDelEquipo);
+    });
+
+    test('tipoDeChatNuevo: el de la solicitud si es conocido; si no, adopcion '
+        '(lo que la app ya asume al leer un chat sin tipo)', () {
+      expect(ChatsRepository.tipoDeChatNuevo('hogar_de_paso'), 'hogar_de_paso');
+      expect(ChatsRepository.tipoDeChatNuevo('consulta'), 'consulta');
+      expect(ChatsRepository.tipoDeChatNuevo(null), 'adopcion');
+      expect(ChatsRepository.tipoDeChatNuevo('consulta_aliado'), 'adopcion');
+      expect(ChatsRepository.tipoDeChatNuevo('zzz'), 'adopcion');
+    });
+
+    test('asegurarChatAnimal: un chat NUEVO nace con tipoSolicitud', () async {
+      final id = await abrir();
+      expect((await chat(id))['tipoSolicitud'], 'adopcion');
+    });
+
+    test('asegurarChatAnimal: a un chat que ya existe SIN tipo no se le agrega '
+        'al reabrirlo (lo dejaría visible para el equipo, y las reglas lo '
+        'rechazan)', () async {
+      final id = repo.idAnimal(rescateId: 'r1', adoptanteId: 'ana');
+      await firestore.collection('chats').doc(id).set({
+        'adoptanteId': 'ana',
+        'rescatistaId': 'perla',
+        'creadoPor': 'albergue',
+        'rescateId': 'r1',
+      });
+      await abrir();
+      expect((await chat(id)).containsKey('tipoSolicitud'), isFalse);
+    });
+
+    test('asegurarChatAnimal: un chat que ya tiene tipo lo conserva tal cual', () async {
+      final id = repo.idAnimal(rescateId: 'r1', adoptanteId: 'ana');
+      await firestore.collection('chats').doc(id).set({
+        'adoptanteId': 'ana',
+        'rescatistaId': 'perla',
+        'creadoPor': 'albergue',
+        'rescateId': 'r1',
+        'tipoSolicitud': 'hogar_de_paso',
+      });
+      await abrir();
+      expect((await chat(id))['tipoSolicitud'], 'hogar_de_paso');
+    });
+
+    test('asegurarChatAnimal: un tipoSolicitud que venga en `extra` se ignora — '
+        'el tipo no lo elige quien llama', () async {
+      final id = await abrir(extra: {'tipoSolicitud': 'consulta_aliado', 'ultimoMensaje': 'Hola'});
+      final d = await chat(id);
+      expect(d['tipoSolicitud'], 'adopcion');
+      expect(d['ultimoMensaje'], 'Hola');
+    });
+
+    group('asegurarChatAnimal cuando no se puede leer antes', () {
+      setUpAll(() {
+        registerFallbackValue(SetOptions(merge: true));
+      });
+
+      Future<Map<String, dynamic>> escrituraCon(Object errorAlLeer) async {
+        final db = MockFirebaseFirestore();
+        final col = MockCollectionReference();
+        final ref = MockDocumentReference();
+        when(() => db.collection('chats')).thenReturn(col);
+        when(() => col.doc(any())).thenReturn(ref);
+        when(() => ref.get()).thenThrow(errorAlLeer);
+        when(() => ref.set(any(), any())).thenAnswer((_) async {});
+        await ChatsRepository(db: db).asegurarChatAnimal(
+          adoptanteId: 'ana',
+          adoptanteNombre: 'Ana',
+          rescateId: 'r1',
+          rescatistaId: 'perla',
+          rescatista: 'La Perla',
+          creadoPor: 'albergue',
+        );
+        return verify(() => ref.set(captureAny(), any())).captured.single
+            as Map<String, dynamic>;
+      }
+
+      test('permission-denied al leer = el chat todavía no existe: nace con tipo', () async {
+        final datos = await escrituraCon(
+          FirebaseException(plugin: 'cloud_firestore', code: 'permission-denied'),
+        );
+        expect(datos['tipoSolicitud'], 'adopcion');
+      });
+
+      test('cualquier otro error (sin señal): no se sabe si existe, se escribe '
+          'SIN tipo y el chat queda fuera del equipo (el lado seguro)', () async {
+        final datos = await escrituraCon(
+          FirebaseException(plugin: 'cloud_firestore', code: 'unavailable'),
+        );
+        expect(datos.containsKey('tipoSolicitud'), isFalse);
+      });
+
+      test('carrera: leyó "no existe" pero otro camino lo creó sin tipo antes de '
+          'escribir. Las reglas rechazan agregarle el tipo; el error se propaga '
+          '(no se traga) y el chat queda como lo dejó el otro camino', () async {
+        final db = MockFirebaseFirestore();
+        final col = MockCollectionReference();
+        final ref = MockDocumentReference();
+        final snap = MockDocumentSnapshot();
+        when(() => db.collection('chats')).thenReturn(col);
+        when(() => col.doc(any())).thenReturn(ref);
+        when(() => snap.exists).thenReturn(false);
+        when(() => ref.get()).thenAnswer((_) async => snap);
+        when(() => ref.set(any(), any())).thenThrow(
+          FirebaseException(plugin: 'cloud_firestore', code: 'permission-denied'),
+        );
+        await expectLater(
+          ChatsRepository(db: db).asegurarChatAnimal(
+            adoptanteId: 'ana',
+            adoptanteNombre: 'Ana',
+            rescateId: 'r1',
+            rescatistaId: 'perla',
+            rescatista: 'La Perla',
+            creadoPor: 'albergue',
+          ),
+          throwsA(isA<FirebaseException>().having((e) => e.code, 'code', 'permission-denied')),
+        );
+      });
+    });
+
+    test('carrera: dos aperturas simultáneas del mismo chat nuevo dejan UN chat '
+        'con un solo tipo (el id es determinístico y el tipo es el mismo)', () async {
+      final ids = await Future.wait([abrir(), abrir()]);
+      expect(ids.toSet().length, 1);
+      final todos = await firestore.collection('chats').get();
+      expect(todos.docs.length, 1);
+      expect(todos.docs.single.data()['tipoSolicitud'], 'adopcion');
+    });
+
+    group('asegurarChatLegado (animal sin rescateId)', () {
+      Future<void> legado() => repo.asegurarChatLegado(
+            chatId: 'Toby_perla',
+            adoptanteId: 'ana',
+            adoptanteNombre: 'Ana',
+            rescatistaId: 'perla',
+            rescatista: 'La Perla',
+            creadoPor: 'albergue',
+            solicitudId: 's1',
+            animalNombre: 'Toby',
+          );
+
+      test('nunca escribe tipoSolicitud: estos chats quedan fuera del equipo '
+          '(decisión documentada en PLAN-EQUIPO-ALBERGUE.md)', () async {
+        await legado();
+        final d = await chat('Toby_perla');
+        expect(d.containsKey('tipoSolicitud'), isFalse);
+        expect(d['solicitudId'], 's1');
+      });
+
+      test('reabrir un chat legado no le cambia el tipo que ya tuviera', () async {
+        await firestore.collection('chats').doc('Toby_perla').set({
+          'adoptanteId': 'ana',
+          'rescatistaId': 'perla',
+          'tipoSolicitud': 'hogar_de_paso',
+        });
+        await legado();
+        expect((await chat('Toby_perla'))['tipoSolicitud'], 'hogar_de_paso');
+      });
+    });
+
+    test('avisarSobreAnimal: chat nuevo de un animal nace con el tipo de la '
+        'solicitud, o adopcion si no es uno conocido', () async {
+      await repo.avisarSobreAnimal(
+        adoptanteId: 'ana', adoptanteNombre: 'Ana', rescatistaId: 'perla',
+        rescatista: 'La Perla', texto: 'Hola', rescateId: 'r1',
+        creadoPor: 'albergue', tipoSolicitud: 'hogar_de_paso',
+      );
+      await repo.avisarSobreAnimal(
+        adoptanteId: 'beto', adoptanteNombre: 'Beto', rescatistaId: 'perla',
+        rescatista: 'La Perla', texto: 'Hola', rescateId: 'r1',
+        creadoPor: 'albergue', tipoSolicitud: 'consulta_aliado',
+      );
+      await repo.avisarSobreAnimal(
+        adoptanteId: 'caro', adoptanteNombre: 'Caro', rescatistaId: 'perla',
+        rescatista: 'La Perla', texto: 'Hola', rescateId: 'r1', creadoPor: 'albergue',
+      );
+      expect((await chat('r1_ana'))['tipoSolicitud'], 'hogar_de_paso');
+      expect((await chat('r1_beto'))['tipoSolicitud'], 'adopcion');
+      expect((await chat('r1_caro'))['tipoSolicitud'], 'adopcion');
+    });
+
+    test('avisarSobreAnimal: en un chat que ya existía sin tipo, no se agrega', () async {
+      await firestore.collection('chats').doc('r1_ana').set({
+        'adoptanteId': 'ana', 'rescatistaId': 'perla', 'creadoPor': 'albergue', 'rescateId': 'r1',
+      });
+      await repo.avisarSobreAnimal(
+        adoptanteId: 'ana', adoptanteNombre: 'Ana', rescatistaId: 'perla',
+        rescatista: 'La Perla', texto: 'Hola', rescateId: 'r1',
+        creadoPor: 'albergue', tipoSolicitud: 'adopcion',
+      );
+      expect((await chat('r1_ana')).containsKey('tipoSolicitud'), isFalse);
+    });
+
+    test('avisarSobreAnimal: el camino viejo sin animal (solicitud vieja) crea '
+        'el chat SIN tipo, aunque llegue uno', () async {
+      await repo.avisarSobreAnimal(
+        adoptanteId: 'ana', adoptanteNombre: 'Ana', rescatistaId: 'perla',
+        rescatista: 'La Perla', texto: 'Hola', solicitudId: 's1',
+        creadoPor: 'albergue', tipoSolicitud: 'adopcion',
+      );
+      final chats = await firestore.collection('chats').get();
+      expect(chats.docs, hasLength(1));
+      expect(chats.docs.single.data().containsKey('tipoSolicitud'), isFalse);
+      expect(chats.docs.single.data()['solicitudId'], 's1');
+    });
+
+    test('delEquipo: solo chats del albergue, con sombrero de albergue y tipo del '
+        'equipo; nunca consultas a negocios aliados, chats sin tipo, personales '
+        'ni de otro albergue', () async {
+      final col = firestore.collection('chats');
+      await col.doc('adop').set({'rescatistaId': 'perla', 'creadoPor': 'albergue', 'tipoSolicitud': 'adopcion'});
+      await col.doc('hogar').set({'rescatistaId': 'perla', 'creadoPor': 'albergue', 'tipoSolicitud': 'hogar_de_paso'});
+      await col.doc('consulta').set({'rescatistaId': 'perla', 'creadoPor': 'albergue', 'tipoSolicitud': 'consulta'});
+      await col.doc('aliado').set({'rescatistaId': 'perla', 'creadoPor': 'albergue', 'tipoSolicitud': 'consulta_aliado'});
+      await col.doc('sinTipo').set({'rescatistaId': 'perla', 'creadoPor': 'albergue'});
+      await col.doc('raro').set({'rescatistaId': 'perla', 'creadoPor': 'albergue', 'tipoSolicitud': 'zzz'});
+      await col.doc('personal').set({'rescatistaId': 'perla', 'creadoPor': 'rescatista', 'tipoSolicitud': 'adopcion'});
+      await col.doc('otro').set({'rescatistaId': 'huellitas', 'creadoPor': 'albergue', 'tipoSolicitud': 'adopcion'});
+
+      final snap = await repo.delEquipo('perla').get();
+      expect(snap.docs.map((d) => d.id).toSet(), {'adop', 'hogar', 'consulta'});
     });
   });
 }

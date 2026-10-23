@@ -27,6 +27,20 @@ class HogaresDePasoRepository {
   Stream<QuerySnapshot<Map<String, dynamic>>> deAlbergue(String albergueId) =>
       _col.where('albergueId', isEqualTo: albergueId).snapshots();
 
+  /// Hogares de paso de [albergueId] que puede leer una miembro de su
+  /// equipo: solo los autorizados (`visibleEquipo == true`). Pide los mismos
+  /// filtros que firestore.rules, que si no rechaza la consulta entera.
+  /// La usa HogaresDelEquipoScreen (equipo_lectura_screens.dart).
+  ///
+  /// `visibleEquipo` y `revisionEquipo` no los escribe nunca la app: los
+  /// pone la Cloud Function revisarHogarEquipo cuando la responsable decide
+  /// (EquipoRepository.revisarHogar), y las reglas rechazan cualquier
+  /// escritura del cliente que los toque. Ninguno de los métodos de esta
+  /// clase los menciona.
+  Query<Map<String, dynamic>> visiblesParaEquipo(String albergueId) => _col
+      .where('albergueId', isEqualTo: albergueId)
+      .where('visibleEquipo', isEqualTo: true);
+
   /// Primera fila de la red de [albergueId] que sea la MISMA PERSONA que
   /// [nombre]/[email] — para fusionar en vez de duplicar, y para avisar de
   /// un posible duplicado antes de agregar a mano. [agregarManual] no tenía

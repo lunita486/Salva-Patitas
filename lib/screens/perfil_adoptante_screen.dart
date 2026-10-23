@@ -10,6 +10,7 @@ import '../theme/salva_patitas_theme.dart';
 import '../routing/pagina_pestana.dart';
 import '../widgets/adoptante_tab_bar.dart';
 import '../widgets/sp_widgets.dart';
+import '../widgets/fila_mi_equipo.dart';
 import '../widgets/apariencia_sheet.dart';
 import '../data/favoritos_repository.dart';
 import '../widgets/avatares.dart';
@@ -241,6 +242,9 @@ class _PerfilAdoptanteScreenState extends State<PerfilAdoptanteScreen>
                           padding: const EdgeInsets.symmetric(vertical: 4),
                           child: Column(
                             children: [
+                              // Solo aparece con un equipo o una invitación
+                              // (equipo del albergue, PLAN-EQUIPO-ALBERGUE.md).
+                              const FilaMiEquipo(),
                               SpFilaCuenta(
                                 icono: Icons.assignment_outlined,
                                 texto: 'Mis solicitudes',

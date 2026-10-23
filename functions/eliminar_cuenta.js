@@ -2,6 +2,7 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { getAuth } = require('firebase-admin/auth');
 const { ESTADOS_ACTIVOS, motivoBloqueo, clasificarSolicitud, clasificarChat } = require('./eliminar_cuenta_logica');
+const { bloqueoEquipoAlEliminar, limpiarEquipoAlEliminar } = require('./equipo');
 
 const SENTINEL = 'Usuario eliminado';
 
@@ -68,10 +69,16 @@ exports.eliminarCuenta = onCall({ timeoutSeconds: 300, memory: '256MiB', region:
   const uid = request.auth.uid;
   const db = getFirestore();
 
-  const bloqueo = await chequearBloqueo(db, uid);
+  const bloqueo = (await chequearBloqueo(db, uid)) || (await bloqueoEquipoAlEliminar(db, uid));
   if (bloqueo) throw new HttpsError('failed-precondition', bloqueo);
 
   try {
+    // Equipo del albergue: membresía propia (baja el contador si estaba
+    // activa), invitaciones a su correo y, si era responsable sin equipo,
+    // su contador e invitaciones viejas. Antes que el resto: si la cuenta
+    // era miembro, el albergue deja de contarla aunque algo de abajo falle.
+    await limpiarEquipoAlEliminar(db, uid, request.auth.token && request.auth.token.email);
+
     await Promise.all([
       // usuarios/{uid} incluye fcmToken, así que se va con el resto del doc.
       db.collection('usuarios').doc(uid).delete(),
@@ -185,7 +192,7 @@ exports.eliminarCuenta = onCall({ timeoutSeconds: 300, memory: '256MiB', region:
   // Repite el chequeo de bloqueo (barato, 2 queries) justo antes del paso
   // irreversible, por si algo cambió mientras corría la cascada de arriba
   // (ej. alguien aprobó un hogar de paso para esta cuenta en ese ratito).
-  const bloqueoFinal = await chequearBloqueo(db, uid);
+  const bloqueoFinal = (await chequearBloqueo(db, uid)) || (await bloqueoEquipoAlEliminar(db, uid));
   if (bloqueoFinal) throw new HttpsError('failed-precondition', bloqueoFinal);
 
   await getAuth().deleteUser(uid);

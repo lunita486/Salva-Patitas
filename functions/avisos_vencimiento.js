@@ -59,51 +59,67 @@ async function avisarPorVencimiento(db, {
   animalNombre, especie, fotoUrl, creadoPor, texto,
 }) {
   const chatRef = db.collection('chats').doc(idAnimal(rescateId, adoptanteId));
-  const chatSnap = await chatRef.get();
-  const existia = chatSnap.exists;
-  const datosPrevios = existia ? chatSnap.data() : {};
   // Mismo criterio que ChatsRepository.emisorPara: 'adoptante' solo en la
   // autoconsulta (un albergue con un hogar de paso de su propio animal).
   const emisor = adoptanteId === rescatistaId ? 'adoptante' : 'rescatista';
   const hora = horaAhora();
 
-  const batch = db.batch();
-  batch.set(chatRef, {
-    ...(!existia ? {
-      rescateId,
-      adoptanteId,
-      adoptanteNombre,
-      animalNombre,
-      creadoPor: creadoPor || 'rescatista',
-      rescatistaId,
-      rescatista,
-      ...(especie ? { especie } : {}),
-    } : {}),
-    // La foto solo se completa si el chat todavía no tenía una — nunca se
-    // pisa la que ya estaba.
-    ...(fotoUrl && !datosPrevios.fotoUrl ? { fotoUrl } : {}),
-    ultimoMensaje: texto,
-    ultimaHora: hora,
-    ultimoMensajeEn: FieldValue.serverTimestamp(),
-    // Los dos lados suman "sin leer": lo dispara el paso del tiempo, no
-    // una acción consciente del rescatista/albergue — sin esto, el aviso
-    // quedaba guardado en el chat sin ninguna señal visible en SU panel
-    // (ni badge, ni ícono de Chats). Mismo motivo que avisoParaAmbosLados
-    // en ChatsRepository.registrarMensaje.
-    noLeidosAdoptante: FieldValue.increment(1),
-    noLeidosRescatista: FieldValue.increment(1),
-  }, { merge: true });
-  batch.set(chatRef.collection('mensajes').doc(), {
-    texto,
-    emisor,
-    hora,
-    creadoEn: FieldValue.serverTimestamp(),
-    // Este aviso lo manda siempre el rescatista/albergue. En una
-    // autoconsulta `emisor` vale 'adoptante' (ver arriba), así que sin
-    // este dato el aviso se dibujaría del lado equivocado en pantalla.
-    escritoPorRescatista: true,
+  // En una transacción, y no con get() suelto + set(merge): si alguien crea
+  // el chat entre la lectura y la escritura, la transacción se reintenta y
+  // lo ve como existente, en vez de escribir encima con datos de chat nuevo.
+  await db.runTransaction(async (tx) => {
+    const chatSnap = await tx.get(chatRef);
+    const existia = chatSnap.exists;
+    const datosPrevios = existia ? chatSnap.data() : {};
+    const vistaPrevia = {
+      // La foto solo se completa si el chat todavía no tenía una — nunca se
+      // pisa la que ya estaba.
+      ...(fotoUrl && !datosPrevios.fotoUrl ? { fotoUrl } : {}),
+      ultimoMensaje: texto,
+      ultimaHora: hora,
+      ultimoMensajeEn: FieldValue.serverTimestamp(),
+      // Los dos lados suman "sin leer": lo dispara el paso del tiempo, no
+      // una acción consciente del rescatista/albergue — sin esto, el aviso
+      // quedaba guardado en el chat sin ninguna señal visible en SU panel
+      // (ni badge, ni ícono de Chats). Mismo motivo que avisoParaAmbosLados
+      // en ChatsRepository.registrarMensaje.
+      noLeidosAdoptante: FieldValue.increment(1),
+      noLeidosRescatista: FieldValue.increment(1),
+    };
+    if (!existia) {
+      // Chat NUEVO: nace con su tipo. Este aviso existe solo para animales
+      // en hogar de paso, así que el tipo sale de ese contexto. Admin SDK no
+      // pasa por la regla que deja el tipo fijo: por eso el tipo va SOLO
+      // acá, y create() falla (y la transacción se reintenta) si el chat
+      // apareció mientras tanto.
+      tx.create(chatRef, {
+        rescateId,
+        adoptanteId,
+        adoptanteNombre,
+        animalNombre,
+        creadoPor: creadoPor || 'rescatista',
+        rescatistaId,
+        rescatista,
+        ...(especie ? { especie } : {}),
+        tipoSolicitud: 'hogar_de_paso',
+        ...vistaPrevia,
+      });
+    } else {
+      // Chat que ya existía: solo la vista previa. Nunca el tipo, ni la
+      // identidad: un chat viejo sin tipo sigue sin tipo.
+      tx.update(chatRef, vistaPrevia);
+    }
+    tx.create(chatRef.collection('mensajes').doc(), {
+      texto,
+      emisor,
+      hora,
+      creadoEn: FieldValue.serverTimestamp(),
+      // Este aviso lo manda siempre el rescatista/albergue. En una
+      // autoconsulta `emisor` vale 'adoptante' (ver arriba), así que sin
+      // este dato el aviso se dibujaría del lado equivocado en pantalla.
+      escritoPorRescatista: true,
+    });
   });
-  await batch.commit();
 }
 
 exports.avisarVencimientosHogarDePaso = onSchedule(
@@ -183,3 +199,6 @@ exports.avisarVencimientosHogarDePaso = onSchedule(
     }
   }
 );
+
+// Para las pruebas (index.js solo exporta avisarVencimientosHogarDePaso).
+exports.avisarPorVencimiento = avisarPorVencimiento;
