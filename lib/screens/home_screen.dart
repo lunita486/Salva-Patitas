@@ -14,6 +14,7 @@ import '../widgets/texto_sin_desborde.dart';
 import '../services/notificaciones_service.dart';
 import '../services/ubicacion_service.dart';
 import '../services/ubicacion_lifecycle.dart';
+import '../data/equipo_repository.dart';
 import '../data/chats_repository.dart';
 import '../data/creator_role.dart';
 import '../data/rescates_repository.dart';
@@ -164,6 +165,7 @@ class _HomeScreenState extends State<HomeScreen>
   static const _rolLabel = {
     'rescatista': 'Rescatista',
     'adoptante': 'Adoptante',
+    'equipo': 'Albergue',
     'institucion': 'Institución',
     'padrino': 'Padrino',
   };
@@ -287,10 +289,53 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _rolToggle() {
-    final visibles = _roles
-        .where((r) => r == 'adoptante' || r == 'rescatista')
-        .toList();
+  /// Membresía en un equipo de albergue: si está activa, el selector suma
+  /// "Albergue" (el panel del albergue de la responsable, fase 2 del
+  /// equipo). No es un rol de la cuenta: lo decide la membresía.
+  late final Stream<Membresia?> _membresia = EquipoRepository().miMembresia(_uid);
+
+  Widget _rolToggle() => StreamBuilder<Membresia?>(
+    stream: _membresia,
+    builder: (context, snap) => _rolToggleCon(equipo: snap.data?.activa ?? false),
+  );
+
+  /// Con tres opciones (Adoptante, Rescatista y Albergue) el selector no
+  /// entra junto al avatar en un teléfono angosto: se achica para entrar en
+  /// vez de empujar el avatar fuera de la pantalla.
+  Widget _rolToggleQueEntra() => Flexible(
+    child: FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerLeft,
+      child: _rolToggle(),
+    ),
+  );
+
+  /// Entra al panel del albergue: lo decide InicioPersonalOEquipo al ver
+  /// `ultimoRolActivo == 'equipo'` en el perfil.
+  Future<void> _entrarAlAlbergue() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      await FirebaseFirestore.instance
+          .collection('usuarios')
+          .doc(uid)
+          .set({'ultimoRolActivo': 'equipo'}, SetOptions(merge: true));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('No se pudo abrir el albergue. Revisá tu conexión.'),
+          backgroundColor: context.sp.msgError,
+        ),
+      );
+    }
+  }
+
+  Widget _rolToggleCon({required bool equipo}) {
+    final visibles = [
+      ..._roles.where((r) => r == 'adoptante' || r == 'rescatista'),
+      if (equipo) 'equipo',
+    ];
     if (visibles.length <= 1) return const SizedBox.shrink();
     final c = context.sp;
     // Riel blanco 3D con la opción activa en verde 3D (con brillo y canto),
@@ -305,10 +350,14 @@ class _HomeScreenState extends State<HomeScreen>
         children: visibles.map((rol) {
           final activo =
               (_isRescatista == true && rol == 'rescatista') ||
-              (_isRescatista == false && rol != 'rescatista');
+              (_isRescatista == false && rol == 'adoptante');
           final label = _rolLabel[rol] ?? rol;
           return GestureDetector(
             onTap: () {
+              if (rol == 'equipo') {
+                _entrarAlAlbergue();
+                return;
+              }
               setState(() => _isRescatista = rol == 'rescatista');
               // Best-effort, sin esperar ni avisar si falla — es solo para
               // recordar el rol la PRÓXIMA vez que la persona inicie
@@ -337,6 +386,8 @@ class _HomeScreenState extends State<HomeScreen>
                   Icon(
                     rol == 'rescatista'
                         ? Icons.volunteer_activism_rounded
+                        : rol == 'equipo'
+                        ? Icons.home_work_rounded
                         : Icons.favorite_rounded,
                     size: 16,
                     color: activo ? c.onPrimary : c.inkFaint,
@@ -445,7 +496,7 @@ class _HomeScreenState extends State<HomeScreen>
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [_rolToggle(), _avatar('A')],
+            children: [_rolToggleQueEntra(), _avatar('A')],
           ),
           const SizedBox(height: 24),
           // Mismo estándar que el saludo de la vista adoptante (una sola línea
@@ -820,7 +871,7 @@ class _HomeScreenState extends State<HomeScreen>
             children: [
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [_rolToggle(), _avatar('A')],
+                children: [_rolToggleQueEntra(), _avatar('A')],
               ),
               const SizedBox(height: 12),
               Row(

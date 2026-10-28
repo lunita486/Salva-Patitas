@@ -13,6 +13,7 @@ import '../theme/salva_patitas_theme.dart';
 import '../widgets/fotos.dart';
 import '../widgets/pedir_motivo.dart';
 import '../domain/reglas_negocio.dart';
+import '../data/contexto_albergue.dart';
 import '../data/creator_role.dart';
 import '../data/solicitudes_repository.dart';
 import '../data/rescates_repository.dart';
@@ -61,7 +62,9 @@ Future<bool> enviarMensajeChat(
   bool avisoDeEstado = false,
   String? solicitudId,
 }) async {
-  final rescatistaId = FirebaseAuth.instance.currentUser?.uid ?? '';
+  // El albergue del panel en modo equipo (fase 2); si no, la cuenta propia.
+  final esAlbergue = esCreadoPorAlbergue(creadoPor);
+  final rescatistaId = uidDueno(esAlbergue: esAlbergue);
   // UsuariosRepository().nombrePropioParaAnimal() decide entre nombre y
   // albergueNombre mirando de qué animal es (creadoPor) — antes acá vivía
   // una copia a mano que ignoraba ese dato y siempre prefería
@@ -97,6 +100,7 @@ Future<bool> enviarMensajeChat(
     avisoParaAmbosLados: avisoParaAmbosLados,
     avisoDeEstado: avisoDeEstado,
     solicitudId: solicitudId,
+    autor: esAlbergue ? contextoAlbergue().camposAutor : const {},
   );
 }
 
@@ -464,7 +468,7 @@ Future<void> contactarPersonaEnProceso(
   String? creadoPor,
   required String adoptanteIdEnProceso,
 }) async {
-  final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+  final uid = uidDueno(esAlbergue: esCreadoPorAlbergue(creadoPor));
   // Se le pasan los 4 datos y buscarDeAnimal elige solo: con adoptante
   // conocido va al id determinístico; sin él (dato legado) cae al match por
   // nombre acotado al dueño. También traduce a null el permission-denied de
@@ -819,7 +823,7 @@ class _SolicitudesRescatistaScreenState
   // arreglo, que mis_rescates_screen.dart y solicitudes_preview.dart.
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _solicitudesStream =
       _solicitudesRepo.paraOwner(
-        uid: FirebaseAuth.instance.currentUser?.uid ?? '',
+        uid: uidDueno(esAlbergue: widget.esAlbergue),
         role: widget.esAlbergue ? CreatorRole.albergue : CreatorRole.rescatista,
       );
 
@@ -1085,7 +1089,7 @@ class _SolicitudesRescatistaScreenState
             'nombre': animal,
             'rescatista':
                 FirebaseAuth.instance.currentUser?.displayName ?? 'Rescatista',
-            'rescatistaId': FirebaseAuth.instance.currentUser?.uid ?? '',
+            'rescatistaId': uidDueno(esAlbergue: widget.esAlbergue),
             'rescateId': rescateIdChat,
             'adoptanteId': adoptanteId,
             'adoptanteNombre': d['nombre'] as String? ?? 'Adoptante',
@@ -1308,7 +1312,16 @@ class _SolicitudesRescatistaScreenState
             ],
           ],
 
-          if (estado == 'pendiente') ...[
+          // En modo equipo no se aprueba ni se rechaza: lo decide la
+          // responsable (fase 2 del equipo; las reglas tampoco lo dejan).
+          if (estado == 'pendiente' && widget.esAlbergue && SesionEquipo.activa) ...[
+            const SizedBox(height: 14),
+            SpNotice(
+              fondo: c.sky,
+              tinta: c.skyInk,
+              child: const Text('Aprobar o rechazar lo decide la responsable del albergue. Podés chatear con la persona.'),
+            ),
+          ] else if (estado == 'pendiente') ...[
             const SizedBox(height: 14),
             Row(
               children: [

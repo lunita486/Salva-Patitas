@@ -1,12 +1,12 @@
 // Equipo del albergue: qué puede LEER una miembro con las reglas reales.
 //
-// Hogares de paso: solo los que tienen visibleEquipo == true, y solo con
-// membresía activa en ese albergue. visibleEquipo y revisionEquipo no los
-// escribe ningún cliente. Chats y mensajes: solo los del albergue con un
+// Hogares de paso (fase 2, 2026-10-25): una miembro activa ve todos los del
+// albergue y los maneja. Chats y mensajes: solo los del albergue con un
 // tipo del equipo (adopcion, hogar_de_paso, consulta); nunca las consultas
 // a negocios aliados, los chats sin tipo o con un tipo desconocido.
 // tipoSolicitud queda fijo después de crear el chat. usuarios.trabajaEn lo
-// escribe solo el servidor. Las miembros no escriben nada (fase de solo lectura).
+// escribe solo el servidor. El resto de las escrituras de la fase 2
+// (animales, mensajes, solicitudes, fotos) está en equipo_fase2.test.mjs.
 // membresias/invitaciones/equipos: lectura mínima, escritura solo de Functions.
 //
 // Ver PLAN-EQUIPO-ALBERGUE.md (decisiones del 2026-10-22).
@@ -101,39 +101,30 @@ beforeEach(async () => {
 });
 
 const hogaresEquipo = (db, albergue) =>
-  query(collection(db, 'hogaresDePaso'), where('albergueId', '==', albergue), where('visibleEquipo', '==', true));
+  query(collection(db, 'hogaresDePaso'), where('albergueId', '==', albergue));
 const chatsEquipo = (db, albergue, tipos = TIPOS) =>
   query(collection(db, 'chats'), where('rescatistaId', '==', albergue), where('creadoPor', '==', 'albergue'), where('tipoSolicitud', 'in', tipos));
 
 // ─── Hogares de paso: lectura ────────────────────────────────────────────
 
 describe('hogares de paso: lectura', () => {
-  it('la responsable lee todos sus hogares, con o sin visibleEquipo', async () => {
+  it('la responsable lee todos sus hogares', async () => {
     for (const id of ['hSinCampo', 'hFalse', 'hTrue']) await assertSucceeds(getDoc(doc(como(RESP), 'hogaresDePaso', id)));
-    const snap = await assertSucceeds(getDocs(query(collection(como(RESP), 'hogaresDePaso'), where('albergueId', '==', RESP))));
+    const snap = await assertSucceeds(getDocs(hogaresEquipo(como(RESP), RESP)));
     assert.equal(snap.size, 3);
   });
-  it('miembro: sin el campo no, con false no, con true sí', async () => {
-    await assertFails(getDoc(doc(como(MIEMBRO), 'hogaresDePaso', 'hSinCampo')));
-    await assertFails(getDoc(doc(como(MIEMBRO), 'hogaresDePaso', 'hFalse')));
-    await assertSucceeds(getDoc(doc(como(MIEMBRO), 'hogaresDePaso', 'hTrue')));
-  });
-  it('miembro: la lista con albergueId y visibleEquipo == true trae solo los autorizados', async () => {
+  it('miembro activa: lee todos los del albergue, tengan o no el viejo visibleEquipo', async () => {
+    for (const id of ['hSinCampo', 'hFalse', 'hTrue']) await assertSucceeds(getDoc(doc(como(MIEMBRO), 'hogaresDePaso', id)));
     const snap = await assertSucceeds(getDocs(hogaresEquipo(como(MIEMBRO), RESP)));
-    assert.deepEqual(snap.docs.map((d) => d.id), ['hTrue']);
-  });
-  it('miembro: lista sin el filtro de visibleEquipo, o con false: rechazada', async () => {
-    const db = como(MIEMBRO);
-    await assertFails(getDocs(query(collection(db, 'hogaresDePaso'), where('albergueId', '==', RESP))));
-    await assertFails(getDocs(query(collection(db, 'hogaresDePaso'), where('albergueId', '==', RESP), where('visibleEquipo', '==', false))));
+    assert.deepEqual(snap.docs.map((d) => d.id).sort(), ['hFalse', 'hSinCampo', 'hTrue']);
   });
   it('miembro de otro albergue, revocada o sin membresía: no', async () => {
     for (const uid of [MIEMBRO_B, REVOCADA, NADIE]) {
-      await assertFails(getDoc(doc(como(uid), 'hogaresDePaso', 'hTrue')));
+      await assertFails(getDoc(doc(como(uid), 'hogaresDePaso', 'hSinCampo')));
       await assertFails(getDocs(hogaresEquipo(como(uid), RESP)));
     }
   });
-  it('miembro de A no lee los hogares autorizados de B', async () => {
+  it('miembro de A no lee los hogares de B', async () => {
     await assertFails(getDoc(doc(como(MIEMBRO), 'hogaresDePaso', 'hB')));
     await assertFails(getDocs(hogaresEquipo(como(MIEMBRO), RESP_B)));
   });
@@ -141,38 +132,46 @@ describe('hogares de paso: lectura', () => {
 
 // ─── Hogares de paso: escritura ──────────────────────────────────────────
 
-describe('hogares de paso: nadie escribe visibleEquipo ni revisionEquipo desde la app', () => {
-  it('la responsable crea un hogar normal', async () => {
-    await assertSucceeds(setDoc(doc(como(RESP), 'hogaresDePaso', 'nuevo'), { albergueId: RESP, nombre: 'X', creadoEn: serverTimestamp() }));
-  });
-  it('crear con visibleEquipo (true o false) o con revisionEquipo: rechazado', async () => {
+describe('hogares de paso: escritura', () => {
+  it('la responsable crea, edita y borra los suyos', async () => {
     const db = como(RESP);
-    await assertFails(setDoc(doc(db, 'hogaresDePaso', 'n1'), { albergueId: RESP, nombre: 'X', visibleEquipo: true }));
-    await assertFails(setDoc(doc(db, 'hogaresDePaso', 'n2'), { albergueId: RESP, nombre: 'X', visibleEquipo: false }));
-    await assertFails(setDoc(doc(db, 'hogaresDePaso', 'n3'), { albergueId: RESP, nombre: 'X', revisionEquipo: { decision: 'compartir', por: RESP, en: new Date() } }));
-  });
-  it('la responsable no puede autorizar, desautorizar ni tocar la revisión a mano', async () => {
-    const db = como(RESP);
-    await assertFails(updateDoc(doc(db, 'hogaresDePaso', 'hSinCampo'), { visibleEquipo: true }));
-    await assertFails(updateDoc(doc(db, 'hogaresDePaso', 'hTrue'), { visibleEquipo: false }));
-    await assertFails(updateDoc(doc(db, 'hogaresDePaso', 'hTrue'), { visibleEquipo: deleteField() }));
-    await assertFails(updateDoc(doc(db, 'hogaresDePaso', 'hFalse'), { revisionEquipo: { decision: 'compartir', por: RESP, en: new Date() } }));
-    await assertFails(setDoc(doc(db, 'hogaresDePaso', 'hSinCampo'), { visibleEquipo: true }, { merge: true }));
-  });
-  it('la responsable sigue editando los demás campos, también en un hogar ya autorizado', async () => {
-    const db = como(RESP);
+    await assertSucceeds(setDoc(doc(db, 'hogaresDePaso', 'nuevo'), { albergueId: RESP, nombre: 'X', creadoEn: serverTimestamp() }));
     await assertSucceeds(updateDoc(doc(db, 'hogaresDePaso', 'hTrue'), { telefono: '301 111 1111', notas: 'Tiene patio' }));
-    await assertSucceeds(updateDoc(doc(db, 'hogaresDePaso', 'hSinCampo'), { telefono: '302 222 2222' }));
-    await assertSucceeds(setDoc(doc(db, 'hogaresDePaso', 'hTrue'), { vecesAyudo: 2 }, { merge: true }));
+    await assertSucceeds(setDoc(doc(db, 'hogaresDePaso', 'hSinCampo'), { vecesAyudo: 2 }, { merge: true }));
+    await assertSucceeds(deleteDoc(doc(db, 'hogaresDePaso', 'hFalse')));
   });
-  it('una miembro no crea, no edita ni borra hogares', async () => {
+  it('miembro activa: agrega, edita y borra hogares del albergue', async () => {
     const db = como(MIEMBRO);
-    await assertFails(setDoc(doc(db, 'hogaresDePaso', 'n4'), { albergueId: RESP, nombre: 'X' }));
-    await assertFails(updateDoc(doc(db, 'hogaresDePaso', 'hTrue'), { telefono: '1' }));
-    await assertFails(deleteDoc(doc(db, 'hogaresDePaso', 'hTrue')));
+    await assertSucceeds(setDoc(doc(db, 'hogaresDePaso', 'deAna'), { albergueId: RESP, nombre: 'Familia Ríos', creadoEn: serverTimestamp() }));
+    await assertSucceeds(updateDoc(doc(db, 'hogaresDePaso', 'hSinCampo'), { telefono: '303 333 3333' }));
+    await assertSucceeds(setDoc(doc(db, 'hogaresDePaso', 'hTrue'), { notas: 'Solo gatos' }, { merge: true }));
+    await assertSucceeds(deleteDoc(doc(db, 'hogaresDePaso', 'hFalse')));
   });
-  it('la responsable puede borrar su hogar', async () => {
-    await assertSucceeds(deleteDoc(doc(como(RESP), 'hogaresDePaso', 'hFalse')));
+  it('miembro: no se lleva un hogar a otro albergue ni a su propio uid', async () => {
+    const db = como(MIEMBRO);
+    await assertFails(updateDoc(doc(db, 'hogaresDePaso', 'hSinCampo'), { albergueId: RESP_B }));
+    await assertFails(updateDoc(doc(db, 'hogaresDePaso', 'hSinCampo'), { albergueId: MIEMBRO }));
+  });
+  it('miembro: no crea a nombre propio ni de otro albergue, ni toca los de otro albergue', async () => {
+    const db = como(MIEMBRO);
+    await assertFails(setDoc(doc(db, 'hogaresDePaso', 'n1'), { albergueId: MIEMBRO, nombre: 'X' }));
+    await assertFails(setDoc(doc(db, 'hogaresDePaso', 'n2'), { albergueId: RESP_B, nombre: 'X' }));
+    await assertFails(updateDoc(doc(db, 'hogaresDePaso', 'hB'), { telefono: '1' }));
+    await assertFails(deleteDoc(doc(db, 'hogaresDePaso', 'hB')));
+  });
+  it('revocada, saliente, de otro albergue o sin membresía: nada', async () => {
+    for (const uid of [REVOCADA, SALIENTE, MIEMBRO_B, NADIE]) {
+      const db = como(uid);
+      await assertFails(setDoc(doc(db, 'hogaresDePaso', `n_${uid}`), { albergueId: RESP, nombre: 'X' }));
+      await assertFails(updateDoc(doc(db, 'hogaresDePaso', 'hSinCampo'), { telefono: '1' }));
+      await assertFails(deleteDoc(doc(db, 'hogaresDePaso', 'hSinCampo')));
+    }
+  });
+  it('si la cuenta del albergue ya no tiene el rol albergue, la miembro no crea ni edita', async () => {
+    await sembrar((db) => setDoc(doc(db, 'usuarios', RESP), { roles: ['rescatista'], albergueNombre: 'La Perla' }));
+    const db = como(MIEMBRO);
+    await assertFails(setDoc(doc(db, 'hogaresDePaso', 'n3'), { albergueId: RESP, nombre: 'X' }));
+    await assertFails(updateDoc(doc(db, 'hogaresDePaso', 'hSinCampo'), { telefono: '1' }));
   });
 });
 
@@ -262,18 +261,6 @@ describe('chats: sin tipo, con tipo null o desconocido, personales y ajenos', ()
 });
 
 // ─── Chats: escrituras ───────────────────────────────────────────────────
-
-describe('chats: la miembro no escribe en esta fase', () => {
-  it('no pone en cero el "sin leer" ni toca el chat', async () => {
-    await assertFails(updateDoc(doc(como(MIEMBRO), 'chats', 'cAdop'), { noLeidosRescatista: 0 }));
-    await assertFails(updateDoc(doc(como(MIEMBRO), 'chats', 'cAdop'), { ultimoMensaje: 'x' }));
-  });
-  it('no escribe mensajes', async () => {
-    await assertFails(addDoc(collection(como(MIEMBRO), 'chats', 'cAdop', 'mensajes'), {
-      texto: 'hola', emisor: 'rescatista', creadoEn: serverTimestamp(),
-    }));
-  });
-});
 
 describe('chats: tipoSolicitud fijo después de crear', () => {
   it('nadie cambia el tipo de un chat (ni la responsable ni el adoptante)', async () => {
@@ -438,7 +425,7 @@ describe('membresías que no están activas', () => {
       await assertFails(getDoc(doc(db, 'chats', 'cAdop')));
       await assertFails(getDocs(chatsEquipo(db, RESP)));
       await assertFails(getDocs(collection(db, 'chats', 'cAdop', 'mensajes')));
-      await assertFails(getDoc(doc(db, 'hogaresDePaso', 'hTrue')));
+      await assertFails(getDoc(doc(db, 'hogaresDePaso', 'hSinCampo')));
       await assertFails(getDocs(hogaresEquipo(db, RESP)));
     });
   }
@@ -463,7 +450,8 @@ describe('consultas de lista que intentan otro camino', () => {
     await assertFails(getDocs(query(collectionGroup(como(MIEMBRO), 'mensajes'))));
     await assertFails(getDocs(query(collectionGroup(como(RESP), 'mensajes'))));
   });
-  it('hogares solo con visibleEquipo == true, sin decir de qué albergue: rechazada', async () => {
+  it('hogares sin decir de qué albergue: rechazada', async () => {
+    await assertFails(getDocs(query(collection(como(MIEMBRO), 'hogaresDePaso'))));
     await assertFails(getDocs(query(collection(como(MIEMBRO), 'hogaresDePaso'), where('visibleEquipo', '==', true))));
   });
 });

@@ -1,8 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../theme/salva_patitas_theme.dart';
 
+import '../data/contexto_albergue.dart';
 import '../data/chats_repository.dart';
 import '../data/rescates_repository.dart';
 import '../data/solicitudes_repository.dart';
@@ -52,7 +52,8 @@ class CambiarEstadoSheet extends StatelessWidget {
   /// sus fechas, que es lo que importa. Perder la fila de la red es
   /// recuperable a mano; bloquear el cambio de estado por eso, no.
   Future<void> _sumarARed(DatosHogarDePaso datos) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    // La red es del albergue del panel (el de la responsable en modo equipo).
+    final uid = uidDueno(esAlbergue: esAlbergue);
     if (uid.isEmpty) return;
     try {
       await HogaresDePasoRepository().sumarAyudaManual(
@@ -116,7 +117,7 @@ class CambiarEstadoSheet extends StatelessWidget {
   /// todavía no tiene ningún chat abierto).
   Future<bool> _avisarAdoptanteFallecido(String nota) async {
     if (nombre.isEmpty) return true;
-    final miUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final miUid = uidDueno(esAlbergue: esAlbergue);
     if (miUid.isEmpty) return true;
 
     // A quién avisar: el adoptante ya aprobado (si hay) + todos los que
@@ -262,11 +263,16 @@ class CambiarEstadoSheet extends StatelessWidget {
   /// El estado ACTUAL siempre se muestra: es el que aparece marcado, y
   /// esconderlo dejaría la hoja sin indicar en qué estado está el
   /// animalito.
+  ///
+  /// En modo equipo (fase 2) tampoco se ofrece 'Fallecido': cierra las
+  /// solicitudes pendientes rechazándolas, y rechazar es solo de la
+  /// responsable (las reglas no lo dejan). Lo marca ella.
   Iterable<(String, String, String)> get _estadosOfrecidos => _estados.where(
     (e) =>
-        e.$1 != 'Hogar de paso' ||
-        e.$1 == estadoActual ||
-        !hayAdopcionEnCurso(estadoActual),
+        (e.$1 != 'Hogar de paso' ||
+            e.$1 == estadoActual ||
+            !hayAdopcionEnCurso(estadoActual)) &&
+        (e.$1 != 'Fallecido' || e.$1 == estadoActual || !(esAlbergue && SesionEquipo.activa)),
   );
 
   @override

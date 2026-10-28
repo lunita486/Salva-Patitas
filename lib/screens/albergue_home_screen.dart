@@ -19,6 +19,7 @@ import '../widgets/fotos.dart';
 import '../widgets/resultado_guardado_snackbar.dart';
 import '../widgets/umbral_estancado_sheet.dart';
 import '../services/notificaciones_service.dart';
+import '../data/contexto_albergue.dart';
 import '../data/creator_role.dart';
 import '../data/firestore_resiliencia.dart';
 import '../data/rescates_repository.dart';
@@ -55,7 +56,12 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
   /// mismo carácter, que los dos perfiles.
   static const _cargandoValor = '—';
   int _nav = 0;
-  final _uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+  /// A nombre de qué albergue trabaja el panel: el propio (la responsable)
+  /// o, en modo equipo, el de la responsable (fase 2 del equipo). Se lee una
+  /// vez: InicioPersonalOEquipo recrea esta pantalla si cambia.
+  final ContextoAlbergue _ctx = contextoAlbergue();
+  late final String _uid = _ctx.albergueId;
+  bool get _esEquipo => _ctx.esEquipo;
   final _rescatesRepo = RescatesRepository();
   final _solicitudesRepo = SolicitudesRepository();
 
@@ -270,8 +276,11 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
   // Ambas centralizadas en solicitudes_rescatista_screen.dart — antes
   // duplicadas byte a byte con home_screen.dart (hallazgo de auditoría de
   // código).
+  // En modo equipo no corren: los avisos automáticos los manda la cuenta de
+  // la responsable al abrir su panel. Si corrieran también acá, el mismo
+  // aviso podía salir dos veces.
   Future<void> _verificarVencimientos() async {
-    if (!mounted) return;
+    if (!mounted || _esEquipo) return;
     await verificarVencimientos(
       context,
       uid: _uid,
@@ -281,6 +290,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
   }
 
   Future<void> _verificarSeguimientoPostAdopcion() async {
+    if (_esEquipo) return;
     await verificarSeguimientoPostAdopcion(
       uid: _uid,
       role: CreatorRole.albergue,
@@ -321,6 +331,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
   }
 
   Future<void> _uploadFotoPerfil() async {
+    if (_esEquipo) return;
     final b64 = await elegirFotoPerfil();
     if (b64 == null) return;
     try {
@@ -510,7 +521,9 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                 decoration: SpDeco.soft(c, radius: SpRadius.full),
                 child: AvatarPersona(
                   fotoBase64: fotoBase64,
-                  fotoUrl: FirebaseAuth.instance.currentUser?.photoURL,
+                  // En modo equipo no: sería la foto de la miembro como si
+                  // fuera la del albergue.
+                  fotoUrl: _esEquipo ? null : FirebaseAuth.instance.currentUser?.photoURL,
                   inicial: iniciales,
                   radius: 22,
                   backgroundColor: c.mint,
@@ -804,38 +817,6 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
             ),
           ),
 
-          // ── Equipo del albergue ──────────────────────────────────────────────
-          const SizedBox(height: SpSpace.s3),
-          SpCard(
-            padding: const EdgeInsets.all(SpSpace.s3),
-            onTap: () => ctx.push(AppRoutes.equipoAlbergue),
-            child: Row(
-              children: [
-                const SpBigTile(tone: SpTone.lilac, animal: SpAnimalKind.gato),
-                const SizedBox(width: SpSpace.s3),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Equipo del albergue',
-                        style: SpText.headline.copyWith(
-                          color: c.ink,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      Text(
-                        'Invitá a quienes te ayudan',
-                        style: SpText.caption.copyWith(color: c.inkMuted),
-                      ),
-                    ],
-                  ),
-                ),
-                Icon(Icons.chevron_right_rounded, color: c.inkFaint),
-              ],
-            ),
-          ),
-
           // ── Jauría ───────────────────────────────────────────────────────────
           const SizedBox(height: SpSpace.s6),
           _sectionHeader(
@@ -975,6 +956,7 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
   ) {
     final c = ctx.sp;
     final user = FirebaseAuth.instance.currentUser;
+    if (_esEquipo) return _perfilEquipoTab(ctx, nombre, iniciales, fotoBase64);
     return SingleChildScrollView(
       key: const PageStorageKey('perfil'),
       padding: const EdgeInsets.only(bottom: 24),
@@ -1086,6 +1068,16 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
                         onTap: () => ctx.push(AppRoutes.alberguePerfil),
                       ),
                       _perfilDivisor(),
+                      // En el Perfil y no en el Panel, que ya tiene mucho
+                      // (pedido de Eliza). Ver PLAN-EQUIPO-ALBERGUE.md.
+                      _perfilFila(
+                        Icons.groups_2_outlined,
+                        'Equipo del albergue',
+                        sub: 'Invitá a quienes te ayudan',
+                        tono: SpTone.lilac,
+                        onTap: () => ctx.push(AppRoutes.equipoAlbergue),
+                      ),
+                      _perfilDivisor(),
                       _perfilFila(
                         Icons.schedule_rounded,
                         'Aviso sin adoptar',
@@ -1187,6 +1179,124 @@ class _AlbergueHomeScreenState extends State<AlbergueHomeScreen> {
         ],
       ),
     );
+  }
+
+  /// Perfil en modo equipo (fase 2): a qué albergue ayuda, volver a la
+  /// cuenta personal y salir del equipo. Sin nada que edite el albergue
+  /// (perfil, equipo, aviso sin adoptar) ni "Eliminar cuenta": eso es de la
+  /// responsable, y la cuenta propia se elimina desde el perfil personal.
+  Widget _perfilEquipoTab(BuildContext ctx, String nombre, String iniciales, String? fotoBase64) {
+    final c = ctx.sp;
+    final user = FirebaseAuth.instance.currentUser;
+    return SingleChildScrollView(
+      key: const PageStorageKey('perfil'),
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SpScreenHeader(title: 'Perfil', subtitle: 'Ayudás en este albergue', conVolver: false),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: SpDeco.soft(c, radius: SpRadius.full),
+                    child: AvatarPersona(
+                      fotoBase64: fotoBase64,
+                      inicial: iniciales,
+                      radius: 58,
+                      backgroundColor: c.mint,
+                      textColor: c.primaryStrong,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Center(
+                  child: Text(
+                    nombre,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 23, fontWeight: FontWeight.w800, color: c.ink, letterSpacing: -0.2),
+                  ),
+                ),
+                const SizedBox(height: SpSpace.s4),
+                SpNotice(
+                  fondo: c.lilac,
+                  tinta: c.lilacInk,
+                  child: Text(
+                    'Estás trabajando como parte del equipo de $nombre. Lo que cargues o escribas queda a nombre del albergue.',
+                  ),
+                ),
+                const SizedBox(height: SpSpace.s6),
+                _sectionHeader('Cuenta'),
+                const SizedBox(height: SpSpace.s3),
+                SpCard(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Column(
+                    children: [
+                      _perfilFila(Icons.email_outlined, user?.email ?? '-', etiqueta: 'Tu correo'),
+                      _perfilDivisor(),
+                      _perfilFila(
+                        Icons.swap_horiz_rounded,
+                        'Volver a mi cuenta',
+                        sub: 'Tus animales y chats personales',
+                        tono: SpTone.mint,
+                        onTap: _volverACuentaPersonal,
+                      ),
+                      _perfilDivisor(),
+                      _perfilFila(
+                        Icons.groups_2_outlined,
+                        'Mi equipo de albergue',
+                        sub: 'Ver desde cuándo o salir del equipo',
+                        tono: SpTone.lilac,
+                        onTap: () => ctx.push(AppRoutes.miEquipo),
+                      ),
+                      _perfilDivisor(),
+                      _perfilFila(
+                        Icons.dark_mode_outlined,
+                        'Apariencia',
+                        sub: Apariencia.etiqueta,
+                        tono: SpTone.lilac,
+                        onTap: () => mostrarApariencia(ctx),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: SpButton(
+                    label: 'Cerrar sesión',
+                    icon: Icons.logout_rounded,
+                    suave: true,
+                    onTap: () => mostrarDialogoCerrarSesion(ctx),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Sale del modo equipo: InicioPersonalOEquipo ve el cambio de
+  /// `ultimoRolActivo` y vuelve al inicio personal (rescatista si lo tiene).
+  Future<void> _volverACuentaPersonal() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final resultado = await guardarConAviso(() async {
+      final perfil = await FirebaseFirestore.instance.collection('usuarios').doc(uid).get();
+      final roles = List<String>.from(perfil.data()?['roles'] as List? ?? const []);
+      await FirebaseFirestore.instance.collection('usuarios').doc(uid).set(
+        {'ultimoRolActivo': roles.contains('rescatista') ? 'rescatista' : 'adoptante'},
+        SetOptions(merge: true),
+      );
+    });
+    if (!mounted || resultado == ResultadoGuardado.confirmado) return;
+    mostrarResultadoGuardado(context, resultado, exito: '');
   }
 
   /// Tipo o ciudad del albergue (`.sp-chip`), debajo del nombre.

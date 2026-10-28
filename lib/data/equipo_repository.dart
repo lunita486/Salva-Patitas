@@ -23,9 +23,6 @@ class EquipoRepository {
   final FirebaseFirestore _db;
   final LlamarFuncion _llamar;
 
-  /// Mismo tope que functions/equipo_logica.js (MAX_EQUIPO).
-  static const maxEquipo = 10;
-
   // Misma región que el resto de las Functions (ver CuentaRepository.region).
   static Future<Object?> _llamarFuncion(String nombre, Map<String, dynamic> datos) async {
     final r = await FirebaseFunctions.instanceFor(region: CuentaRepository.region)
@@ -109,12 +106,6 @@ class EquipoRepository {
 
   Future<void> salir() => _ejecutar('salirDelEquipo', {});
 
-  /// La responsable decide si su equipo ve el hogar [hogarId].
-  Future<void> revisarHogar(String hogarId, {required bool compartir}) => _ejecutar(
-    'revisarHogarEquipo',
-    {'hogarId': hogarId, 'decision': compartir ? 'compartir' : 'no_compartir'},
-  );
-
   Future<Object?> _ejecutar(String funcion, Map<String, dynamic> datos) async {
     try {
       return await _llamar(funcion, datos);
@@ -153,10 +144,6 @@ class EquipoError implements Exception {
     }
     return EquipoError('No se pudo completar. Probá de nuevo en un momento.', codigo: codigo);
   }
-
-  /// La barrera de hogares de paso dudosos (functions/equipo_logica.js,
-  /// errorHogaresPendientes): la pantalla ofrece ir a revisarlos.
-  bool get esPorHogares => codigo == 'failed-precondition' && mensaje.contains('hogares de paso');
 
   static String mensajeDe(Object e) =>
       e is EquipoError ? e.mensaje : 'No se pudo completar. Probá de nuevo en un momento.';
@@ -229,8 +216,19 @@ class InvitacionEquipo {
   /// "Vence en 3 días", "Vence hoy".
   String venceEnTexto(DateTime ahora) {
     if (expiraEn == null) return '';
-    final dias = expiraEn!.difference(ahora).inHours ~/ 24;
-    if (dias <= 0) return 'Vence hoy';
+    final horas = expiraEn!.difference(ahora).inHours;
+    if (horas < 24) return 'Vence hoy';
+    // Redondeado, no truncado: recién creada (6 días y 23 horas) dice 7.
+    final dias = (horas / 24).round();
     return dias == 1 ? 'Vence en 1 día' : 'Vence en $dias días';
+  }
+
+  /// Lo que ve la persona invitada: cuánto tiempo tiene para responder.
+  String plazoParaResponder(DateTime ahora) {
+    if (expiraEn == null) return '';
+    final horas = expiraEn!.difference(ahora).inHours;
+    if (horas < 24) return 'Respondé hoy: después vence';
+    final dias = (horas / 24).round();
+    return dias == 1 ? 'Tenés 1 día para responder' : 'Tenés $dias días para responder';
   }
 }

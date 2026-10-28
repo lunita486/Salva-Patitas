@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
@@ -56,7 +54,7 @@ void main() {
   }
 
   group('Equipo del albergue (responsable)', () {
-    testWidgets('muestra miembros activos, invitaciones y lugares ocupados', (tester) async {
+    testWidgets('muestra miembros activos e invitaciones pendientes', (tester) async {
       await miembro('m1', 'Bea');
       await miembro('m2', 'Revocada', estado: 'revocada');
       await miembro('m3', 'De otro', albergue: 'otro');
@@ -67,7 +65,10 @@ void main() {
       expect(find.text('Revocada'), findsNothing);
       expect(find.text('De otro'), findsNothing);
       expect(find.text('caro@mail.com'), findsOneWidget);
-      expect(find.text('2 de 10 lugares'), findsOneWidget);
+      expect(find.text('Invitaciones pendientes (1)'), findsOneWidget);
+      expect(find.textContaining('lugares'), findsNothing, reason: 'sin tope, no hay cupo que mostrar');
+      expect(find.text('Qué puede hacer tu equipo'), findsOneWidget);
+      expect(find.textContaining('aprobar o rechazar solicitudes', findRichText: true), findsOneWidget);
       expect(find.text('Miembros (1)'), findsOneWidget);
     });
 
@@ -90,6 +91,8 @@ void main() {
       await invitacion('i1', 'caro@mail.com');
       await tester.pumpWidget(app(EquipoAlbergueScreen(repo: repo, uid: 'perla')));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byTooltip('Cancelar invitación'));
+      await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Cancelar invitación'));
       await tester.pumpAndSettle();
       await confirmar(tester, 'Cancelar invitación');
@@ -102,6 +105,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Invitar a alguien'));
       await tester.pumpAndSettle();
+      expect(find.text('Usá el correo con el que esa persona entra a Salva Patitas.'), findsOneWidget);
       await tester.enterText(find.byType(TextField), 'ana@mail');
       await tester.pump();
       await tester.tap(find.text('Enviar invitación'));
@@ -116,10 +120,10 @@ void main() {
       expect(find.textContaining('Invitación enviada a ana@mail.com'), findsOneWidget);
     });
 
-    testWidgets('si los hogares de paso bloquean, la hoja lo dice y ofrece revisarlos', (tester) async {
+    testWidgets('un error del servidor se muestra en la hoja, sin el viejo atajo a revisar hogares', (tester) async {
       errorAlLlamar = FirebaseFunctionsException(
-        code: 'failed-precondition',
-        message: 'Antes de invitar a tu equipo tenés que revisar tu red de hogares de paso.',
+        code: 'already-exists',
+        message: 'Ya hay una invitación pendiente para ese correo.',
       );
       await tester.pumpWidget(app(EquipoAlbergueScreen(repo: repo, uid: 'perla')));
       await tester.pumpAndSettle();
@@ -129,23 +133,24 @@ void main() {
       await tester.pump();
       await tester.tap(find.text('Enviar invitación'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('revisar tu red de hogares de paso'), findsOneWidget);
-      expect(find.text('Revisar mis hogares de paso'), findsOneWidget);
+      expect(find.text('Ya hay una invitación pendiente para ese correo.'), findsOneWidget);
+      expect(find.text('Revisar mis hogares de paso'), findsNothing);
     });
 
-    testWidgets('con 10 lugares ocupados no se puede invitar', (tester) async {
-      for (var i = 0; i < 7; i++) {
-        await miembro('m$i', 'Persona $i');
+    testWidgets('sin tope: con 12 miembros y 3 invitaciones se puede seguir invitando', (tester) async {
+      for (var i = 0; i < 12; i++) {
+        await miembro('m${i.toString().padLeft(2, '0')}', 'Persona $i');
       }
       for (var i = 0; i < 3; i++) {
         await invitacion('i$i', 'p$i@mail.com');
       }
       await tester.pumpWidget(app(EquipoAlbergueScreen(repo: repo, uid: 'perla')));
       await tester.pumpAndSettle();
-      expect(find.text('Equipo completo'), findsOneWidget);
-      await tester.tap(find.text('Equipo completo'));
+      expect(find.text('Miembros (12)'), findsOneWidget);
+      expect(find.text('Equipo completo'), findsNothing);
+      await tester.tap(find.text('Invitar a alguien'));
       await tester.pumpAndSettle();
-      expect(find.text('Invitar al equipo'), findsNothing);
+      expect(find.text('Invitar al equipo'), findsOneWidget);
     });
   });
 
@@ -162,11 +167,15 @@ void main() {
       await tester.pumpWidget(app(MiEquipoScreen(repo: repo, uid: 'ana', email: 'Ana@Mail.com')));
       await tester.pumpAndSettle();
       expect(find.text('La Perla te invitó a su equipo'), findsOneWidget);
+      expect(find.text('Tenés 5 días para responder'), findsOneWidget);
       expect(find.text('Invitaciones (1)'), findsOneWidget, reason: 'la de otro correo no aparece');
       await tester.tap(find.text('Aceptar'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('Tu cuenta personal sigue igual'), findsOneWidget);
-      await confirmar(tester, 'Aceptar');
+      expect(find.text('¿Sumarte al equipo de La Perla?'), findsOneWidget);
+      expect(find.textContaining('los animales que publicás por tu cuenta', findRichText: true), findsOneWidget);
+      expect(find.text('•  Cargar y editar animalitos'), findsOneWidget);
+      expect(find.text('Aprobar adopciones sigue siendo de la responsable.'), findsOneWidget);
+      await confirmar(tester, 'Sí, sumarme');
       expect(llamadas.single.$1, 'aceptarInvitacion');
       expect(llamadas.single.$2, {'invitacionId': 'i1'});
     });
@@ -182,14 +191,15 @@ void main() {
       expect(llamadas.single.$2, {'invitacionId': 'i1'});
     });
 
-    testWidgets('miembro: ve su albergue, los accesos de solo lectura y puede salir', (tester) async {
+    testWidgets('miembro: ve su albergue y desde cuándo, sin accesos de solo lectura, y puede salir', (tester) async {
       await db.collection('usuarios').doc('perla').set({'albergueNombre': 'La Perla', 'roles': ['albergue']});
       await miembro('ana', 'Ana');
       await tester.pumpWidget(app(MiEquipoScreen(repo: repo, uid: 'ana', email: 'ana@mail.com')));
       await tester.pumpAndSettle();
       expect(find.text('La Perla'), findsOneWidget);
-      expect(find.text('Chats del albergue'), findsOneWidget);
-      expect(find.text('Hogares de paso compartidos'), findsOneWidget);
+      expect(find.textContaining('Sos parte del equipo desde el'), findsOneWidget);
+      expect(find.text('Chats del albergue'), findsNothing);
+      expect(find.text('Hogares de paso compartidos'), findsNothing);
       await tester.ensureVisible(find.text('Salir del equipo'));
       await tester.tap(find.text('Salir del equipo'));
       await tester.pumpAndSettle();
@@ -210,11 +220,11 @@ void main() {
       expect(llamadas, isEmpty);
     });
 
-    testWidgets('una membresía revocada no muestra los accesos del albergue', (tester) async {
+    testWidgets('una membresía revocada no muestra el albergue', (tester) async {
       await miembro('ana', 'Ana', estado: 'revocada');
       await tester.pumpWidget(app(MiEquipoScreen(repo: repo, uid: 'ana', email: 'ana@mail.com')));
       await tester.pumpAndSettle();
-      expect(find.text('Chats del albergue'), findsNothing);
+      expect(find.text('Salir del equipo'), findsNothing);
       expect(find.text('No tenés invitaciones'), findsOneWidget);
     });
   });
@@ -241,26 +251,6 @@ void main() {
       await tester.pumpWidget(fila());
       await tester.pumpAndSettle();
       expect(find.text('Sos parte de un equipo'), findsOneWidget);
-    });
-  });
-
-  group('vistas de solo lectura del equipo', () {
-    final fuente = File('lib/screens/equipo_lectura_screens.dart')
-        .readAsStringSync()
-        .split('\n')
-        .where((l) => !l.trimLeft().startsWith('//'))
-        .join('\n');
-
-    test('no escriben nada: ni mensajes, ni "leído", ni contadores', () {
-      for (final escritura in ['.set(', '.update(', '.add(', '.delete(', 'marcar', 'registrarMensaje', 'batch']) {
-        expect(fuente, isNot(contains(escritura)), reason: 'una vista de solo lectura no debe usar $escritura');
-      }
-    });
-
-    test('piden exactamente las consultas que las reglas permiten al equipo', () {
-      expect(fuente, contains('.delEquipo(albergueId)'));
-      expect(fuente, contains('.visiblesParaEquipo(albergueId)'));
-      expect(fuente, contains('.mensajes(chatId)'));
     });
   });
 }

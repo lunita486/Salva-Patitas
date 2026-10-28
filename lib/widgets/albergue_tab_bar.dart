@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 // Barra de abajo del albergue: Panel · Jauría · Solicitudes · Chats ·
 // Negocios · Perfil. Es UNA sola, la misma en el Panel y en cada sección que
 // se abre desde él, para que la persona siempre vea dónde está (pedido de
@@ -8,10 +9,10 @@
 // otra pantalla: cierra la actual devolviendo la pestaña elegida
 // ([AlbergueTabBar.volverAlPanel]) y el Panel abre esa. Así la pila siempre
 // es Panel + una sección, y "volver" lleva siempre al Panel.
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../data/contexto_albergue.dart';
 import '../data/chats_repository.dart';
 import '../data/creator_role.dart';
 import '../data/solicitudes_repository.dart';
@@ -47,7 +48,9 @@ class AlbergueTabBar extends StatefulWidget {
 }
 
 class _AlbergueTabBarState extends State<AlbergueTabBar> {
-  final _uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+  // El albergue del panel: el propio, o el de la responsable en modo equipo.
+  final _ctx = contextoAlbergue();
+  late final _uid = _ctx.albergueId;
 
   // Cada barra pide sus propios streams (y no recibe los del Panel): un
   // stream de Firestore es broadcast, y quien se suscribe tarde no recibe la
@@ -58,11 +61,17 @@ class _AlbergueTabBarState extends State<AlbergueTabBar> {
     estado: 'pendiente',
   );
   late final _chats = ChatsRepository();
-  late final _recibidos = _chats.mios(uid: _uid, esRescatista: true);
+  // En modo equipo, solo los chats que las reglas le dejan leer al equipo.
+  late final _recibidos = _ctx.esEquipo
+      ? _chats.delEquipo(_uid).snapshots()
+      : _chats.mios(uid: _uid, esRescatista: true);
   // Consultas que ESTA cuenta le mandó a un negocio aliado — sin esto el
   // badge nunca contaba una respuesta a una consulta propia (ver
   // contarMensajesSinLeer en domain/reglas_negocio.dart).
-  late final _consultas = _chats.consultasEnviadas(uid: _uid);
+  // En modo equipo no hay: las consultas a negocios aliados no se comparten.
+  late final Stream<QuerySnapshot<Map<String, dynamic>>?> _consultas = _ctx.esEquipo
+      ? Stream.value(null)
+      : _chats.consultasEnviadas(uid: _uid);
 
   @override
   Widget build(BuildContext context) {
@@ -109,7 +118,8 @@ class _AlbergueTabBarState extends State<AlbergueTabBar> {
             ),
           ),
         ),
-        item(AlbergueTab.negocios, Icons.storefront_outlined, 'Negocios'),
+        // Las consultas a negocios aliados son de la responsable, no del equipo.
+        if (!_ctx.esEquipo) item(AlbergueTab.negocios, Icons.storefront_outlined, 'Negocios'),
         item(AlbergueTab.perfil, Icons.person_outline_rounded, 'Perfil'),
       ],
     );

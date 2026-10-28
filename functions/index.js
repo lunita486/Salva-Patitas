@@ -34,7 +34,6 @@ exports.rechazarInvitacion = equipo.rechazarInvitacion;
 exports.cancelarInvitacion = equipo.cancelarInvitacion;
 exports.revocarMiembro = equipo.revocarMiembro;
 exports.salirDelEquipo = equipo.salirDelEquipo;
-exports.revisarHogarEquipo = equipo.revisarHogarEquipo;
 
 // Endpoint público para la vidriera de animales de la landing (docs/index.html).
 exports.landingAnimales = require('./landing_animales').landingAnimales;

@@ -135,20 +135,6 @@
       ]
     },
     {
-      "collectionGroup": "hogaresDePaso",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "albergueId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "visibleEquipo",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
       "collectionGroup": "membresias",
       "queryScope": "COLLECTION",
       "fields": [

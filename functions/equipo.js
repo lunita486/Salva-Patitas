@@ -1,17 +1,16 @@
-// Functions del equipo del albergue: invitaciones, membresías y qué hogares
-// de paso ve el equipo. Ver PLAN-EQUIPO-ALBERGUE.md.
+// Functions del equipo del albergue: invitaciones y membresías. Ver
+// PLAN-EQUIPO-ALBERGUE.md.
 //
 // Admin SDK no pasa por firestore.rules: cada Function comprueba ella misma
 // quién llama y qué puede hacer, siempre con `request.auth` y con lo que lee
 // del servidor. Del cliente solo se acepta el correo a invitar o el id de la
 // invitación; cualquier otro campo se rechaza.
 //
-// Barrera de hogares de paso (barrera 1 del diseño): ni invitar ni aceptar
-// funcionan mientras la responsable tenga hogares de paso dudosos sin una
-// revisión válida. Se calcula en cada llamada leyendo los hogares, nunca
-// desde un conteo guardado. La barrera 2 son las reglas: el equipo solo lee
-// hogares con `visibleEquipo == true`, que únicamente escribe
-// revisarHogarEquipo.
+// Hogares de paso: desde la fase 2 (2026-10-25) el equipo ve todos los del
+// albergue, así que ya no hay revisión hogar por hogar ni barrera de
+// "hogares dudosos" al invitar o aceptar. La pantalla de hogares nació el
+// 2026-07-30 y siempre estuvo solo dentro del panel del albergue: no hay
+// hogares personales mezclados que proteger.
 //
 // Las notificaciones van DESPUÉS de cada transacción y nunca hacen fallar
 // la operación: si FCM falla, la invitación o el cambio de equipo ya quedó
@@ -19,10 +18,6 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { getFirestore, Timestamp } = require('firebase-admin/firestore');
 const L = require('./equipo_logica');
-
-// Solo lo necesario para decidir. Nunca nombres, teléfonos, correos ni notas
-// de las familias.
-const CAMPOS_HOGAR = ['albergueId', 'creadoEn', 'revisionEquipo'];
 
 // Varias aceptaciones o invitaciones simultáneas del mismo albergue chocan a
 // propósito sobre equipos/{albergueId}; con más reintentos que el valor por
@@ -45,25 +40,6 @@ function comprobarSesion(request) {
   const email = L.normalizarEmail(token.email);
   if (!email) throw new L.ErrorEquipo('failed-precondition', 'Tu cuenta no tiene un correo asociado.');
   return { uid: request.auth.uid, email, nombre: typeof token.name === 'string' ? token.name : '' };
-}
-
-/**
- * Ids de los hogares de paso dudosos sin revisión válida de este albergue.
- * Se lee dentro de la transacción, así que es el dato del momento.
- */
-async function leerHogaresPendientes(tx, db, albergueId, responsable) {
-  const snap = await tx.get(db.collection('hogaresDePaso')
-      .where('albergueId', '==', albergueId).select(...CAMPOS_HOGAR));
-  const hogares = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  if (!hogares.length) return [];
-  let tuvoVidaDeRescatista = Array.isArray(responsable?.roles) && responsable.roles.includes('rescatista');
-  if (!tuvoVidaDeRescatista) {
-    const animal = await tx.get(db.collection('rescates')
-        .where('rescatistaId', '==', albergueId).where('creadoPor', '==', 'rescatista')
-        .select('rescatistaId').limit(1));
-    tuvoVidaDeRescatista = !animal.empty;
-  }
-  return L.hogaresPendientesDeRevision(hogares, tuvoVidaDeRescatista);
 }
 
 const datos = (snap) => (snap.exists ? snap.data() : null);
@@ -113,15 +89,12 @@ async function invitarMiembroHandler(request, {
           .where('albergueId', '==', uid).where('estado', '==', 'pendiente'));
 
       L.comprobarPuedeInvitar({ usuario, membresiaPropia });
-      const pendientes = await leerHogaresPendientes(tx, db, uid, usuario);
-      if (pendientes.length) throw L.errorHogaresPendientes();
 
       const vigentes = pendientesSnap.docs.map((d) => d.data()).filter((i) => L.invitacionVigente(i, t));
       if (vigentes.some((i) => L.normalizarEmail(i.emailDestino) === email)) {
         throw new L.ErrorEquipo('already-exists', 'Ya hay una invitación pendiente para ese correo.');
       }
       const miembrosActivos = contador(equipoSnap);
-      L.comprobarCupoParaInvitar({ miembrosActivos, invitacionesVigentes: vigentes.length });
 
       const invRef = db.collection('invitaciones').doc();
       const creadaEn = Timestamp.fromMillis(t);
@@ -180,12 +153,7 @@ async function aceptarInvitacionHandler(request, { db = getFirestore(), ahora = 
         tx.update(invRef, { estado: 'expirada' });
         return { vencida: true };
       }
-      // Se vuelve a mirar al aceptar: una invitación vieja, o una que no pasó
-      // por invitarMiembro, tampoco puede saltarse la barrera.
-      const pendientes = await leerHogaresPendientes(tx, db, albergueId, responsable);
-      if (pendientes.length) throw L.errorAlbergueNoDisponible();
       const miembrosActivos = contador(equipoSnap);
-      L.comprobarCupoParaAceptar({ miembrosActivos });
 
       const ahoraTs = Timestamp.fromMillis(t);
       tx.set(membresiaRef, {
@@ -296,34 +264,6 @@ async function salirDelEquipoHandler(request, { db = getFirestore(), ahora = Dat
   }
 }
 
-/**
- * La responsable decide si un hogar de su red lo ve el equipo. Es el único
- * camino que escribe `visibleEquipo` y `revisionEquipo` (las reglas se lo
- * prohíben a la app). Sirve también para resolver los hogares dudosos que
- * bloquean las invitaciones: cualquier decisión cuenta como revisión.
- */
-async function revisarHogarEquipoHandler(request, { db = getFirestore(), ahora = Date.now } = {}) {
-  try {
-    const { uid } = comprobarSesion(request);
-    L.validarPayload(request.data, ['hogarId', 'decision']);
-    const { hogarId, decision } = request.data;
-    if (!idValido(hogarId)) throw new L.ErrorEquipo('invalid-argument', 'Hogar inválido.');
-    await db.runTransaction(async (tx) => {
-      const usuario = datos(await tx.get(db.collection('usuarios').doc(uid)));
-      const ref = db.collection('hogaresDePaso').doc(hogarId);
-      const hogar = datos(await tx.get(ref));
-      L.comprobarPuedeRevisarHogar({ uid, usuario, hogar, decision });
-      tx.update(ref, {
-        revisionEquipo: { decision, por: uid, en: Timestamp.fromMillis(ahora()) },
-        visibleEquipo: decision === 'compartir',
-      });
-    }, { maxAttempts: MAX_INTENTOS });
-    return { ok: true, visibleEquipo: decision === 'compartir' };
-  } catch (e) {
-    throw aHttps(e);
-  }
-}
-
 // ─── Eliminación de cuenta (la usa eliminar_cuenta.js) ───────────────────
 
 /** Mensaje si la cuenta [uid] es responsable de un equipo con gente; si no, null. */
@@ -383,7 +323,6 @@ exports.rechazarInvitacion = onCall(OPCIONES, (request) => rechazarInvitacionHan
 exports.cancelarInvitacion = onCall(OPCIONES, (request) => cancelarInvitacionHandler(request));
 exports.revocarMiembro = onCall(OPCIONES, (request) => revocarMiembroHandler(request));
 exports.salirDelEquipo = onCall(OPCIONES, (request) => salirDelEquipoHandler(request));
-exports.revisarHogarEquipo = onCall(OPCIONES, (request) => revisarHogarEquipoHandler(request));
 
 exports.bloqueoEquipoAlEliminar = bloqueoEquipoAlEliminar;
 exports.limpiarEquipoAlEliminar = limpiarEquipoAlEliminar;
@@ -395,6 +334,3 @@ exports.rechazarInvitacionHandler = rechazarInvitacionHandler;
 exports.cancelarInvitacionHandler = cancelarInvitacionHandler;
 exports.revocarMiembroHandler = revocarMiembroHandler;
 exports.salirDelEquipoHandler = salirDelEquipoHandler;
-exports.revisarHogarEquipoHandler = revisarHogarEquipoHandler;
-exports.leerHogaresPendientes = leerHogaresPendientes;
-exports.CAMPOS_HOGAR = CAMPOS_HOGAR;

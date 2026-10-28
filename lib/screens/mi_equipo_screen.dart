@@ -1,17 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:go_router/go_router.dart';
 
 import '../data/equipo_repository.dart';
 import '../domain/reglas_negocio.dart';
-import '../routing/app_router.dart';
 import '../theme/salva_patitas_theme.dart';
 import '../widgets/estado_error_feed.dart';
 import '../widgets/sp_widgets.dart';
 
 /// "Mi equipo de albergue" de una persona invitada o miembro: sus
-/// invitaciones pendientes (aceptar o rechazar) y, si ya es miembro, los
-/// accesos de solo lectura al albergue y el botón para salir.
+/// invitaciones pendientes (aceptar o rechazar) y, si ya es miembro, a qué
+/// albergue pertenece y el botón para salir (la Function avisa al albergue).
 ///
 /// La membresía no es un rol: esta pantalla se abre desde el perfil de
 /// adoptante o rescatista, y nada de lo personal de la persona cambia.
@@ -73,14 +71,44 @@ class _MiEquipoScreenState extends State<MiEquipoScreen> {
   }
 
   Future<void> _aceptar(InvitacionEquipo i) async {
-    final ok = await _confirmar(
-      'Sumarte a ${_nombre(i)}',
-      'Vas a poder ver los chats de adopción y hogar de paso del albergue y los hogares de paso que te comparta. '
-          'Tu cuenta personal sigue igual: el albergue no ve tus chats ni tus animales.',
-      'Aceptar',
+    final c = context.sp;
+    final texto = TextStyle(fontSize: 15, color: c.inkMuted, height: 1.35);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dlg) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('¿Sumarte al equipo de ${_nombre(i)}?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Vas a poder, a nombre del albergue:', style: texto.copyWith(color: c.ink, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            Text('•  Cargar y editar animalitos', style: texto),
+            Text('•  Responder los chats', style: texto),
+            Text('•  Manejar los hogares de paso', style: texto),
+            const SizedBox(height: 8),
+            Text('Aprobar adopciones sigue siendo de la responsable.', style: texto),
+            const SizedBox(height: 12),
+            Text.rich(TextSpan(children: [
+              TextSpan(text: 'Tu cuenta personal sigue separada: ', style: texto.copyWith(color: c.ink, fontWeight: FontWeight.w700)),
+              TextSpan(text: 'el albergue no ve tus chats ni los animales que publicás por tu cuenta.', style: texto),
+            ])),
+            const SizedBox(height: 8),
+            Text('Para entrar, elegí «Albergue» arriba en tu inicio.', style: texto),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dlg, false), child: const Text('Ahora no')),
+          TextButton(
+            onPressed: () => Navigator.pop(dlg, true),
+            child: Text('Sí, sumarme', style: TextStyle(color: c.primaryStrong, fontWeight: FontWeight.w800)),
+          ),
+        ],
+      ),
     );
-    if (!ok) return;
-    await _accion(i.id, () => _repo.aceptar(i.id), '¡Listo! Ya sos parte del equipo de ${_nombre(i)}.');
+    if (ok != true) return;
+    await _accion(i.id, () => _repo.aceptar(i.id), '¡Listo! Ya sos parte del equipo de ${_nombre(i)}. Elegí «Albergue» en tu inicio para entrar.');
   }
 
   Future<void> _rechazar(InvitacionEquipo i) async {
@@ -92,7 +120,7 @@ class _MiEquipoScreenState extends State<MiEquipoScreen> {
   Future<void> _salir(String nombreAlbergue) async {
     final ok = await _confirmar(
       'Salir del equipo',
-      'Dejás de ver los chats y los hogares de paso de $nombreAlbergue. Para volver, te tienen que invitar de nuevo.',
+      'Dejás de ser parte del equipo de $nombreAlbergue y le avisamos al albergue. Para volver, te tienen que invitar de nuevo.',
       'Salir',
       peligro: true,
     );
@@ -195,42 +223,11 @@ class _MiEquipoScreenState extends State<MiEquipoScreen> {
                     children: [
                       Text(nombre, style: SpText.headline.copyWith(color: c.ink, fontWeight: FontWeight.w800)),
                       Text(
-                        m.desde != null ? 'Miembro del equipo desde ${formatearFecha(m.desde!)}' : 'Miembro del equipo',
+                        m.desde != null ? 'Sos parte del equipo desde el ${formatearFecha(m.desde!)}' : 'Sos parte del equipo',
                         style: SpText.caption.copyWith(color: c.inkMuted),
                       ),
                     ],
                   ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: SpSpace.s3),
-          SpNotice(
-            fondo: c.sky,
-            tinta: c.skyInk,
-            child: const Text(
-              'Por ahora el equipo puede consultar: ver los chats y los hogares de paso compartidos. '
-              'Responder, publicar y aprobar solicitudes sigue haciéndolo la cuenta del albergue.',
-            ),
-          ),
-          SpCard(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Column(
-              children: [
-                SpFilaCuenta(
-                  icono: Icons.forum_outlined,
-                  texto: 'Chats del albergue',
-                  sub: 'Adopción, hogar de paso y consultas',
-                  tono: SpTone.lilac,
-                  onTap: () => context.push(AppRoutes.chatsEquipo, extra: (albergueId: m.albergueId, albergueNombre: nombre)),
-                ),
-                const SpDivisorFilas(),
-                SpFilaCuenta(
-                  icono: Icons.home_outlined,
-                  texto: 'Hogares de paso compartidos',
-                  sub: 'Los que el albergue eligió compartir',
-                  tono: SpTone.butter,
-                  onTap: () => context.push(AppRoutes.hogaresEquipo, extra: (albergueId: m.albergueId, albergueNombre: nombre)),
                 ),
               ],
             ),
@@ -268,7 +265,7 @@ class _MiEquipoScreenState extends State<MiEquipoScreen> {
                 children: [
                   Text('${_nombre(i)} te invitó a su equipo',
                       style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: c.ink)),
-                  Text(i.venceEnTexto(DateTime.now()), style: SpText.caption.copyWith(color: c.inkMuted)),
+                  Text(i.plazoParaResponder(DateTime.now()), style: SpText.caption.copyWith(color: c.inkMuted)),
                 ],
               ),
             ),

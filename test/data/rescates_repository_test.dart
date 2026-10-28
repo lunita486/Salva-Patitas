@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:salva_patitas/data/contexto_albergue.dart';
 import 'package:salva_patitas/data/creator_role.dart';
 import 'package:salva_patitas/data/rescate_fotos_repository.dart';
 import 'package:salva_patitas/data/rescates_repository.dart';
@@ -254,8 +255,45 @@ void main() {
         expect(doc['rescatistaId'], 'user-2');
         expect(doc['creadoPor'], 'albergue');
         expect(doc['nombre'], 'Toby');
+        expect(doc.data()!.containsKey('autorUid'), isFalse,
+            reason: 'lo que carga la cuenta dueña sigue igual que antes');
       },
     );
+
+    test(
+      'equipo del albergue: crear() a nombre del albergue guarda quién lo cargó, '
+      'y los datos no pueden pisar el dueño ni el sombrero',
+      () async {
+        const ctx = ContextoAlbergue.equipo(albergueId: 'perla', autorUid: 'ana', autorNombre: 'Ana');
+        final ref = await repo.crear(
+          uid: ctx.albergueId,
+          role: CreatorRole.albergue,
+          datos: {'nombre': 'Tito', 'rescatistaId': 'ana', 'creadoPor': 'rescatista'},
+          autor: ctx.camposAutor,
+        );
+        final d = (await ref.get()).data()!;
+        expect(d['rescatistaId'], 'perla');
+        expect(d['creadoPor'], 'albergue');
+        expect(d['autorUid'], 'ana');
+        expect(d['autorNombre'], 'Ana');
+        expect(ContextoAlbergue.autorDe(d), 'Ana');
+      },
+    );
+
+    test('equipo del albergue: editar un animal no borra ni cambia quién lo cargó', () async {
+      final ref = await repo.crear(
+        uid: 'perla',
+        role: CreatorRole.albergue,
+        datos: {'nombre': 'Tito'},
+        autor: const ContextoAlbergue.equipo(albergueId: 'perla', autorUid: 'ana', autorNombre: 'Ana').camposAutor,
+      );
+      await repo.actualizar(ref.id, {'descripcion': 'Muy mimoso', 'nombre': 'Tito'});
+      await repo.cambiarEstadoAdopcion(ref.id, 'En proceso de adopción');
+      final d = (await ref.get()).data()!;
+      expect(d['descripcion'], 'Muy mimoso');
+      expect(d['autorUid'], 'ana');
+      expect(d['autorNombre'], 'Ana');
+    });
 
     test(
       'existeNombre() true si el mismo uid y el mismo rol ya tienen un animal con ese '

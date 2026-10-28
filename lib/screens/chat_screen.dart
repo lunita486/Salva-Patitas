@@ -10,6 +10,7 @@ import '../widgets/fotos.dart';
 import '../widgets/texto_sin_desborde.dart';
 import '../widgets/sp_widgets.dart';
 import '../theme/salva_patitas_theme.dart';
+import '../data/contexto_albergue.dart';
 import '../data/chats_repository.dart';
 import '../data/creator_role.dart';
 import '../data/firestore_resiliencia.dart';
@@ -181,8 +182,11 @@ class _ChatScreenState extends State<ChatScreen> {
                         'Adoptante'),
               rescateId: rescateId,
               rescatistaId: widget.animal['rescatistaId'] as String? ?? '',
-              rescatista:
-                  widget.animal['rescatista'] as String? ?? 'Rescatista',
+              // En modo equipo, el nombre del albergue: el adoptante nunca
+              // ve el de la persona del equipo.
+              rescatista: (_equipo?.albergueNombre.isNotEmpty ?? false)
+                  ? _equipo!.albergueNombre
+                  : widget.animal['rescatista'] as String? ?? 'Rescatista',
               creadoPor: widget.animal['creadoPor'] as String? ?? 'rescatista',
               animalNombre: widget.animal['nombre'] as String?,
               especie: widget.animal['especie'] as String?,
@@ -249,8 +253,15 @@ class _ChatScreenState extends State<ChatScreen> {
   // a un chat así mandaba emisor 'rescatista' y la regla rechazaba la
   // escritura entera ("No se pudo enviar el mensaje"). Mismo hallazgo que
   // ya se arregló para consulta_aliado, ahora en un chat de animal normal.
+  /// Modo equipo (fase 2): una miembro escribe del lado del albergue. Su
+  /// "lado" es el uid del albergue, y sus mensajes llevan su autor.
+  late final ContextoAlbergue? _equipo = widget.esRescatista ? SesionEquipo.actual.value : null;
+
+  /// Mi uid en ESTE chat: el del albergue en modo equipo, el propio si no.
+  String get _miUid => _equipo?.albergueId ?? FirebaseAuth.instance.currentUser?.uid ?? '';
+
   bool get _autoChat {
-    final propioUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final propioUid = _miUid;
     return widget.esRescatista &&
         propioUid.isNotEmpty &&
         (widget.animal['adoptanteId'] as String? ?? '') == propioUid;
@@ -264,7 +275,7 @@ class _ChatScreenState extends State<ChatScreen> {
   /// hace falta reconocerlo también desde el lado adoptante, que es donde
   /// Eliza vio todas las burbujas del mismo lado.
   bool get _esAutoconsulta {
-    final propioUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final propioUid = _miUid;
     if (propioUid.isEmpty) return false;
     final otroLado = widget.esRescatista
         ? (widget.animal['adoptanteId'] as String? ?? '')
@@ -306,6 +317,7 @@ class _ChatScreenState extends State<ChatScreen> {
         // lo único que distingue los dos lados (`emisor` ahí vale siempre
         // 'adoptante' porque la regla lo exige) — ver agregarMensaje.
         escritoPorRescatista: widget.esRescatista,
+        autor: _equipo?.camposAutor ?? const {},
       );
       // Se registra CADA mensaje, no solo "el primero" — distinguir el
       // primero de una conversación requeriría otra lectura extra (contar
@@ -484,6 +496,15 @@ class _ChatScreenState extends State<ChatScreen> {
     );
     final text = d['texto'] as String? ?? '';
     final time = d['hora'] as String? ?? '';
+    // Rotulito de quién escribió, solo del lado del albergue y solo en los
+    // mensajes del albergue escritos por una miembro del equipo. El
+    // adoptante nunca lo ve. Los propios no lo llevan.
+    final autorUid = d['autorUid'];
+    final autor = widget.esRescatista &&
+            d['emisor'] == 'rescatista' &&
+            autorUid != FirebaseAuth.instance.currentUser?.uid
+        ? ContextoAlbergue.autorDe(d)
+        : null;
     final c = context.sp;
     return Align(
       alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
@@ -515,6 +536,13 @@ class _ChatScreenState extends State<ChatScreen> {
               ? CrossAxisAlignment.end
               : CrossAxisAlignment.start,
           children: [
+            if (autor != null) ...[
+              Text(
+                autor,
+                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: c.primaryStrong),
+              ),
+              const SizedBox(height: 2),
+            ],
             Text(
               text,
               style: TextStyle(fontSize: 14, color: c.ink, height: 1.4),

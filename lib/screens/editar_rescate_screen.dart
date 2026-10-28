@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:go_router/go_router.dart';
@@ -16,6 +15,7 @@ import '../widgets/dialogos_eliminar_rescate.dart';
 import '../widgets/elegir_foto_animal.dart';
 import '../widgets/fotos.dart';
 import '../widgets/tardando_mucho_mixin.dart';
+import '../data/contexto_albergue.dart';
 import '../data/creator_role.dart';
 import '../data/rescates_repository.dart';
 import '../data/rescate_fotos_repository.dart';
@@ -398,6 +398,17 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
   // otro ya había borrado).
   bool _eliminando = false;
 
+  /// Dueño del animal: el albergue si es del albergue (el de la
+  /// responsable en modo equipo), si no la cuenta propia.
+  late final String _dueno = uidDueno(esAlbergue: esRescateDeAlbergue(widget.data));
+
+  /// Modo equipo (fase 2): solo borra lo que cargó esta persona.
+  late final ContextoAlbergue? _equipo = esRescateDeAlbergue(widget.data) ? SesionEquipo.actual.value : null;
+  bool get _puedeBorrar => _equipo == null || widget.data['autorUid'] == _equipo.autorUid;
+
+  /// "Cargado por Ana", solo del lado del albergue.
+  late final String? _cargadoPor = esRescateDeAlbergue(widget.data) ? ContextoAlbergue.autorDe(widget.data) : null;
+
   Future<void> _eliminar() async {
     // Silencioso a propósito (el aviso de "hay una eliminación en curso"
     // que hubo acá un tiempo generaba confusión y se quitó — ver la
@@ -431,7 +442,7 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
       bloqueo = await RescatesRepository().bloqueoParaEliminar(
         rescateId: widget.docId,
         nombre: nombre,
-        rescatistaId: FirebaseAuth.instance.currentUser?.uid ?? '',
+        rescatistaId: _dueno,
       );
     } catch (_) {
       if (!mounted) return;
@@ -554,9 +565,8 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
   Future<bool> _pasaElChequeoDeDuplicado() async {
     final nombre = _nombreCtl.text.trim();
     if (nombre.isEmpty) return true;
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     final duplicado = await RescatesRepository().buscarDuplicado(
-      uid: uid,
+      uid: _dueno,
       nombre: nombre,
       role: creatorRoleFromFirestore(widget.data['creadoPor'] as String?),
       especie: _especie,
@@ -1033,16 +1043,27 @@ class _EditarRescateScreenState extends State<EditarRescateScreen>
                         ),
                         const SizedBox(height: SpSpace.s6),
                         _botonGuardar(c),
-                        const SizedBox(height: SpSpace.s3),
-                        SizedBox(
-                          width: double.infinity,
-                          child: SpButton(
-                            label: 'Eliminar publicación',
-                            icon: Icons.delete_outline_rounded,
-                            peligro: true,
-                            onTap: _guardando ? null : _eliminar,
+                        if (_puedeBorrar) ...[
+                          const SizedBox(height: SpSpace.s3),
+                          SizedBox(
+                            width: double.infinity,
+                            child: SpButton(
+                              label: 'Eliminar publicación',
+                              icon: Icons.delete_outline_rounded,
+                              peligro: true,
+                              onTap: _guardando ? null : _eliminar,
+                            ),
                           ),
-                        ),
+                        ],
+                        if (_cargadoPor != null) ...[
+                          const SizedBox(height: SpSpace.s3),
+                          Center(
+                            child: Text(
+                              'Cargado por $_cargadoPor',
+                              style: SpText.caption.copyWith(color: c.lilacInk, fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),

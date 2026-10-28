@@ -88,6 +88,11 @@ void main() {
       expect(inv(const Duration(hours: 5)).venceEnTexto(ahora), 'Vence hoy');
       expect(inv(const Duration(hours: 30)).venceEnTexto(ahora), 'Vence en 1 día');
       expect(inv(const Duration(days: 6, hours: 1)).venceEnTexto(ahora), 'Vence en 6 días');
+      expect(inv(const Duration(days: 6, hours: 23)).venceEnTexto(ahora), 'Vence en 7 días',
+          reason: 'recién creada no puede decir 6 si dura 7');
+      expect(inv(const Duration(days: 6, hours: 23)).plazoParaResponder(ahora), 'Tenés 7 días para responder');
+      expect(inv(const Duration(hours: 30)).plazoParaResponder(ahora), 'Tenés 1 día para responder');
+      expect(inv(const Duration(hours: 5)).plazoParaResponder(ahora), 'Respondé hoy: después vence');
       expect(const InvitacionEquipo(id: 'x', albergueId: 'p', emailDestino: 'a', estado: 'pendiente').vigente(ahora), isFalse);
     });
   });
@@ -101,11 +106,9 @@ void main() {
       await repo.cancelar('inv3');
       await repo.revocar('uid_m');
       await repo.salir();
-      await repo.revisarHogar('h1', compartir: true);
-      await repo.revisarHogar('h2', compartir: false);
       expect(llamadas.map((l) => l.$1).toList(), [
         'invitarMiembro', 'aceptarInvitacion', 'rechazarInvitacion', 'cancelarInvitacion',
-        'revocarMiembro', 'salirDelEquipo', 'revisarHogarEquipo', 'revisarHogarEquipo',
+        'revocarMiembro', 'salirDelEquipo',
       ]);
       expect(llamadas.map((l) => l.$2).toList(), [
         {'email': 'ana@mail.com'},
@@ -114,8 +117,6 @@ void main() {
         {'invitacionId': 'inv3'},
         {'miembroUid': 'uid_m'},
         <String, dynamic>{},
-        {'hogarId': 'h1', 'decision': 'compartir'},
-        {'hogarId': 'h2', 'decision': 'no_compartir'},
       ]);
     });
 
@@ -143,13 +144,6 @@ void main() {
       final e = await errorDe(FirebaseFunctionsException(
         code: 'already-exists', message: 'Ya hay una invitación pendiente para ese correo.'));
       expect(e.mensaje, 'Ya hay una invitación pendiente para ese correo.');
-      expect(e.esPorHogares, isFalse);
-    });
-
-    test('barrera de hogares de paso: se reconoce para ofrecer revisarlos', () async {
-      final e = await errorDe(FirebaseFunctionsException(
-        code: 'failed-precondition', message: 'Antes de invitar a tu equipo tenés que revisar tu red de hogares de paso.'));
-      expect(e.esPorHogares, isTrue);
     });
 
     test('errores técnicos: texto genérico, sin detalles del servidor', () async {

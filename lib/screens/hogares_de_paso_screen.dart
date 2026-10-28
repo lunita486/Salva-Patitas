@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme/salva_patitas_theme.dart';
@@ -9,7 +8,7 @@ import '../widgets/avatares.dart';
 import '../widgets/campo_pais_telefono.dart';
 import '../widgets/estado_error_feed.dart';
 import '../widgets/resultado_guardado_snackbar.dart';
-import '../data/equipo_repository.dart';
+import '../data/contexto_albergue.dart';
 import '../data/hogares_de_paso_repository.dart';
 import '../data/firestore_resiliencia.dart';
 
@@ -27,97 +26,9 @@ class HogaresDePasoScreen extends StatefulWidget {
 
 class _HogaresDePasoScreenState extends State<HogaresDePasoScreen> {
   final _repo = HogaresDePasoRepository();
-  final _equipo = EquipoRepository();
-  // Hogar cuya decisión de equipo se está guardando (un toque a la vez).
-  String? _revisando;
-
-  /// Qué ve el equipo del albergue de este hogar. Lo decide solo la
-  /// responsable, y lo guarda la Cloud Function revisarHogarEquipo (las
-  /// reglas no dejan que la app escriba visibleEquipo/revisionEquipo).
-  /// Ningún hogar se comparte por defecto.
-  Future<void> _decidirEquipo(String docId, String nombre, bool? compartidoAhora) async {
-    if (_revisando != null) return;
-    final compartir = await showModalBottomSheet<bool>(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (hoja) => Padding(
-        padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SpAgarradera(),
-            const SizedBox(height: 16),
-            SpHojaTitulo(
-              '¿Lo ve tu equipo?',
-              subtitulo: 'Decidí si las personas de tu equipo pueden ver a $nombre y sus datos de contacto.',
-            ),
-            const SizedBox(height: 16),
-            SpOpcionHoja(
-              titulo: 'Compartir con mi equipo',
-              detalle: 'Lo ven en "Hogares de paso compartidos"',
-              icono: Icons.groups_2_outlined,
-              tono: SpTone.mint,
-              elegida: compartidoAhora == true,
-              onTap: () => Navigator.pop(hoja, true),
-            ),
-            SpOpcionHoja(
-              titulo: 'Solo yo',
-              detalle: 'Tu equipo no lo ve',
-              icono: Icons.lock_outline_rounded,
-              tono: SpTone.lilac,
-              elegida: compartidoAhora == false,
-              onTap: () => Navigator.pop(hoja, false),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (compartir == null || !mounted) return;
-    setState(() => _revisando = docId);
-    try {
-      await _equipo.revisarHogar(docId, compartir: compartir);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(compartir ? 'Tu equipo ya puede ver a $nombre.' : 'Tu equipo no ve a $nombre.'),
-          backgroundColor: context.sp.msgExito,
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(EquipoError.mensajeDe(e)), backgroundColor: context.sp.msgError),
-      );
-    } finally {
-      if (mounted) setState(() => _revisando = null);
-    }
-  }
-
-  Widget _pillEquipo(SpColors c, String docId, String nombre, Map<String, dynamic> d) {
-    final revisado = d['revisionEquipo'] is Map;
-    final compartido = d['visibleEquipo'] == true;
-    final estado = !revisado && !compartido ? null : compartido;
-    if (_revisando == docId) {
-      return SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: c.primary));
-    }
-    return GestureDetector(
-      onTap: () => _decidirEquipo(docId, nombre, estado),
-      child: SpPill(
-        switch (estado) {
-          true => 'Equipo: lo ve',
-          false => 'Equipo: no lo ve',
-          null => 'Equipo: sin decidir',
-        },
-        fondo: estado == true ? c.mint : (estado == false ? c.surfaceSunken : c.butter),
-        tinta: estado == true ? c.primaryStrong : (estado == false ? c.inkMuted : c.butterInk),
-        icon: estado == true ? Icons.groups_2_outlined : Icons.lock_outline_rounded,
-      ),
-    );
-  }
-  final _uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+  // La red del albergue del panel: la propia, o la de la responsable en
+  // modo equipo (fase 2: el equipo ve, agrega, edita y borra).
+  final _uid = contextoAlbergue().albergueId;
   // Sin este candado, dos toques en el botón "Agregar" (uno mientras la hoja
   // todavía está abriéndose, u otro porque la persona no vio ninguna
   // confirmación de que el primero funcionó — agregarManual() no avisaba
@@ -482,11 +393,6 @@ class _HogaresDePasoScreenState extends State<HogaresDePasoScreen> {
                                           icon: Icons.chat_rounded,
                                         ),
                                       ),
-                                    if (linkWhatsapp != null)
-                                      const SizedBox(width: 8),
-                                    Flexible(
-                                      child: _pillEquipo(c, docId, nombre, d),
-                                    ),
                                     const Spacer(),
                                     SpMiniButton(
                                       icon: Icons.edit_outlined,

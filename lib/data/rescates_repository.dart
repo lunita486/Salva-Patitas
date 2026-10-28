@@ -711,16 +711,21 @@ class RescatesRepository {
   /// para el adoptante, porque el rollback nunca tuvo un id que borrar).
   DocumentReference<Map<String, dynamic>> nuevoRef() => _col.doc();
 
+  /// [uid] es el dueño del animal: la cuenta propia, o el albergue cuando
+  /// carga una miembro del equipo. [autor] son los campos de quién lo cargó
+  /// de verdad (ContextoAlbergue.camposAutor); vacío para la cuenta dueña.
   Future<DocumentReference<Map<String, dynamic>>> crear({
     required String uid,
     required CreatorRole role,
     required Map<String, dynamic> datos,
     DocumentReference<Map<String, dynamic>>? ref,
+    Map<String, Object> autor = const {},
   }) async {
     final destino = ref ?? _col.doc();
     final nombre = datos['nombre'] as String?;
     await destino.set({
       ...datos,
+      ...autor,
       'rescatistaId': uid,
       'creadoPor': role.firestoreValue,
       'creadoEn': FieldValue.serverTimestamp(),
@@ -1134,6 +1139,7 @@ class RescatesRepository {
     required Map<String, dynamic> datos,
     required List<Uint8List> fotos,
     void Function(double progreso)? onProgreso,
+    Map<String, Object> autor = const {},
   }) async {
     final fotosRepo = _fotosRepo;
     String? rescateId;
@@ -1147,7 +1153,7 @@ class RescatesRepository {
       // fantasma sin foto (bug real reportado por Eliza).
       final nuevaRef = nuevoRef();
       rescateId = nuevaRef.id;
-      await crear(ref: nuevaRef, uid: uid, role: role, datos: datos).timeout(
+      await crear(ref: nuevaRef, uid: uid, role: role, datos: datos, autor: autor).timeout(
         const Duration(seconds: 15),
         onTimeout: () => throw Exception('No hay conexión a internet.'),
       );

@@ -32,6 +32,10 @@
     // ninguna credencial de verdad de por medio.
     "auth": { "port": 9099 },
     "storage": { "port": 9199 },
+    // Functions del equipo del albergue (y el resto) en local, para probar
+    // la app en sandbox sin llamar nunca a las Functions de producción.
+    // La app se conecta en lib/data/sandbox.dart.
+    "functions": { "port": 5001 },
     "ui": { "enabled": false },
     "singleProjectMode": true
   }

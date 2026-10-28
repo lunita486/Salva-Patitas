@@ -1,12 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../domain/reglas_negocio.dart';
 import '../widgets/albergue_tab_bar.dart';
 import '../widgets/dialogos_eliminar_rescate.dart';
 import '../widgets/estado_error_feed.dart';
+import '../data/contexto_albergue.dart';
 import '../data/creator_role.dart';
 import '../data/rescates_repository.dart';
 import '../data/rescate_fotos_repository.dart';
@@ -170,7 +170,9 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
     return todos;
   }
 
-  String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
+  // En la jauría del albergue, el albergue del panel (el de la responsable
+  // en modo equipo); en "Mis rescates", la cuenta propia.
+  String get _uid => uidDueno(esAlbergue: widget.esAlbergue);
   CreatorRole get _rol =>
       widget.esAlbergue ? CreatorRole.albergue : CreatorRole.rescatista;
 
@@ -325,8 +327,9 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
   }
 
   Future<void> _cargarUmbralEstancado() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
+    // El umbral es del albergue (o de la cuenta propia en "Mis rescates").
+    final uid = _uid;
+    if (uid.isEmpty) return;
     final doc = await FirebaseFirestore.instance
         .collection('usuarios')
         .doc(uid)
@@ -394,7 +397,7 @@ class _TodosLosRescatesScreenState extends State<TodosLosRescatesScreen> {
       bloqueo = await RescatesRepository().bloqueoParaEliminar(
         rescateId: docId,
         nombre: nombre,
-        rescatistaId: FirebaseAuth.instance.currentUser?.uid ?? '',
+        rescatistaId: _uid,
       );
     } catch (_) {
       if (!context.mounted) return;

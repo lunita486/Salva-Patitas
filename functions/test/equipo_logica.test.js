@@ -6,7 +6,6 @@ const L = require('../equipo_logica');
 // la concurrencia) están en equipo.emulador.test.js.
 
 const fecha = (anio, mes, dia) => ({ toMillis: () => Date.UTC(anio, mes - 1, dia) });
-const revision = (extra = {}) => ({ decision: 'compartir', por: 'uid_resp', en: fecha(2026, 10, 20), ...extra });
 const codigo = (fn) => { try { fn(); } catch (e) { return e.code; } return null; };
 
 describe('validarPayload: solo los campos permitidos', () => {
@@ -57,57 +56,18 @@ describe('identidades', () => {
   });
 });
 
-describe('hogares de paso dudosos', () => {
-  test('sin vida de rescatista, ningún hogar es dudoso', () => {
-    assert.equal(L.hogarDudoso({ creadoEn: fecha(2026, 1, 1) }, false), false);
-    assert.equal(L.hogarDudoso({}, false), false);
-  });
-  test('con vida de rescatista: viejo o sin fecha es dudoso, desde el 2026-07-31 no', () => {
-    assert.equal(L.hogarDudoso({ creadoEn: fecha(2026, 7, 30) }, true), true);
-    assert.equal(L.hogarDudoso({ creadoEn: fecha(2026, 7, 31) }, true), false);
-    assert.equal(L.hogarDudoso({}, true), true);
-    assert.equal(L.hogarDudoso({ creadoEn: '2026-09-01' }, true), true, 'una fecha como texto no vale');
-    assert.equal(L.hogarDudoso({ creadoEn: new Date(Date.UTC(2026, 8, 1)) }, true), false);
-  });
-  test('revisión válida: decisión conocida, quién y cuándo', () => {
-    assert.equal(L.revisionValida(revision()), true);
-    assert.equal(L.revisionValida(revision({ decision: 'no_compartir' })), true);
-  });
-  for (const [caso, rev] of [
-    ['decisión desconocida', revision({ decision: 'si' })],
-    ['sin decisión', revision({ decision: undefined })],
-    ['sin quién', revision({ por: '' })],
-    ['quién no es texto', revision({ por: 7 })],
-    ['sin cuándo', revision({ en: undefined })],
-    ['cuándo como texto', revision({ en: '2026-10-20' })],
-    ['una lista', ['compartir']],
-    ['un texto', 'compartir'],
-    ['true', true],
-    ['null', null],
-  ]) {
-    test(`revisión mal formada no cuenta: ${caso}`, () => assert.equal(L.revisionValida(rev), false));
-  }
-  test('pendientes: solo los dudosos sin revisión válida', () => {
-    const hogares = [
-      { id: 'viejo', creadoEn: fecha(2026, 5, 1) },
-      { id: 'sinFecha' },
-      { id: 'nuevo', creadoEn: fecha(2026, 9, 1) },
-      { id: 'revisadoSi', revisionEquipo: revision() },
-      { id: 'revisadoNo', revisionEquipo: revision({ decision: 'no_compartir' }) },
-      { id: 'revisadoMal', revisionEquipo: revision({ por: '' }) },
-    ];
-    assert.deepEqual(L.hogaresPendientesDeRevision(hogares, true), ['viejo', 'sinFecha', 'revisadoMal']);
-    assert.deepEqual(L.hogaresPendientesDeRevision(hogares, false), []);
-  });
-  test('los mensajes de bloqueo no dicen cuántos hogares hay ni nada del historial', () => {
-    const paraResponsable = L.errorHogaresPendientes();
-    const paraInvitada = L.errorAlbergueNoDisponible();
-    for (const e of [paraResponsable, paraInvitada]) {
-      assert.equal(e.code, 'failed-precondition');
-      assert.doesNotMatch(e.message, /\d/, 'sin números');
-      assert.doesNotMatch(e.message, /rescatista|época|dudos/i, 'sin historial de la cuenta');
+describe('hogares de paso: sin revisión ni barrera desde la fase 2', () => {
+  test('la lógica ya no exporta nada de hogares dudosos ni de revisión', () => {
+    for (const nombre of ['hogarDudoso', 'revisionValida', 'hogaresPendientesDeRevision',
+      'errorHogaresPendientes', 'comprobarPuedeRevisarHogar', 'REGLA_ROL_ALBERGUE', 'DECISIONES_REVISION']) {
+      assert.equal(L[nombre], undefined, nombre);
     }
-    assert.doesNotMatch(paraInvitada.message, /hogar/i, 'la invitada no se entera de que es por los hogares');
+  });
+  test('el mensaje genérico para la invitada no da pistas de la cuenta', () => {
+    const e = L.errorAlbergueNoDisponible();
+    assert.equal(e.code, 'failed-precondition');
+    assert.doesNotMatch(e.message, /\d/, 'sin números');
+    assert.doesNotMatch(e.message, /rescatista|hogar|aliado/i);
   });
 });
 
@@ -125,12 +85,6 @@ describe('invitar', () => {
   });
   test('una responsable que también es negocio aliado no puede', () => {
     assert.equal(codigo(() => L.comprobarPuedeInvitar({ usuario: { ...resp, roles: ['albergue', 'aliado'] }, membresiaPropia: null })), 'failed-precondition');
-  });
-  test('cupo: activos + vigentes nunca pasan de 10', () => {
-    L.comprobarCupoParaInvitar({ miembrosActivos: 9, invitacionesVigentes: 0 });
-    L.comprobarCupoParaInvitar({ miembrosActivos: 5, invitacionesVigentes: 4 });
-    assert.equal(codigo(() => L.comprobarCupoParaInvitar({ miembrosActivos: 10, invitacionesVigentes: 0 })), 'resource-exhausted');
-    assert.equal(codigo(() => L.comprobarCupoParaInvitar({ miembrosActivos: 7, invitacionesVigentes: 3 })), 'resource-exhausted');
   });
   test('vigencia de 7 días', () => {
     const t = Date.UTC(2026, 9, 22);
@@ -186,9 +140,13 @@ describe('aceptar', () => {
       }
     }
   });
-  test('cupo al aceptar: 10 activos es el máximo', () => {
-    L.comprobarCupoParaAceptar({ miembrosActivos: 9 });
-    assert.equal(codigo(() => L.comprobarCupoParaAceptar({ miembrosActivos: 10 })), 'resource-exhausted');
+});
+
+describe('sin tope de personas por equipo', () => {
+  test('la lógica ya no tiene cupo: no exporta MAX_EQUIPO ni comprobaciones de cupo', () => {
+    assert.equal(L.MAX_EQUIPO, undefined);
+    assert.equal(L.comprobarCupoParaInvitar, undefined);
+    assert.equal(L.comprobarCupoParaAceptar, undefined);
   });
 });
 
@@ -221,14 +179,6 @@ describe('terminar membresías, invitaciones y eliminación de cuenta', () => {
     assert.equal(L.restarMiembro(0), 0);
     assert.equal(L.restarMiembro(undefined), 0);
     assert.equal(L.restarMiembro('x'), 0);
-  });
-  test('revisar un hogar: decisión conocida, responsable y hogar de su red', () => {
-    const usuario = { roles: ['albergue'], albergueNombre: 'La Perla' };
-    const hogar = { albergueId: 'resp' };
-    L.comprobarPuedeRevisarHogar({ uid: 'resp', usuario, hogar, decision: 'no_compartir' });
-    assert.equal(codigo(() => L.comprobarPuedeRevisarHogar({ uid: 'resp', usuario, hogar, decision: 'si' })), 'invalid-argument');
-    assert.equal(codigo(() => L.comprobarPuedeRevisarHogar({ uid: 'resp', usuario: { roles: ['adoptante'] }, hogar, decision: 'compartir' })), 'permission-denied');
-    assert.equal(codigo(() => L.comprobarPuedeRevisarHogar({ uid: 'otra', usuario, hogar, decision: 'compartir' })), 'not-found');
   });
   test('eliminar cuenta: bloquea con miembros o invitaciones vigentes, sin decir nombres', () => {
     assert.equal(L.bloqueoEliminarCuenta({ miembrosActivos: 0, invitacionesVigentes: 0 }), null);

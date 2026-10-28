@@ -1,6 +1,6 @@
 // Lógica pura del equipo del albergue (invitaciones y membresías), sin
 // ninguna llamada a Firestore ni a Auth: es la parte que decide quién puede
-// invitar, quién puede aceptar y cuándo un hogar de paso bloquea al equipo.
+// invitar y quién puede aceptar.
 // `equipo.js` lee los datos del servidor y le pregunta a estas funciones.
 // Mismo patrón que eliminar_cuenta_logica.js.
 //
@@ -9,13 +9,8 @@
 // (su uid es el albergueId), "miembro del equipo" es una persona invitada,
 // "negocio aliado" es el rol técnico `aliado`.
 
-const MAX_EQUIPO = 10;
 const DIAS_VIGENCIA = 7;
 const DIA_MS = 24 * 60 * 60 * 1000;
-// Desde este día firestore.rules exige el rol 'albergue' para crear en
-// hogaresDePaso (commit abf8525). Antes, una cuenta sin ese rol también podía.
-const REGLA_ROL_ALBERGUE = Date.UTC(2026, 6, 31);
-const DECISIONES_REVISION = ['compartir', 'no_compartir'];
 
 const esTexto = (v) => typeof v === 'string' && v.trim() !== '';
 const tiene = (lista, valor) => Array.isArray(lista) && lista.includes(valor);
@@ -76,54 +71,8 @@ function esNegocioAliado(usuario) {
 
 const membresiaActiva = (m) => !!m && m.estado === 'activa';
 
-// ─── Hogares de paso dudosos ─────────────────────────────────────────────
-//
-// La colección no tiene campo de contexto. Un hogar es dudoso cuando la
-// responsable tuvo vida de rescatista (rol o algún animal personal) y el
-// hogar no tiene una fecha posterior a REGLA_ROL_ALBERGUE: pudo haberse
-// creado fuera del contexto del albergue.
-//
-// Límite conocido: las reglas no obligan a que `creadoEn` sea la hora del
-// servidor, así que una fecha posterior a la regla NO prueba que el hogar
-// sea del albergue. Por eso esta barrera no alcanza sola: en una fase
-// posterior las reglas solo dejarán ver al equipo hogares con
-// `visibleEquipo == true`, y ningún hogar se vuelve visible por defecto.
-
-function hogarDudoso(hogar, tuvoVidaDeRescatista) {
-  if (!tuvoVidaDeRescatista) return false;
-  const ms = msDe(hogar.creadoEn);
-  return ms === null || ms < REGLA_ROL_ALBERGUE;
-}
-
-/**
- * Una revisión cuenta solo si está completa: decisión conocida, quién la
- * tomó y cuándo. Cualquier otra forma se trata como no revisada.
- */
-function revisionValida(rev) {
-  return !!rev && typeof rev === 'object' && !Array.isArray(rev) &&
-    DECISIONES_REVISION.includes(rev.decision) &&
-    esTexto(rev.por) &&
-    msDe(rev.en) !== null;
-}
-
-/** Ids de los hogares dudosos que todavía no tienen una revisión válida. */
-function hogaresPendientesDeRevision(hogares, tuvoVidaDeRescatista) {
-  return hogares
-      .filter((h) => hogarDudoso(h, tuvoVidaDeRescatista) && !revisionValida(h.revisionEquipo))
-      .map((h) => h.id);
-}
-
-// Mensajes de la barrera de hogares. No dicen cuántos hogares hay, ni cuáles,
-// ni nada del historial de la cuenta: la persona invitada no tiene por qué
-// enterarse de nada de la responsable, y la responsable ve sus hogares en
-// la app (la revisión es de una fase posterior).
-function errorHogaresPendientes() {
-  return new ErrorEquipo('failed-precondition',
-      'Antes de invitar a tu equipo tenés que revisar tu red de hogares de paso.');
-}
-
 // Mismo texto para cualquier motivo por el que el albergue no puede sumar
-// gente ahora (hogares sin revisar, la responsable dejó de serlo o es
+// gente ahora (la responsable dejó de serlo o es
 // negocio aliado): así la persona invitada no puede deducir cuál es.
 function errorAlbergueNoDisponible() {
   return new ErrorEquipo('failed-precondition',
@@ -148,13 +97,10 @@ function comprobarPuedeInvitar({ usuario, membresiaPropia }) {
 
 const invitacionVigente = (inv, ahora) => inv.estado === 'pendiente' && (msDe(inv.expiraEn) ?? 0) > ahora;
 
-/** Lanza si no hay lugar: activos + invitaciones vigentes no pueden pasar de 10. */
-function comprobarCupoParaInvitar({ miembrosActivos, invitacionesVigentes }) {
-  if (miembrosActivos + invitacionesVigentes >= MAX_EQUIPO) {
-    throw new ErrorEquipo('resource-exhausted',
-        `El equipo ya tiene ${MAX_EQUIPO} lugares ocupados entre miembros e invitaciones pendientes.`);
-  }
-}
+// Sin tope de personas por equipo (decisión de Eliza, 2026-10-24: reemplaza
+// el máximo de 10). El contador equipos/{albergueId}.miembrosActivos sigue
+// existiendo: lo usan el bloqueo al eliminar la cuenta y la regla que no
+// deja a una responsable con equipo hacerse negocio aliado.
 
 const venceEn = (ahora) => ahora + DIAS_VIGENCIA * DIA_MS;
 
@@ -193,12 +139,6 @@ function comprobarPuedeAceptar({ invitacion, uid, email, ahora, membresiaPropia,
     throw errorAlbergueNoDisponible();
   }
   return { vencida: false };
-}
-
-function comprobarCupoParaAceptar({ miembrosActivos }) {
-  if (miembrosActivos >= MAX_EQUIPO) {
-    throw new ErrorEquipo('resource-exhausted', `El equipo ya tiene ${MAX_EQUIPO} miembros.`);
-  }
 }
 
 // ─── Terminar una membresía ──────────────────────────────────────────────
@@ -254,21 +194,6 @@ function comprobarPuedeRechazar({ email, invitacion }) {
 /** El contador nunca baja de cero, aunque el documento esté desfasado. */
 const restarMiembro = (miembrosActivos) => Math.max(0, (Number(miembrosActivos) || 0) - 1);
 
-// ─── Revisión de hogares para el equipo ──────────────────────────────────
-
-/** Lanza si la responsable [uid] no puede decidir sobre ese hogar. */
-function comprobarPuedeRevisarHogar({ uid, usuario, hogar, decision }) {
-  if (!DECISIONES_REVISION.includes(decision)) {
-    throw new ErrorEquipo('invalid-argument', 'Decisión inválida.');
-  }
-  if (!esResponsable(usuario)) {
-    throw new ErrorEquipo('permission-denied', 'Solo la responsable del albergue decide qué ve su equipo.');
-  }
-  if (!hogar || hogar.albergueId !== uid) {
-    throw new ErrorEquipo('not-found', 'Ese hogar de paso no está en tu red.');
-  }
-}
-
 // ─── Eliminación de cuenta ───────────────────────────────────────────────
 
 /**
@@ -283,12 +208,12 @@ function bloqueoEliminarCuenta({ miembrosActivos, invitacionesVigentes }) {
 }
 
 module.exports = {
-  MAX_EQUIPO, DIAS_VIGENCIA, REGLA_ROL_ALBERGUE, DECISIONES_REVISION,
+  DIAS_VIGENCIA,
   ErrorEquipo, validarPayload, normalizarEmail, emailValido, msDe,
   esResponsable, tieneSenalDeResponsable, esNegocioAliado, membresiaActiva,
-  hogarDudoso, revisionValida, hogaresPendientesDeRevision, errorHogaresPendientes, errorAlbergueNoDisponible,
-  comprobarPuedeInvitar, invitacionVigente, comprobarCupoParaInvitar, venceEn,
-  comprobarPuedeAceptar, comprobarCupoParaAceptar,
+  errorAlbergueNoDisponible,
+  comprobarPuedeInvitar, invitacionVigente, venceEn,
+  comprobarPuedeAceptar,
   MOTIVOS_FIN, comprobarPuedeRevocar, comprobarPuedeSalir, comprobarPuedeCancelar, comprobarPuedeRechazar,
-  restarMiembro, comprobarPuedeRevisarHogar, bloqueoEliminarCuenta,
+  restarMiembro, bloqueoEliminarCuenta,
 };

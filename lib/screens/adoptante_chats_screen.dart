@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
+import '../data/contexto_albergue.dart';
 import '../data/chats_repository.dart';
 import '../data/solicitudes_repository.dart';
 import '../routing/app_router.dart';
@@ -45,10 +46,16 @@ class _AdoptanteChatsScreenState extends State<AdoptanteChatsScreen> {
   // "consultas enviadas" de la lista se caía y volvía sola en cada mensaje
   // nuevo. Ese era el parpadeo de "aparecen de a uno" en la lista de chats.
   // Hallazgo de auditoría de código.
-  late final String _uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+  // En el lado del albergue, el dueño es el albergue del panel (el de la
+  // responsable en modo equipo); en lo personal, la cuenta propia.
+  late final String _uid = uidDueno(esAlbergue: widget.esAlbergue);
+  late final bool _modoEquipo = widget.esAlbergue && SesionEquipo.activa;
   late final ChatsRepository _chatsRepo = ChatsRepository();
-  late final Stream<QuerySnapshot<Map<String, dynamic>>> _chatsStream =
-      _chatsRepo.mios(uid: _uid, esRescatista: widget.esRescatista);
+  // Modo equipo: solo los chats que las reglas dejan leer al equipo (sin
+  // consultas a negocios ni chats personales de la responsable).
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _chatsStream = _modoEquipo
+      ? _chatsRepo.delEquipo(_uid).snapshots()
+      : _chatsRepo.mios(uid: _uid, esRescatista: widget.esRescatista);
   late final Stream<QuerySnapshot<Map<String, dynamic>>>
   _consultasEnviadasStream = _chatsRepo.consultasEnviadas(uid: _uid);
 
@@ -116,7 +123,7 @@ class _AdoptanteChatsScreenState extends State<AdoptanteChatsScreen> {
                       // recibió (soloConsultas) no lo necesita: a él sí lo
                       // encuentra bien la consulta de arriba, siempre es
                       // rescatistaId en sus propios chats.
-                      if (widget.esRescatista && !widget.soloConsultas) {
+                      if (widget.esRescatista && !widget.soloConsultas && !_modoEquipo) {
                         return StreamBuilder<QuerySnapshot>(
                           stream: _consultasEnviadasStream,
                           builder: (context, snapEnviadas) {
@@ -155,7 +162,7 @@ class _AdoptanteChatsScreenState extends State<AdoptanteChatsScreen> {
     BuildContext context,
     List<QueryDocumentSnapshot> docsSinFiltrar,
   ) {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final uid = _uid;
     final docs =
         docsSinFiltrar
             .where(

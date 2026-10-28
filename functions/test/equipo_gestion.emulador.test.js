@@ -5,8 +5,8 @@ const { getFirestore, Timestamp } = require('firebase-admin/firestore');
 const E = require('../equipo');
 
 // Gestión del equipo contra el EMULADOR de Firestore: rechazar y cancelar
-// invitaciones, quitar a alguien, salir del equipo, decidir qué hogares ve
-// el equipo, la limpieza al eliminar una cuenta y los avisos push.
+// invitaciones, quitar a alguien, salir del equipo,
+// la limpieza al eliminar una cuenta y los avisos push.
 //
 // Mismas condiciones que equipo.emulador.test.js: solo con el emulador local
 // y un proyecto "demo-". Cómo correrlas:
@@ -230,54 +230,6 @@ describe('gestión del equipo con el emulador', { skip: SIN_EMULADOR }, () => {
       assert.equal(r.filter((x) => x.status === 'fulfilled').length, 1, 'gana una sola de las dos');
       assert.ok(['salio', 'revocada'].includes((await leer('membresias', miembro)).estado));
       assert.equal((await leer('equipos', resp)).miembrosActivos, 0);
-    });
-  });
-
-  describe('revisarHogarEquipo', () => {
-    const hogar = async (albergueId, extra = {}) => {
-      const id = nuevoId('hogar');
-      await poner('hogaresDePaso', id, { albergueId, nombre: 'Familia Ruiz', telefono: '300', ...extra });
-      return id;
-    };
-    test('compartir: visibleEquipo true y revisión completa; no_compartir: false', async () => {
-      const resp = nuevoId('resp');
-      await responsable(resp);
-      const h1 = await hogar(resp);
-      const h2 = await hogar(resp, { visibleEquipo: true });
-      await llamar(E.revisarHogarEquipoHandler, resp, { hogarId: h1, decision: 'compartir' });
-      await llamar(E.revisarHogarEquipoHandler, resp, { hogarId: h2, decision: 'no_compartir' });
-      const a = await leer('hogaresDePaso', h1);
-      assert.equal(a.visibleEquipo, true);
-      assert.deepEqual({ decision: a.revisionEquipo.decision, por: a.revisionEquipo.por }, { decision: 'compartir', por: resp });
-      assert.equal(a.revisionEquipo.en.toMillis(), AHORA);
-      assert.equal(a.nombre, 'Familia Ruiz', 'no toca los datos de la familia');
-      assert.equal((await leer('hogaresDePaso', h2)).visibleEquipo, false);
-    });
-    test('revisar los hogares dudosos destraba las invitaciones', async () => {
-      const resp = nuevoId('resp');
-      await responsable(resp, { roles: ['albergue', 'rescatista'] });
-      const viejo = await hogar(resp, { creadoEn: ts(Date.UTC(2026, 5, 1)) });
-      await falla(llamar(E.invitarMiembroHandler, resp, { email: 'ana@mail.com' }), 'failed-precondition');
-      await llamar(E.revisarHogarEquipoHandler, resp, { hogarId: viejo, decision: 'no_compartir' });
-      await llamar(E.invitarMiembroHandler, resp, { email: 'ana@mail.com' });
-    });
-    test('hogar de otro albergue, una miembro o quien no es responsable: rechazo sin cambios', async () => {
-      const { resp, miembro } = await equipoConMiembro();
-      const otra = nuevoId('resp');
-      await responsable(otra);
-      const h = await hogar(resp);
-      await falla(llamar(E.revisarHogarEquipoHandler, otra, { hogarId: h, decision: 'compartir' }), 'not-found');
-      await poner('usuarios', miembro, { roles: ['adoptante'] });
-      await falla(llamar(E.revisarHogarEquipoHandler, miembro, { hogarId: h, decision: 'compartir' }), 'permission-denied');
-      assert.equal((await leer('hogaresDePaso', h)).visibleEquipo, undefined);
-    });
-    test('decisión inventada o campos de más: rechazo', async () => {
-      const resp = nuevoId('resp');
-      await responsable(resp);
-      const h = await hogar(resp);
-      await falla(llamar(E.revisarHogarEquipoHandler, resp, { hogarId: h, decision: 'si' }), 'invalid-argument');
-      await falla(llamar(E.revisarHogarEquipoHandler, resp, { hogarId: h, decision: 'compartir', visibleEquipo: true }), 'invalid-argument');
-      await falla(llamar(E.revisarHogarEquipoHandler, resp, { hogarId: 'no-existe', decision: 'compartir' }), 'not-found');
     });
   });
 

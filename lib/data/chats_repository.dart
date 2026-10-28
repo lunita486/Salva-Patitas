@@ -30,9 +30,9 @@ class ChatsRepository {
   /// Chats de un albergue que puede leer una miembro de su equipo. Pide
   /// exactamente los filtros que exige firestore.rules: las reglas no
   /// filtran resultados, rechazan la consulta entera si podría traer algo
-  /// que no se puede leer. La usa ChatsDelEquipoScreen
-  /// (equipo_lectura_screens.dart), que ordena en la app. Sin orderBy a
-  /// propósito: ordenar por fecha pediría otro índice compuesto.
+  /// que no se puede leer. Es la lista de chats del panel del albergue en
+  /// modo equipo (fase 2). Sin orderBy a propósito: ordenar por fecha
+  /// pediría otro índice compuesto; se ordena en la app.
   ///
   /// Los chats viejos sin `tipoSolicitud` (y los del camino legado sin
   /// animal, [asegurarChatLegado]) quedan FUERA del equipo a propósito: las
@@ -480,6 +480,7 @@ class ChatsRepository {
     /// `get()` que costaría una lectura en CADA mensaje.
     bool crearChatPrimero = false,
     Duration timeout = const Duration(seconds: 15),
+    Map<String, Object> autor = const {},
   }) async {
     final chatRef = _db.collection('chats').doc(chatId);
     final mensajeRef = chatRef.collection('mensajes').doc();
@@ -531,6 +532,7 @@ class ChatsRepository {
       if (escritoPorRescatista != null)
         'escritoPorRescatista': escritoPorRescatista,
       if (avisoDeEstado) 'avisoDeEstado': true,
+      ...autor,
     });
     await batch.commit().timeout(timeout);
   }
@@ -559,6 +561,10 @@ class ChatsRepository {
   /// eso es no enterarse nunca. Hallazgo real de Eliza. NO se usa para
   /// avisos que sí dispara una acción consciente del rescatista (aprobar,
   /// rechazar una solicitud) — de esos ya sabe, porque los hizo él mismo.
+  ///
+  /// [autor]: quién escribió de verdad cuando es una miembro del equipo del
+  /// albergue (ContextoAlbergue.camposAutor). Va en el mensaje, no en el
+  /// chat: el adoptante ve al albergue, y la responsable ve el nombre.
   Future<void> registrarMensaje({
     required String chatId,
     required String texto,
@@ -572,6 +578,7 @@ class ChatsRepository {
     /// Ver [_escribirChatYMensaje]. Lo saben los llamadores que acaban de
     /// comprobar que el chat no existe.
     bool crearChatPrimero = false,
+    Map<String, Object> autor = const {},
   }) async {
     final h = hora ?? horaAhora();
     await _escribirChatYMensaje(
@@ -593,6 +600,7 @@ class ChatsRepository {
       escritoPorRescatista: escritoPorRescatista,
       avisoDeEstado: avisoDeEstado,
       crearChatPrimero: crearChatPrimero,
+      autor: autor,
     );
   }
 
@@ -637,6 +645,7 @@ class ChatsRepository {
     required String emisor,
     String? hora,
     bool? escritoPorRescatista,
+    Map<String, Object> autor = const {},
   }) => _db.collection('chats').doc(chatId).collection('mensajes').add({
     'texto': texto,
     'emisor': emisor,
@@ -644,6 +653,7 @@ class ChatsRepository {
     'creadoEn': FieldValue.serverTimestamp(),
     if (escritoPorRescatista != null)
       'escritoPorRescatista': escritoPorRescatista,
+    ...autor,
   });
 
   /// Pone en cero los no leídos del lado que acaba de abrir el chat.
@@ -723,6 +733,9 @@ class ChatsRepository {
     /// Pacolin". El mensaje se escribe igual y se ve en el chat como
     /// siempre; lo unico que se evita es el aviso repetido.
     bool avisoDeEstado = false,
+    /// Quién manda el aviso cuando es una miembro del equipo del albergue
+    /// (ContextoAlbergue.camposAutor). Ver [registrarMensaje].
+    Map<String, Object> autor = const {},
   }) async {
     try {
       final hora = horaAhora();
@@ -774,6 +787,7 @@ class ChatsRepository {
           // autoconsulta `emisor` vale 'adoptante' por la regla, así que
           // sin este dato el aviso se dibujaría del lado equivocado.
           escritoPorRescatista: true,
+          autor: autor,
         );
         return true;
       }
@@ -792,6 +806,7 @@ class ChatsRepository {
         avisoDeEstado: avisoDeEstado,
         hora: hora,
         escritoPorRescatista: true,
+        autor: autor,
         camposChat: {
           if (existente == null) ...{
             if (solicitudId != null && solicitudId.isNotEmpty)

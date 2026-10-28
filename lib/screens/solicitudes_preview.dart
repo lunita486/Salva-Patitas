@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme/salva_patitas_theme.dart';
 import '../widgets/sp_widgets.dart';
@@ -9,6 +8,7 @@ import '../widgets/estado_error_feed.dart';
 import '../widgets/fotos.dart';
 import '../widgets/pedir_motivo.dart';
 import '../domain/reglas_negocio.dart';
+import '../data/contexto_albergue.dart';
 import '../data/creator_role.dart';
 import '../data/solicitudes_repository.dart';
 import 'solicitudes_rescatista_screen.dart'
@@ -40,9 +40,10 @@ class _SolicitudesPreviewState extends State<SolicitudesPreview> {
   // versión de cuando se mandó la solicitud. Hallazgo real de Eliza:
   // cambió la foto de "Cosita" y la tarjeta de esta vista previa la
   // siguió mostrando vieja (y con el nombre de otro animal, "Hermoso").
+  late final bool _esAlbergue = widget.role == CreatorRole.albergue;
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _stream =
       SolicitudesRepository().paraOwner(
-        uid: FirebaseAuth.instance.currentUser?.uid ?? '',
+        uid: uidDueno(esAlbergue: _esAlbergue),
         role: widget.role,
         estado: 'pendiente',
       );
@@ -381,6 +382,14 @@ Widget _solicitudDetalle(
                         ),
                       ],
                       const SizedBox(height: 24),
+                      // Modo equipo (fase 2): aprobar y rechazar es de la
+                      // responsable; las reglas tampoco lo dejan.
+                      if (esAlbergue && SesionEquipo.activa)
+                        Text(
+                          'Aprobar o rechazar lo decide la responsable del albergue.',
+                          style: TextStyle(fontSize: 13, color: ctx.sp.inkMuted, fontWeight: FontWeight.w600),
+                        )
+                      else
                       Row(
                         children: [
                           Expanded(

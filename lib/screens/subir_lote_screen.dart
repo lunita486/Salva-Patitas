@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import '../domain/tareas_en_paralelo.dart';
 import '../widgets/tardando_mucho_mixin.dart';
+import '../data/contexto_albergue.dart';
 import '../data/creator_role.dart';
 import '../data/rescates_repository.dart';
 import '../data/usuarios_repository.dart';
@@ -66,8 +67,10 @@ class _SubirLoteScreenState extends State<SubirLoteScreen>
   }
 
   Future<void> _cargarCiudad() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
+    // Esta pantalla es solo del albergue: el del panel (el de la
+    // responsable en modo equipo).
+    final uid = contextoAlbergue().albergueId;
+    if (uid.isEmpty) return;
     // UsuariosRepository.ubicacionDeAlbergue — la MISMA función que usa el
     // alta individual. Antes acá se leían los mismos campos a mano pero SIN
     // la red de seguridad que repara los perfiles viejos sin coordenadas:
@@ -125,7 +128,7 @@ class _SubirLoteScreenState extends State<SubirLoteScreen>
     // que arranca temprano en vez de esperar su turno más abajo. Mismo
     // motivo que el mismo arreglo en subir_rescate_screen.dart. Hallazgo
     // real de Eliza: "guardar animalitos se estaba demorando muchísimo".
-    final uidParaPerfil = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final uidParaPerfil = contextoAlbergue().albergueId;
     final userDocFuture = FirebaseFirestore.instance
         .collection('usuarios')
         .doc(uidParaPerfil)
@@ -149,7 +152,7 @@ class _SubirLoteScreenState extends State<SubirLoteScreen>
     // animal que se publicó pese al aviso de nombre repetido.
     final repetidos = <String>{};
     if (animalesConNombre.isNotEmpty) {
-      final uidActual = FirebaseAuth.instance.currentUser?.uid ?? '';
+      final uidActual = uidParaPerfil;
       // Una sola consulta para todo el lote, no una por animal (mismo
       // filtro rescatistaId+creadoPor cada vez — hallazgo de auditoría).
       final existentes = await RescatesRepository().nombresExistentes(
@@ -276,6 +279,7 @@ class _SubirLoteScreenState extends State<SubirLoteScreen>
           // de auditoría de código).
           await RescatesRepository().publicarConFotos(
             uid: uid,
+            autor: contextoAlbergue().camposAutor,
             role: CreatorRole.albergue,
             datos: {
               'nombre': a.nombreCtl.text.trim(),

@@ -28,6 +28,12 @@ const TOKEN_INVALIDO = new Set([
 // default que ya usa la pantalla, para no silenciar de golpe a nadie que
 // nunca entró a configurar esto.
 async function notificar(uid, title, body, tipoPreferencia) {
+  // En el emulador de Functions nunca se manda push: FCM no tiene emulador,
+  // así que un envío saldría por los servidores reales de Google.
+  if (process.env.FUNCTIONS_EMULATOR === 'true') {
+    console.log(`[emulador] push NO enviado a ${uid}: ${title}`);
+    return;
+  }
   const userRef = getFirestore().collection('usuarios').doc(uid);
   const doc = await userRef.get();
   const token = doc.exists ? (doc.data().fcmToken || null) : null;

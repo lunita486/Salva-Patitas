@@ -14,8 +14,9 @@ Diseño técnico completo: https://claude.ai/artifact/9r5eepp5uo7ZKqcGUEM456
   `invitarMiembro`, `aceptarInvitacion`, `rechazarInvitacion`,
   `cancelarInvitacion`, `revocarMiembro`, `salirDelEquipo`,
   `revisarHogarEquipo`. Todas exigen sesión con correo verificado y
-  rechazan campos que no sean los suyos. El cupo de 10 se cuida en
-  transacciones sobre `equipos/{albergueId}`.
+  rechazan campos que no sean los suyos. Sin tope de personas (ver
+  decisión 5); el contador `equipos/{albergueId}` se mantiene exacto con
+  transacciones.
 - **Avisos push** (best effort, nunca hacen fallar la operación): a la
   persona invitada si ya tiene cuenta con ese correo, a la responsable
   cuando alguien acepta o sale, a la miembro cuando la quitan.
@@ -27,7 +28,8 @@ Diseño técnico completo: https://claude.ai/artifact/9r5eepp5uo7ZKqcGUEM456
   verificado; el contador, la responsable y su equipo activo. Nadie escribe
   esas colecciones desde la app. Las miembros leen chats del albergue con
   tipo del equipo y hogares con `visibleEquipo == true`.
-- **App:** "Equipo del albergue" en el panel de la responsable (invitar,
+- **App:** "Equipo del albergue" en el Perfil de la responsable (debajo de
+  "Editar perfil del albergue") (invitar,
   quitar, cancelar, cupo), un control por hogar en "Hogares de paso"
   ("Equipo: lo ve / no lo ve / sin decidir"), y "Mi equipo de albergue" en
   los perfiles de adoptante y rescatista (solo aparece con una invitación o
@@ -48,6 +50,232 @@ miembros.
 **Chats viejos sin `tipoSolicitud`:** quedan fuera del equipo, sin
 modificarlos (incluye los que crea `asegurarChatLegado`, el camino de
 animales sin `rescateId`). La responsable los sigue viendo como siempre.
+
+## Fase 2: "modo Albergue" para el equipo (diseño, 2026-10-24, sin programar)
+
+Idea de Eliza al probar la v1 en el emulador: la miembro no "mira" el
+albergue desde su perfil, **trabaja** en él. Reemplaza las vistas de solo
+lectura de la v1. **No se publica la v1 sola**: v1 + fase 2 salen juntas.
+
+### Ya hecho (2026-10-24, aprobado)
+
+- "Mi equipo de albergue" muestra solo la tarjeta "Sos parte del equipo
+  desde el …" y "Salir del equipo". Sin "Chats del albergue" ni "Hogares de
+  paso compartidos". Al salir, `salirDelEquipo` ya avisa a la responsable
+  (push) y su lista de Miembros se actualiza sola.
+
+### Cómo se ve (aprobado por Eliza)
+
+1. Ana (adoptante + rescatista + miembro de Refugio La Perla) ve **tres
+   opciones** en el selector de rol: Adoptante, Rescatista y **Albergue**.
+   "Albergue" no es un rol de su cuenta (no se guarda en `usuarios.roles`,
+   y la regla `rolesCompatiblesConEquipo` ya impide que una miembro tenga
+   albergue propio): es el albergue de Perla, mientras la membresía esté
+   activa.
+2. Con "Albergue" entra al **mismo panel** que Perla (`AlbergueHomeScreen`)
+   con los datos de Refugio La Perla: Jauría, chats, solicitudes y hogares
+   de paso. Arriba, un rótulo "Ayudás en Refugio La Perla".
+3. Lo que Ana no puede hacer **no aparece** (no botones grises con error).
+
+| | Perla (responsable) | Ana (equipo) |
+|---|---|---|
+| Cargar animalitos (uno o en lote) y editarlos | ✅ | ✅ |
+| Cambiar el estado de un animalito | ✅ | ✅ |
+| Borrar animalitos | ✅ | Solo los que cargó ella, con los mismos frenos |
+| Responder chats del albergue | ✅ | ✅ |
+| Aprobar solicitudes de adopción | ✅ | ❌ |
+| Rechazar solicitudes | ✅ | ❌ |
+| Ver todos los hogares de paso, agregar, editar y **borrar** | ✅ | ✅ |
+| Editar el perfil del albergue | ✅ | ❌ |
+| Invitar o quitar personas | ✅ | ❌ |
+| Eliminar el albergue | ✅ | ❌ |
+| Ver consultas a negocios aliados o chats personales de Perla | ✅ | ❌ |
+
+Cambio respecto de la v1: **desaparece la elección "Equipo: lo ve / no lo
+ve"** de cada hogar de paso. El equipo ve todos. Se borran el campo
+`visibleEquipo`/`revisionEquipo`, la Function `revisarHogarEquipo` y su
+control. Nada de esto llegó a producción, así que no hay datos que migrar.
+
+### Cómo funciona por dentro
+
+**Regla de oro:** todo lo que Ana hace en modo Albergue queda **a nombre
+del albergue**: `rescatistaId = uid de Perla`, `creadoPor = 'albergue'`.
+Además se guarda quién lo hizo de verdad (`autorUid`, `autorNombre`) para
+que Perla lo sepa. El adoptante ve siempre "Refugio La Perla", nunca a Ana.
+Lo personal de Ana (sus animales de rescatista, sus chats de adoptante)
+sigue con su propio uid y no se mezcla.
+
+**Reglas de Firestore** (una función nueva `actuaPorAlbergue(id)`: es la
+responsable, o es miembro activa de ese albergue):
+
+- `rescates`: crear y editar con `creadoPor == 'albergue'` y
+  `rescatistaId` de un albergue del que es miembro, con `autorUid == uid()`.
+  Borrar: la responsable, o la miembro activa si `autorUid == uid()`.
+- `solicitudes` (de animales del albergue): leer sí; aprobar no.
+- `chats` del albergue (los de tipo adopción, hogar de paso, consulta, ya
+  definidos en la v1): leer, mandar mensajes con `emisor: 'rescatista'` y
+  `autorUid`, y poner en cero el "sin leer" compartido. Crear el chat de un
+  aviso automático (por ejemplo "este animalito falleció" al cambiar el
+  estado), igual que hoy lo hace la responsable.
+- `hogaresDePaso`: leer, crear, editar y borrar los del albergue.
+- `usuarios` de Perla: nada nuevo (el perfil del albergue ya se lee; no se
+  edita).
+- **Storage** (fotos de animales): subir y borrar fotos de un animal del
+  albergue si es miembro activa (la regla cruza con `membresias`).
+- Cada regla nueva lleva su prueba **negativa**: una miembro revocada, una
+  de otro albergue, o una persona sin equipo no puede nada de lo anterior; y
+  Ana no puede aprobar, borrar animales, ni tocar lo personal de Perla.
+
+**Functions:**
+
+- `onNuevoMensaje` y `onNuevaSolicitud`: sin cambios en a quién avisan
+  (las miembros no reciben avisos del albergue, ver respuestas). Solo hay
+  que cuidar que un mensaje escrito por una miembro (emisor 'rescatista')
+  le siga avisando al adoptante y no a la responsable.
+- `revisarHogarEquipo` se elimina.
+
+**App:**
+
+- `AlbergueHomeScreen` y las pantallas que abre (subir uno, subir en lote,
+  editar, cambiar estado, Jauría completa, solicitudes, chats, hogares de
+  paso) dejan de usar "el uid de la sesión" y reciben **el id del
+  albergue**. Para Perla es su propio uid, así que para ella no cambia nada.
+  Son unos 12 archivos y 4 repositorios (rescates, solicitudes, chats,
+  hogares).
+- Selector de rol con la tercera opción, y que recuerde la última
+  (`ultimoRolActivo = 'equipo'`).
+- Si a Ana la quitan del equipo mientras está en modo Albergue, la app la
+  saca sola al modo Adoptante o Rescatista con un aviso.
+- En el modo Albergue, la pestaña Perfil de Ana muestra: el albergue en el
+  que ayuda, cambiar de rol, salir del equipo y cerrar sesión. No muestra
+  "Editar perfil del albergue", "Equipo del albergue" ni "Eliminar cuenta".
+- El diálogo de aceptar invitación cambia: "Vas a poder cargar y editar
+  animalitos, responder chats y manejar los hogares de paso. Aprobar
+  adopciones sigue siendo de la responsable."
+- Se borran las vistas de solo lectura (`equipo_lectura_screens.dart`, sus
+  rutas y pruebas).
+
+**Pruebas antes de dar por terminado:** reglas (positivas y negativas),
+Functions en el emulador, pruebas de pantallas, y una vuelta completa en el
+emulador con Perla y Ana: Ana carga un animalito, Rita lo pide en adopción,
+Ana responde el chat, Ana no ve "Aprobar", Perla aprueba.
+
+**Tamaño:** grande, varias sesiones. Orden propuesto: 1) reglas + Storage +
+sus pruebas, 2) Functions, 3) repositorios con id de albergue, 4) panel y
+selector de rol, 5) vuelta completa en el emulador.
+
+### Respuestas de Eliza (2026-10-24)
+
+- Rechazar solicitudes: **no**. Ana chatea; decidir es de Perla.
+- Rotulito con el nombre de quien escribió, solo para el lado del
+  albergue: **sí**.
+- "Cargado por Ana" en la ficha, solo para el lado del albergue: **sí**.
+- Editar información del albergue: **no**, nada.
+- Orden por partes (reglas, avisos, datos, pantallas, prueba): **sí**.
+
+- Borrar (2026-10-25): Ana borra **solo los animalitos que cargó ella**
+  (`autorUid == Ana`), con los mismos frenos que la responsable (no si
+  tiene solicitudes pendientes o una adopción aprobada). Los demás, solo
+  Perla. Regla: `delete` para miembro activa si `autorUid == uid()`; los
+  frenos siguen en la app (`bloqueoParaEliminar`), igual que hoy.
+- Avisos (2026-10-25): **las miembros no reciben avisos del albergue.**
+  Ana ve los mensajes y solicitudes del albergue solo cuando entra en modo
+  Albergue (chats sin leer), igual que hoy ve los de rescatista solo en
+  modo Rescatista. `onNuevoMensaje` y `onNuevaSolicitud` siguen avisando
+  solo a la responsable; no se tocan.
+
+**Diseño cerrado.**
+
+### Avance
+
+- **Parte 1, reglas (2026-10-25, en local, sin desplegar):**
+  `firestore.rules` y `storage.rules` con las escrituras de la miembro
+  (funciones nuevas `miembroDeAlbergueVigente`, `autorPropio`,
+  `autorNombreValido`, `miembroEscribeEn`, `puedeTocarFotos`). Además,
+  `solicitudes.create` ahora exige que el `creadoPor` de la solicitud sea
+  el del animal (si viene), para que una solicitud sobre un animal
+  personal de la responsable no pueda quedar a la vista del equipo.
+  Pruebas: `test_rules/equipo_fase2.test.mjs` (nuevo, Firestore + Storage)
+  y `equipo.test.mjs` ajustado a hogares sin `visibleEquipo`. El corredor
+  levanta Firestore y Storage con el proyecto `demo-patitas-reglas`.
+  Resultado: 216/216.
+  Notas para las partes siguientes: la app tiene que mandar `autorUid`
+  (y `autorNombre`) en todo lo que una miembro crea o escribe, y no
+  pisarlos al editar; las listas de la miembro tienen que pedir los filtros
+  que las reglas pueden probar (solicitudes: `rescatistaId` + `creadoPor
+  == 'albergue'`; chats: además `tipoSolicitud in [...]`; hogares:
+  `albergueId`). `visibleEquipo` ya no decide nada en las reglas; la
+  Function `revisarHogarEquipo` y su control se quitan en la parte 2.
+- **Parte 2, Functions (2026-10-25, en local, sin desplegar):** se quitó
+  `revisarHogarEquipo` (equipo.js, index.js) y la barrera de "hogares
+  dudosos" al invitar y aceptar, con su lógica (`hogarDudoso`,
+  `revisionValida`, `hogaresPendientesDeRevision`, `errorHogaresPendientes`,
+  `comprobarPuedeRevisarHogar`, `leerHogaresPendientes`). Motivo: la
+  pantalla de hogares nació el 2026-07-30 y siempre estuvo solo en el panel
+  del albergue, así que no hay hogares personales mezclados. Pruebas de
+  Functions: 342/342 con emulador. `onNuevoMensaje` y `onNuevaSolicitud` no
+  cambian: verificado de punta a punta en el emulador (Functions reales)
+  que un mensaje de una miembro avisa al adoptante, y uno del adoptante
+  avisa solo a la responsable. `_diagnostico_equipo.js` queda como está
+  (sus datos de hogares pasan a ser solo informativos).
+  Pendiente para la parte 3 (app): quitar el control "Equipo: lo ve / no lo
+  ve" de `hogares_de_paso_screen.dart`, `EquipoRepository.revisarHogar`, el
+  aviso de "revisá tus hogares" de `equipo_albergue_screen.dart`, las vistas
+  de solo lectura y el índice `hogaresDePaso (albergueId, visibleEquipo)` de
+  `firestore.indexes.json` (lo usa todavía `visiblesParaEquipo`).
+- **Parte 3, datos (2026-10-25, en local, sin desplegar):**
+  `lib/data/contexto_albergue.dart` (nuevo): `ContextoAlbergue.responsable`
+  / `.equipo`, con `camposAutor` y `autorDe()` para el rotulito.
+  `RescatesRepository.crear` y `publicarConFotos`, y `ChatsRepository`
+  (`registrarMensaje`, `agregarMensaje`, `avisarSobreAnimal`) aceptan
+  `autor`; va en el animal y en el mensaje, nunca en el chat. Editar o
+  cambiar el estado no toca `autorUid`. Solicitudes y hogares ya trabajaban
+  con el id del albergue (`paraOwner(uid:, role:)`, `deAlbergue`), y la
+  lista de chats del equipo es `ChatsRepository.delEquipo`. Quitado: el
+  control "Equipo: lo ve / no lo ve" de Hogares de paso,
+  `EquipoRepository.revisarHogar` y `esPorHogares`, el atajo "Revisar mis
+  hogares de paso" al invitar, las vistas de solo lectura
+  (`equipo_lectura_screens.dart`, sus 3 rutas y pruebas),
+  `visiblesParaEquipo` y su índice. Pruebas de la app: 1023 + 3 omitidas;
+  `flutter analyze` sin errores nuevos.
+  Límite conocido: una miembro no puede mandar un aviso automático en un
+  chat viejo sin `tipoSolicitud` ni sobre una solicitud vieja sin animal
+  (las reglas lo rechazan y `avisarSobreAnimal` devuelve false). Esos
+  quedan para la responsable, como ya se decidió con los chats viejos.
+- **Parte 4, pantallas (2026-10-25, en local, sin desplegar):**
+  `InicioPersonalOEquipo` (nuevo, desde AuthWrapper para cuentas
+  personales): con `ultimoRolActivo == 'equipo'` y membresía activa muestra
+  `AlbergueHomeScreen` del albergue de la responsable; si la membresía deja
+  de estar activa vuelve sola al inicio personal con un aviso y borra la
+  elección. `SesionEquipo` (en contexto_albergue.dart) guarda el contexto
+  de la sesión; las pantallas del albergue lo leen con `contextoAlbergue()`
+  / `uidDueno(esAlbergue:)` solo en sus caminos de albergue. Selector de
+  rol de HomeScreen con "Albergue" (y se achica para entrar con tres).
+  Panel: sin avisos automáticos en modo equipo (los manda la responsable),
+  sin foto de la miembro, Perfil propio (a qué albergue ayuda, volver a la
+  cuenta, Mi equipo, apariencia, cerrar sesión). Barra: chats del equipo
+  (`delEquipo`), sin consultas a negocios ni pestaña Negocios. Chats:
+  mensajes con autor, rotulito con el nombre para el lado del albergue, y
+  el nombre del albergue (no el de la miembro) en un chat nuevo.
+  Solicitudes y vista previa: sin Aprobar/Rechazar en modo equipo, con
+  aviso. Jauría y editar: dueño = albergue, tacho solo en lo que cargó esa
+  persona, "Cargado por" para el lado del albergue. Subir uno y en lote:
+  a nombre del albergue con `autor`. Cambiar estado: sin "Fallecido" en
+  modo equipo (cierra solicitudes rechazándolas, que es de la
+  responsable). Hogares de paso: la red del albergue. Diálogo de aceptar
+  invitación y aviso de la pantalla "Equipo del albergue" con los permisos
+  nuevos. Pruebas: Flutter 1030 + 3 omitidas (`modo_equipo_test.dart`
+  nuevo); `flutter analyze` sin nada nuevo. Probado en el emulador con
+  Perla, Ana y Rita: Ana entra como Albergue, ve el panel de Refugio La
+  Perla, responde el chat de Rita (el mensaje queda con `autorUid` y el
+  aviso va a Rita), no ve Aprobar/Rechazar ni "Fallecido" ni tacho en lo de
+  Perla, vuelve a su cuenta, y al revocarla sale sola con el aviso. Perla
+  ve el rotulito "Ana" en el chat.
+  No probado en el emulador (solo con pruebas y reglas): subir un animal
+  con foto como miembro, borrar uno propio, editar un hogar de paso.
+- Siguiente: commit (con OK de Eliza), diagnóstico de producción (con su
+  autorización) y publicar en orden: índices, reglas (Firestore y
+  Storage), Functions y app.
 
 ## Terminología
 
@@ -95,9 +323,13 @@ negocio aliado.**
 3. **La cuenta de la responsable no se puede eliminar** mientras tenga miembros activos
    o invitaciones pendientes. Sin transferencia de propiedad en la v1.
 4. **Invitaciones vencen a los 7 días.**
-5. **Máximo 10 miembros activos** por albergue, con un contador
-   `equipos/{albergueId}` leído y escrito en la misma transacción (seguro
-   ante aceptaciones o invitaciones simultáneas).
+5. **Sin tope de personas por equipo** (Eliza, 2026-10-24; reemplaza el
+   máximo de 10). Un albergue grande puede sumar a toda la gente que lo
+   ayuda. El contador `equipos/{albergueId}.miembrosActivos` se mantiene
+   exacto en transacciones: lo usan el bloqueo al eliminar la cuenta y la
+   regla de roles incompatibles. Contrapartida asumida: cada miembro ve
+   chats con adoptantes y los hogares compartidos; la protección es que
+   solo la responsable invita y puede quitar a cualquiera.
 6. **Correo verificado obligatorio** para aceptar, también en sandbox.
 7. **Borrar animales: solo la responsable** en la v1. Los miembros del
    equipo crean y editan. Caminos revisados: la regla `rescates.delete` no

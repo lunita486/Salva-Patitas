@@ -114,8 +114,16 @@ Instalalo con:  npm install -g firebase-tools
   process.exit(1);
 }
 
+// Storage también: storage.rules lee membresias y rescates de Firestore
+// (equipo del albergue, equipo_fase2.test.mjs), y eso solo se prueba con
+// los dos emuladores levantados juntos.
+//
+// --project demo-patitas-reglas: el emulador de Storage busca esos datos de
+// Firestore en el proyecto con el que arrancó el emulador, no en el que usa
+// cada prueba. equipo_fase2.test.mjs usa este mismo id. Un proyecto "demo-"
+// nunca habla con Firebase de verdad, ni siquiera por error.
 const resultado = spawnSync(
-  `${firebase} emulators:exec --only firestore "node --test"`,
+  `${firebase} emulators:exec --project demo-patitas-reglas --only firestore,storage "node --test"`,
   { cwd: aca, env, stdio: 'inherit', shell: true },
 );
 

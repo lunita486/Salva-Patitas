@@ -47,7 +47,6 @@ const leer = async (col, id) => (await db.collection(col).doc(id).get()).data();
 const responsable = (uid, extra = {}) => poner('usuarios', uid, { roles: ['albergue'], albergueNombre: 'La Perla', ...extra });
 const invitacionesDe = async (albergueId) =>
   (await db.collection('invitaciones').where('albergueId', '==', albergueId).get()).docs.map((d) => d.data());
-const revision = (decision = 'compartir', extra = {}) => ({ decision, por: 'x', en: fecha(2026, 10, 20), ...extra });
 
 /** La promesa tiene que fallar con ese código de HttpsError. */
 async function falla(promesa, code) {
@@ -137,135 +136,43 @@ describe('equipo con el emulador', { skip: SIN_EMULADOR }, () => {
       await invitacionSembrada(resp2, 'ana@mail.com', { expiraEn: ts(AHORA - 1) });
       await invitar(resp2, null, { email: 'ana@mail.com' });
     });
-    test('cupo: 10 activos, o 7 activos + 3 pendientes vigentes, no dejan invitar; las vencidas no cuentan', async () => {
-      const lleno = nuevoId('resp');
-      await responsable(lleno);
-      await poner('equipos', lleno, { miembrosActivos: 10 });
-      await falla(invitar(lleno, null, { email: 'x@mail.com' }), 'resource-exhausted');
-
-      const mixto = nuevoId('resp');
-      await responsable(mixto);
-      await poner('equipos', mixto, { miembrosActivos: 7 });
-      for (const e of ['a', 'b', 'c']) await invitacionSembrada(mixto, `${e}@mail.com`);
-      await falla(invitar(mixto, null, { email: 'x@mail.com' }), 'resource-exhausted');
-
-      const conVencida = nuevoId('resp');
-      await responsable(conVencida);
-      await poner('equipos', conVencida, { miembrosActivos: 7 });
-      await invitacionSembrada(conVencida, 'a@mail.com');
-      await invitacionSembrada(conVencida, 'b@mail.com');
-      await invitacionSembrada(conVencida, 'c@mail.com', { expiraEn: ts(AHORA - 1) });
-      await invitar(conVencida, null, { email: 'x@mail.com' });
+    test('sin tope: con 30 miembros y 5 invitaciones pendientes se puede seguir invitando', async () => {
+      const grande = nuevoId('resp');
+      await responsable(grande);
+      await poner('equipos', grande, { miembrosActivos: 30 });
+      for (const e of ['a', 'b', 'c', 'd', 'e']) await invitacionSembrada(grande, `${e}@mail.com`);
+      await invitar(grande, null, { email: 'x@mail.com' });
+      assert.equal((await invitacionesDe(grande)).length, 6);
+      assert.equal((await leer('equipos', grande)).miembrosActivos, 30, 'invitar no toca el contador');
     });
   });
 
-  describe('barrera de hogares de paso dudosos', () => {
-    // La responsable con vida de rescatista (G2 a G7): por rol o por un animal personal.
-    async function respConHogares(hogares, { porAnimal = false } = {}) {
+  describe('hogares de paso: ya no bloquean (fase 2)', () => {
+    // Desde la fase 2 el equipo ve todos los hogares del albergue: no hay
+    // revisión hogar por hogar ni barrera de "hogares dudosos".
+    test('responsable con vida de rescatista y hogares viejos o sin fecha: invita y la invitada acepta', async () => {
       const resp = nuevoId('resp');
-      await responsable(resp, porAnimal ? {} : { roles: ['albergue', 'rescatista'] });
-      if (porAnimal) await poner('rescates', nuevoId('r'), { rescatistaId: resp, creadoPor: 'rescatista' });
-      for (const h of hogares) {
-        await poner('hogaresDePaso', nuevoId('h'), {
-          albergueId: resp, nombre: 'Familia Ruiz', telefono: '300 000 0000', email: 'familia@mail.com', ...h,
-        });
-      }
-      return resp;
-    }
-    const invitaBien = async (resp) => { await invitar(resp, null, { email: 'nueva@mail.com' }); };
-    const bloqueada = async (resp) => {
-      const antes = await leer('equipos', resp);
-      await assert.rejects(invitar(resp, null, { email: 'nueva@mail.com' }), (e) => {
-        assert.equal(e.code, 'failed-precondition');
-        assert.doesNotMatch(e.message, /\d|rescatista/i, 'el mensaje no dice cuántos hogares ni el historial');
-        return true;
-      });
-      assert.deepEqual(await invitacionesDe(resp), [], 'no tiene que crearse la invitación');
-      assert.deepEqual(await leer('equipos', resp), antes, 'el contador no cambia');
-    };
-
-    test('G1 responsable que nunca fue rescatista, con hogares viejos y sin fecha: invita', async () => {
+      await responsable(resp, { roles: ['albergue', 'rescatista'] });
+      await poner('rescates', nuevoId('r'), { rescatistaId: resp, creadoPor: 'rescatista' });
+      await poner('hogaresDePaso', nuevoId('h'), { albergueId: resp, nombre: 'Familia Ruiz', creadoEn: fecha(2026, 5, 1) });
+      await poner('hogaresDePaso', nuevoId('h'), { albergueId: resp, nombre: 'Familia Gómez' });
+      const { invitacionId } = await invitar(resp, null, { email: 'ana@mail.com' });
+      const ana = nuevoId('ana');
+      await aceptar(ana, 'ana@mail.com', { invitacionId });
+      assert.equal((await leer('membresias', ana)).estado, 'activa');
+    });
+    test('el cliente sigue sin poder mandar campos de más', async () => {
       const resp = nuevoId('resp');
       await responsable(resp);
-      await poner('hogaresDePaso', nuevoId('h'), { albergueId: resp, creadoEn: fecha(2026, 3, 1) });
-      await poner('hogaresDePaso', nuevoId('h'), { albergueId: resp });
-      await invitaBien(resp);
-    });
-    test('G2 rol de rescatista y un hogar viejo sin revisar: bloqueada', async () => {
-      await bloqueada(await respConHogares([{ creadoEn: fecha(2026, 5, 1) }]));
-    });
-    test('G3 vida de rescatista por un animal personal, sin el rol: bloqueada', async () => {
-      await bloqueada(await respConHogares([{ creadoEn: fecha(2026, 5, 1) }], { porAnimal: true }));
-    });
-    test('G4 hogar sin fecha (como los que agrega la app sola): bloqueada', async () => {
-      await bloqueada(await respConHogares([{ adoptanteId: 'x', vecesAyudo: 2 }]));
-    });
-    test('G5 hogar con fecha desde el 2026-07-31: no bloquea', async () => {
-      await invitaBien(await respConHogares([{ creadoEn: fecha(2026, 7, 31) }]));
-    });
-    test('G6 hogares dudosos con revisión válida compartir o no_compartir: no bloquean', async () => {
-      await invitaBien(await respConHogares([
-        { creadoEn: fecha(2026, 5, 1), revisionEquipo: revision('compartir') },
-        { revisionEquipo: revision('no_compartir') },
-      ]));
-    });
-    for (const [caso, rev] of [
-      ['decisión desconocida', revision('si')],
-      ['sin quién', revision('compartir', { por: '' })],
-      ['sin cuándo', revision('compartir', { en: null })],
-      ['cuándo como texto', revision('compartir', { en: '2026-10-20' })],
-      ['revisión como true', true],
-    ]) {
-      test(`G7 revisión mal formada (${caso}): sigue bloqueada`, async () => {
-        await bloqueada(await respConHogares([{ creadoEn: fecha(2026, 5, 1), revisionEquipo: rev }]));
-      });
-    }
-    test('G7b un solo hogar pendiente entre varios revisados: bloqueada', async () => {
-      await bloqueada(await respConHogares([
-        { creadoEn: fecha(2026, 5, 1), revisionEquipo: revision() },
-        { creadoEn: fecha(2026, 4, 1) },
-      ]));
-    });
-    test('G8 invitación creada antes de que aparezca un hogar dudoso: aceptar la rechaza', async () => {
-      const resp = await respConHogares([]);
-      const { invitacionId } = await invitar(resp, null, { email: 'ana@mail.com' });
-      await poner('hogaresDePaso', nuevoId('h'), { albergueId: resp, creadoEn: fecha(2026, 5, 1) });
-      const ana = nuevoId('ana');
-      await assert.rejects(aceptar(ana, 'ana@mail.com', { invitacionId }), (e) => {
-        assert.equal(e.code, 'failed-precondition');
-        // B1: la invitada no se entera de que es por los hogares ni del historial de la responsable.
-        assert.doesNotMatch(e.message, /hogar|rescatista|\d/i);
-        return true;
-      });
-      assert.equal(await leer('membresias', ana), undefined);
-      assert.equal((await leer('invitaciones', invitacionId)).estado, 'pendiente');
-    });
-    test('G8b invitación sembrada sin pasar por invitarMiembro: aceptar también la rechaza', async () => {
-      const resp = await respConHogares([{ creadoEn: fecha(2026, 5, 1) }]);
-      const invitacionId = await invitacionSembrada(resp, 'ana@mail.com');
-      const ana = nuevoId('ana');
-      await falla(aceptar(ana, 'ana@mail.com', { invitacionId }), 'failed-precondition');
-      assert.equal(await leer('membresias', ana), undefined);
-    });
-    test('G9 el cliente manda campos para saltarse la barrera: rechazo', async () => {
-      const resp = await respConHogares([{ creadoEn: fecha(2026, 5, 1) }]);
       const invitacionId = await invitacionSembrada(resp, 'ana@mail.com');
       await falla(invitar(resp, null, { email: 'x@mail.com', hogaresRevisados: ['todos'] }), 'invalid-argument');
       await falla(aceptar(nuevoId('ana'), 'ana@mail.com', { invitacionId, hogaresRevisados: ['todos'] }), 'invalid-argument');
       await falla(aceptar(nuevoId('ana'), 'ana@mail.com', { invitacionId, albergueId: 'otro' }), 'invalid-argument');
     });
-    test('G10 hogares dudosos de OTRO albergue no bloquean', async () => {
-      const otra = await respConHogares([{ creadoEn: fecha(2026, 5, 1) }]);
-      const resp = nuevoId('resp');
-      await responsable(resp, { roles: ['albergue', 'rescatista'] });
-      await poner('hogaresDePaso', nuevoId('h'), { albergueId: resp, creadoEn: fecha(2026, 9, 1) });
-      await invitaBien(resp);
-      await bloqueada(otra);
-    });
-    test('G12 cuando los hogares quedan revisados, se puede aceptar', async () => {
-      const resp = await respConHogares([{ creadoEn: fecha(2026, 5, 1), revisionEquipo: revision('no_compartir') }]);
-      const { invitacionId } = await invitar(resp, null, { email: 'ana@mail.com' });
-      await aceptar(nuevoId('ana'), 'ana@mail.com', { invitacionId });
+    test('las Functions de revisión ya no existen', () => {
+      assert.equal(E.revisarHogarEquipo, undefined);
+      assert.equal(E.revisarHogarEquipoHandler, undefined);
+      assert.equal(E.leerHogaresPendientes, undefined);
     });
   });
 
@@ -351,10 +258,11 @@ describe('equipo con el emulador', { skip: SIN_EMULADOR }, () => {
       const invitacionId = await invitacionSembrada(resp, `${resp}@mail.com`);
       await falla(aceptar(resp, `${resp}@mail.com`, { invitacionId }), 'permission-denied');
     });
-    test('equipo lleno: rechazo', async () => {
+    test('sin tope: en un equipo de 30 se acepta igual y el contador sube a 31', async () => {
       const { resp, invitacionId } = await invitacionValida();
-      await poner('equipos', resp, { miembrosActivos: 10 });
-      await falla(aceptar(nuevoId('ana'), 'ana@mail.com', { invitacionId }), 'resource-exhausted');
+      await poner('equipos', resp, { miembrosActivos: 30 });
+      await aceptar(nuevoId('ana'), 'ana@mail.com', { invitacionId });
+      assert.equal((await leer('equipos', resp)).miembrosActivos, 31);
     });
     test('id inválido o inexistente', async () => {
       await falla(aceptar(nuevoId('ana'), 'ana@mail.com', { invitacionId: 'a/b' }), 'invalid-argument');
@@ -364,23 +272,20 @@ describe('equipo con el emulador', { skip: SIN_EMULADOR }, () => {
   });
 
   describe('concurrencia', () => {
-    test('C1 11 aceptaciones simultáneas en un equipo vacío: exactamente 10 activas', async () => {
+    test('C1 15 aceptaciones simultáneas en un equipo vacío: las 15 entran y el contador queda exacto', async () => {
       const resp = nuevoId('resp');
       await responsable(resp);
-      // Sembradas a mano: invitarMiembro no deja tener 11 pendientes.
       const personas = [];
-      for (let i = 0; i < 11; i++) {
+      for (let i = 0; i < 15; i++) {
         const uid = nuevoId('m');
         personas.push({ uid, email: `${uid}@mail.com`, invitacionId: await invitacionSembrada(resp, `${uid}@mail.com`) });
       }
       const r = await Promise.allSettled(personas.map((p) => aceptar(p.uid, p.email, { invitacionId: p.invitacionId })));
-      const ok = r.filter((x) => x.status === 'fulfilled').length;
       const rechazos = r.filter((x) => x.status === 'rejected').map((x) => x.reason.code);
-      assert.equal(ok, 10, `aceptadas: ${ok}, rechazos: ${rechazos.join(', ')}`);
-      assert.deepEqual(rechazos, ['resource-exhausted']);
-      assert.equal((await leer('equipos', resp)).miembrosActivos, 10);
+      assert.deepEqual(rechazos, [], `rechazos: ${rechazos.join(', ')}`);
+      assert.equal((await leer('equipos', resp)).miembrosActivos, 15);
       const activas = await db.collection('membresias').where('albergueId', '==', resp).where('estado', '==', 'activa').get();
-      assert.equal(activas.size, 10);
+      assert.equal(activas.size, 15);
     });
     test('C2 una persona acepta dos albergues a la vez: queda en uno solo', async () => {
       const a = nuevoId('respA'); const b = nuevoId('respB');
@@ -407,15 +312,13 @@ describe('equipo con el emulador', { skip: SIN_EMULADOR }, () => {
       assert.equal(r.filter((x) => x.status === 'fulfilled').length, 1);
       assert.equal((await leer('equipos', resp)).miembrosActivos, 1);
     });
-    test('C4 12 invitaciones simultáneas: exactamente 10 creadas', async () => {
+    test('C4 15 invitaciones simultáneas a correos distintos: se crean las 15', async () => {
       const resp = nuevoId('resp');
       await responsable(resp);
-      const r = await Promise.allSettled(Array.from({ length: 12 }, (_, i) => invitar(resp, null, { email: `p${i}@mail.com` })));
-      const ok = r.filter((x) => x.status === 'fulfilled').length;
+      const r = await Promise.allSettled(Array.from({ length: 15 }, (_, i) => invitar(resp, null, { email: `p${i}@mail.com` })));
       const rechazos = r.filter((x) => x.status === 'rejected').map((x) => x.reason.code);
-      assert.equal(ok, 10, `creadas: ${ok}, rechazos: ${rechazos.join(', ')}`);
-      assert.deepEqual(rechazos, ['resource-exhausted', 'resource-exhausted']);
-      assert.equal((await invitacionesDe(resp)).length, 10);
+      assert.deepEqual(rechazos, [], `rechazos: ${rechazos.join(', ')}`);
+      assert.equal((await invitacionesDe(resp)).length, 15);
     });
     test('C5 tres invitaciones simultáneas al mismo correo: una sola', async () => {
       const resp = nuevoId('resp');
@@ -425,7 +328,7 @@ describe('equipo con el emulador', { skip: SIN_EMULADOR }, () => {
       assert.deepEqual(r.filter((x) => x.status === 'rejected').map((x) => x.reason.code), ['already-exists', 'already-exists']);
       assert.equal((await invitacionesDe(resp)).length, 1);
     });
-    test('C6 aceptaciones e invitaciones mezcladas: nunca más de 10 entre activos y pendientes', async () => {
+    test('C6 aceptaciones e invitaciones mezcladas: el contador cuenta exactamente a quienes aceptaron', async () => {
       const resp = nuevoId('resp');
       await responsable(resp);
       const personas = [];
@@ -437,45 +340,9 @@ describe('equipo con el emulador', { skip: SIN_EMULADOR }, () => {
         ...personas.map((p) => aceptar(p.uid, p.email, { invitacionId: p.invitacionId })),
         ...Array.from({ length: 8 }, (_, i) => invitar(resp, null, { email: `nueva${i}@mail.com` })),
       ]);
-      const activos = (await leer('equipos', resp)).miembrosActivos;
+      assert.equal((await leer('equipos', resp)).miembrosActivos, 6);
       const pendientes = (await invitacionesDe(resp)).filter((i) => i.estado === 'pendiente').length;
-      assert.ok(activos + pendientes <= 10, `activos ${activos} + pendientes ${pendientes}`);
-      assert.equal(activos, 6);
+      assert.equal(pendientes, 8, 'las 8 invitaciones nuevas quedaron pendientes');
     });
-  });
-});
-
-// Esta no necesita el emulador: comprueba qué campos pide la consulta de hogares.
-describe('consulta de hogares de paso (sin emulador)', () => {
-  test('pide solo albergueId, creadoEn y revisionEquipo, y el historial con limit 1', async () => {
-    const pedidos = [];
-    const consulta = (col, pasos = []) => ({
-      where: (f, op, v) => consulta(col, [...pasos, `where ${f}${op}${v}`]),
-      select: (...campos) => consulta(col, [...pasos, `select ${campos.join(',')}`]),
-      limit: (k) => consulta(col, [...pasos, `limit ${k}`]),
-      _col: col, _pasos: pasos,
-    });
-    const db = { collection: (col) => consulta(col) };
-    const tx = {
-      get: async (q) => {
-        pedidos.push(`${q._col}: ${q._pasos.join(' · ')}`);
-        if (q._col === 'hogaresDePaso') return { docs: [{ id: 'h1', data: () => ({ albergueId: 'resp', creadoEn: null }) }] };
-        return { empty: true, docs: [] };
-      },
-    };
-    const pendientes = await E.leerHogaresPendientes(tx, db, 'resp', { roles: ['albergue'] });
-    assert.deepEqual(pedidos, [
-      'hogaresDePaso: where albergueId==resp · select albergueId,creadoEn,revisionEquipo',
-      'rescates: where rescatistaId==resp · where creadoPor==rescatista · select rescatistaId · limit 1',
-    ]);
-    assert.deepEqual(pendientes, [], 'sin animal personal, el hogar sin fecha no es dudoso');
-    assert.deepEqual(E.CAMPOS_HOGAR, ['albergueId', 'creadoEn', 'revisionEquipo']);
-  });
-  test('sin hogares no hace falta mirar el historial', async () => {
-    const pedidos = [];
-    const q = { where: () => q, select: () => q, limit: () => q };
-    const tx = { get: async () => { pedidos.push('x'); return { docs: [], empty: true }; } };
-    assert.deepEqual(await E.leerHogaresPendientes(tx, { collection: () => q }, 'resp', null), []);
-    assert.equal(pedidos.length, 1);
   });
 });

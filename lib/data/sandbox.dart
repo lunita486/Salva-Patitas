@@ -1,9 +1,12 @@
 import 'dart:io' show Platform;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
+
+import 'cuenta_repository.dart';
 
 /// Modo sandbox: la app habla con los emuladores locales de Firebase en vez
 /// de con `patitas-dd0bb`.
@@ -77,10 +80,21 @@ const bool enModoPruebas = kDebugMode || kProfileMode;
 /// `localhost` desde adentro del emulador de Android es el propio teléfono
 /// virtual, no la máquina. 10.0.2.2 es el alias que Android reserva para
 /// "la máquina que me hospeda". En iOS y escritorio sí es localhost.
-String get _host =>
-    (!kIsWeb && Platform.isAndroid) ? '10.0.2.2' : '127.0.0.1';
+///
+/// En un teléfono FÍSICO por USB, 10.0.2.2 no existe: se usa `adb reverse`
+/// (el teléfono habla con la máquina por el cable, sin abrir nada en la red)
+/// y se compila con `--dart-define=SANDBOX_HOST=127.0.0.1`.
+const _hostForzado = String.fromEnvironment('SANDBOX_HOST');
 
-/// Redirige los tres SDK a los emuladores. Se llama una sola vez, justo
+String get _host => _hostForzado.isNotEmpty
+    ? _hostForzado
+    : (!kIsWeb && Platform.isAndroid) ? '10.0.2.2' : '127.0.0.1';
+
+/// Puerto del emulador de Functions (el mismo de firebase.json).
+const puertoFunctions = 5001;
+
+/// Redirige los cuatro SDK (Firestore, Auth, Storage y Functions) a los
+/// emuladores. Se llama una sola vez, justo
 /// después de `Firebase.initializeApp()` y ANTES de cualquier lectura.
 Future<void> conectarEmuladores() async {
   final host = _host;
@@ -90,7 +104,14 @@ Future<void> conectarEmuladores() async {
   FirebaseFirestore.instance.useFirestoreEmulator(host, 8097);
   await FirebaseAuth.instance.useAuthEmulator(host, 9099);
   await FirebaseStorage.instance.useStorageEmulator(host, 9199);
-  debugPrint('SANDBOX: hablando con los emuladores en $host');
+  // Functions: la MISMA instancia que usan CuentaRepository y
+  // EquipoRepository (instanceFor con la región de producción, que el SDK
+  // guarda por app y región). Sin esto, la app en sandbox llamaría a las
+  // Functions reales.
+  FirebaseFunctions.instanceFor(region: CuentaRepository.region)
+      .useFunctionsEmulator(host, puertoFunctions);
+  debugPrint('SANDBOX: hablando con los emuladores en $host '
+      '(Firestore 8097, Auth 9099, Storage 9199, Functions $puertoFunctions)');
 }
 
 /// Entra con email y contraseña, creando la cuenta si no existe.

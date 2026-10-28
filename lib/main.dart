@@ -23,7 +23,7 @@ import 'screens/albergue_perfil_screen.dart';
 import 'screens/albergue_home_screen.dart';
 import 'screens/aliado_perfil_screen.dart';
 import 'screens/aliado_home_screen.dart';
-import 'screens/home_screen.dart';
+import 'screens/inicio_personal_o_equipo.dart';
 import 'services/notificaciones_service.dart';
 import 'data/sandbox.dart';
 
@@ -126,6 +126,9 @@ Future<void> _inicializarEnSegundoPlano() async {
   // ese archivo); este try/catch es la segunda red, para que algo nuevo
   // que se agregue ahí en el futuro y se olvide de atrapar su error no
   // rompa esta cadena a mitad de camino.
+  // En sandbox no hay push: las cuentas son de prueba y el token del
+  // teléfono no tiene que terminar en ningún perfil, ni de los emuladores.
+  if (enSandbox) return;
   try {
     await NotificacionesService.inicializar();
   } catch (e) {
@@ -312,7 +315,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
       // Sin await ni catch por el mismo motivo que las dos escrituras de
       // arriba: guardarToken() ya se traga sus propios errores, y una cuenta
       // sin token queda degradada (no recibe push), no rota.
-      NotificacionesService.guardarToken();
+      if (!enSandbox) NotificacionesService.guardarToken();
     }
   }
 
@@ -430,7 +433,9 @@ class _AuthWrapperState extends State<AuthWrapper> {
               case PantallaPerfil.aliadoHome:
                 return const AliadoHomeScreen();
               case PantallaPerfil.home:
-                return const HomeScreen();
+                // Cuenta personal: su inicio, o el panel del albergue si es
+                // del equipo y eligió "Albergue" (fase 2 del equipo).
+                return InicioPersonalOEquipo(uid: snap.data!.uid, perfil: data);
             }
           },
         );

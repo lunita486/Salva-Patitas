@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:go_router/go_router.dart';
 
 import '../data/equipo_repository.dart';
 import '../domain/reglas_negocio.dart';
-import '../routing/app_router.dart';
 import '../theme/salva_patitas_theme.dart';
 import '../widgets/avatares.dart';
 import '../widgets/estado_error_feed.dart';
@@ -12,7 +10,7 @@ import '../widgets/sp_widgets.dart';
 
 /// "Equipo del albergue" de la responsable: quién está, a quién invitó y el
 /// botón para invitar. Solo la ve la cuenta dueña del albergue (se abre
-/// desde su panel). Todo cambio pasa por una Cloud Function; las reglas no
+/// desde su Perfil). Todo cambio pasa por una Cloud Function; las reglas no
 /// dejan escribir el equipo desde la app. Ver PLAN-EQUIPO-ALBERGUE.md.
 class EquipoAlbergueScreen extends StatefulWidget {
   const EquipoAlbergueScreen({super.key, this.repo, this.uid});
@@ -126,8 +124,6 @@ class _EquipoAlbergueScreenState extends State<EquipoAlbergueScreen> {
                   final cargando = !sm.hasData && !sm.hasError || !si.hasData && !si.hasError;
                   final miembros = sm.data ?? const <Membresia>[];
                   final invitaciones = si.data ?? const <InvitacionEquipo>[];
-                  final ocupados = miembros.length + invitaciones.length;
-                  final lleno = ocupados >= EquipoRepository.maxEquipo;
                   return ListView(
                     padding: const EdgeInsets.only(bottom: 40),
                     children: [
@@ -143,12 +139,7 @@ class _EquipoAlbergueScreenState extends State<EquipoAlbergueScreen> {
                             SpNotice(
                               fondo: c.lilac,
                               tinta: c.lilacInk,
-                              child: Text(
-                                'Tu equipo ve los chats de adopción, hogar de paso y consultas del albergue, '
-                                'y solo los hogares de paso que vos compartas. Nunca ve tus chats personales '
-                                'ni las consultas a negocios aliados. Solo vos invitás o quitás personas.',
-                                style: SpText.label.copyWith(color: c.lilacInk, fontWeight: FontWeight.w600),
-                              ),
+                              child: _QuePuedeVer(tinta: c.lilacInk),
                             ),
                             if (sm.hasError || si.hasError)
                               errorFeedState()
@@ -158,14 +149,12 @@ class _EquipoAlbergueScreenState extends State<EquipoAlbergueScreen> {
                                 child: Center(child: CircularProgressIndicator(color: c.primary)),
                               )
                             else ...[
-                              _cupo(c, ocupados),
-                              const SizedBox(height: SpSpace.s3),
                               SizedBox(
                                 width: double.infinity,
                                 child: SpButton(
-                                  label: lleno ? 'Equipo completo' : 'Invitar a alguien',
+                                  label: 'Invitar a alguien',
                                   icon: Icons.person_add_alt_1_rounded,
-                                  onTap: lleno ? null : _invitar,
+                                  onTap: _invitar,
                                 ),
                               ),
                               const SizedBox(height: SpSpace.s6),
@@ -205,31 +194,6 @@ class _EquipoAlbergueScreenState extends State<EquipoAlbergueScreen> {
       ),
     );
   }
-
-  Widget _cupo(SpColors c, int ocupados) => SpCard(
-    padding: const EdgeInsets.all(SpSpace.s3),
-    child: Row(
-      children: [
-        const SpBigTile(tone: SpTone.lilac, animal: SpAnimalKind.gato),
-        const SizedBox(width: SpSpace.s3),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '$ocupados de ${EquipoRepository.maxEquipo} lugares',
-                style: SpText.headline.copyWith(color: c.ink, fontWeight: FontWeight.w800),
-              ),
-              Text(
-                'Cuentan los miembros y las invitaciones pendientes',
-                style: SpText.caption.copyWith(color: c.inkMuted),
-              ),
-            ],
-          ),
-        ),
-      ],
-    ),
-  );
 
   Widget _filaMiembro(SpColors c, Membresia m) => Container(
     key: ValueKey('miembro_${m.uid}'),
@@ -311,7 +275,7 @@ class _EquipoAlbergueScreenState extends State<EquipoAlbergueScreen> {
 }
 
 /// Hoja para invitar por correo. Muestra el error del servidor ahí mismo
-/// (cupo lleno, ya invitada, hogares por revisar) sin cerrar la hoja.
+/// (ya invitada, correo inválido) sin cerrar la hoja.
 class _InvitarSheet extends StatefulWidget {
   const _InvitarSheet({required this.repo});
   final EquipoRepository repo;
@@ -380,6 +344,13 @@ class _InvitarSheetState extends State<_InvitarSheet> {
                 errorText: _email.isNotEmpty && !esEmailValido(_email) ? avisoEmailCorto : null,
               ),
             ),
+            const SizedBox(height: 6),
+            // Las invitaciones se reconocen por el correo de la cuenta de
+            // Google con la que la persona entra; con otro correo no la ve.
+            Text(
+              'Usá el correo con el que esa persona entra a Salva Patitas.',
+              style: SpText.caption.copyWith(color: c.inkMuted),
+            ),
             if (_error != null) ...[
               const SizedBox(height: 12),
               SpNotice(
@@ -387,11 +358,6 @@ class _InvitarSheetState extends State<_InvitarSheet> {
                 tinta: c.danger,
                 child: Text(_error!.mensaje, style: SpText.label.copyWith(color: c.danger, fontWeight: FontWeight.w600)),
               ),
-              if (_error!.esPorHogares)
-                SpLink('Revisar mis hogares de paso', onTap: () {
-                  Navigator.pop(context);
-                  context.push(AppRoutes.hogaresDePaso);
-                }),
             ],
             const SizedBox(height: 20),
             SizedBox(
@@ -406,6 +372,52 @@ class _InvitarSheetState extends State<_InvitarSheet> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Qué ve y qué no ve el equipo, en tres bloques cortos (pedido de Eliza:
+/// el texto corrido no se entendía).
+class _QuePuedeVer extends StatelessWidget {
+  const _QuePuedeVer({required this.tinta});
+  final Color tinta;
+
+  @override
+  Widget build(BuildContext context) {
+    final normal = SpText.label.copyWith(color: tinta, fontWeight: FontWeight.w500, height: 1.35);
+    final fuerte = normal.copyWith(fontWeight: FontWeight.w800);
+    Widget linea(String texto) => Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('✓ ', style: fuerte),
+          Expanded(child: Text(texto, style: normal)),
+        ],
+      ),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Qué puede hacer tu equipo', style: fuerte),
+        linea('Cargar y editar animalitos, a nombre del albergue.'),
+        linea('Responder los chats del albergue.'),
+        linea('Ver, agregar, editar y borrar hogares de paso.'),
+        linea('Borrar solo los animalitos que cargó cada persona.'),
+        const SizedBox(height: 8),
+        Text.rich(TextSpan(children: [
+          TextSpan(text: 'Lo que es solo tuyo: ', style: fuerte),
+          TextSpan(
+            text: 'aprobar o rechazar solicitudes, marcar un animalito como fallecido, editar el perfil e invitar o quitar personas.',
+            style: normal,
+          ),
+        ])),
+        const SizedBox(height: 8),
+        Text.rich(TextSpan(children: [
+          TextSpan(text: 'Qué no ve: ', style: fuerte),
+          TextSpan(text: 'tus chats personales ni tus consultas a negocios aliados.', style: normal),
+        ])),
+      ],
     );
   }
 }

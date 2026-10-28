@@ -6,6 +6,7 @@ import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:salva_patitas/data/chats_repository.dart';
+import 'package:salva_patitas/data/contexto_albergue.dart';
 
 // fake_cloud_firestore siempre resuelve al toque — para probar que una
 // escritura que NUNCA resuelve (sin señal) se corta sola con timeout hace
@@ -2142,6 +2143,72 @@ void main() {
 
       final snap = await repo.delEquipo('perla').get();
       expect(snap.docs.map((d) => d.id).toSet(), {'adop', 'hogar', 'consulta'});
+    });
+  });
+
+  group('equipo del albergue (fase 2) — quién escribió', () {
+    late FakeFirebaseFirestore firestore;
+    late ChatsRepository repo;
+    const ana = ContextoAlbergue.equipo(albergueId: 'perla', autorUid: 'ana', autorNombre: 'Ana');
+
+    setUp(() {
+      firestore = FakeFirebaseFirestore();
+      repo = ChatsRepository(db: firestore);
+    });
+
+    Future<List<Map<String, dynamic>>> mensajesDe(String chatId) async =>
+        (await firestore.collection('chats').doc(chatId).collection('mensajes').get())
+            .docs
+            .map((d) => d.data())
+            .toList();
+
+    test('registrarMensaje de una miembro: el mensaje lleva su autor, el chat no', () async {
+      await firestore.collection('chats').doc('c1').set({'rescatistaId': 'perla', 'adoptanteId': 'rita'});
+      await repo.registrarMensaje(
+        chatId: 'c1', texto: 'Hola Rita', emisor: 'rescatista', paraAdoptante: true, autor: ana.camposAutor);
+      final m = (await mensajesDe('c1')).single;
+      expect(m['emisor'], 'rescatista');
+      expect(m['autorUid'], 'ana');
+      expect(m['autorNombre'], 'Ana');
+      expect(ContextoAlbergue.autorDe(m), 'Ana');
+      final chat = (await firestore.collection('chats').doc('c1').get()).data()!;
+      expect(chat.containsKey('autorUid'), isFalse, reason: 'el adoptante ve al albergue, no a la persona');
+      expect(chat.containsKey('autorNombre'), isFalse);
+    });
+
+    test('la responsable (o cualquier llamador sin autor) escribe igual que antes', () async {
+      await repo.registrarMensaje(chatId: 'c2', texto: 'Hola', emisor: 'rescatista', paraAdoptante: true);
+      await repo.agregarMensaje(chatId: 'c2', texto: 'Otro', emisor: 'rescatista');
+      for (final m in await mensajesDe('c2')) {
+        expect(m.containsKey('autorUid'), isFalse);
+        expect(ContextoAlbergue.autorDe(m), isNull);
+      }
+      expect(const ContextoAlbergue.responsable('perla').camposAutor, isEmpty);
+    });
+
+    test('agregarMensaje y avisarSobreAnimal también guardan el autor', () async {
+      await repo.agregarMensaje(chatId: 'c3', texto: 'Hola', emisor: 'rescatista', autor: ana.camposAutor);
+      expect((await mensajesDe('c3')).single['autorUid'], 'ana');
+
+      final ok = await repo.avisarSobreAnimal(
+        adoptanteId: 'rita', adoptanteNombre: 'Rita', rescatistaId: 'perla', rescatista: 'La Perla',
+        texto: 'Luna ya tiene fecha de visita', rescateId: 'r1', animalNombre: 'Luna', creadoPor: 'albergue',
+        autor: ana.camposAutor,
+      );
+      expect(ok, isTrue);
+      final chatId = repo.idAnimal(rescateId: 'r1', adoptanteId: 'rita');
+      final m = (await mensajesDe(chatId)).single;
+      expect(m['autorUid'], 'ana');
+      final chat = (await firestore.collection('chats').doc(chatId).get()).data()!;
+      expect(chat['rescatistaId'], 'perla');
+      expect(chat['tipoSolicitud'], 'adopcion', reason: 'las reglas exigen tipo para que una miembro cree el chat');
+      expect(chat.containsKey('autorUid'), isFalse);
+    });
+
+    test('autorDe: sin autorUid no hay rotulito; sin nombre, uno genérico', () {
+      expect(ContextoAlbergue.autorDe({'autorNombre': 'Ana'}), isNull);
+      expect(ContextoAlbergue.autorDe({'autorUid': 'ana', 'autorNombre': '  '}), 'Alguien del equipo');
+      expect(ContextoAlbergue.autorDe({'autorUid': 'ana'}), 'Alguien del equipo');
     });
   });
 }

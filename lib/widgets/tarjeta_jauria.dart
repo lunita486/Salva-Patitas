@@ -7,6 +7,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../data/contexto_albergue.dart';
 import '../data/creator_role.dart';
 import '../domain/reglas_negocio.dart';
 import '../routing/app_router.dart';
@@ -40,6 +41,11 @@ class TarjetaJauria extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.sp;
     final nombre = nombreDeAnimal(d['nombre'] as String?);
+    final cargadoPor = ContextoAlbergue.autorDe(d);
+    // En modo equipo, el tacho solo en lo que cargó esta persona: las reglas
+    // no la dejan borrar lo de la responsable ni lo de otra miembro.
+    final equipo = esAlbergue ? SesionEquipo.actual.value : null;
+    final puedeBorrar = equipo == null || d['autorUid'] == equipo.autorUid;
     final especie = d['especie'] ?? '';
     final estado = d['estado'] ?? '';
     final urgencia = d['urgencia'] ?? '';
@@ -198,6 +204,17 @@ class TarjetaJauria extends StatelessWidget {
                         color: c.ink,
                       ),
                     ),
+                    // "Cargado por Ana": solo del lado del albergue, para lo
+                    // que cargó una miembro del equipo (fase 2).
+                    if (esAlbergue && cargadoPor != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        'Cargado por $cargadoPor',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: SpText.caption.copyWith(color: c.lilacInk, fontWeight: FontWeight.w700),
+                      ),
+                    ],
                     const SizedBox(height: 2),
                     Text(
                       '$especie · $estado',
@@ -453,13 +470,15 @@ class TarjetaJauria extends StatelessWidget {
                     extra: (docId: docId, data: d),
                   ),
                 ),
-                const SizedBox(width: 6),
-                SpMiniButton(
-                  icon: Icons.delete_outline_rounded,
-                  tooltip: 'Eliminar',
-                  danger: true,
-                  onTap: () => onEliminar(nombre),
-                ),
+                if (puedeBorrar) ...[
+                  const SizedBox(width: 6),
+                  SpMiniButton(
+                    icon: Icons.delete_outline_rounded,
+                    tooltip: 'Eliminar',
+                    danger: true,
+                    onTap: () => onEliminar(nombre),
+                  ),
+                ],
               ],
             ],
           ),

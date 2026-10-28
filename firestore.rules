@@ -36,9 +36,15 @@ service cloud.firestore {
     // ── Equipo del albergue ───────────────────────────────────────────
     // Ver PLAN-EQUIPO-ALBERGUE.md. La membresía la escriben SOLO las
     // Cloud Functions (membresias/{uid}); ningún rol de `usuarios` la
-    // prueba, porque los roles se los pone cada cuenta. En esta fase las
-    // miembros solo LEEN: chats y mensajes del albergue, y los hogares de
-    // paso que la responsable autorizó. No escriben nada todavía.
+    // prueba, porque los roles se los pone cada cuenta.
+    //
+    // Fase 2 ("modo Albergue", 2026-10-25): una miembro activa trabaja A
+    // NOMBRE del albergue. Carga y edita sus animalitos (y borra solo los
+    // que cargó ella), responde los chats del albergue, lee sus
+    // solicitudes sin poder aprobar ni rechazar, y maneja todos sus
+    // hogares de paso. Lo que escribe queda con el uid del albergue
+    // (rescatistaId / albergueId) y, donde importa saber quién fue, con
+    // `autorUid` == su propio uid.
     function membresiaPath() {
       return /databases/$(database)/documents/membresias/$(request.auth.uid);
     }
@@ -62,6 +68,21 @@ service cloud.firestore {
       return chat.creadoPor == 'albergue' &&
         chat.tipoSolicitud in tiposDelEquipo() &&
         esMiembroActivoDe(chat.rescatistaId);
+    }
+    // Una miembro actúa por el albergue solo si la cuenta del albergue
+    // sigue siendo albergue: si la responsable se saca el rol, su equipo
+    // deja de poder publicar a su nombre.
+    function miembroDeAlbergueVigente(albergueId) {
+      return esMiembroActivoDe(albergueId) && tieneRol(albergueId, 'albergue');
+    }
+    // `autorUid` (quién lo hizo de verdad) es opcional, pero si viene
+    // tiene que ser quien escribe: nadie le atribuye algo a otra persona.
+    function autorPropio(data) {
+      return !('autorUid' in data) || data.autorUid == uid();
+    }
+    function autorNombreValido(data) {
+      return !('autorNombre' in data) ||
+        (data.autorNombre is string && data.autorNombre.size() <= 100);
     }
 
     // ── usuarios ──────────────────────────────────────────────────────
@@ -204,12 +225,27 @@ service cloud.firestore {
     // Escritura solo del dueño, y `creadoPor` tiene que coincidir con un
     // rol de cuenta que ese uid realmente tenga (no puede publicar como
     // 'albergue' si su cuenta nunca activó ese rol).
+    //
+    // Equipo (fase 2): una miembro activa crea y edita animales del
+    // albergue (`creadoPor == 'albergue'`, `rescatistaId` = la responsable)
+    // con `autorUid` == su uid, y borra solo los que tienen su autorUid.
+    // `autorUid` no cambia nunca después de crear: "Cargado por" no se
+    // falsifica. Los frenos para borrar (solicitudes pendientes, adopción
+    // aprobada) son de la app, igual que para la responsable.
     match /rescates/{rescateId} {
       allow read: if true;
       allow create: if signedIn() &&
-        request.resource.data.rescatistaId == uid() &&
         request.resource.data.creadoPor in ['rescatista', 'albergue'] &&
-        hasRole(request.resource.data.creadoPor);
+        autorNombreValido(request.resource.data) &&
+        (
+          (request.resource.data.rescatistaId == uid() &&
+           hasRole(request.resource.data.creadoPor) &&
+           autorPropio(request.resource.data))
+          ||
+          (request.resource.data.creadoPor == 'albergue' &&
+           request.resource.data.get('autorUid', '') == uid() &&
+           miembroDeAlbergueVigente(request.resource.data.rescatistaId))
+        );
       // update NO deja reescribir rescatistaId ni creadoPor — antes solo se
       // pedía ser el dueño ACTUAL, sin restringir a qué podía cambiarlo.
       // Eso dejaba "regalarle" un animal propio al uid de cualquier otra
@@ -218,18 +254,34 @@ service cloud.firestore {
       // solicitudes.create de arriba supuestamente había cerrado — ese
       // anclaje compara contra ESTE documento, y quedaba falsificable
       // después de creado. Hallazgo de auditoría de código.
-      allow update: if signedIn() && resource.data.rescatistaId == uid() &&
+      allow update: if signedIn() &&
+        (resource.data.rescatistaId == uid() ||
+         (resource.data.creadoPor == 'albergue' &&
+          miembroDeAlbergueVigente(resource.data.rescatistaId))) &&
         request.resource.data.rescatistaId == resource.data.rescatistaId &&
-        request.resource.data.creadoPor == resource.data.creadoPor;
-      allow delete: if signedIn() && resource.data.rescatistaId == uid();
+        request.resource.data.creadoPor == resource.data.creadoPor &&
+        request.resource.data.get('autorUid', null) == resource.data.get('autorUid', null) &&
+        autorNombreValido(request.resource.data) &&
+        request.resource.data.get('autorNombre', null) == resource.data.get('autorNombre', null);
+      allow delete: if signedIn() &&
+        (resource.data.rescatistaId == uid() ||
+         (resource.data.creadoPor == 'albergue' &&
+          resource.data.get('autorUid', '') == uid() &&
+          esMiembroActivoDe(resource.data.rescatistaId)));
     }
 
     // ── solicitudes ───────────────────────────────────────────────────
     // Privado: contiene datos de vivienda/familia del adoptante. Solo lo
     // ven el adoptante dueño y el rescatista/albergue destinatario.
     match /solicitudes/{solicitudId} {
+      // Equipo (fase 2): una miembro activa lee las solicitudes del
+      // albergue (`creadoPor == 'albergue'`), nunca las personales de la
+      // responsable. Acceso directo al campo: sin `creadoPor` se niega.
+      // Su lista tiene que pedir rescatistaId == y creadoPor == 'albergue'.
+      // No escribe: aprobar y rechazar es solo de la responsable.
       allow read: if signedIn() &&
-        (resource.data.adoptanteId == uid() || resource.data.rescatistaId == uid());
+        (resource.data.adoptanteId == uid() || resource.data.rescatistaId == uid() ||
+         (resource.data.creadoPor == 'albergue' && esMiembroActivoDe(resource.data.rescatistaId)));
       // El estado inicial SIEMPRE es 'pendiente' — nunca se puede crear una
       // solicitud que ya nazca 'aprobada'. Sin esto, la rama de abajo que
       // protege el update no servía de nada: bastaba con saltarse el update
@@ -265,7 +317,15 @@ service cloud.firestore {
         !('acuerdoAceptadoEn' in request.resource.data) &&
         request.resource.data.get('rescateId', '') != '' &&
         get(/databases/$(database)/documents/rescates/$(request.resource.data.rescateId)).data.rescatistaId
-          == request.resource.data.rescatistaId;
+          == request.resource.data.rescatistaId &&
+        // El sombrero de la solicitud es el del animal. Decide si el equipo
+        // del albergue la ve: sin esto, una solicitud sobre un animal
+        // PERSONAL de la responsable podía nacer marcada 'albergue' y
+        // quedar a la vista de su equipo. Si no viene (versiones viejas de
+        // la app), se acepta: sin el campo el equipo no la ve.
+        (!('creadoPor' in request.resource.data) ||
+         request.resource.data.creadoPor ==
+           get(/databases/$(database)/documents/rescates/$(request.resource.data.rescateId)).data.get('creadoPor', 'rescatista'));
       // Solo el rescatista/albergue dueño del animal puede cambiar el
       // estado (aprobar/rechazar) — el adoptante lee su propia solicitud
       // pero nunca la escribe después de creada. Antes cualquiera de las
@@ -374,10 +434,26 @@ service cloud.firestore {
       // nadie: lo único que queda posible es sumar de a uno mandando
       // mensajes de verdad, que se ven y ya están limitados por las otras
       // reglas.
-      function contadorValido(campo, duenio) {
+      //
+      // El "sin leer" del lado del albergue es compartido por el equipo
+      // (decisión 10): una miembro que abre el chat también lo pone en cero.
+      function contadorValido(campo, duenio, delEquipo) {
         return request.resource.data.get(campo, 0) == resource.data.get(campo, 0)
             || request.resource.data.get(campo, 0) == resource.data.get(campo, 0) + 1
-            || (duenio == uid() && request.resource.data.get(campo, 0) == 0);
+            || ((duenio == uid() || delEquipo) && request.resource.data.get(campo, 0) == 0);
+      }
+      // Una miembro escribe en un chat del albergue como el albergue, salvo
+      // en uno donde ella misma es la adoptante: ahí no puede contestarse
+      // a sí misma en nombre del albergue.
+      // Con get() y no acceso directo (a diferencia de chatDelEquipo, que
+      // lo necesita para las listas): en un chat viejo sin `creadoPor` o
+      // sin tipo, el acceso directo da error, y como esto se evalúa
+      // también cuando escribe el adoptante, le bloquearía su propio chat.
+      function miembroEscribeEn(chat) {
+        return chat.get('creadoPor', '') == 'albergue' &&
+          chat.get('tipoSolicitud', '') in tiposDelEquipo() &&
+          chat.adoptanteId != uid() &&
+          esMiembroActivoDe(chat.rescatistaId);
       }
 
       allow read: if (signedIn() &&
@@ -406,8 +482,17 @@ service cloud.firestore {
       // Así que ahora se enumeran las TRES formas legítimas, cada una con
       // su propio anclaje, y todo lo que no encaje en una de ellas se
       // rechaza. Ya no hay una rama que se saltee el anclaje.
+      // Equipo (fase 2): una miembro activa también crea, del lado del
+      // albergue, los chats de los avisos automáticos (por ejemplo "este
+      // animalito falleció" al cambiar el estado). Solo con un tipo del
+      // equipo, para que el chat nazca visible para ella, y siempre por la
+      // rama (A) o (C): el anclaje al animal o a la solicitud no cambia.
       allow create: if signedIn() &&
-        (request.resource.data.adoptanteId == uid() || request.resource.data.rescatistaId == uid()) &&
+        (request.resource.data.adoptanteId == uid() || request.resource.data.rescatistaId == uid() ||
+         (request.resource.data.get('creadoPor', '') == 'albergue' &&
+          request.resource.data.get('tipoSolicitud', '') in tiposDelEquipo() &&
+          request.resource.data.adoptanteId != uid() &&
+          miembroDeAlbergueVigente(request.resource.data.rescatistaId))) &&
         (
           // (A) Chat sobre un animal. Anclado al documento REAL del
           // rescate: quien figura como rescatista tiene que ser su dueño
@@ -504,9 +589,10 @@ service cloud.firestore {
         // responsable que también fuera negocio aliado podía cambiarle el
         // tipo a una consulta que recibió y abrírsela a su equipo.
         request.resource.data.get('tipoSolicitud', null) == resource.data.get('tipoSolicitud', null) &&
-        contadorValido('noLeidosAdoptante', resource.data.adoptanteId) &&
-        contadorValido('noLeidosRescatista', resource.data.rescatistaId) &&
-        (resource.data.adoptanteId == uid() || resource.data.rescatistaId == uid());
+        contadorValido('noLeidosAdoptante', resource.data.adoptanteId, false) &&
+        contadorValido('noLeidosRescatista', resource.data.rescatistaId, miembroEscribeEn(resource.data)) &&
+        (resource.data.adoptanteId == uid() || resource.data.rescatistaId == uid() ||
+         miembroEscribeEn(resource.data));
 
       match /mensajes/{mensajeId} {
         allow read: if (signedIn() &&
@@ -542,13 +628,25 @@ service cloud.firestore {
         // en cambio, y la escritura se rechazaba siempre. Priorizar
         // adoptanteId resuelve la ambigüedad a favor de lo que el cliente
         // realmente manda.
+        //
+        // Equipo (fase 2): una miembro activa escribe del lado del
+        // albergue (emisor 'rescatista') con `autorUid` == su uid, para el
+        // rotulito que ve la responsable. El adoptante ve al albergue.
         allow create: if signedIn() &&
-          (get(/databases/$(database)/documents/chats/$(chatId)).data.adoptanteId == uid() ||
-           get(/databases/$(database)/documents/chats/$(chatId)).data.rescatistaId == uid()) &&
-          request.resource.data.emisor == (
-            get(/databases/$(database)/documents/chats/$(chatId)).data.adoptanteId == uid()
-              ? 'adoptante' : 'rescatista'
+          (
+            ((get(/databases/$(database)/documents/chats/$(chatId)).data.adoptanteId == uid() ||
+              get(/databases/$(database)/documents/chats/$(chatId)).data.rescatistaId == uid()) &&
+             request.resource.data.emisor == (
+               get(/databases/$(database)/documents/chats/$(chatId)).data.adoptanteId == uid()
+                 ? 'adoptante' : 'rescatista'
+             ) &&
+             autorPropio(request.resource.data))
+            ||
+            (miembroEscribeEn(get(/databases/$(database)/documents/chats/$(chatId)).data) &&
+             request.resource.data.emisor == 'rescatista' &&
+             request.resource.data.get('autorUid', '') == uid())
           ) &&
+          autorNombreValido(request.resource.data) &&
           request.resource.data.texto is string &&
           request.resource.data.texto.size() <= 2000 &&
           // La fecha la pone el SERVIDOR, no quien escribe. La regla no la
@@ -584,33 +682,30 @@ service cloud.firestore {
     // lo ve/edita el albergue dueño (`albergueId`). Solo para albergues,
     // no rescatistas (decisión de producto: mejoras_albergue.html).
     match /hogaresDePaso/{docId} {
-      // Las miembros ven solo los hogares que la responsable autorizó
-      // (`visibleEquipo == true`, lo escribe una Cloud Function de una fase
-      // posterior). Los que no tienen el campo, o lo tienen en false,
-      // quedan ocultos: ningún hogar es visible por defecto. Acceso directo
-      // al campo a propósito: si falta, se niega. La consulta de lista de
-      // una miembro tiene que pedir albergueId == y visibleEquipo == true.
-      allow read: if signedIn() && (resource.data.albergueId == uid() ||
-        (resource.data.visibleEquipo == true && esMiembroActivoDe(resource.data.albergueId)));
-      allow delete: if signedIn() && resource.data.albergueId == uid();
+      // Equipo (fase 2, 2026-10-25): una miembro activa ve TODOS los
+      // hogares del albergue y puede agregar, editar y borrar (decisión de
+      // Eliza). Ya no existe la elección "Equipo: lo ve / no lo ve": los
+      // campos visibleEquipo/revisionEquipo de la v1 no llegaron a
+      // producción y no deciden nada. Su lista tiene que pedir
+      // albergueId == el albergue.
+      allow read, delete: if signedIn() &&
+        (resource.data.albergueId == uid() || esMiembroActivoDe(resource.data.albergueId));
       // update NO deja reescribir albergueId — mismo motivo que en
       // servicios.update: sin este candado se podía inyectar un contacto
       // falso directo en el roster PRIVADO de otro albergue, reescribiendo
       // a quién pertenece una fila propia. Hallazgo de auditoría de código.
-      allow update: if signedIn() && resource.data.albergueId == uid() &&
-        request.resource.data.albergueId == resource.data.albergueId &&
-        // Lo decide el servidor, nunca la app (ni siquiera la responsable).
-        !request.resource.data.diff(resource.data).affectedKeys()
-          .hasAny(['visibleEquipo', 'revisionEquipo']);
+      allow update: if signedIn() &&
+        (resource.data.albergueId == uid() || miembroDeAlbergueVigente(resource.data.albergueId)) &&
+        request.resource.data.albergueId == resource.data.albergueId;
       // hasRole('albergue') es lo que hace cumplir "solo para albergues,
       // no rescatistas" en la práctica — antes solo se pedía que
       // albergueId fuera uno mismo, así que una cuenta rescatista (sin
       // ese rol) también podía crear acá, aunque el dato quedara
       // igual acotado a su propio uid (nunca se filtraba entre cuentas).
+      // Para una miembro, el rol que se mira es el de la cuenta del albergue.
       allow create: if signedIn() &&
-        request.resource.data.albergueId == uid() &&
-        hasRole('albergue') &&
-        !request.resource.data.keys().hasAny(['visibleEquipo', 'revisionEquipo']);
+        ((request.resource.data.albergueId == uid() && hasRole('albergue')) ||
+         miembroDeAlbergueVigente(request.resource.data.albergueId));
     }
 
     // ── membresias, invitaciones, equipos ─────────────────────────────

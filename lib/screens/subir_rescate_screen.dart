@@ -13,6 +13,7 @@ import '../widgets/chips_seleccionables.dart';
 import '../widgets/confirmar_ciudad_resuelta.dart';
 import '../widgets/elegir_foto_animal.dart';
 import '../widgets/tardando_mucho_mixin.dart';
+import '../data/contexto_albergue.dart';
 import '../data/creator_role.dart';
 import '../data/rescates_repository.dart';
 import '../data/usuarios_repository.dart';
@@ -147,8 +148,9 @@ class _SubirRescateScreenState extends State<SubirRescateScreen>
   void reintentarConPermiso() => _ciudadCtrl.detectar();
 
   Future<void> _cargarCiudadAlbergue() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
+    // El albergue del panel: el de la responsable en modo equipo.
+    final uid = contextoAlbergue().albergueId;
+    if (uid.isEmpty) return;
     // UsuariosRepository.ubicacionDeAlbergue: la lectura del perfil Y la
     // red de seguridad que repara los perfiles viejos sin coordenadas.
     // Vive compartida porque la pantalla de publicar en LOTE necesita
@@ -218,7 +220,7 @@ class _SubirRescateScreenState extends State<SubirRescateScreen>
     // dos "negocios" distintos aunque el login sea el mismo.
     final nombreIngresado = _nombreCtl.text.trim();
     if (nombreIngresado.isNotEmpty) {
-      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      final uid = uidDueno(esAlbergue: widget.esAlbergue);
       final duplicado = await RescatesRepository().buscarDuplicado(
         uid: uid,
         nombre: nombreIngresado,
@@ -365,7 +367,9 @@ class _SubirRescateScreenState extends State<SubirRescateScreen>
     iniciarTimerTardando(const Duration(seconds: 6));
 
     try {
-      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      // Dueño del animal: el albergue del panel (el de la responsable en
+      // modo equipo, que además guarda quién lo cargó) o la cuenta propia.
+      final uid = uidDueno(esAlbergue: widget.esAlbergue);
       // Se dispara ACÁ, antes de esperar las fotos — es una lectura
       // independiente (el nombre/logo del albergue no depende en nada de
       // las fotos del animal), así que no hay motivo para esperarla recién
@@ -437,6 +441,7 @@ class _SubirRescateScreenState extends State<SubirRescateScreen>
       // subir_lote_screen.dart (hallazgo de auditoría de código).
       final resultado = await RescatesRepository().publicarConFotos(
         uid: uid,
+        autor: widget.esAlbergue ? contextoAlbergue().camposAutor : const {},
         role: widget.esAlbergue ? CreatorRole.albergue : CreatorRole.rescatista,
         datos: {
           'nombre': _nombreCtl.text.trim(),
